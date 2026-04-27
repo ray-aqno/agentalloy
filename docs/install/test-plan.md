@@ -130,7 +130,7 @@ Per-platform checklist, run by a human. One walk-through per OS × harness combi
 |---|---|---|---|
 | Linux x86_64 | Intel CPU only | CPU+RAM | required |
 | Linux x86_64 | NVIDIA GPU | dGPU | required |
-| Linux x86_64 | AMD Radeon dGPU | dGPU (radeon preset) | required (your dev workstation) |
+| Linux x86_64 | AMD Radeon iGPU (e.g. 890M) | iGPU (radeon preset) | required (your dev workstation) |
 | macOS | Apple Silicon M-series | iGPU | required |
 | Windows 11 | NVIDIA GPU | dGPU | nice-to-have v1, required v1.1 |
 | Windows 11 | AMD Radeon dGPU | dGPU | nice-to-have v1, required v1.1 |

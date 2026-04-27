@@ -269,6 +269,7 @@ If a detection command isn't available (`nvidia-smi` not installed), the field i
   ],
   "preset_resolution_table": {
     "(amd-x86_64, dGPU)": "radeon",
+    "(amd-x86_64, iGPU)": "radeon",
     "(apple-silicon, iGPU)": "apple-silicon",
     "(nvidia, dGPU)": "nvidia",
     "(any, CPU+RAM)": "cpu"

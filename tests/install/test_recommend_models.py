@@ -70,8 +70,8 @@ class TestResolvePreset:
     def test_amd_dgpu_resolves_radeon(self) -> None:
         assert _resolve_preset("amd-x86_64", "dGPU") == "radeon"
 
-    def test_amd_igpu_falls_back_to_cpu(self) -> None:
-        assert _resolve_preset("amd-x86_64", "iGPU") == "cpu"
+    def test_amd_igpu_resolves_radeon(self) -> None:
+        assert _resolve_preset("amd-x86_64", "iGPU") == "radeon"
 
     def test_apple_silicon_igpu(self) -> None:
         assert _resolve_preset("apple-silicon", "iGPU") == "apple-silicon"
@@ -144,6 +144,12 @@ class TestRecommendModels:
             discrete_gpus=[{"vendor": "amd", "model": "RX 7900 XTX", "vram_gb": 24}],
         )
         result = recommend_models(hw, "dGPU")
+        assert result["preset"] == "radeon"
+        assert result["options"][0]["embed_runner"] == "lm-studio"
+
+    def test_amd_igpu_resolves_radeon_with_lm_studio(self) -> None:
+        hw = _hw(cpu_vendor="amd")
+        result = recommend_models(hw, "iGPU")
         assert result["preset"] == "radeon"
         assert result["options"][0]["embed_runner"] == "lm-studio"
 

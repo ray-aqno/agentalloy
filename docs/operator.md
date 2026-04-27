@@ -8,7 +8,7 @@ All settings are read from environment variables (or `.env` file at the project 
 cp .env.cpu .env          # Universal CPU+RAM (any machine)
 cp .env.apple-silicon .env # Apple Silicon (Metal)
 cp .env.nvidia .env        # NVIDIA GPU (CUDA)
-cp .env.radeon .env        # AMD Radeon dGPU (LM Studio Vulkan)
+cp .env.radeon .env        # AMD Radeon dGPU or iGPU (LM Studio Vulkan)
 ```
 
 Or copy `.env.example` and fill in manually. Full reference:

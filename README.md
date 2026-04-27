@@ -48,7 +48,7 @@ The runtime requires only an embedding service. The install agent handles config
 | `cpu` | Any x86_64 / ARM64 | Ollama on CPU | 8 GB RAM |
 | `apple-silicon` | Apple M1/M2/M3/M4 | Ollama (Metal) | 8 GB unified |
 | `nvidia` | NVIDIA GPU (CUDA) | Ollama (CUDA) | 4 GB VRAM |
-| `radeon` | AMD Radeon dGPU | LM Studio (Vulkan) | 4 GB VRAM |
+| `radeon` | AMD Radeon dGPU or iGPU | LM Studio (Vulkan) | 4 GB VRAM |
 
 All presets use `qwen3-embedding:0.6b` (1024-dim). `cpu`, `apple-silicon`, and `nvidia` use Ollama at `localhost:11434`; `radeon` uses LM Studio's Vulkan backend at `localhost:1234`.
 

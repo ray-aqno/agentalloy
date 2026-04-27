@@ -135,9 +135,10 @@ The preset name is **resolved from `(hardware, host_target)`** by `recommend-mod
 | `(hardware_arch, host_target)` | Preset |
 |---|---|
 | AMD x86_64 + dGPU | `radeon` |
+| AMD x86_64 + iGPU | `radeon` |
 | Apple Silicon + iGPU (Metal) | `apple-silicon` |
 | NVIDIA + dGPU | `nvidia` |
-| any + CPU+RAM or iGPU | `cpu` |
+| any + CPU+RAM | `cpu` |
 
 `recommend-models` returns the resolved preset in its output, and the runbook passes that preset name straight to `write-env`. The user never types a preset name.
 

@@ -1,7 +1,7 @@
 # Compose stack for Skillsmith (cpu / apple-silicon / nvidia presets).
 # Works with both `podman compose up` (project preference) and `docker compose up`.
 #
-# For AMD Radeon dGPU (LM Studio Vulkan backend), use compose.radeon.yaml instead.
+# For AMD Radeon dGPU or iGPU (LM Studio Vulkan backend), use compose.radeon.yaml instead.
 #
 # What this gives you:
 #   - skillsmith service on http://localhost:8000 with the pre-seeded corpus

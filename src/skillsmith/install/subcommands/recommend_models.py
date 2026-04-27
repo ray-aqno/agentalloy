@@ -8,6 +8,7 @@ Preset resolution table (from contracts.md):
   (apple-silicon, iGPU)    → apple-silicon
   (nvidia, dGPU)           → nvidia
   (amd-x86_64, dGPU)       → radeon
+  (amd-x86_64, iGPU)       → radeon  (LM Studio Vulkan works on AMD iGPU)
   (any, CPU+RAM)           → cpu
 """
 
@@ -30,6 +31,7 @@ _PRESET_TABLE: list[tuple[str, str, str]] = [
     ("apple-silicon", "iGPU", "apple-silicon"),
     ("nvidia", "dGPU", "nvidia"),
     ("amd-x86_64", "dGPU", "radeon"),
+    ("amd-x86_64", "iGPU", "radeon"),  # LM Studio Vulkan works on AMD iGPU
 ]
 _DEFAULT_PRESET = "cpu"
 
@@ -38,6 +40,7 @@ PRESET_RESOLUTION_TABLE: dict[str, str] = {
     "(apple-silicon, iGPU)": "apple-silicon",
     "(nvidia, dGPU)": "nvidia",
     "(amd-x86_64, dGPU)": "radeon",
+    "(amd-x86_64, iGPU)": "radeon",
     "(any, CPU+RAM)": "cpu",
 }
 
@@ -93,6 +96,7 @@ _PRESET_OPTIONS: dict[str, Any] = {
     "apple-silicon-iGPU": _options_apple_silicon,
     "nvidia-dGPU": _options_nvidia,
     "radeon-dGPU": _options_radeon,
+    "radeon-iGPU": _options_radeon,
     "cpu-CPU+RAM": _options_cpu,
 }
 
@@ -117,7 +121,7 @@ def _classify_hardware(hw: dict[str, Any]) -> str:
     if any((d.get("vendor") or "").lower() == "nvidia" for d in discrete):
         return "nvidia"
 
-    # AMD x86_64 — resolves to radeon (dGPU) or cpu (iGPU/CPU+RAM)
+    # AMD x86_64 — resolves to radeon (dGPU or iGPU) or cpu (CPU+RAM)
     if vendor == "amd" and "x86" in arch:
         return "amd-x86_64"
 

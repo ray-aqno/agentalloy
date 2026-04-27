@@ -1,4 +1,4 @@
-# Skillsmith container stack for AMD Radeon dGPU (LM Studio Vulkan backend).
+# Skillsmith container stack for AMD Radeon dGPU or iGPU (LM Studio Vulkan backend).
 #
 # LM Studio runs on the HOST — it cannot run inside a container because it
 # requires direct Vulkan GPU access. Skillsmith reaches it via the
