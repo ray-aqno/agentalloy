@@ -13,7 +13,7 @@
 A local **Skillsmith** service that gives your coding agent (this LLM, or another) access to a curated corpus of engineering skills — testing patterns, error handling, deployment recipes, observability, security, etc. — composed dynamically per task.
 
 The runtime is a small FastAPI service backed by:
-- An embedding model (`embeddinggemma`, 768-dim) — lightweight, runs on any hardware
+- An embedding model (`qwen3-embedding:0.6b`, 1024-dim) — runs on any hardware via Ollama or LM Studio
 - A skill corpus (~150 skills, ~1700 fragments) — ships inside the wheel; copied to the user data dir on first run
 - Your handoff harness (Claude Code / Cursor / Continue.dev / etc.) — wired so it can query the API
 
@@ -98,7 +98,7 @@ The output lists which host targets are available on this hardware. Exactly one 
 > ASK
 >
 > Present the recommendation first, then list alternatives. For example:
-> > "I recommend running the embedding model on the **iGPU** (Apple Metal), because it's faster than CPU and your Mac has it available. Alternatives: NPU (not available on this hardware), dGPU (not available), or CPU+RAM (slower but works).
+> > "I recommend running the embedding model on the **iGPU** (Apple Metal), because it's faster than CPU and your Mac has it available. Alternatives: dGPU (not available on this hardware), or CPU+RAM (slower but works).
 > >
 > > Use the recommendation, or pick a different target?"
 >
@@ -113,12 +113,12 @@ The output lists which host targets are available on this hardware. Exactly one 
 > python -m skillsmith.install recommend-models --hardware ~/.local/share/skillsmith/outputs/detect.json --host <chosen-target>
 > ```
 
-The output lists `{embed_model, ingest_model, runner}` triples valid for the chosen host target, with one flagged `default: true`. The `preset` field tells you which `.env` preset will be used.
+The output lists `{embed_model, embed_runner}` options valid for the chosen host target, with one flagged `default: true`. The `preset` field tells you which `.env` preset will be used.
 
 > ASK
 >
 > Most users want the default. For example:
-> > "For Apple Silicon + iGPU, I'll use the **embeddinggemma** embedding model and **qwen3.5:0.8b** for skill ingestion, both via Ollama. Use these defaults, or pick a different combination?"
+> > "For Apple Silicon + iGPU, I'll use **qwen3-embedding:0.6b** via Ollama. Use this default, or pick a different runner?"
 >
 > Wait for confirmation.
 
@@ -230,7 +230,7 @@ If the user picked `manual`, the output includes copy-pasteable instructions for
 > python -m skillsmith.install verify
 > ```
 
-This runs 8 enumerated install-time checks (embedding endpoint reachable, returns 768-dim, DuckDB present at the user-scope corpus dir, harness config present, port available, etc.).
+This runs 8 enumerated install-time checks (embedding endpoint reachable, returns 1024-dim, DuckDB present at the user-scope corpus dir, harness config present, port available, etc.).
 
 If `all_checks_passed: true`, proceed to step 11.
 
@@ -312,5 +312,5 @@ Common stuck-states:
 - The CLI prints a `WARNING: Found legacy per-repo state at <repo>/.skillsmith/install-state.json`. That's a Skillsmith install from before the v2 user-scope refactor. Either delete the legacy file or `mv` it to the user-scope location (the warning prints the exact command).
 - The CLI exits 3 (schema mismatch). The user has a state file from a different version. Tell them to back it up and re-run install with a fresh state.
 - The CLI exits 4 (already-completed). That step ran successfully before. Read the user-scope state file to see what's done; skip ahead. (`skillsmith status` shows this concisely.)
-- A required external tool (Ollama, FastFlowLM) is missing. Tell the user the tool's install URL and wait for them to install it manually. Do NOT auto-execute install scripts.
+- A required external tool (Ollama, LM Studio) is missing. Tell the user the tool's install URL and wait for them to install it manually. Do NOT auto-execute install scripts.
 - A port collision on 8000. Re-run `write-env` with `--port <n>` and re-run `wire-harness` so the harness config gets the new URL.
