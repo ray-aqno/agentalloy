@@ -298,7 +298,7 @@ def _wire_continue(
 
 def wire_harness(
     harness: str,
-    port: int = 8000,
+    port: int = 47950,
     root: Path | None = None,
     force: bool = False,
     mcp_fallback: bool = False,
@@ -718,8 +718,8 @@ def add_parser(
     p.add_argument(
         "--port",
         type=int,
-        default=8000,
-        help="Skillsmith service port (default: 8000).",
+        default=None,
+        help="Skillsmith service port (default: read from user state, fallback 47950).",
     )
     p.add_argument(
         "--force",
@@ -744,9 +744,11 @@ def add_parser(
 
 
 def _run(args: argparse.Namespace) -> int:
+    st = install_state.load_state()
+    port = install_state.validate_port(args.port if args.port is not None else st.get("port", 47950))
     result = wire_harness(
         args.harness,
-        port=args.port,
+        port=port,
         force=args.force,
         mcp_fallback=args.mcp_fallback,
     )

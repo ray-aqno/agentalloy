@@ -2,7 +2,7 @@
 # Compatible with Podman (project preference) and Docker (works as Dockerfile via --file Containerfile).
 #
 # Build:  podman build -t skillsmith -f Containerfile .
-# Run:    via compose.yaml (recommended) or `podman run --rm -p 8000:8000 -v ./data:/app/data skillsmith`
+# Run:    via compose.yaml (recommended) or `podman run --rm -p 47950:47950 -v ./data:/app/data skillsmith`
 
 FROM python:3.12-slim AS base
 
@@ -39,10 +39,10 @@ ENV LADYBUG_DB_PATH=/app/data/ladybug \
     DUCKDB_PATH=/app/data/skills.duck \
     LOG_LEVEL=INFO
 
-EXPOSE 8000
+EXPOSE 47950
 
 # Note: HEALTHCHECK is intentionally defined in compose.yaml rather than here.
 # Podman's default OCI image format does not honor inline HEALTHCHECK directives;
 # the compose-level healthcheck works on both Podman and Docker.
 
-CMD ["uv", "run", "uvicorn", "skillsmith.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "uvicorn", "skillsmith.app:app", "--host", "0.0.0.0", "--port", "47950"]

@@ -29,12 +29,13 @@ Most users want exactly this:
 
 ```bash
 # Once per machine — installs everything user-scoped.
+# Will prompt: "Do you want skillsmith to run persistently as a background service?"
 skillsmith setup
 
 # Once per repo — wire this project to the service. Auto-detects the harness.
 cd ~/dev/some-project && skillsmith wire
 
-# Start the service (foreground, leave it running like `ollama serve`).
+# If you chose manual mode during setup, start the service now:
 skillsmith serve
 ```
 
@@ -166,7 +167,7 @@ If the check reports `missing_files`, the bundled corpus didn't ship in this whe
 
 (Substitute the preset name from step 4's `preset` field, e.g., `apple-silicon`.) The `.env` is written to `${XDG_CONFIG_HOME:-~/.config}/skillsmith/.env` with mode `0600` (owner read/write only).
 
-If the user wants a non-default port (because 8000 is taken on their machine), pass `--port <n>`. Otherwise let it default to 8000.
+If the user wants a non-default port (because 47950 is taken on their machine), pass `--port <n>`. Otherwise let it default to 47950.
 
 ---
 
@@ -246,6 +247,8 @@ If any check fails:
 
 ## Step 11: Enable persistent service
 
+> **Note:** If you ran `skillsmith setup`, this step was already prompted interactively as part of that command. Skip to Step 12 if `install-state.json` already contains a `service_mode` entry.
+
 > ASK
 > "Do you want Skillsmith to start automatically in the background, or will you start it manually each session?
 >  1. Persistent — native service (systemd on Linux / launchd on macOS, starts at login)
@@ -281,13 +284,13 @@ Start the service in foreground (recommended — same idiom as `ollama serve`):
 
 This sources `${XDG_CONFIG_HOME:-~/.config}/skillsmith/.env` into the process environment, then execs `uvicorn skillsmith.app:app` on the configured port. **Leave it running** in the terminal; open a new shell for the demo curl.
 
-Alternatively, the user can manually run `uv run uvicorn skillsmith.app:app --host 127.0.0.1 --port 8000` from a terminal of their choice — `skillsmith serve` is just the convenience wrapper.
+Alternatively, the user can manually run `uv run uvicorn skillsmith.app:app --host 127.0.0.1 --port 47950` from a terminal of their choice — `skillsmith serve` is just the convenience wrapper.
 
 Wait 3 seconds for the service to start, then in another shell:
 
 > RUN
 > ```bash
-> curl -s -X POST http://localhost:8000/compose \
+> curl -s -X POST http://localhost:47950/compose \
 >   -H 'Content-Type: application/json' \
 >   -d '{"task": "write a failing pytest", "phase": "build"}'
 > ```
@@ -296,14 +299,14 @@ Show the user the response. The `output` field contains concatenated raw skill f
 
 > "The skill API is live. Returned guidance from these skills: [list]. The full text is what your harness will see when it queries this endpoint.
 >
-> **Try it now:** open your harness (Claude Code / Cursor / etc.) and ask: 'What skills do you have access to right now? Run `curl http://localhost:8000/health` to confirm.' If everything is wired correctly, your harness should respond with a list of skill capabilities pulled from the API."
+> **Try it now:** open your harness (Claude Code / Cursor / etc.) and ask: 'What skills do you have access to right now? Run `curl http://localhost:47950/health` to confirm.' If everything is wired correctly, your harness should respond with a list of skill capabilities pulled from the API."
 
 ---
 
 ## You're done
 
 State summary:
-- Service running at `http://localhost:<port>` (default 8000)
+- Service running at `http://localhost:<port>` (default 47950)
 - Service mode recorded: `native` (systemd/launchd), `container` (podman/docker), or `manual` (`skillsmith serve`)
 - Skill corpus seeded into `${XDG_DATA_HOME:-~/.local/share}/skillsmith/corpus/`
 - Models pulled and on disk
@@ -340,4 +343,4 @@ Common stuck-states:
 - The CLI exits 3 (schema mismatch). The user has a state file from a different version. Tell them to back it up and re-run install with a fresh state.
 - The CLI exits 4 (already-completed). That step ran successfully before. Read the user-scope state file to see what's done; skip ahead. (`skillsmith status` shows this concisely.)
 - A required external tool (Ollama, LM Studio) is missing. Tell the user the tool's install URL and wait for them to install it manually. Do NOT auto-execute install scripts.
-- A port collision on 8000. Re-run `write-env` with `--port <n>` and re-run `wire-harness` so the harness config gets the new URL.
+- A port collision on 47950. Re-run `write-env` with `--port <n>` and re-run `wire-harness` so the harness config gets the new URL.

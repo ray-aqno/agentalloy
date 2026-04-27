@@ -1,11 +1,11 @@
 """``setup`` verb — one-shot user-scope install.
 
-Composes the existing 13-step subcommand surface into a single command:
+Composes the existing subcommand surface into a single command:
 ``detect → recommend-host-targets → recommend-models → pull-models →
-seed-corpus → write-env``. Stops on the first non-zero exit (other than
-the documented EXIT_NOOP=4 idempotent skip). Each step's already-existing
-stdout JSON is preserved so the runbook LLM (or operator) can read each
-result.
+seed-corpus → write-env → enable-service``. Stops on the first non-zero
+exit (other than the documented EXIT_NOOP=4 idempotent skip). Each
+step's already-existing stdout JSON is preserved so the runbook LLM (or
+operator) can read each result.
 
 Note: ``wire-harness`` is intentionally NOT part of setup. Wiring is
 per-repo and runs separately via ``skillsmith wire`` from inside each
@@ -31,6 +31,7 @@ _SETUP_STEPS = (
     ("pull-models", "skillsmith.install.subcommands.pull_models"),
     ("seed-corpus", "skillsmith.install.subcommands.seed_corpus"),
     ("write-env", "skillsmith.install.subcommands.write_env"),
+    ("enable-service", "skillsmith.install.subcommands.enable_service"),
 )
 
 
@@ -39,7 +40,7 @@ def add_parser(
 ) -> None:
     p: argparse.ArgumentParser = subparsers.add_parser(
         "setup",
-        help="One-shot user-scope install: detect → recommend → pull → seed → env.",
+        help="One-shot user-scope install: detect → recommend → pull → seed → env → enable-service.",
     )
     p.add_argument(
         "--continue-on-error",
