@@ -1,0 +1,56 @@
+skill_id: http-error-contract-design
+canonical_name: HTTP error contract design
+category: design
+skill_class: domain
+domain_tags: [http, api, design]
+deprecated: false
+always_apply: false
+phase_scope: null
+category_scope: null
+versions:
+  - version_id: http-error-contract-design-v1
+    version_number: 1
+    authored_at: 2026-01-12T00:00:00Z
+    author: fixture-seed
+    change_summary: initial version
+    status: superseded
+    raw_prose: Old notes.
+    fragments: []
+  - version_id: http-error-contract-design-v2
+    version_number: 2
+    authored_at: 2026-03-08T00:00:00Z
+    author: fixture-seed
+    change_summary: v2 with stage-scoped errors and no-partial rule
+    status: active
+    raw_prose: |
+      Error responses should distinguish client-side causes (4xx) from server
+      and dependency failures (5xx), name the failing stage explicitly, and
+      never return partial success disguised as success.
+    fragments:
+      - fragment_id: http-error-contract-design-v2-f1
+        fragment_type: execution
+        sequence: 1
+        content: |
+          On dependency failure (upstream HTTP, database, model runtime), return
+          503 with a structured body: stage, code, message. The stage field lets
+          callers route retries intelligently.
+      - fragment_id: http-error-contract-design-v2-f2
+        fragment_type: guardrail
+        sequence: 2
+        content: |
+          Do not return partial results on dependency failure. A composed body
+          that silently dropped half its inputs is indistinguishable from a
+          successful response and will cause downstream drift.
+      - fragment_id: http-error-contract-design-v2-f3
+        fragment_type: example
+        sequence: 3
+        content: |
+          {"status":"error","stage":"retrieval","code":"store_unavailable",
+           "message":"ladybug connection refused"}
+      - fragment_id: http-error-contract-design-v2-f4
+        fragment_type: verification
+        sequence: 4
+        content: |
+          Test each stage's failure path: inject a failing dependency, send a
+          valid request, assert the response body's stage field matches the
+          injected failure point.

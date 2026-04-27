@@ -1,0 +1,20 @@
+---
+description: Use when you need procedural guidance on a coding task (testing, error handling, deployment, observability)
+globs: ["**/*"]
+---
+
+# Skillsmith access
+
+A local skillsmith service is running at `http://localhost:{port}` exposing a curated corpus of engineering skills.
+
+When you need procedural guidance:
+
+```bash
+curl -s -X POST http://localhost:{port}/compose \
+  -H 'Content-Type: application/json' \
+  -d '{"task": "<task description>", "phase": "build"}'
+```
+
+Phases: `spec`, `design`, `build`, `qa`, `ops`.
+
+Health check: `curl -s http://localhost:{port}/health` returns `{"status":"ok"}`. If not, run `python -m skillsmith.install doctor` from the skillsmith repo.

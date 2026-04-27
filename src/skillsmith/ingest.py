@@ -1,0 +1,597 @@
+"""Review-gated ingest CLI — loads a review YAML into LadybugDB after human confirmation.
+
+Usage::
+
+    python -m skillsmith.ingest <review.yaml> [--force] [--yes]
+
+The review YAML is produced by the Skill Authoring Agent. It covers both domain
+and system skills. No Ollama is required; fragment embeddings are initialised to
+zero and can be populated by a separate re-embed pass.
+
+Exit codes
+----------
+0  success
+1  usage error (bad args, file not found)
+2  validation error (bad skill data or duplicate)
+3  DB error
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, cast
+
+import yaml
+
+from skillsmith.config import get_settings
+from skillsmith.storage.ladybug import LadybugStore
+
+EXIT_OK = 0
+EXIT_USAGE = 1
+EXIT_VALIDATION = 2
+EXIT_DB = 3
+
+_VALID_SYSTEM_CATEGORIES = frozenset(
+    {"governance", "operational", "tooling", "safety", "quality", "observability"}
+)
+_VALID_DOMAIN_CATEGORIES = frozenset(
+    {"engineering", "ops", "review", "design", "tooling", "quality"}
+)
+_VALID_FRAGMENT_TYPES = frozenset(
+    {"setup", "execution", "verification", "example", "guardrail", "rationale"}
+)
+_VALID_PHASES = frozenset({"design", "build", "review"})
+
+
+class IngestError(ValueError):
+    pass
+
+
+@dataclass
+class FragmentRecord:
+    sequence: int
+    fragment_type: str
+    content: str
+
+
+@dataclass
+class ReviewRecord:
+    skill_type: str
+    skill_id: str
+    canonical_name: str
+    category: str
+    skill_class: str
+    domain_tags: list[str]
+    always_apply: bool
+    phase_scope: list[str]
+    category_scope: list[str]
+    author: str
+    change_summary: str
+    raw_prose: str
+    fragments: list[FragmentRecord] = field(default_factory=lambda: cast(list[FragmentRecord], []))
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="python -m skillsmith.ingest",
+        description=(
+            "Load review YAML skill(s) into LadybugDB after human confirmation. "
+            "Pass a file path to load a single skill, or a directory to batch-load "
+            "all *.yaml files in that directory."
+        ),
+    )
+    parser.add_argument("path", help="Path to a review YAML file or a directory of YAML files")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite if skill_id or canonical_name already exists",
+    )
+    parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Skip confirmation prompt",
+    )
+    args = parser.parse_args(argv)
+
+    target = Path(args.path)
+    if not target.exists():
+        print(f"error: path not found: {target}", file=sys.stderr)
+        return EXIT_USAGE
+
+    if target.is_dir():
+        return _batch(target, force=args.force, yes=args.yes)
+
+    return _single(target, force=args.force, yes=args.yes)
+
+
+def _single(yaml_path: Path, *, force: bool, yes: bool) -> int:
+    try:
+        record = _load_yaml(yaml_path)
+    except IngestError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_VALIDATION
+
+    errors = _validate(record)
+    if errors:
+        for e in errors:
+            print(f"validation error: {e}", file=sys.stderr)
+        return EXIT_VALIDATION
+
+    settings = get_settings()
+    store = LadybugStore(settings.ladybug_db_path)
+    try:
+        store.open()
+    except Exception as exc:
+        print(
+            f"error: failed to open LadybugDB at '{settings.ladybug_db_path}': {exc}",
+            file=sys.stderr,
+        )
+        return EXIT_DB
+
+    try:
+        existing_name = store.scalar(
+            "MATCH (s:Skill {skill_id: $id}) RETURN s.canonical_name",
+            {"id": record.skill_id},
+        )
+        if existing_name is not None and not force:
+            print(
+                f"error: skill_id '{record.skill_id}' already exists "
+                f"(canonical_name: '{existing_name}'). Use --force to overwrite.",
+                file=sys.stderr,
+            )
+            return EXIT_VALIDATION
+
+        if existing_name is None:
+            existing_id_by_name = store.scalar(
+                "MATCH (s:Skill {canonical_name: $name}) RETURN s.skill_id",
+                {"name": record.canonical_name},
+            )
+            if existing_id_by_name is not None and not force:
+                print(
+                    f"error: canonical_name '{record.canonical_name}' is already used by "
+                    f"skill_id '{existing_id_by_name}'. Use --force to overwrite.",
+                    file=sys.stderr,
+                )
+                return EXIT_VALIDATION
+
+        _print_summary(record, existing=existing_name is not None)
+        if not yes:
+            try:
+                answer = input("Proceed? [y/N] ").strip().lower()
+            except EOFError:
+                answer = ""
+            if answer not in ("y", "yes"):
+                print("Aborted.", file=sys.stderr)
+                return EXIT_USAGE
+
+        try:
+            _insert(store, record, force=force)
+        except Exception as exc:
+            print(f"error: DB insert failed: {exc}", file=sys.stderr)
+            return EXIT_DB
+
+    finally:
+        store.close()
+
+    print(f"ok: loaded '{record.skill_id}' ({record.canonical_name})")
+    return EXIT_OK
+
+
+def _batch(directory: Path, *, force: bool, yes: bool) -> int:
+    yaml_files = sorted(directory.glob("*.yaml"))
+    if not yaml_files:
+        print(f"error: no YAML files found in {directory}", file=sys.stderr)
+        return EXIT_USAGE
+
+    # --- Phase 1: parse + validate all files without touching the DB ---
+    parsed: list[tuple[Path, ReviewRecord]] = []
+    invalid: list[tuple[Path, list[str]]] = []
+
+    for f in yaml_files:
+        try:
+            record = _load_yaml(f)
+        except IngestError as exc:
+            invalid.append((f, [str(exc)]))
+            continue
+        errs = _validate(record)
+        if errs:
+            invalid.append((f, errs))
+        else:
+            parsed.append((f, record))
+
+    # --- Phase 2: consolidated review summary ---
+    print(f"\n{'=' * 60}")
+    print(f"  Batch directory: {directory}")
+    print(f"  Files found:     {len(yaml_files)}")
+    print(f"  Valid:           {len(parsed)}")
+    print(f"  Invalid:         {len(invalid)}")
+    print(f"{'=' * 60}")
+
+    for f, errs in invalid:
+        print(f"\n  INVALID: {f.name}")
+        for e in errs:
+            print(f"    - {e}", file=sys.stderr)
+
+    if parsed:
+        print("\n  Skills to load:")
+        for _f, r in parsed:
+            frag_info = f"  {len(r.fragments)} fragment(s)" if r.skill_type == "domain" else ""
+            print(f"    {r.skill_id:<40} [{r.skill_type}]{frag_info}")
+
+    print()
+
+    if not parsed:
+        print("No valid files to load.")
+        return EXIT_VALIDATION if invalid else EXIT_OK
+
+    # --- Phase 3: open DB and check duplicates ---
+    settings = get_settings()
+    store = LadybugStore(settings.ladybug_db_path)
+    try:
+        store.open()
+    except Exception as exc:
+        print(
+            f"error: failed to open LadybugDB at '{settings.ladybug_db_path}': {exc}",
+            file=sys.stderr,
+        )
+        return EXIT_DB
+
+    blocked: list[tuple[Path, ReviewRecord, str]] = []
+    to_load: list[tuple[Path, ReviewRecord]] = []
+
+    try:
+        for f, record in parsed:
+            existing_name = store.scalar(
+                "MATCH (s:Skill {skill_id: $id}) RETURN s.canonical_name",
+                {"id": record.skill_id},
+            )
+            if existing_name is not None and not force:
+                blocked.append(
+                    (f, record, f"skill_id '{record.skill_id}' already exists — use --force")
+                )
+                continue
+
+            if existing_name is None:
+                existing_id = store.scalar(
+                    "MATCH (s:Skill {canonical_name: $name}) RETURN s.skill_id",
+                    {"name": record.canonical_name},
+                )
+                if existing_id is not None and not force:
+                    blocked.append(
+                        (
+                            f,
+                            record,
+                            f"canonical_name '{record.canonical_name}' "
+                            f"already used by '{existing_id}' — use --force",
+                        )
+                    )
+                    continue
+
+            to_load.append((f, record))
+
+        if blocked:
+            print(f"  {len(blocked)} file(s) blocked by duplicate check:", file=sys.stderr)
+            for f, _, reason in blocked:
+                print(f"    {f.name}: {reason}", file=sys.stderr)
+
+        if not to_load:
+            print("Nothing to load after duplicate check.", file=sys.stderr)
+            return EXIT_VALIDATION
+
+        if not yes:
+            try:
+                answer = input(f"Load {len(to_load)} skill(s)? [y/N] ").strip().lower()
+            except EOFError:
+                answer = ""
+            if answer not in ("y", "yes"):
+                print("Aborted.", file=sys.stderr)
+                return EXIT_USAGE
+
+        # --- Phase 4: load sequentially ---
+        loaded = 0
+        failed = 0
+        for f, record in to_load:
+            try:
+                _insert(store, record, force=force)
+                print(f"ok: {record.skill_id} ({record.canonical_name})")
+                loaded += 1
+            except Exception as exc:
+                print(f"error: {f.name}: {exc}", file=sys.stderr)
+                failed += 1
+
+    finally:
+        store.close()
+
+    skipped = len(invalid) + len(blocked)
+    print(f"\nLoaded: {loaded}  Failed: {failed}  Skipped: {skipped}")
+    return EXIT_OK if failed == 0 else EXIT_DB
+
+
+def _load_yaml(path: Path) -> ReviewRecord:
+    try:
+        raw: Any = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise IngestError(f"{path}: YAML parse error: {exc}") from exc
+
+    if not isinstance(raw, dict):
+        raise IngestError(f"{path}: expected a YAML mapping at the top level")
+
+    data: dict[str, Any] = cast("dict[str, Any]", raw)
+
+    def _str(key: str, default: str = "") -> str:
+        v: Any = data.get(key, default)
+        return str(v).strip() if v is not None else default
+
+    def _bool(key: str, default: bool = False) -> bool:
+        v: Any = data.get(key, default)
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            return v.lower() in ("true", "yes", "1")
+        return bool(v)
+
+    def _strlist(key: str) -> list[str]:
+        v: Any = data.get(key)
+        if not v:
+            return []
+        if isinstance(v, list):
+            return [str(x).strip() for x in cast(list[Any], v) if x]
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return []
+
+    skill_type = _str("skill_type")
+    if skill_type not in ("domain", "system"):
+        raise IngestError(f"{path}: 'skill_type' must be 'domain' or 'system', got '{skill_type}'")
+
+    raw_fragments: Any = data.get("fragments") or []
+    if not isinstance(raw_fragments, list):
+        raise IngestError(f"{path}: 'fragments' must be a list")
+
+    fragments: list[FragmentRecord] = []
+    for i, frag in enumerate(cast(list[Any], raw_fragments)):
+        if not isinstance(frag, dict):
+            raise IngestError(f"{path}: fragment[{i}] must be a mapping")
+        frag_data: dict[str, Any] = cast("dict[str, Any]", frag)
+        fragments.append(
+            FragmentRecord(
+                sequence=int(frag_data.get("sequence", i + 1)),
+                fragment_type=str(frag_data.get("fragment_type", "")).strip(),
+                content=str(frag_data.get("content", "")).strip(),
+            )
+        )
+
+    return ReviewRecord(
+        skill_type=skill_type,
+        skill_id=_str("skill_id"),
+        canonical_name=_str("canonical_name"),
+        category=_str("category"),
+        skill_class=_str("skill_class", skill_type),
+        domain_tags=_strlist("domain_tags"),
+        always_apply=_bool("always_apply"),
+        phase_scope=_strlist("phase_scope"),
+        category_scope=_strlist("category_scope"),
+        author=_str("author", "operator"),
+        change_summary=_str("change_summary", "initial authoring"),
+        raw_prose=_str("raw_prose"),
+        fragments=fragments,
+    )
+
+
+def _validate(record: ReviewRecord) -> list[str]:
+    errors: list[str] = []
+
+    if not record.skill_id:
+        errors.append("skill_id is required")
+
+    if not record.canonical_name:
+        errors.append("canonical_name is required")
+
+    if not record.raw_prose:
+        errors.append("raw_prose is required")
+
+    if record.skill_type == "system":
+        if not record.skill_id.startswith("sys-"):
+            errors.append(f"system skill_id '{record.skill_id}' must start with 'sys-'")
+        if record.category and record.category not in _VALID_SYSTEM_CATEGORIES:
+            errors.append(
+                f"category '{record.category}' is not valid for system skills "
+                f"(must be one of {sorted(_VALID_SYSTEM_CATEGORIES)})"
+            )
+        if not record.always_apply and not record.phase_scope and not record.category_scope:
+            errors.append(
+                "system skill must declare applicability: "
+                "set always_apply=true, phase_scope, or category_scope"
+            )
+        if record.always_apply and (record.phase_scope or record.category_scope):
+            errors.append(
+                "always_apply=true is mutually exclusive with phase_scope / category_scope"
+            )
+        for phase in record.phase_scope:
+            if phase not in _VALID_PHASES:
+                errors.append(
+                    f"phase_scope '{phase}' is not valid (must be one of {sorted(_VALID_PHASES)})"
+                )
+        if record.fragments:
+            errors.append(
+                "system skills do not declare fragments — the ingest CLI generates "
+                "a single guardrail fragment from raw_prose automatically"
+            )
+
+    elif record.skill_type == "domain":
+        if record.category and record.category not in _VALID_DOMAIN_CATEGORIES:
+            errors.append(
+                f"category '{record.category}' is not valid for domain skills "
+                f"(must be one of {sorted(_VALID_DOMAIN_CATEGORIES)})"
+            )
+        if not record.fragments:
+            errors.append("domain skill requires at least one fragment")
+        else:
+            types = {f.fragment_type for f in record.fragments}
+            if "execution" not in types:
+                errors.append("domain skill requires at least one 'execution' fragment")
+            sequences = sorted(f.sequence for f in record.fragments)
+            expected = list(range(sequences[0], sequences[0] + len(sequences)))
+            if sequences != expected:
+                errors.append(f"fragment sequences are not contiguous: got {sequences}")
+            for frag in record.fragments:
+                if frag.fragment_type not in _VALID_FRAGMENT_TYPES:
+                    errors.append(
+                        f"fragment_type '{frag.fragment_type}' is not valid "
+                        f"(must be one of {sorted(_VALID_FRAGMENT_TYPES)})"
+                    )
+                if not frag.content:
+                    errors.append(f"fragment sequence {frag.sequence} has empty content")
+
+    return errors
+
+
+def _print_summary(record: ReviewRecord, *, existing: bool) -> None:
+    action = "OVERWRITE" if existing else "INSERT"
+    print(f"\n{'=' * 60}")
+    print(f"  Action:         {action}")
+    print(f"  skill_type:     {record.skill_type}")
+    print(f"  skill_id:       {record.skill_id}")
+    print(f"  canonical_name: {record.canonical_name}")
+    print(f"  category:       {record.category}")
+    print(f"  always_apply:   {record.always_apply}")
+    print(f"  phase_scope:    {record.phase_scope or '(none)'}")
+    print(f"  category_scope: {record.category_scope or '(none)'}")
+    print(f"  author:         {record.author}")
+    print(f"  prose length:   {len(record.raw_prose)} chars")
+    if record.skill_type == "domain":
+        frag_types = ", ".join(f.fragment_type for f in record.fragments)
+        print(f"  fragments:      {len(record.fragments)} ({frag_types})")
+    print(f"{'=' * 60}\n")
+
+
+def _insert(store: LadybugStore, record: ReviewRecord, *, force: bool) -> None:
+    version_id = f"{record.skill_id}-v1"
+    now = datetime.now(tz=UTC)
+
+    if force:
+        store.execute(
+            """
+            MATCH (s:Skill {skill_id: $id})
+            OPTIONAL MATCH (s)-[:HAS_VERSION]->(v:SkillVersion)
+            OPTIONAL MATCH (v)-[:DECOMPOSES_TO]->(f:Fragment)
+            DETACH DELETE s, v, f
+            """,
+            {"id": record.skill_id},
+        )
+
+    store.execute(
+        """
+        CREATE (:Skill {
+            skill_id: $skill_id,
+            canonical_name: $canonical_name,
+            category: $category,
+            skill_class: $skill_class,
+            domain_tags: $domain_tags,
+            deprecated: false,
+            always_apply: $always_apply,
+            phase_scope: $phase_scope,
+            category_scope: $category_scope
+        })
+        """,
+        {
+            "skill_id": record.skill_id,
+            "canonical_name": record.canonical_name,
+            "category": record.category,
+            "skill_class": record.skill_class,
+            "domain_tags": record.domain_tags,
+            "always_apply": record.always_apply,
+            "phase_scope": record.phase_scope,
+            "category_scope": record.category_scope,
+        },
+    )
+
+    store.execute(
+        """
+        CREATE (:SkillVersion {
+            version_id: $version_id,
+            version_number: 1,
+            authored_at: $authored_at,
+            author: $author,
+            change_summary: $change_summary,
+            status: 'active',
+            raw_prose: $raw_prose
+        })
+        """,
+        {
+            "version_id": version_id,
+            "authored_at": now,
+            "author": record.author,
+            "change_summary": record.change_summary,
+            "raw_prose": record.raw_prose,
+        },
+    )
+
+    store.execute(
+        """
+        MATCH (s:Skill {skill_id: $skill_id}), (v:SkillVersion {version_id: $version_id})
+        CREATE (s)-[:HAS_VERSION]->(v)
+        CREATE (s)-[:CURRENT_VERSION]->(v)
+        """,
+        {"skill_id": record.skill_id, "version_id": version_id},
+    )
+
+    if record.skill_type == "system":
+        fragment_id = f"{record.skill_id}-v1-f1"
+        store.execute(
+            """
+            CREATE (:Fragment {
+                fragment_id: $fragment_id,
+                fragment_type: 'guardrail',
+                sequence: 1,
+                content: $content
+            })
+            """,
+            {
+                "fragment_id": fragment_id,
+                "content": record.raw_prose,
+            },
+        )
+        store.execute(
+            """
+            MATCH (v:SkillVersion {version_id: $version_id}), (f:Fragment {fragment_id: $fragment_id})
+            CREATE (v)-[:DECOMPOSES_TO]->(f)
+            """,
+            {"version_id": version_id, "fragment_id": fragment_id},
+        )
+    else:
+        for frag in record.fragments:
+            fragment_id = f"{record.skill_id}-v1-f{frag.sequence}"
+            store.execute(
+                """
+                CREATE (:Fragment {
+                    fragment_id: $fragment_id,
+                    fragment_type: $fragment_type,
+                    sequence: $sequence,
+                    content: $content
+                })
+                """,
+                {
+                    "fragment_id": fragment_id,
+                    "fragment_type": frag.fragment_type,
+                    "sequence": frag.sequence,
+                    "content": frag.content,
+                },
+            )
+            store.execute(
+                """
+                MATCH (v:SkillVersion {version_id: $version_id}),
+                      (f:Fragment {fragment_id: $fragment_id})
+                CREATE (v)-[:DECOMPOSES_TO]->(f)
+                """,
+                {"version_id": version_id, "fragment_id": fragment_id},
+            )
+
+
+if __name__ == "__main__":
+    sys.exit(main())

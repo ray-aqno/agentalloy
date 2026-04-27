@@ -1,0 +1,42 @@
+skill_id: sys-governance-build-phase
+canonical_name: Build-phase governance
+category: governance
+skill_class: system
+domain_tags: []
+deprecated: false
+always_apply: false
+phase_scope: [build]
+category_scope: null
+versions:
+  - version_id: sys-governance-build-phase-v1
+    version_number: 1
+    authored_at: 2026-01-02T00:00:00Z
+    author: fixture-seed
+    change_summary: initial version
+    status: superseded
+    raw_prose: Outdated draft.
+    fragments: []
+  - version_id: sys-governance-build-phase-v2
+    version_number: 2
+    authored_at: 2026-02-25T00:00:00Z
+    author: fixture-seed
+    change_summary: v2 — tightened test-first requirement
+    status: active
+    raw_prose: |
+      Rules that apply during the build phase only — writing code, running
+      tests, committing changes.
+    fragments:
+      - fragment_id: sys-governance-build-phase-v2-f1
+        fragment_type: guardrail
+        sequence: 1
+        content: |
+          Every acceptance criterion must have a failing test written before
+          the implementation that satisfies it. Tests define the target; code
+          makes it green.
+      - fragment_id: sys-governance-build-phase-v2-f2
+        fragment_type: verification
+        sequence: 2
+        content: |
+          Before declaring a build complete, run the full test suite, the
+          linter, and the type checker. All three must pass. A build that
+          "passes tests" but fails typecheck is not complete.

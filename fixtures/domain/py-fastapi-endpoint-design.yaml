@@ -1,0 +1,57 @@
+skill_id: py-fastapi-endpoint-design
+canonical_name: Python FastAPI endpoint design
+category: design
+skill_class: domain
+domain_tags: [python, http, fastapi]
+deprecated: false
+always_apply: false
+phase_scope: null
+category_scope: null
+versions:
+  - version_id: py-fastapi-endpoint-design-v1
+    version_number: 1
+    authored_at: 2026-01-10T00:00:00Z
+    author: fixture-seed
+    change_summary: initial version (superseded by v2)
+    status: superseded
+    raw_prose: Early draft of FastAPI endpoint conventions. Do not use; see v2.
+    fragments: []
+  - version_id: py-fastapi-endpoint-design-v2
+    version_number: 2
+    authored_at: 2026-03-01T00:00:00Z
+    author: fixture-seed
+    change_summary: v2 with structured fragments
+    status: active
+    raw_prose: |
+      Design FastAPI endpoints as thin handlers that delegate to orchestrators.
+      Keep request and response models in dedicated pydantic modules. Use
+      discriminated unions for responses that branch on result type.
+    fragments:
+      - fragment_id: py-fastapi-endpoint-design-v2-f1
+        fragment_type: setup
+        sequence: 1
+        content: |
+          Create an APIRouter per bounded context. Mount routers on the app in
+          app.py. Keep routing and handler code in the same module; dependencies
+          in a separate providers.py.
+      - fragment_id: py-fastapi-endpoint-design-v2-f2
+        fragment_type: execution
+        sequence: 2
+        content: |
+          The handler parses the request model, delegates to an orchestrator,
+          and maps the orchestrator's result type to an HTTP response. Use
+          response_model unions for multi-shape success responses.
+      - fragment_id: py-fastapi-endpoint-design-v2-f3
+        fragment_type: verification
+        sequence: 3
+        content: |
+          Verify with FastAPI TestClient: one test per response branch. For
+          discriminated-union responses, assert the discriminator field is the
+          expected literal value.
+      - fragment_id: py-fastapi-endpoint-design-v2-f4
+        fragment_type: example
+        sequence: 4
+        content: |
+          @router.post("/compose", response_model=ComposedResult | EmptyResult)
+          async def compose(req: ComposeRequest, orch: Orchestrator = Depends(get_orch)):
+              return await orch.compose(req)

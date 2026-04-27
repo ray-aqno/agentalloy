@@ -1,0 +1,49 @@
+# Build-context excludes for Containerfile.
+# Matches Podman's .containerignore semantics; also honored by Docker.
+
+.git/
+.github/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+.pytest_cache/
+.ruff_cache/
+.pyright/
+
+build/
+dist/
+*.egg-info/
+
+# Skill-source workspace and vendored marketplace content — not needed at runtime
+skill-source/
+agents/
+agency-agents/
+vercel-labs-agent-skills/
+agent-skills/
+
+# Eval / dev artifacts
+eval/runs/
+docs/
+seeds/
+fixtures/
+memory/
+tests/
+
+# Local environment overrides (the image gets env from compose)
+.env
+.env.local
+.env.*.local
+.env.cpu
+.env.apple-silicon
+.env.nvidia
+.env.strix-point
+.env.example
+
+# IDE
+.idea/
+.vscode/
+.claude/
+.skillsmith/

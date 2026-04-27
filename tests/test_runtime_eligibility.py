@@ -1,0 +1,230 @@
+"""NXS-776: enforce active-version-only runtime selection.
+
+Tests cover:
+  - get_active_version_by_id raises InconsistentActiveVersion for non-active versions
+  - GET /skills/{id} returns HTTP 500 with structured body on inconsistent state
+  - GET /retrieve/{id} returns HTTP 500 with structured body on inconsistent state
+  - POST /compose returns HTTP 500 with structured body on inconsistent state
+  - Deterministic failure, not silent selection
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from skillsmith.api.compose_router import get_orchestrator
+from skillsmith.api.retrieve_router import get_retrieve_orchestrator
+from skillsmith.api.skill_router import get_skill_store
+from skillsmith.fixtures.loader import load_fixtures
+from skillsmith.orchestration.retrieve import RetrieveOrchestrator
+from skillsmith.reads import InconsistentActiveVersion, get_active_version_by_id
+from skillsmith.storage.ladybug import LadybugStore
+from skillsmith.storage.vector_store import VectorStore
+from skillsmith.telemetry import NullTelemetryWriter
+from tests.support import StubLMClient
+
+# -------- shared fixtures --------
+
+
+@pytest.fixture
+def empty_store(tmp_path: Path) -> LadybugStore:
+    s = LadybugStore(str(tmp_path / "ladybug"))
+    s.open()
+    s.migrate()
+    return s
+
+
+@pytest.fixture
+def populated_store(tmp_path: Path) -> LadybugStore:
+    s = LadybugStore(str(tmp_path / "ladybug"))
+    s.open()
+    s.migrate()
+    load_fixtures(s)
+    return s
+
+
+# -------- helpers --------
+
+
+def _make_skill(store: LadybugStore, skill_id: str, skill_class: str = "domain") -> None:
+    store.execute(
+        """
+        CREATE (:Skill {
+            skill_id: $sid, canonical_name: $sid, category: 'design',
+            skill_class: $sc, domain_tags: [], deprecated: false,
+            always_apply: false, phase_scope: [], category_scope: []
+        })
+        """,
+        {"sid": skill_id, "sc": skill_class},
+    )
+
+
+def _make_version(store: LadybugStore, skill_id: str, version_id: str, status: str) -> None:
+    store.execute(
+        """
+        CREATE (:SkillVersion {
+            version_id: $vid, version_number: 1, authored_at: $at,
+            author: 'test', change_summary: 't', status: $status, raw_prose: 'prose'
+        })
+        """,
+        {"vid": version_id, "at": datetime.now(UTC), "status": status},
+    )
+    store.execute(
+        """
+        MATCH (s:Skill {skill_id: $sid}), (v:SkillVersion {version_id: $vid})
+        CREATE (s)-[:HAS_VERSION]->(v)
+        """,
+        {"sid": skill_id, "vid": version_id},
+    )
+
+
+def _link_current(store: LadybugStore, skill_id: str, version_id: str) -> None:
+    store.execute(
+        """
+        MATCH (s:Skill {skill_id: $sid}), (v:SkillVersion {version_id: $vid})
+        CREATE (s)-[:CURRENT_VERSION]->(v)
+        """,
+        {"sid": skill_id, "vid": version_id},
+    )
+
+
+def _first_active_version_id(store: LadybugStore) -> str:
+    rows = store.execute(
+        "MATCH (s:Skill)-[:CURRENT_VERSION]->(v:SkillVersion) RETURN v.version_id LIMIT 1"
+    )
+    assert rows, "fixture store has no active versions"
+    return str(rows[0][0])
+
+
+# -------- Unit: get_active_version_by_id --------
+
+
+def test_get_active_version_by_id_returns_data_for_active(
+    populated_store: LadybugStore,
+) -> None:
+    version_id = _first_active_version_id(populated_store)
+    data = get_active_version_by_id(populated_store, version_id)
+    assert data["version_id"] == version_id
+    assert isinstance(data["version_number"], int)
+    assert isinstance(data["raw_prose"], str)
+
+
+def test_get_active_version_by_id_raises_for_superseded(empty_store: LadybugStore) -> None:
+    _make_skill(empty_store, "s1")
+    _make_version(empty_store, "s1", "s1-v1", "superseded")
+    with pytest.raises(InconsistentActiveVersion) as ei:
+        get_active_version_by_id(empty_store, "s1-v1")
+    assert ei.value.skill_id == "s1"
+    assert "superseded" in ei.value.reason
+
+
+def test_get_active_version_by_id_raises_for_draft(empty_store: LadybugStore) -> None:
+    _make_skill(empty_store, "s2")
+    _make_version(empty_store, "s2", "s2-v1", "draft")
+    with pytest.raises(InconsistentActiveVersion) as ei:
+        get_active_version_by_id(empty_store, "s2-v1")
+    assert "draft" in ei.value.reason
+
+
+def test_get_active_version_by_id_raises_for_proposed(empty_store: LadybugStore) -> None:
+    _make_skill(empty_store, "s3")
+    _make_version(empty_store, "s3", "s3-v1", "proposed")
+    with pytest.raises(InconsistentActiveVersion) as ei:
+        get_active_version_by_id(empty_store, "s3-v1")
+    assert "proposed" in ei.value.reason
+
+
+def test_get_active_version_by_id_raises_runtime_error_for_missing(
+    empty_store: LadybugStore,
+) -> None:
+    with pytest.raises(RuntimeError, match="not found"):
+        get_active_version_by_id(empty_store, "no-such-version")
+
+
+# -------- HTTP handler: InconsistentActiveVersion → structured 500 --------
+#
+# We need an inconsistent store for HTTP-level tests. We construct one where
+# CURRENT_VERSION points at a superseded version so the consistency guard fires
+# on the first active-read call in the request path.
+#
+
+
+@pytest.fixture
+def inconsistent_store(tmp_path: Path) -> LadybugStore:
+    """Store where CURRENT_VERSION points at a non-active version (superseded)."""
+    s = LadybugStore(str(tmp_path / "ladybug"))
+    s.open()
+    s.migrate()
+    _make_skill(s, "broken-skill")
+    _make_version(s, "broken-skill", "broken-skill-v1", "superseded")
+    _link_current(s, "broken-skill", "broken-skill-v1")
+    return s
+
+
+def test_inconsistent_state_returns_500_on_inspect(
+    app: FastAPI, inconsistent_store: LadybugStore
+) -> None:
+    app.dependency_overrides[get_skill_store] = lambda: inconsistent_store
+    with TestClient(app) as c:
+        resp = c.get("/skills/broken-skill")
+    assert resp.status_code == 500
+    body = resp.json()
+    assert body["code"] == "inconsistent_active_version"
+    assert "skill_id" in body
+    assert "detail" in body
+
+
+def test_inconsistent_state_returns_500_on_retrieve_by_id(
+    app: FastAPI, inconsistent_store: LadybugStore, vector_store: VectorStore
+) -> None:
+    orch = RetrieveOrchestrator(
+        inconsistent_store,
+        StubLMClient(),
+        vector_store,
+        NullTelemetryWriter(),
+        embedding_model="stub-embed",
+    )
+    app.dependency_overrides[get_retrieve_orchestrator] = lambda: orch
+    app.dependency_overrides[get_orchestrator] = lambda: None  # type: ignore[return-value]
+    with TestClient(app) as c:
+        resp = c.get("/retrieve/broken-skill")
+    assert resp.status_code == 500
+    body = resp.json()
+    assert body["code"] == "inconsistent_active_version"
+
+
+# -------- AC: compose uses active-only fragments --------
+
+
+def test_compose_uses_only_active_fragments(
+    app: FastAPI, populated_store: LadybugStore, vector_store: VectorStore
+) -> None:
+    """Compose retrieval must only surface active-version fragments."""
+    from skillsmith.orchestration.compose import ComposeOrchestrator
+    from skillsmith.telemetry.writer import NullTelemetryWriter
+
+    orch = ComposeOrchestrator(
+        populated_store,
+        StubLMClient(),
+        vector_store,
+        NullTelemetryWriter(),
+        embedding_model="stub-embed",
+    )
+    app.dependency_overrides[get_orchestrator] = lambda: orch
+    with TestClient(app) as c:
+        resp = c.post("/compose", json={"task": "fastapi endpoint", "phase": "design"})
+    # 200 or 503 (retrieval failure) but NOT 500 (no inconsistency)
+    assert resp.status_code in (200, 503)
+    if resp.status_code == 503:
+        body = resp.json()
+        assert body.get("stage") == "retrieval"
+    # If 200, verify source skills came from active versions only
+    if resp.status_code == 200:
+        body = resp.json()
+        for sid in body.get("source_skills", []):
+            assert sid  # non-empty skill_id

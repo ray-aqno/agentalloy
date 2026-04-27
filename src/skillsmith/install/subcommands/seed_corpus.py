@@ -1,0 +1,285 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportAttributeAccessIssue=false, reportArgumentType=false
+"""``seed-corpus`` subcommand — presence + integrity check.
+
+The corpus ships in the repo at ``data/skills.duck`` and ``data/ladybug``.
+This subcommand verifies both files exist, the schema version matches,
+and the skill count meets the minimum threshold. No network calls.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+from skillsmith.install import state as install_state
+
+SCHEMA_VERSION = 1
+
+# The corpus schema version the code expects.
+# Bump this when a migration changes the DB schema.
+EXPECTED_CORPUS_SCHEMA_VERSION = 1
+
+# Minimum number of skills for the corpus to be considered valid.
+MIN_SKILL_COUNT = 50
+
+
+def _check_duckdb(duck_path: Path) -> dict[str, Any]:
+    """Query DuckDB for skill/fragment counts, embedding metadata, and embedded
+    schema_version (if the ``corpus_meta`` table is present).
+
+    Returns ``corpus_schema_version_recorded=None`` if the corpus pre-dates the
+    metadata table (callers treat this as "implicit v1" with a soft warning).
+    """
+    import duckdb
+
+    con = duckdb.connect(str(duck_path), read_only=True)
+    try:
+        frag_count = con.execute("SELECT count(*) FROM fragment_embeddings").fetchone()[0]  # type: ignore[index]
+        skill_count = con.execute(
+            "SELECT count(DISTINCT skill_id) FROM fragment_embeddings"
+        ).fetchone()[0]  # type: ignore[index]
+        emb_model_row = con.execute(
+            "SELECT DISTINCT embedding_model FROM fragment_embeddings LIMIT 1"
+        ).fetchone()
+        embedding_model = emb_model_row[0] if emb_model_row else None  # type: ignore[index]
+        # Probe embedding dimension from first row
+        dim_row = con.execute(
+            "SELECT array_length(embedding) FROM fragment_embeddings LIMIT 1"
+        ).fetchone()
+        embedding_dim = dim_row[0] if dim_row else None  # type: ignore[index]
+
+        # Read schema_version from corpus_meta table if it exists.
+        # The table is written by the ingest CLI; corpora ingested before this
+        # was added will not have the table — that's treated as "unrecorded".
+        recorded_version: int | None = None
+        try:
+            row = con.execute(
+                "SELECT value FROM corpus_meta WHERE key = 'schema_version' LIMIT 1"
+            ).fetchone()
+            if row and row[0] is not None:
+                recorded_version = int(row[0])  # type: ignore[index]
+        except duckdb.CatalogException:
+            recorded_version = None
+    finally:
+        con.close()
+
+    return {
+        "skill_count": skill_count,
+        "fragment_count": frag_count,
+        "embedding_model": embedding_model,
+        "embedding_dim": embedding_dim,
+        "corpus_schema_version_recorded": recorded_version,
+    }
+
+
+def _check_ladybug(ladybug_path: Path) -> int:
+    """Query Kuzu for skill count."""
+    import kuzu
+
+    db = kuzu.Database(str(ladybug_path))
+    conn = kuzu.Connection(db)
+    result = conn.execute("MATCH (s:Skill) RETURN count(s) AS c")
+    count = 0
+    if result.has_next():
+        count = result.get_next()[0]
+    return count
+
+
+def check_corpus(root: Path | None = None) -> dict[str, Any]:  # noqa: ARG001 — back-compat
+    """Run the seed-corpus presence + integrity check.
+
+    The corpus lives at ``${XDG_DATA_HOME:-~/.local/share}/skillsmith/corpus/``
+    (user-scoped). On first run, copies the bundled corpus from inside
+    the wheel package into that location.
+    """
+    t0 = time.monotonic()
+
+    # First-run seed: copy the bundled corpus out of the wheel into the
+    # user data dir if not already present.
+    user_corpus, was_seeded = install_state.ensure_corpus_seeded()
+
+    duck_path = user_corpus / "skills.duck"
+    ladybug_path = user_corpus / "ladybug"
+
+    remediation = (
+        "Reinstall skillsmith (`pip install --force-reinstall skillsmith`) "
+        "to restore the bundled corpus, or run `python -m skillsmith.install "
+        "install-pack <name>` to add a corpus from a pack."
+    )
+
+    # 1. File presence
+    missing: list[str] = []
+    if not duck_path.exists():
+        missing.append(str(duck_path))
+    if not ladybug_path.exists():
+        missing.append(str(ladybug_path))
+
+    if missing:
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "action": "missing_files",
+            "missing": missing,
+            "remediation": remediation,
+            "duration_ms": duration_ms,
+        }
+
+    # 2. Read DuckDB metadata
+    try:
+        duck_meta = _check_duckdb(duck_path)
+    except Exception as exc:
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "action": "missing_files",
+            "error": f"Cannot read DuckDB: {exc}",
+            "remediation": remediation,
+            "duration_ms": duration_ms,
+        }
+
+    # 3. Schema version check
+    # The ingest CLI writes schema_version into a `corpus_meta` table. Corpora
+    # built before that change won't have the table — those are treated as
+    # implicit v1 with a soft warning surfaced in the output.
+    recorded = duck_meta.get("corpus_schema_version_recorded")
+    if recorded is None:
+        # Implicit v1 — pre-dates corpus_meta. Pass through but flag.
+        corpus_schema_version = EXPECTED_CORPUS_SCHEMA_VERSION
+        schema_warning: str | None = (
+            "corpus_meta table not present; treating corpus as implicit "
+            f"v{EXPECTED_CORPUS_SCHEMA_VERSION}. Run `python -m skillsmith.ingest "
+            "--write-corpus-meta` (or re-ingest) to make the schema version explicit."
+        )
+    elif recorded != EXPECTED_CORPUS_SCHEMA_VERSION:
+        # Real schema mismatch — abort with the contract's documented action.
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "action": "schema_mismatch",
+            "corpus_schema_version": recorded,
+            "expected_corpus_schema_version": EXPECTED_CORPUS_SCHEMA_VERSION,
+            "skill_count": duck_meta["skill_count"],
+            "fragment_count": duck_meta["fragment_count"],
+            "error": (
+                f"Corpus is at schema v{recorded}, but this code expects "
+                f"v{EXPECTED_CORPUS_SCHEMA_VERSION}."
+            ),
+            "remediation": (
+                "Run `python -m skillsmith.install update` to migrate the corpus "
+                "in-place, or reinstall skillsmith to restore the bundled corpus."
+            ),
+            "duration_ms": duration_ms,
+        }
+    else:
+        corpus_schema_version = recorded
+        schema_warning = None
+
+    # 4. Skill count check
+    skill_count = duck_meta["skill_count"]
+    if skill_count < MIN_SKILL_COUNT:
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "action": "missing_files",
+            "corpus_schema_version": corpus_schema_version,
+            "skill_count": skill_count,
+            "fragment_count": duck_meta["fragment_count"],
+            "error": f"Skill count {skill_count} < minimum {MIN_SKILL_COUNT}",
+            "remediation": remediation,
+            "duration_ms": int((time.monotonic() - t0) * 1000),
+        }
+
+    duration_ms = int((time.monotonic() - t0) * 1000)
+    result: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "action": "verified_present" if not was_seeded else "seeded",
+        "corpus_path": str(user_corpus),
+        "corpus_schema_version": corpus_schema_version,
+        "skill_count": skill_count,
+        "fragment_count": duck_meta["fragment_count"],
+        "embedding_model": duck_meta["embedding_model"],
+        "embedding_dim": duck_meta["embedding_dim"],
+        "duration_ms": duration_ms,
+    }
+    if schema_warning:
+        result["warning"] = schema_warning
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Subcommand interface
+# ---------------------------------------------------------------------------
+
+
+def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:  # pyright: ignore[reportPrivateUsage]
+    p: argparse.ArgumentParser = subparsers.add_parser(
+        "seed-corpus",
+        help="Verify the in-repo seed corpus is present and valid.",
+    )
+    p.set_defaults(func=run)
+
+
+def run(args: argparse.Namespace) -> int:
+    """Execute the seed-corpus subcommand."""
+    st = install_state.load_state()
+    if install_state.is_step_completed(st, "seed-corpus"):
+        prev = install_state.get_step_output(st, "seed-corpus")
+        # Idempotency cache hit must still verify the user-scoped corpus
+        # files are actually on disk — otherwise a user who deleted them
+        # between runs gets a stale success JSON instead of an actionable
+        # error.
+        user_corpus = install_state.corpus_dir()
+        duck_present = (user_corpus / "skills.duck").exists()
+        ladybug_present = (user_corpus / "ladybug").exists()
+        if prev and prev.get("output_path") and duck_present and ladybug_present:
+            p = Path(prev["output_path"])
+            if p.exists():
+                sys.stdout.write(p.read_text())
+                return 4  # EXIT_NOOP
+        # Cache hit but corpus files missing — fall through and re-check.
+
+    result = check_corpus()
+    action = result["action"]
+
+    fp, digest = install_state.save_output_file(result, "seed-corpus.json")
+
+    if action in ("verified_present", "seeded"):
+        install_state.record_step(
+            st,
+            "seed-corpus",
+            extra={
+                "output_digest": digest,
+                "output_path": str(fp),
+                "skill_count": result.get("skill_count"),
+                "fragment_count": result.get("fragment_count"),
+            },
+        )
+        install_state.save_state(st)
+        json.dump(result, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return 0
+
+    # Failure cases — emit but don't record as completed
+    json.dump(result, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+
+    remediation = result.get("remediation", "")
+    error = result.get("error", "")
+    if action == "missing_files":
+        print("\nERROR: Corpus files missing or incomplete", file=sys.stderr)
+        if error:
+            print(f"CAUSE: {error}", file=sys.stderr)
+        print(f"FIX:   {remediation}", file=sys.stderr)
+        return 1
+    if action == "schema_mismatch":
+        print("\nERROR: Corpus schema version mismatch", file=sys.stderr)
+        if error:
+            print(f"CAUSE: {error}", file=sys.stderr)
+        print("FIX:   python -m skillsmith.install update", file=sys.stderr)
+        return 3
+
+    return 1

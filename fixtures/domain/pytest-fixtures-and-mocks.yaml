@@ -1,0 +1,49 @@
+skill_id: pytest-fixtures-and-mocks
+canonical_name: Pytest fixtures and mocks
+category: qa
+skill_class: domain
+domain_tags: [python, pytest, testing]
+deprecated: false
+always_apply: false
+phase_scope: null
+category_scope: null
+versions:
+  - version_id: pytest-fixtures-and-mocks-v1
+    version_number: 1
+    authored_at: 2026-01-20T00:00:00Z
+    author: fixture-seed
+    change_summary: initial version
+    status: superseded
+    raw_prose: Obsolete notes.
+    fragments: []
+  - version_id: pytest-fixtures-and-mocks-v2
+    version_number: 2
+    authored_at: 2026-03-10T00:00:00Z
+    author: fixture-seed
+    change_summary: v2 with fixture scopes and monkeypatch patterns
+    status: active
+    raw_prose: |
+      Use pytest fixtures for anything that needs setup and teardown. Use
+      monkeypatch for environment variables and attribute patches in preference
+      to unittest.mock when you only need the setup side.
+    fragments:
+      - fragment_id: pytest-fixtures-and-mocks-v2-f1
+        fragment_type: setup
+        sequence: 1
+        content: |
+          Define shared fixtures in conftest.py at the highest scope where they
+          are used. Keep per-test throwaway state in the test file, not conftest.
+      - fragment_id: pytest-fixtures-and-mocks-v2-f2
+        fragment_type: execution
+        sequence: 2
+        content: |
+          Use tmp_path for filesystem work; use monkeypatch.setenv /
+          monkeypatch.delenv for environment overrides. Both are function-scoped
+          and cleaned up automatically.
+      - fragment_id: pytest-fixtures-and-mocks-v2-f3
+        fragment_type: verification
+        sequence: 3
+        content: |
+          Assert on observable effects, not on call counts. A passing mock-count
+          assertion does not prove the system behaves correctly — only that your
+          double was invoked. Prefer state-based assertions.
