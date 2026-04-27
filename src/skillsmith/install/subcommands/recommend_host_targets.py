@@ -2,10 +2,10 @@
 """``recommend-host-targets`` subcommand.
 
 Given confirmed hardware JSON, return valid host targets
-(NPU / dGPU / iGPU / CPU+RAM) with tradeoff notes and a single
+(dGPU / iGPU / CPU+RAM) with tradeoff notes and a single
 ``recommended: true`` flagged target.
 
-Preference order: NPU > dGPU > iGPU > CPU+RAM.
+Preference order: dGPU > iGPU > CPU+RAM.
 
 Pyright suppression rationale: this module reads dynamically-shaped JSON
 (hardware-detect output) and pyright's strict mode flags every nested
@@ -27,38 +27,12 @@ from skillsmith.install import state as install_state
 SCHEMA_VERSION = 1
 
 # Preference order — first available wins ``recommended: true``.
-_PREFERENCE_ORDER = ["NPU", "dGPU", "iGPU", "CPU+RAM"]
+_PREFERENCE_ORDER = ["dGPU", "iGPU", "CPU+RAM"]
 
 
 # ---------------------------------------------------------------------------
 # Target evaluation
 # ---------------------------------------------------------------------------
-
-
-def _evaluate_npu(hw: dict[str, Any]) -> dict[str, Any]:
-    npu = hw.get("npu") or {}
-    available = bool(npu.get("present"))
-    model = npu.get("model") or "unknown NPU"
-    reason = (
-        f"{model} detected; lowest power, no GPU contention" if available else "No NPU detected"
-    )
-    notes: str | None = None
-    if available:
-        vendor = (npu.get("vendor") or "").lower()
-        if vendor == "amd":
-            notes = (
-                "Only embed-gemma:300m via FastFlowLM is supported on this target. "
-                "Generation/ingest still uses iGPU."
-            )
-        elif vendor == "apple":
-            notes = "Apple Neural Engine detected; CoreML acceleration available."
-    return {
-        "target": "NPU",
-        "available": available,
-        "recommended": False,
-        "reason": reason,
-        "notes": notes,
-    }
 
 
 def _evaluate_dgpu(hw: dict[str, Any]) -> dict[str, Any]:
@@ -121,7 +95,6 @@ def _evaluate_cpu_ram(hw: dict[str, Any]) -> dict[str, Any]:
 
 
 _EVALUATORS = {
-    "NPU": _evaluate_npu,
     "dGPU": _evaluate_dgpu,
     "iGPU": _evaluate_igpu,
     "CPU+RAM": _evaluate_cpu_ram,

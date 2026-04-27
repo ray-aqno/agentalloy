@@ -2,12 +2,7 @@ preset: cpu
 description: "CPU-only inference via Ollama (no GPU acceleration)"
 defaults:
   RUNTIME_EMBED_BASE_URL: "http://localhost:11434"
-  RUNTIME_EMBEDDING_MODEL: "embeddinggemma"
-  LM_STUDIO_BASE_URL: "http://localhost:11434"
-  AUTHORING_EMBED_BASE_URL: "http://localhost:11434"
-  AUTHORING_MODEL: "qwen3.5:0.8b"
-  CRITIC_MODEL: "qwen3.5:0.8b"
-  AUTHORING_EMBEDDING_MODEL: "embeddinggemma"
+  RUNTIME_EMBEDDING_MODEL: "qwen3-embedding:0.6b"
   DEDUP_HARD_THRESHOLD: "0.92"
   DEDUP_SOFT_THRESHOLD: "0.80"
   BOUNCE_BUDGET: "3"

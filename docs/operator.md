@@ -18,13 +18,11 @@ Or copy `.env.example` and fill in manually. Full reference:
 | `LADYBUG_DB_PATH` | `./data/ladybug` | LadybugDB (KuzuDB) directory |
 | `DUCKDB_PATH` | `./data/skills.duck` | DuckDB vector + telemetry store |
 | `LOG_LEVEL` | `INFO` | Python log level |
-| `RUNTIME_EMBED_BASE_URL` | `http://127.0.0.1:52625` | OpenAI-compatible embedding endpoint |
-| `RUNTIME_EMBEDDING_MODEL` | `embed-gemma:300m` | Embedding model (must produce 768-dim vectors) |
-| `LM_STUDIO_BASE_URL` | `http://localhost:1234` | Chat completion endpoint (authoring only) |
-| `AUTHORING_EMBED_BASE_URL` | `http://localhost:1234` | Authoring embedding endpoint |
-| `AUTHORING_MODEL` | `qwen/qwen3.6-35b-a3b` | Model for skill generation |
-| `CRITIC_MODEL` | `qwen/qwen3.6-35b-a3b` | Model for QA critic |
-| `AUTHORING_EMBEDDING_MODEL` | `text-embedding-nomic-embed-text-v1.5` | Authoring embedding model |
+| `RUNTIME_EMBED_BASE_URL` | `http://localhost:11434` | OpenAI-compatible embedding endpoint |
+| `RUNTIME_EMBEDDING_MODEL` | `qwen3-embedding:0.6b` | Embedding model (1024-dim) |
+| `AUTHORING_MODEL` | `qwen/qwen3.6-35b-a3b` | Model for skill generation (authoring only) |
+| `CRITIC_MODEL` | `qwen/qwen3.6-35b-a3b` | Model for QA critic (authoring only) |
+| `AUTHORING_EMBEDDING_MODEL` | `qwen3-embedding:0.6b` | Authoring embedding model (authoring only) |
 | `DEDUP_HARD_THRESHOLD` | `0.92` | Cosine threshold for hard dedup |
 | `DEDUP_SOFT_THRESHOLD` | `0.80` | Cosine threshold for soft dedup |
 | `BOUNCE_BUDGET` | `3` | Max authoring bounce attempts |
@@ -366,11 +364,9 @@ Separate from the runtime retrieval settings above. Both Author and Critic run a
 
 | Variable | Default | Notes |
 |---|---|---|
-| `LM_STUDIO_BASE_URL` | `http://localhost:1234` | LM Studio's OpenAI-compatible root |
-| `AUTHORING_EMBED_BASE_URL` | `http://localhost:1234` | Split if you move embeddings to another host |
 | `AUTHORING_MODEL` | `qwen/qwen3.6-35b-a3b` | Non-reasoning via `/no_think` prompt directive |
 | `CRITIC_MODEL` | `qwen/qwen3.6-35b-a3b` | Thinking ON — judgment calls benefit |
-| `AUTHORING_EMBEDDING_MODEL` | `text-embedding-nomic-embed-text-v1.5` | |
+| `AUTHORING_EMBEDDING_MODEL` | `qwen3-embedding:0.6b` | |
 | `DEDUP_HARD_THRESHOLD` | `0.92` | Cosine similarity; matches ≥ this → auto-reject |
 | `DEDUP_SOFT_THRESHOLD` | `0.80` | Matches in [soft, hard) → Critic review |
 | `BOUNCE_BUDGET` | `3` | Revise passes before needs-human escalation |
@@ -403,9 +399,8 @@ Forthcoming architecture change (v5.3 directive). In-flight across the `Composta
 |---|---|---|
 | Fragment embeddings | `Fragment.embedding` column in LadybugDB | DuckDB `fragment_embeddings` table at `skills.duck` |
 | Composition telemetry | SQLite `data/telemetry.db` | DuckDB `composition_traces` table (same `skills.duck` file) |
-| Vector search | Kùzu VECTOR extension + HNSW index | DuckDB `array_cosine_distance` (FLOAT[768] linear scan, <10ms at current scale) |
-| Tier 2/Tier 3 inference | Ollama (`OllamaClient`) | LM Studio OpenAI-compatible endpoint |
-| Tier 1 inference | Ollama | FastFlowLM on NPU (Gemma 4 E4B) |
+| Vector search | Kùzu VECTOR extension + HNSW index | DuckDB `array_cosine_distance` (FLOAT[1024] linear scan, <10ms at current scale) |
+| Inference | Ollama (`OllamaClient`) | Ollama OpenAI-compatible endpoint |
 
 ### What does NOT change
 
@@ -437,7 +432,7 @@ uv run python -m skillsmith.reembed --skill-id <id> --force  # wipe + re-embed
 2. **Back up existing stores**: `cp -r data/ladybug data/ladybug.bak && cp data/telemetry.db data/telemetry.db.bak`.
 3. **Pull the v1.5 release** (all NXS-794..802 merged).
 4. **Install the new dep**: `uv sync` (adds `duckdb`).
-5. **Verify LM Studio is up** with both the assembly model and `text-embedding-nomic-embed-text-v1.5` loaded: `curl http://localhost:1234/v1/models`.
+5. **Verify Ollama is up** with `qwen3-embedding:0.6b` loaded: `curl http://localhost:11434/v1/models`.
 6. **Populate DuckDB from existing Fragment nodes**: `uv run python -m skillsmith.reembed`. Dry-run first if anxious (`--dry-run`).
 7. **Run the integration harness**: `uv run pytest tests/test_v1_5_integration.py -v`. All non-skipped tests should pass.
 8. **Restart the service**. `GET /health` should report `healthy` across all dependencies.
@@ -453,6 +448,6 @@ duckdb data/skills.duck -c "SELECT count(*) FROM fragment_embeddings;"
 # composition_traces writes land here, not SQLite
 duckdb data/skills.duck -c "SELECT count(*), min(request_ts), max(request_ts) FROM composition_traces;"
 
-# Embedding dimensionality stays at 768 (tied to nomic-embed-text-v1.5)
+# Embedding dimensionality should be 1024 (qwen3-embedding:0.6b)
 duckdb data/skills.duck -c "SELECT array_length(embedding) FROM fragment_embeddings LIMIT 1;"
 ```

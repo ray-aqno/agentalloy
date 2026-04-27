@@ -2,18 +2,12 @@
 """``recommend-models`` subcommand.
 
 Given hardware + chosen host target, return valid
-``{embed_model, embed_runner, ingest_model, ingest_runner, preset}``
-options and the resolved preset name.
+``{embed_model, embed_runner}`` options and the resolved preset name.
 
 Preset resolution table (from contracts.md):
-  (amd-x86_64, NPU)       → strix-point
-  (amd-x86_64, iGPU)      → strix-point
   (apple-silicon, iGPU)    → apple-silicon
   (nvidia, dGPU)           → nvidia
   (any, CPU+RAM)           → cpu
-
-Pyright suppression rationale: same as recommend_host_targets.py — reads
-dynamically-shaped JSON.
 """
 
 from __future__ import annotations
@@ -32,8 +26,6 @@ SCHEMA_VERSION = 1
 
 _PRESET_TABLE: list[tuple[str, str, str]] = [
     # (hardware_class, host_target, preset)
-    ("amd-x86_64", "NPU", "strix-point"),
-    ("amd-x86_64", "iGPU", "strix-point"),
     ("apple-silicon", "iGPU", "apple-silicon"),
     ("nvidia", "dGPU", "nvidia"),
 ]
@@ -41,8 +33,6 @@ _DEFAULT_PRESET = "cpu"
 
 # Full resolution table exposed in output
 PRESET_RESOLUTION_TABLE: dict[str, str] = {
-    "(amd-x86_64, NPU)": "strix-point",
-    "(amd-x86_64, iGPU)": "strix-point",
     "(apple-silicon, iGPU)": "apple-silicon",
     "(nvidia, dGPU)": "nvidia",
     "(any, CPU+RAM)": "cpu",
@@ -52,44 +42,13 @@ PRESET_RESOLUTION_TABLE: dict[str, str] = {
 # ---- Model options per preset --------------------------------------------
 
 
-def _options_strix_npu() -> list[dict[str, Any]]:
-    return [
-        {
-            "default": True,
-            "embed_model": "embed-gemma:300m",
-            "embed_runner": "fastflowlm",
-            "embed_runner_install_hint": "FastFlowLM required for NPU; install from https://fastflowlm.ai",
-            "ingest_model": "qwen/qwen3.6-35b-a3b",
-            "ingest_runner": "lmstudio",
-            "ingest_runner_install_hint": "LM Studio required; install from https://lmstudio.ai",
-        },
-    ]
-
-
-def _options_strix_igpu() -> list[dict[str, Any]]:
-    return [
-        {
-            "default": True,
-            "embed_model": "embed-gemma:300m",
-            "embed_runner": "fastflowlm",
-            "embed_runner_install_hint": "FastFlowLM required; install from https://fastflowlm.ai",
-            "ingest_model": "qwen/qwen3.6-35b-a3b",
-            "ingest_runner": "lmstudio",
-            "ingest_runner_install_hint": "LM Studio required; install from https://lmstudio.ai",
-        },
-    ]
-
-
 def _options_apple_silicon() -> list[dict[str, Any]]:
     return [
         {
             "default": True,
-            "embed_model": "embeddinggemma",
+            "embed_model": "qwen3-embedding:0.6b",
             "embed_runner": "ollama",
-            "embed_runner_install_hint": "ollama is installed; will run `ollama pull embeddinggemma`",
-            "ingest_model": "qwen3.5:0.8b",
-            "ingest_runner": "ollama",
-            "ingest_runner_install_hint": "ollama is installed; will run `ollama pull qwen3.5:0.8b`",
+            "embed_runner_install_hint": "ollama is installed; will run `ollama pull qwen3-embedding:0.6b`",
         },
     ]
 
@@ -98,12 +57,9 @@ def _options_nvidia() -> list[dict[str, Any]]:
     return [
         {
             "default": True,
-            "embed_model": "embeddinggemma",
+            "embed_model": "qwen3-embedding:0.6b",
             "embed_runner": "ollama",
-            "embed_runner_install_hint": "ollama is installed; will run `ollama pull embeddinggemma`",
-            "ingest_model": "qwen3.5:0.8b",
-            "ingest_runner": "ollama",
-            "ingest_runner_install_hint": "ollama is installed; will run `ollama pull qwen3.5:0.8b`",
+            "embed_runner_install_hint": "ollama is installed; will run `ollama pull qwen3-embedding:0.6b`",
         },
     ]
 
@@ -112,19 +68,14 @@ def _options_cpu() -> list[dict[str, Any]]:
     return [
         {
             "default": True,
-            "embed_model": "embeddinggemma",
+            "embed_model": "qwen3-embedding:0.6b",
             "embed_runner": "ollama",
-            "embed_runner_install_hint": "ollama is installed; will run `ollama pull embeddinggemma`",
-            "ingest_model": "qwen3.5:0.8b",
-            "ingest_runner": "ollama",
-            "ingest_runner_install_hint": "ollama is installed; will run `ollama pull qwen3.5:0.8b`",
+            "embed_runner_install_hint": "ollama is installed; will run `ollama pull qwen3-embedding:0.6b`",
         },
     ]
 
 
 _PRESET_OPTIONS: dict[str, Any] = {
-    "strix-point-NPU": _options_strix_npu,
-    "strix-point-iGPU": _options_strix_igpu,
     "apple-silicon-iGPU": _options_apple_silicon,
     "nvidia-dGPU": _options_nvidia,
     "cpu-CPU+RAM": _options_cpu,
@@ -151,7 +102,7 @@ def _classify_hardware(hw: dict[str, Any]) -> str:
     if any((d.get("vendor") or "").lower() == "nvidia" for d in discrete):
         return "nvidia"
 
-    # AMD x86_64
+    # AMD x86_64 — no dedicated preset, falls back to cpu
     if vendor == "amd" and "x86" in arch:
         return "amd-x86_64"
 
@@ -202,7 +153,7 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
     p.add_argument(
         "--host",
         required=True,
-        choices=["NPU", "dGPU", "iGPU", "CPU+RAM"],
+        choices=["dGPU", "iGPU", "CPU+RAM"],
         help="The chosen host target from recommend-host-targets.",
     )
     p.set_defaults(func=run)
@@ -239,8 +190,6 @@ def run(args: argparse.Namespace) -> int:
                 "preset": result["preset"],
                 "embed_model": opt["embed_model"],
                 "embed_runner": opt["embed_runner"],
-                "ingest_model": opt["ingest_model"],
-                "ingest_runner": opt["ingest_runner"],
             }
             break
 

@@ -11,6 +11,7 @@ from skillsmith.fixtures.loader import load_fixtures
 from skillsmith.reads import get_active_fragments
 from skillsmith.reads.models import ActiveFragment
 from skillsmith.retrieval.domain import (
+    _rrf_fuse,  # pyright: ignore[reportPrivateUsage]
     diversity_select,
     phase_to_categories,
     retrieve_domain_candidates,
@@ -18,6 +19,7 @@ from skillsmith.retrieval.domain import (
 from skillsmith.storage.ladybug import LadybugStore
 from skillsmith.storage.vector_store import (
     FragmentEmbedding,
+    SimilarityHit,
     VectorStore,
     open_or_create,
 )
@@ -53,6 +55,7 @@ def populated_vectors(tmp_path: Path, populated: LadybugStore) -> VectorStore:
             fragment_type=f.fragment_type,
             embedded_at=now,
             embedding_model="stub",
+            prose=f.content,
         )
         for f in fragments
     ]
@@ -268,3 +271,42 @@ def test_k_larger_than_eligible_returns_all(
     )
     # Only a handful of fastapi-tagged fragments exist; k=50 must not error
     assert len(result.candidates) <= 50
+
+
+# -------- _rrf_fuse --------
+
+
+def _dense(fid: str) -> SimilarityHit:
+    return SimilarityHit(fragment_id=fid, skill_id="s", distance=0.5)
+
+
+def test_rrf_fuse_doc_in_both_legs_ranks_higher() -> None:
+    # "shared" appears in both legs; "dense-only" / "bm25-only" each in one.
+    dense = [_dense("shared"), _dense("dense-only")]
+    bm25 = ["shared", "bm25-only"]
+    result = _rrf_fuse(dense, bm25)
+    # "shared" should rank first (contributions from both legs).
+    assert result[0] == "shared"
+
+
+def test_rrf_fuse_returns_union_of_both_legs() -> None:
+    dense = [_dense("a"), _dense("b")]
+    bm25 = ["b", "c"]
+    result = _rrf_fuse(dense, bm25)
+    assert set(result) == {"a", "b", "c"}
+
+
+def test_rrf_fuse_empty_bm25_returns_dense_order() -> None:
+    dense = [_dense("x"), _dense("y"), _dense("z")]
+    result = _rrf_fuse(dense, [])
+    # Without BM25 leg, RRF still ranks by dense order.
+    assert result[0] == "x"
+
+
+def test_rrf_fuse_empty_dense_returns_bm25_order() -> None:
+    result = _rrf_fuse([], ["p", "q", "r"])
+    assert result[0] == "p"
+
+
+def test_rrf_fuse_both_empty_returns_empty() -> None:
+    assert _rrf_fuse([], []) == []

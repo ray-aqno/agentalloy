@@ -3,7 +3,7 @@
 
 Runs 8 enumerated checks from contracts.md:
 1. embedding_endpoint_reachable
-2. embedding_endpoint_returns_768_dim
+2. embedding_endpoint_returns_1024_dim
 3. duckdb_present
 4. ladybug_present
 5. skill_count_meets_minimum
@@ -29,7 +29,7 @@ from skillsmith.install import state as install_state
 
 SCHEMA_VERSION = 1
 MIN_SKILL_COUNT = 50
-EXPECTED_EMBEDDING_DIM = 768
+EXPECTED_EMBEDDING_DIM = 1024
 
 # Allowed schemes for the embedding-runtime URL probe. `.env` is operator-
 # controlled but a hostile dependency or shared dotfile could rewrite it
@@ -99,9 +99,9 @@ def _check_embedding_endpoint_reachable(embed_url: str) -> dict[str, Any]:
         }
 
 
-def _check_embedding_768_dim(embed_url: str, model: str) -> dict[str, Any]:
-    """Check 2: POST /v1/embeddings returns a 768-dim vector."""
-    bad = _validate_probe_url(embed_url, "embedding_768_dim")
+def _check_embedding_1024_dim(embed_url: str, model: str) -> dict[str, Any]:
+    """Check 2: POST /v1/embeddings returns a 1024-dim vector."""
+    bad = _validate_probe_url(embed_url, "embedding_1024_dim")
     if bad:
         return bad
     t0 = time.monotonic()
@@ -115,7 +115,7 @@ def _check_embedding_768_dim(embed_url: str, model: str) -> dict[str, Any]:
         if not embeddings:
             duration = int((time.monotonic() - t0) * 1000)
             return {
-                "name": "embedding_endpoint_returns_768_dim",
+                "name": "embedding_endpoint_returns_1024_dim",
                 "passed": False,
                 "duration_ms": duration,
                 "error": "No embeddings returned",
@@ -125,22 +125,22 @@ def _check_embedding_768_dim(embed_url: str, model: str) -> dict[str, Any]:
         duration = int((time.monotonic() - t0) * 1000)
         if dim == EXPECTED_EMBEDDING_DIM:
             return {
-                "name": "embedding_endpoint_returns_768_dim",
+                "name": "embedding_endpoint_returns_1024_dim",
                 "passed": True,
                 "duration_ms": duration,
                 "detail": f"POST /v1/embeddings with model={model} returned {dim}-dim vector",
             }
         return {
-            "name": "embedding_endpoint_returns_768_dim",
+            "name": "embedding_endpoint_returns_1024_dim",
             "passed": False,
             "duration_ms": duration,
             "error": f"Expected {EXPECTED_EMBEDDING_DIM}-dim, got {dim}-dim",
-            "remediation": f"Wrong embedding model. Expected a 768-dim model; '{model}' returned {dim} dimensions.",
+            "remediation": f"Wrong embedding model. Expected a 1024-dim model; '{model}' returned {dim} dimensions.",
         }
     except (URLError, OSError, TimeoutError, json.JSONDecodeError) as exc:
         duration = int((time.monotonic() - t0) * 1000)
         return {
-            "name": "embedding_endpoint_returns_768_dim",
+            "name": "embedding_endpoint_returns_1024_dim",
             "passed": False,
             "duration_ms": duration,
             "error": str(exc),
@@ -465,7 +465,7 @@ def run_checks(st: dict[str, Any], root: Path | None = None) -> dict[str, Any]: 
 
     checks = [
         _check_embedding_endpoint_reachable(embed_url),
-        _check_embedding_768_dim(embed_url, embed_model),
+        _check_embedding_1024_dim(embed_url, embed_model),
         _check_duckdb_present(duck_path),
         _check_ladybug_present(ladybug_path),
         _check_skill_count(ladybug_path),

@@ -15,6 +15,7 @@ import pytest
 
 from skillsmith.storage.vector_store import (
     EMBEDDING_DIM,
+    BM25Hit,
     CompositionTrace,
     EmbeddingDimMismatch,
     FragmentEmbedding,
@@ -41,6 +42,7 @@ def _mk_fragment(
     skill_id: str = "skill-a",
     category: str = "engineering",
     fragment_type: str = "execution",
+    prose: str = "",
 ) -> FragmentEmbedding:
     return FragmentEmbedding(
         fragment_id=f"frag-{i}",
@@ -49,7 +51,8 @@ def _mk_fragment(
         category=category,
         fragment_type=fragment_type,
         embedded_at=int(time.time()),
-        embedding_model="nomic-embed-text-v1.5",
+        embedding_model="qwen3-embedding:0.6b",
+        prose=prose,
     )
 
 
@@ -126,7 +129,8 @@ def test_insert_rejects_wrong_dimension(store: VectorStore) -> None:
         category="engineering",
         fragment_type="execution",
         embedded_at=int(time.time()),
-        embedding_model="nomic-embed-text-v1.5",
+        embedding_model="qwen3-embedding:0.6b",
+        prose="bad fragment",
     )
     with pytest.raises(EmbeddingDimMismatch):
         store.insert_embeddings([bad])
@@ -293,3 +297,59 @@ def test_record_trace_with_minimum_fields(store: VectorStore) -> None:
     )
     store.record_composition_trace(t)
     assert store.count_traces() == 1
+
+
+# ---------------------------------------------------------------------------
+# BM25 search
+# ---------------------------------------------------------------------------
+
+
+def test_bm25_returns_empty_for_empty_query(store: VectorStore) -> None:
+    store.insert_embeddings([_mk_fragment(0, prose="prisma migration schema")])
+    store.rebuild_fts_index()
+    assert store.search_bm25("") == []
+    assert store.search_bm25("   ") == []
+
+
+def test_bm25_finds_literal_token(store: VectorStore) -> None:
+    store.insert_embeddings(
+        [
+            _mk_fragment(0, prose="add a prisma migration for a new column"),
+            _mk_fragment(1, prose="implement JWT authentication with refresh tokens"),
+            _mk_fragment(2, prose="configure webpack bundler settings"),
+        ]
+    )
+    store.rebuild_fts_index()
+    hits = store.search_bm25("prisma migration", k=5)
+    assert len(hits) >= 1
+    assert hits[0].fragment_id == "frag-0"
+
+
+def test_bm25_returns_empty_on_no_match(store: VectorStore) -> None:
+    store.insert_embeddings([_mk_fragment(0, prose="hello world")])
+    store.rebuild_fts_index()
+    hits = store.search_bm25("zxqvbnm unique nonsense token", k=5)
+    assert hits == []
+
+
+def test_bm25_respects_category_filter(store: VectorStore) -> None:
+    store.insert_embeddings(
+        [
+            _mk_fragment(0, category="engineering", prose="prisma ORM database migration"),
+            _mk_fragment(1, category="ops", prose="prisma deployment pipeline"),
+        ]
+    )
+    store.rebuild_fts_index()
+    hits = store.search_bm25("prisma", categories=["engineering"], k=5)
+    ids = {h.fragment_id for h in hits}
+    assert "frag-0" in ids
+    assert "frag-1" not in ids
+
+
+def test_bm25_hit_has_positive_score(store: VectorStore) -> None:
+    store.insert_embeddings([_mk_fragment(0, prose="JWT token rotation NestJS")])
+    store.rebuild_fts_index()
+    hits = store.search_bm25("JWT NestJS", k=5)
+    assert len(hits) == 1
+    assert isinstance(hits[0], BM25Hit)
+    assert hits[0].score > 0

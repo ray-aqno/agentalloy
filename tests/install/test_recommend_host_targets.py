@@ -15,9 +15,6 @@ from skillsmith.install.subcommands.recommend_host_targets import (
 
 def _hw(
     *,
-    npu_present: bool = False,
-    npu_vendor: str | None = None,
-    npu_model: str | None = None,
     discrete_gpus: list[dict[str, Any]] | None = None,
     integrated_gpus: list[dict[str, Any]] | None = None,
     metal: bool = False,
@@ -31,11 +28,6 @@ def _hw(
         "gpu": {
             "discrete": discrete_gpus or [],
             "integrated": integrated_gpus or [],
-        },
-        "npu": {
-            "present": npu_present,
-            "vendor": npu_vendor,
-            "model": npu_model,
         },
         "metal": metal,
     }
@@ -53,9 +45,9 @@ class TestRecommendTargetsSchema:
         assert "targets" in result
         assert result["schema_version"] == 1
 
-    def test_always_four_targets(self) -> None:
+    def test_always_three_targets(self) -> None:
         result = recommend_targets(_hw())
-        assert len(result["targets"]) == 4
+        assert len(result["targets"]) == 3
 
     def test_each_target_has_required_fields(self) -> None:
         result = recommend_targets(_hw())
@@ -69,7 +61,7 @@ class TestRecommendTargetsSchema:
     def test_target_names(self) -> None:
         result = recommend_targets(_hw())
         names = [t["target"] for t in result["targets"]]
-        assert names == ["NPU", "dGPU", "iGPU", "CPU+RAM"]
+        assert names == ["dGPU", "iGPU", "CPU+RAM"]
 
 
 # ---------------------------------------------------------------------------
@@ -78,15 +70,7 @@ class TestRecommendTargetsSchema:
 
 
 class TestPreferenceOrder:
-    def test_npu_recommended_when_present(self) -> None:
-        result = recommend_targets(
-            _hw(npu_present=True, npu_vendor="amd", npu_model="AMD XDNA NPU")
-        )
-        recommended = [t for t in result["targets"] if t["recommended"]]
-        assert len(recommended) == 1
-        assert recommended[0]["target"] == "NPU"
-
-    def test_dgpu_recommended_when_no_npu(self) -> None:
+    def test_dgpu_recommended_when_present(self) -> None:
         result = recommend_targets(
             _hw(discrete_gpus=[{"vendor": "nvidia", "model": "RTX 4090", "vram_gb": 24}])
         )
@@ -94,7 +78,7 @@ class TestPreferenceOrder:
         assert len(recommended) == 1
         assert recommended[0]["target"] == "dGPU"
 
-    def test_igpu_recommended_when_no_npu_or_dgpu(self) -> None:
+    def test_igpu_recommended_when_no_dgpu(self) -> None:
         result = recommend_targets(
             _hw(integrated_gpus=[{"vendor": "intel", "model": "UHD 770", "vram_gb": None}])
         )
@@ -110,9 +94,6 @@ class TestPreferenceOrder:
 
     def test_exactly_one_recommended(self) -> None:
         hw = _hw(
-            npu_present=True,
-            npu_vendor="amd",
-            npu_model="XDNA",
             discrete_gpus=[{"vendor": "nvidia", "model": "RTX", "vram_gb": 8}],
             integrated_gpus=[{"vendor": "amd", "model": "Radeon", "vram_gb": 4}],
         )
@@ -127,11 +108,6 @@ class TestPreferenceOrder:
 
 
 class TestAvailability:
-    def test_npu_not_available_when_absent(self) -> None:
-        result = recommend_targets(_hw())
-        npu = next(t for t in result["targets"] if t["target"] == "NPU")
-        assert npu["available"] is False
-
     def test_dgpu_not_available_when_empty(self) -> None:
         result = recommend_targets(_hw())
         dgpu = next(t for t in result["targets"] if t["target"] == "dGPU")

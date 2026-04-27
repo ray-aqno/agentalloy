@@ -33,10 +33,8 @@ def repo_root(tmp_path: Path) -> Path:
 
 def _recommend_output(
     *,
-    embed_model: str = "embeddinggemma",
+    embed_model: str = "qwen3-embedding:0.6b",
     embed_runner: str = "ollama",
-    ingest_model: str = "qwen3.5:0.8b",
-    ingest_runner: str = "ollama",
 ) -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -47,8 +45,6 @@ def _recommend_output(
                 "default": True,
                 "embed_model": embed_model,
                 "embed_runner": embed_runner,
-                "ingest_model": ingest_model,
-                "ingest_runner": ingest_runner,
             },
         ],
     }
@@ -60,39 +56,33 @@ def _recommend_output(
 
 
 class TestCollectPairs:
-    def test_two_distinct_pairs(self) -> None:
+    def test_single_embed_pair(self) -> None:
         option = {
-            "embed_model": "embeddinggemma",
+            "embed_model": "qwen3-embedding:0.6b",
+            "embed_runner": "ollama",
+        }
+        pairs = _collect_model_runner_pairs(option)
+        assert len(pairs) == 1
+        assert ("qwen3-embedding:0.6b", "ollama") in pairs
+
+    def test_ignores_ingest_fields_if_present(self) -> None:
+        option = {
+            "embed_model": "qwen3-embedding:0.6b",
             "embed_runner": "ollama",
             "ingest_model": "qwen3.5:0.8b",
             "ingest_runner": "ollama",
         }
         pairs = _collect_model_runner_pairs(option)
-        assert len(pairs) == 2
-        assert ("embeddinggemma", "ollama") in pairs
-        assert ("qwen3.5:0.8b", "ollama") in pairs
+        assert len(pairs) == 1
+        assert ("qwen3-embedding:0.6b", "ollama") in pairs
 
     def test_deduplicates_same_model_runner(self) -> None:
         option = {
-            "embed_model": "embeddinggemma",
+            "embed_model": "qwen3-embedding:0.6b",
             "embed_runner": "ollama",
-            "ingest_model": "embeddinggemma",
-            "ingest_runner": "ollama",
         }
         pairs = _collect_model_runner_pairs(option)
         assert len(pairs) == 1
-
-    def test_mixed_runners(self) -> None:
-        option = {
-            "embed_model": "embed-gemma:300m",
-            "embed_runner": "fastflowlm",
-            "ingest_model": "qwen/qwen3.6-35b-a3b",
-            "ingest_runner": "lmstudio",
-        }
-        pairs = _collect_model_runner_pairs(option)
-        assert len(pairs) == 2
-        assert ("embed-gemma:300m", "fastflowlm") in pairs
-        assert ("qwen/qwen3.6-35b-a3b", "lmstudio") in pairs
 
 
 # ---------------------------------------------------------------------------
@@ -186,7 +176,7 @@ class TestAutoPull:
 
 
 class TestPullModels:
-    def test_auto_pull_both_models(self, repo_root: Path) -> None:
+    def test_auto_pull_embed_model(self, repo_root: Path) -> None:
         models = _recommend_output()
 
         def always_false(m: str) -> bool:
@@ -199,7 +189,8 @@ class TestPullModels:
             mock_pull.return_value = {"success": True, "duration_ms": 100}
             result = pull_models(models, root=repo_root)
         assert result["schema_version"] == 1
-        assert len(result["auto_pulled"]) == 2
+        assert len(result["auto_pulled"]) == 1
+        assert result["auto_pulled"][0]["model"] == "qwen3-embedding:0.6b"
         assert result["manual_steps_required"] == []
         assert result["skipped_already_present"] == []
 
@@ -211,15 +202,13 @@ class TestPullModels:
 
         with patch.dict(_PRESENCE_CHECKS, {"ollama": always_true}):
             result = pull_models(models, root=repo_root)
-        assert len(result["skipped_already_present"]) == 2
+        assert len(result["skipped_already_present"]) == 1
         assert result["auto_pulled"] == []
 
-    def test_manual_steps_for_lmstudio(self, repo_root: Path) -> None:
+    def test_manual_steps_for_fastflowlm(self, repo_root: Path) -> None:
         models = _recommend_output(
-            embed_model="embed-gemma:300m",
+            embed_model="qwen3-embedding:0.6b",
             embed_runner="fastflowlm",
-            ingest_model="qwen/qwen3.6-35b-a3b",
-            ingest_runner="lmstudio",
         )
 
         def always_false(m: str) -> bool:
@@ -232,10 +221,7 @@ class TestPullModels:
             mock_pull.return_value = {"success": True, "duration_ms": 50}
             result = pull_models(models, root=repo_root)
         assert len(result["auto_pulled"]) == 1
-        assert result["auto_pulled"][0]["model"] == "embed-gemma:300m"
-        assert len(result["manual_steps_required"]) == 1
-        assert result["manual_steps_required"][0]["runner"] == "lmstudio"
-        assert "qwen/qwen3.6-35b-a3b" in result["manual_steps_required"][0]["instruction"]
+        assert result["auto_pulled"][0]["model"] == "qwen3-embedding:0.6b"
 
     def test_idempotent_skip(self, repo_root: Path) -> None:
         """Second run exits 4 (noop) when step already completed."""
@@ -284,7 +270,7 @@ class TestPullModels:
             }
             result = pull_models(models, root=repo_root)
         assert "errors" in result
-        assert len(result["errors"]) == 2
+        assert len(result["errors"]) == 1
 
     def test_partial_failure_does_not_record_completion(self, repo_root: Path) -> None:
         """If any pull fails, pull-models must NOT mark itself completed —
@@ -326,5 +312,4 @@ class TestPullModels:
         from skillsmith.install.state import load_state
 
         st = load_state(repo_root)
-        assert "ollama:embeddinggemma" in st["models_pulled"]
-        assert "ollama:qwen3.5:0.8b" in st["models_pulled"]
+        assert "ollama:qwen3-embedding:0.6b" in st["models_pulled"]

@@ -23,7 +23,7 @@ from skillsmith.install import state as install_state
 SCHEMA_VERSION = 1
 DEFAULT_PORT = 8000
 
-VALID_PRESETS = frozenset({"cpu", "apple-silicon", "nvidia", "strix-point"})
+VALID_PRESETS = frozenset({"cpu", "apple-silicon", "nvidia"})
 
 # Keys the user is allowed to override via --overrides.
 _KNOWN_KEYS = frozenset(
@@ -32,11 +32,6 @@ _KNOWN_KEYS = frozenset(
         "DUCKDB_PATH",
         "RUNTIME_EMBED_BASE_URL",
         "RUNTIME_EMBEDDING_MODEL",
-        "LM_STUDIO_BASE_URL",
-        "AUTHORING_EMBED_BASE_URL",
-        "AUTHORING_MODEL",
-        "CRITIC_MODEL",
-        "AUTHORING_EMBEDDING_MODEL",
         "DEDUP_HARD_THRESHOLD",
         "DEDUP_SOFT_THRESHOLD",
         "BOUNCE_BUDGET",

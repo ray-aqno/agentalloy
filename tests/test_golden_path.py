@@ -41,8 +41,8 @@ from skillsmith.telemetry.writer import DuckDBTelemetryWriter
 
 pytestmark = pytest.mark.integration
 
-LM_BASE = "http://127.0.0.1:52625"
-EMBED_MODEL = "embed-gemma:300m"
+LM_BASE = "http://localhost:11434"
+EMBED_MODEL = "qwen3-embedding:0.6b"
 
 GOLDEN_TASK = (
     "Design a Python FastAPI endpoint that validates a JSON request body "
@@ -124,6 +124,7 @@ def golden_app(seeded_store: LadybugStore, tmp_path_factory: pytest.TempPathFact
                     fragment_type=f.fragment_type,
                     embedded_at=now,
                     embedding_model=EMBED_MODEL,
+                    prose=f.content,
                 )
                 for f, vec in zip(fragments, vectors, strict=True)
             ]

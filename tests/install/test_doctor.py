@@ -33,7 +33,7 @@ def _minimal_state(root: Path) -> dict[str, Any]:
     # Write a minimal .env
     (root / ".env").write_text(
         "RUNTIME_EMBED_BASE_URL=http://localhost:11434\n"
-        "RUNTIME_EMBEDDING_MODEL=embeddinggemma\n"
+        "RUNTIME_EMBEDDING_MODEL=qwen3-embedding:0.6b\n"
         "DUCKDB_PATH=./data/skills.duck\n"
         "LADYBUG_DB_PATH=./data/ladybug\n"
     )
@@ -92,7 +92,7 @@ class TestRunnerProcesses:
             patch("subprocess.run") as mock_run,
         ):
             mock_run.return_value = MagicMock(returncode=1)
-            result = _check_runner_processes({"models_pulled": ["ollama:embeddinggemma"]})
+            result = _check_runner_processes({"models_pulled": ["ollama:qwen3-embedding:0.6b"]})
         assert result["passed"] is False
 
 

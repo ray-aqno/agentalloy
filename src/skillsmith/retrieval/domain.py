@@ -1,7 +1,8 @@
 """Domain fragment retrieval pipeline.
 
 Given a task + phase + optional filters, embed the task via the inference
-runtime, query DuckDB ``fragment_embeddings`` for top-k by cosine, hydrate
+runtime, query DuckDB ``fragment_embeddings`` for top-k by cosine, fuse with
+a BM25 lexical leg via Reciprocal Rank Fusion (RRF, k=60), hydrate
 ActiveFragment metadata from LadybugDB, then reshuffle for structural
 diversity (setup/execution/verification preferred).
 
@@ -12,6 +13,7 @@ Per v5.3, vector storage is DuckDB; cosine ranking happens in DuckDB via
 
 from __future__ import annotations
 
+import os as _os
 import time
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
@@ -20,7 +22,9 @@ from skillsmith.api.compose_models import Phase
 from skillsmith.authoring.lm_client import OpenAICompatClient
 from skillsmith.reads import ActiveFragment
 from skillsmith.reads.models import SkillClass
-from skillsmith.storage.vector_store import VectorStore
+from skillsmith.storage.vector_store import SimilarityHit, VectorStore
+
+_RRF_K = 60
 
 
 @runtime_checkable
@@ -92,6 +96,33 @@ class StoreFragmentSource:
         )
 
 
+def _rrf_fuse(
+    dense_hits: list[SimilarityHit],
+    bm25_fragment_ids: list[str],
+    k: int = _RRF_K,
+) -> list[str]:
+    """Reciprocal Rank Fusion over dense and BM25 result lists.
+
+    Returns fragment_ids ordered by descending RRF score. Documents appearing
+    in only one leg get a rank of len(that_leg)+1 in the missing leg.
+    """
+    dense_ids = [h.fragment_id for h in dense_hits]
+    all_ids = dict.fromkeys(dense_ids + bm25_fragment_ids)
+
+    dense_rank = {fid: i + 1 for i, fid in enumerate(dense_ids)}
+    bm25_rank = {fid: i + 1 for i, fid in enumerate(bm25_fragment_ids)}
+    dense_miss = len(dense_ids) + 1
+    bm25_miss = len(bm25_fragment_ids) + 1
+
+    scores: dict[str, float] = {}
+    for fid in all_ids:
+        scores[fid] = 1.0 / (k + dense_rank.get(fid, dense_miss)) + 1.0 / (
+            k + bm25_rank.get(fid, bm25_miss)
+        )
+
+    return sorted(all_ids, key=lambda fid: scores[fid], reverse=True)
+
+
 def retrieve_domain_candidates(
     source: object,
     lm: OpenAICompatClient,
@@ -102,6 +133,7 @@ def retrieve_domain_candidates(
     domain_tags: list[str] | None,
     k: int,
     embedding_model: str,
+    raw_scores: bool = False,
 ) -> RetrievalResult:
     """Execute the retrieval pipeline and return a bounded candidate set.
 
@@ -114,11 +146,13 @@ def retrieve_domain_candidates(
 
     1. embed the task via ``lm.embed`` (propagates LMClientError on failure)
     2. DuckDB top-k vector search filtered by phase categories
-    3. hydrate ActiveFragment metadata from ``source`` and apply optional
+    3. DuckDB BM25 search on prose column filtered by phase categories
+    4. Reciprocal Rank Fusion of both legs
+    5. hydrate ActiveFragment metadata from ``source`` and apply optional
        domain_tags filter
-    4. greedy diversity reshuffle — prefer fragment_types from the
+    6. greedy diversity reshuffle — prefer fragment_types from the
        setup/execution/verification priority set when not already in the
-       selected set
+       selected set (skipped when ``raw_scores=True``)
     """
     start_ns = time.perf_counter_ns()
 
@@ -126,50 +160,57 @@ def retrieve_domain_candidates(
         source if isinstance(source, FragmentSource) else StoreFragmentSource(source)
     )
 
-    query_vec = lm.embed(model=embedding_model, texts=[task])[0]
+    embed_prefix = (
+        "Given a software engineering task description, retrieve relevant "
+        "skill instruction fragments: "
+    )
+    query_vec = lm.embed(model=embedding_model, texts=[embed_prefix + task])[0]
 
+    categories = phase_to_categories(phase)
     pool_size = max(k * 2, k)
-    hits = vector_store.search_similar(
+
+    dense_hits = vector_store.search_similar(
         query_vec,
-        categories=phase_to_categories(phase),
+        categories=categories,
         k=pool_size,
     )
 
-    if not hits:
+    bm25_hits = vector_store.search_bm25(task, categories=categories, k=pool_size)
+    bm25_ids = [h.fragment_id for h in bm25_hits]
+
+    if not dense_hits and not bm25_hits:
         elapsed_ms = (time.perf_counter_ns() - start_ns) // 1_000_000
         return RetrievalResult(candidates=[], eligible_count=0, retrieval_ms=int(elapsed_ms))
 
+    fused_ids = _rrf_fuse(dense_hits, bm25_ids)
+
     # Hydrate ActiveFragment metadata from the source. Pull domain fragments
-    # for the eligible categories; intersect with the hit ids.
+    # for the eligible categories; intersect with the fused ids.
     metadata = frag_src.get_active_fragments(
         skill_class="domain",
-        categories=phase_to_categories(phase),
+        categories=categories,
         domain_tags=domain_tags,
     )
     by_id = {f.fragment_id: f for f in metadata}
 
-    # Preserve DuckDB's rank order (smallest distance first). Drop hits whose
-    # fragment_id wasn't in the eligible metadata pool — that's the
-    # domain_tags filter applied implicitly via ``metadata`` filtering.
+    # Build dense score lookup for observability.
+    dense_score_by_id = {h.fragment_id: 1.0 - h.distance for h in dense_hits}
+
     ranked: list[ActiveFragment] = []
     scores_by_id: dict[str, float] = {}
-    for hit in hits:
-        frag = by_id.get(hit.fragment_id)
+    for fid in fused_ids:
+        frag = by_id.get(fid)
         if frag is None:
             continue
         ranked.append(frag)
-        scores_by_id[hit.fragment_id] = 1.0 - hit.distance
+        scores_by_id[fid] = dense_score_by_id.get(fid, 0.0)
 
     eligible_count = len(ranked)
-    # RUNTIME_DIVERSITY_SELECTION=off short-circuits to pure top-k by similarity.
-    # Used by the eval harness to A/B-test whether the setup→execution→verification
-    # heuristic adds value over plain similarity ranking.
-    import os as _os
 
-    if _os.environ.get("RUNTIME_DIVERSITY_SELECTION", "on").lower() == "off":
-        selected = ranked[:k]
-    else:
-        selected = diversity_select(ranked, k)
+    # raw_scores=True: return pre-diversity order (for /retrieve observability).
+    # RUNTIME_DIVERSITY_SELECTION=off also short-circuits — used by eval harness.
+    diversity_off = _os.environ.get("RUNTIME_DIVERSITY_SELECTION", "on").lower() == "off"
+    selected = ranked[:k] if raw_scores or diversity_off else diversity_select(ranked, k)
 
     elapsed_ms = (time.perf_counter_ns() - start_ns) // 1_000_000
     return RetrievalResult(

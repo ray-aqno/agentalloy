@@ -52,7 +52,7 @@ class ConsistencyReport(BaseModel):
 
 class PathReadiness(BaseModel):
     compose: bool
-    """Requires: runtime_store + embedding_runtime + assembly_runtime."""
+    """Requires: runtime_store + embedding_runtime + runtime_cache."""
     retrieve: bool
     """Requires: runtime_store + embedding_runtime (telemetry degrades only)."""
     inspect: bool
@@ -65,7 +65,7 @@ class DependencyReadiness(BaseModel):
     runtime_store: DepStatus
     telemetry_store: DepStatus
     embedding_runtime: DepStatus
-    assembly_runtime: DepStatus
+    runtime_cache: DepStatus
     per_path: PathReadiness
 
 
@@ -125,15 +125,15 @@ class DiagnosticsChecker:
         store_ok = deps["runtime_store"].status == "ok"
         tel_ok = deps["telemetry_store"].status == "ok"
         embed_ok = deps["embedding_runtime"].status == "ok"
-        assemble_ok = deps["assembly_runtime"].status == "ok"
+        cache_ok = deps["runtime_cache"].status == "ok"
 
         dep_readiness = DependencyReadiness(
             runtime_store=deps["runtime_store"].status,
             telemetry_store=deps["telemetry_store"].status,
             embedding_runtime=deps["embedding_runtime"].status,
-            assembly_runtime=deps["assembly_runtime"].status,
+            runtime_cache=deps["runtime_cache"].status,
             per_path=PathReadiness(
-                compose=store_ok and embed_ok and assemble_ok,
+                compose=store_ok and embed_ok and cache_ok,
                 retrieve=store_ok and embed_ok,
                 inspect=store_ok,
                 telemetry=tel_ok,
@@ -218,7 +218,7 @@ async def runtime_diagnostics(request: Request) -> RuntimeDiagnosticsResponse:
                 runtime_store="ok",
                 telemetry_store="ok",
                 embedding_runtime="ok",
-                assembly_runtime="ok",
+                runtime_cache="ok",
                 per_path=PathReadiness(
                     compose=True,
                     retrieve=True,

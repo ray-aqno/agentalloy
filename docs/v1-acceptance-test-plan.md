@@ -2,7 +2,7 @@
 
 ## Overview
 
-This plan defines the representative scenario, pass criteria, and verification steps for Skill API v1. A live Ollama instance with `nomic-embed-text` (embedding) and `qwen2.5-coder:14b` (assembly) is required to run the golden path.
+This plan defines the representative scenario, pass criteria, and verification steps for Skill API v1. A live Ollama instance with `qwen3-embedding:0.6b` (embedding) is required to run the golden path.
 
 ---
 

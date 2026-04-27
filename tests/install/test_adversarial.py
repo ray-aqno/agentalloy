@@ -310,9 +310,9 @@ class TestVerifyUrlAllowlist:
         assert "scheme" in result["error"]
 
     def test_javascript_scheme_blocked(self) -> None:
-        from skillsmith.install.subcommands.verify import _check_embedding_768_dim
+        from skillsmith.install.subcommands.verify import _check_embedding_1024_dim
 
-        result = _check_embedding_768_dim("javascript:alert(1)", "m")
+        result = _check_embedding_1024_dim("javascript:alert(1)", "m")
         assert result["passed"] is False
 
 

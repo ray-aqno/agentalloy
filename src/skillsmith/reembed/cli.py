@@ -231,6 +231,7 @@ def reembed_fragments(
                         fragment_type=frag.fragment_type,
                         embedded_at=now,
                         embedding_model=embedding_model,
+                        prose=frag.content,
                     )
                 ]
             )
@@ -304,15 +305,11 @@ def main(argv: list[str] | None = None) -> int:
                 n = vs.delete_skill(args.skill_id)
                 logger.info("--force: deleted %d existing embeddings for %s", n, args.skill_id)
             else:
-                # Nuclear: wipe the whole fragment_embeddings table.
-                # Intentionally conservative — require explicit --skill-id for
-                # targeted re-embed. Whole-table wipe would need a future flag.
-                print(
-                    "error: --force without --skill-id is unsupported for safety. "
-                    "Use --skill-id <id> --force for targeted wipe-and-reembed.",
-                    file=sys.stderr,
-                )
-                return EXIT_USAGE
+                # Full wipe: required when changing embedding models (dimension change
+                # makes existing vectors incompatible with the new index).
+                n = vs.count_embeddings()
+                vs._conn.execute("DELETE FROM fragment_embeddings")  # pyright: ignore[reportPrivateUsage]
+                logger.info("--force: deleted all %d existing embeddings for full reindex", n)
 
         fragments = discover_unembedded_fragments(
             store, vs, skill_id=args.skill_id, force=args.force
@@ -354,6 +351,9 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         stats.log_summary()
+        if stats.embedded > 0:
+            logger.info("rebuilding BM25 FTS index after embedding %d fragment(s)", stats.embedded)
+            vs.rebuild_fts_index()
         return EXIT_OK if stats.failed == 0 else EXIT_LLM
 
 

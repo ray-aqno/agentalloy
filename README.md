@@ -95,11 +95,9 @@ Environment variables:
 | `RUNTIME_EMBEDDING_MODEL` | `embed-gemma:300m` | Embedding model for retrieve / compose |
 | `LADYBUG_DB_PATH` | `./data/ladybug` | LadybugDB directory |
 | `DUCKDB_PATH` | `./data/skills.duck` | DuckDB vector + telemetry store |
-| `LM_STUDIO_BASE_URL` | `http://localhost:1234` | LM Studio HTTP endpoint (authoring only) |
-| `AUTHORING_EMBED_BASE_URL` | `http://localhost:1234` | Authoring pipeline embedding endpoint |
-| `AUTHORING_MODEL` | `qwen/qwen3.6-35b-a3b` | Model for skill generation |
-| `CRITIC_MODEL` | `qwen/qwen3.6-35b-a3b` | Model for authoring critic |
-| `AUTHORING_EMBEDDING_MODEL` | `text-embedding-nomic-embed-text-v1.5` | Authoring-pipeline embedding model |
+| `AUTHORING_MODEL` | `qwen/qwen3.6-35b-a3b` | Model for skill generation (authoring only) |
+| `CRITIC_MODEL` | `qwen/qwen3.6-35b-a3b` | Model for authoring critic (authoring only) |
+| `AUTHORING_EMBEDDING_MODEL` | `qwen3-embedding:0.6b` | Authoring-pipeline embedding model (authoring only) |
 | `DEDUP_HARD_THRESHOLD` | `0.92` | Dedup hard cosine threshold |
 | `DEDUP_SOFT_THRESHOLD` | `0.80` | Dedup soft cosine threshold |
 | `BOUNCE_BUDGET` | `3` | Max retrieval bounces |

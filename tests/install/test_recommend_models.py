@@ -67,11 +67,8 @@ class TestClassifyHardware:
 
 
 class TestResolvePreset:
-    def test_amd_npu(self) -> None:
-        assert _resolve_preset("amd-x86_64", "NPU") == "strix-point"
-
-    def test_amd_igpu(self) -> None:
-        assert _resolve_preset("amd-x86_64", "iGPU") == "strix-point"
+    def test_amd_igpu_falls_back_to_cpu(self) -> None:
+        assert _resolve_preset("amd-x86_64", "iGPU") == "cpu"
 
     def test_apple_silicon_igpu(self) -> None:
         assert _resolve_preset("apple-silicon", "iGPU") == "apple-silicon"
@@ -112,20 +109,35 @@ class TestRecommendModels:
     def test_option_has_required_fields(self) -> None:
         result = recommend_models(_hw(), "CPU+RAM")
         opt = result["options"][0]
-        for key in ("embed_model", "embed_runner", "ingest_model", "ingest_runner"):
+        for key in ("embed_model", "embed_runner"):
             assert key in opt
 
-    def test_npu_uses_fastflowlm(self) -> None:
-        hw = _hw(cpu_vendor="amd")
-        result = recommend_models(hw, "NPU")
+    def test_option_has_no_ingest_fields(self) -> None:
+        result = recommend_models(_hw(), "CPU+RAM")
         opt = result["options"][0]
-        assert opt["embed_runner"] == "fastflowlm"
-        assert opt["embed_model"] == "embed-gemma:300m"
+        assert "ingest_model" not in opt
+        assert "ingest_runner" not in opt
+
+    def test_all_presets_use_qwen3_embedding(self) -> None:
+        for hw_fn, host in [
+            (_hw(), "CPU+RAM"),
+            (_hw(os_kind="macos", arch="arm64"), "iGPU"),
+            (_hw(discrete_gpus=[{"vendor": "nvidia", "model": "RTX", "vram_gb": 8}]), "dGPU"),
+        ]:
+            result = recommend_models(hw_fn, host)
+            opt = result["options"][0]
+            assert opt["embed_model"] == "qwen3-embedding:0.6b"
+            assert opt["embed_runner"] == "ollama"
 
     def test_apple_silicon_preset(self) -> None:
         hw = _hw(os_kind="macos", arch="arm64")
         result = recommend_models(hw, "iGPU")
         assert result["preset"] == "apple-silicon"
+
+    def test_amd_hardware_resolves_to_cpu_preset(self) -> None:
+        hw = _hw(cpu_vendor="amd")
+        result = recommend_models(hw, "CPU+RAM")
+        assert result["preset"] == "cpu"
 
     def test_preset_resolution_table_in_output(self) -> None:
         result = recommend_models(_hw(), "CPU+RAM")

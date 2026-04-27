@@ -1,17 +1,22 @@
 """DuckDB-backed vector store for fragment embeddings + composition telemetry.
 
 Single file per scope (``skills.duck``) holding both tables. Uses DuckDB's
-built-in ``array_cosine_distance`` over ``FLOAT[768]`` columns — not the
+built-in ``array_cosine_distance`` over ``FLOAT[1024]`` columns — not the
 experimental VSS extension. Linear scan is <10ms at current corpus scale.
 
 L2-normalization is enforced at write time so ``array_cosine_distance``
 reduces to an inner product at query time. Callers pass raw embeddings;
 the store normalizes before insert.
 
+BM25 full-text search is available via ``search_bm25``, which uses DuckDB's
+native FTS extension over the ``prose`` column. The FTS index is built once
+on first open via ``open_or_create``.
+
 Public API:
     - ``open_or_create(path) -> VectorStore``
     - ``VectorStore.insert_embeddings(items)``
     - ``VectorStore.search_similar(query_vec, *, category=None, fragment_type=None, k=10)``
+    - ``VectorStore.search_bm25(query, *, categories=None, k=10)``
     - ``VectorStore.record_composition_trace(trace)``
     - ``l2_normalize(vec) -> list[float]`` — shared helper
 
@@ -27,10 +32,10 @@ from pathlib import Path
 
 import duckdb
 
-EMBEDDING_DIM = 768
-"""Vector dimensionality. Tied to the ``nomic-embed-text-v1.5`` model used
-for both authoring and retrieval embedding. Changing the model requires a
-schema migration — DuckDB's ``FLOAT[768]`` column type is dimension-fixed."""
+EMBEDDING_DIM = 1024
+"""Vector dimensionality. Tied to ``qwen3-embedding:0.6b`` (1024-dim default).
+Changing the model requires a schema migration and full corpus reindex —
+DuckDB's ``FLOAT[1024]`` column type is dimension-fixed."""
 
 
 # ---------------------------------------------------------------------------
@@ -50,6 +55,7 @@ class FragmentEmbedding:
     fragment_type: str
     embedded_at: int  # unix epoch seconds
     embedding_model: str
+    prose: str = ""  # raw fragment text; indexed for BM25
 
 
 @dataclass(frozen=True)
@@ -57,6 +63,12 @@ class SimilarityHit:
     fragment_id: str
     skill_id: str
     distance: float  # cosine distance in [0, 2]; 0 = identical direction
+
+
+@dataclass(frozen=True)
+class BM25Hit:
+    fragment_id: str
+    score: float  # BM25 score; higher = more relevant
 
 
 @dataclass(frozen=True)
@@ -113,7 +125,8 @@ CREATE TABLE IF NOT EXISTS fragment_embeddings (
     category VARCHAR NOT NULL,
     fragment_type VARCHAR NOT NULL,
     embedded_at BIGINT NOT NULL,
-    embedding_model VARCHAR NOT NULL
+    embedding_model VARCHAR NOT NULL,
+    prose VARCHAR NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_frag_emb_skill ON fragment_embeddings(skill_id);
@@ -144,6 +157,18 @@ CREATE INDEX IF NOT EXISTS idx_traces_ts ON composition_traces(request_ts);
 CREATE INDEX IF NOT EXISTS idx_traces_phase ON composition_traces(phase);
 CREATE INDEX IF NOT EXISTS idx_traces_status ON composition_traces(status);
 """
+
+_FTS_SETUP_SQL = """
+INSTALL fts;
+LOAD fts;
+"""
+
+_FTS_INDEX_EXISTS_SQL = """
+SELECT COUNT(*) FROM information_schema.tables
+WHERE table_name = 'fts_main_fragment_embeddings_config'
+"""
+
+_FTS_CREATE_SQL = "PRAGMA create_fts_index('fragment_embeddings', 'fragment_id', 'prose');"
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +230,7 @@ class VectorStore:
                 f.fragment_type,
                 f.embedded_at,
                 f.embedding_model,
+                f.prose,
             )
             for f in batch
         ]
@@ -212,8 +238,8 @@ class VectorStore:
             """
             INSERT INTO fragment_embeddings
                 (fragment_id, embedding, skill_id, category, fragment_type,
-                 embedded_at, embedding_model)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                 embedded_at, embedding_model, prose)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -271,6 +297,58 @@ class VectorStore:
             )
             for row in rows
         ]
+
+    def search_bm25(
+        self,
+        query: str,
+        *,
+        categories: list[str] | None = None,
+        k: int = 10,
+    ) -> list[BM25Hit]:
+        """BM25 full-text search over the prose column.
+
+        Returns up to ``k`` results ordered by descending BM25 score.
+        Only fragments with a non-null score (i.e. at least one query token
+        matched) are returned. Returns empty list if the FTS index is not
+        available or query is empty.
+        """
+        if not query.strip():
+            return []
+
+        try:
+            where_clauses: list[str] = ["score IS NOT NULL"]
+            params: list[object] = [query]
+            if categories:
+                where_clauses.append("category = ANY(?)")
+                params.append(categories)
+            params.append(k)
+
+            where = " AND ".join(where_clauses)
+            sql = f"""
+                SELECT score, fragment_id FROM (
+                    SELECT *,
+                        fts_main_fragment_embeddings.match_bm25(
+                            fragment_id, ?, fields := 'prose'
+                        ) AS score
+                    FROM fragment_embeddings
+                )
+                WHERE {where}
+                ORDER BY score DESC
+                LIMIT ?
+            """
+            rows = self._conn.execute(sql, params).fetchall()
+        except Exception:  # noqa: BLE001 — FTS unavailable or index not built
+            return []
+
+        return [BM25Hit(fragment_id=str(row[1]), score=float(row[0])) for row in rows]
+
+    def rebuild_fts_index(self) -> None:
+        """Drop (if present) and recreate the FTS index on the prose column."""
+        import contextlib
+
+        with contextlib.suppress(Exception):
+            self._conn.execute("PRAGMA drop_fts_index('fragment_embeddings');")
+        self._conn.execute(_FTS_CREATE_SQL)
 
     def count_embeddings(self) -> int:
         row = self._conn.execute("SELECT COUNT(*) FROM fragment_embeddings").fetchone()
@@ -339,14 +417,28 @@ class VectorStore:
 # ---------------------------------------------------------------------------
 
 
+def _fts_index_exists(conn: duckdb.DuckDBPyConnection) -> bool:
+    row = conn.execute(_FTS_INDEX_EXISTS_SQL).fetchone()
+    return bool(row and row[0] > 0)
+
+
 def open_or_create(path: str | Path) -> VectorStore:
     """Open (or create) the DuckDB vector store at ``path``.
 
     Creates parent directories if missing. Idempotent: applies schema DDL on
-    every open. Use as a context manager to guarantee connection close.
+    every open. Builds the BM25 FTS index on first open (or when missing).
+    Use as a context manager to guarantee connection close.
     """
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     conn = duckdb.connect(str(p))
     conn.execute(_SCHEMA_DDL)
+
+    try:
+        conn.execute(_FTS_SETUP_SQL)
+        if not _fts_index_exists(conn):
+            conn.execute(_FTS_CREATE_SQL)
+    except Exception:  # noqa: BLE001 — FTS extension unavailable; BM25 leg silently degrades
+        pass
+
     return VectorStore(conn)

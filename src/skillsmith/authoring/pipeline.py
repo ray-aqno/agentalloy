@@ -37,7 +37,7 @@ from skillsmith.authoring.qa_gate import (
     qa_one,
     save_bounces,
 )
-from skillsmith.config import Settings, get_settings
+from skillsmith.config import AuthoringConfig, Settings, get_settings
 from skillsmith.storage.ladybug import LadybugStore
 from skillsmith.storage.vector_store import VectorStore, open_or_create
 
@@ -69,13 +69,14 @@ def process_one_skill(
     embed_client: OpenAICompatClient,
     bounces: dict[str, int],
     settings: Settings,
+    ac: AuthoringConfig,
 ) -> SkillResult:
     """Author → [qa → revise]* loop for one SKILL.md. Converges per skill."""
     # --- author ---
     draft = author_one(
         source,
         client=lm_client,
-        model=settings.authoring_model,
+        model=ac.authoring_model,
         system_prompt=system_prompt,
         paths=paths,
     )
@@ -111,8 +112,8 @@ def process_one_skill(
             paths=paths,
             hard_threshold=settings.dedup_hard_threshold,
             soft_threshold=settings.dedup_soft_threshold,
-            embedding_model=settings.authoring_embedding_model,
-            critic_model=settings.critic_model,
+            embedding_model=ac.authoring_embedding_model,
+            critic_model=ac.critic_model,
             budget=settings.bounce_budget,
             bounces=bounces,
         )
@@ -134,7 +135,7 @@ def process_one_skill(
         revise_result = revise_one(
             gate.draft_path,
             client=lm_client,
-            model=settings.authoring_model,
+            model=ac.authoring_model,
             system_prompt=system_prompt,
             paths=paths,
         )
@@ -176,13 +177,14 @@ def run_per_skill(
 ) -> list[SkillResult]:
     """Walk ``source_dir`` for SKILL.md files, run each through the full pipeline."""
     settings = get_settings()
+    ac = settings.require_authoring_config()
     paths.ensure_all()
 
     owned_lm = lm_client is None
     owned_embed = embed_client is None
     owned_vs = vector_store is None
-    _lm = lm_client or OpenAICompatClient(settings.lm_studio_base_url)
-    _embed = embed_client or OpenAICompatClient(settings.authoring_embed_base_url)
+    _lm = lm_client or OpenAICompatClient(ac.lm_studio_base_url)
+    _embed = embed_client or OpenAICompatClient(ac.authoring_embed_base_url)
     _vs = vector_store or open_or_create(settings.duckdb_path)
 
     system_prompt = load_authoring_prompt(repo_root)
@@ -210,6 +212,7 @@ def run_per_skill(
                 embed_client=_embed,
                 bounces=bounces,
                 settings=settings,
+                ac=ac,
             )
             logger.info(
                 "[%d/%d] %s → %s (%d rounds)",

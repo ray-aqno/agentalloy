@@ -212,7 +212,7 @@ def test_reembed_uses_model_id_in_metadata(store: VectorStore) -> None:
         fragments,
         embed_fn=embed,
         vector_store=store,
-        embedding_model="nomic-embed-text-v1.5",
+        embedding_model="qwen3-embedding:0.6b",
     )
     # The model id ends up in the row; nothing on VectorStore exposes it
     # directly, but we can sanity-check the insert landed.

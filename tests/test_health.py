@@ -41,7 +41,7 @@ def _mock_checker(
             "runtime_store": dep(store_ok, "compose and retrieve requests will fail"),
             "telemetry_store": dep(tel_ok, "trace persistence degraded"),
             "embedding_runtime": dep(embed_ok, "semantic retrieve will fail"),
-            "assembly_runtime": dep(assemble_ok, "compose requests will fail"),
+            "runtime_cache": dep(assemble_ok, "compose requests will fail"),
         }
         if not store_ok:
             overall = "unavailable"

@@ -14,7 +14,7 @@ from urllib.error import URLError
 from skillsmith.install.subcommands.verify import (
     SCHEMA_VERSION,
     _check_duckdb_present,  # pyright: ignore[reportPrivateUsage]
-    _check_embedding_768_dim,  # pyright: ignore[reportPrivateUsage]
+    _check_embedding_1024_dim,  # pyright: ignore[reportPrivateUsage]
     _check_embedding_endpoint_reachable,  # pyright: ignore[reportPrivateUsage]
     _check_harness_config_present,  # pyright: ignore[reportPrivateUsage]
     _check_harness_config_url,  # pyright: ignore[reportPrivateUsage]
@@ -47,33 +47,33 @@ class TestEmbeddingEndpointReachable:
 
 
 # ---------------------------------------------------------------------------
-# Check 2: embedding 768-dim
+# Check 2: embedding 1024-dim
 # ---------------------------------------------------------------------------
 
 
-class TestEmbedding768Dim:
+class TestEmbedding1024Dim:
     @patch("skillsmith.install.subcommands.verify.urlopen")
-    def test_pass_on_768_dim(self, mock_urlopen: MagicMock) -> None:
+    def test_pass_on_1024_dim(self, mock_urlopen: MagicMock) -> None:
+        body = json.dumps({"data": [{"embedding": [0.1] * 1024}]}).encode()
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = body
+        mock_resp.__enter__ = lambda s: s  # pyright: ignore[reportUnknownLambdaType]
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+        result = _check_embedding_1024_dim("http://localhost:11434", "qwen3-embedding:0.6b")
+        assert result["passed"] is True
+
+    @patch("skillsmith.install.subcommands.verify.urlopen")
+    def test_fail_on_wrong_dim(self, mock_urlopen: MagicMock) -> None:
         body = json.dumps({"data": [{"embedding": [0.1] * 768}]}).encode()
         mock_resp = MagicMock()
         mock_resp.read.return_value = body
         mock_resp.__enter__ = lambda s: s  # pyright: ignore[reportUnknownLambdaType]
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_resp
-        result = _check_embedding_768_dim("http://localhost:11434", "embeddinggemma")
-        assert result["passed"] is True
-
-    @patch("skillsmith.install.subcommands.verify.urlopen")
-    def test_fail_on_wrong_dim(self, mock_urlopen: MagicMock) -> None:
-        body = json.dumps({"data": [{"embedding": [0.1] * 384}]}).encode()
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = body
-        mock_resp.__enter__ = lambda s: s  # pyright: ignore[reportUnknownLambdaType]
-        mock_resp.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_resp
-        result = _check_embedding_768_dim("http://localhost:11434", "wrong-model")
+        result = _check_embedding_1024_dim("http://localhost:11434", "wrong-model")
         assert result["passed"] is False
-        assert "384" in result.get("error", "")
+        assert "768" in result.get("error", "")
 
 
 # ---------------------------------------------------------------------------

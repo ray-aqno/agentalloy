@@ -190,7 +190,6 @@ def _mock_healthy_checker(*, runtime_load_error: str | None = None) -> MagicMock
             "runtime_store": DependencyStatus(status="ok"),
             "telemetry_store": DependencyStatus(status="ok"),
             "embedding_runtime": DependencyStatus(status="ok"),
-            "assembly_runtime": DependencyStatus(status="ok"),
             "runtime_cache": DependencyStatus(
                 status="ok" if cache_ok else "unavailable",
                 impact=None

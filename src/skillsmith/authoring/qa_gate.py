@@ -454,12 +454,13 @@ def run_qa(
 ) -> list[GateResult]:
     """Process every draft currently in ``pending-qa/``."""
     settings = get_settings()
+    ac = settings.require_authoring_config()
     paths.ensure_all()
 
     owned_lm = lm_client is None
     owned_embed = embed_client is None
-    _lm = lm_client or OpenAICompatClient(settings.lm_studio_base_url)
-    _embed = embed_client or OpenAICompatClient(settings.authoring_embed_base_url)
+    _lm = lm_client or OpenAICompatClient(ac.lm_studio_base_url)
+    _embed = embed_client or OpenAICompatClient(ac.authoring_embed_base_url)
 
     qa_fixture = repo_root / "fixtures" / "skill-qa-agent.md"
     if not qa_fixture.exists():
@@ -483,8 +484,8 @@ def run_qa(
                 paths=paths,
                 hard_threshold=settings.dedup_hard_threshold,
                 soft_threshold=settings.dedup_soft_threshold,
-                embedding_model=settings.authoring_embedding_model,
-                critic_model=settings.critic_model,
+                embedding_model=ac.authoring_embedding_model,
+                critic_model=ac.critic_model,
                 budget=settings.bounce_budget,
                 bounces=bounces,
             )

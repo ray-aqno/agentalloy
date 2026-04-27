@@ -10,7 +10,7 @@ extension is incompatible with restartable FastAPI service lifecycle. The
 
 from __future__ import annotations
 
-EMBEDDING_DIM = 768
+EMBEDDING_DIM = 1024
 
 NODE_TABLES: tuple[str, ...] = (
     """

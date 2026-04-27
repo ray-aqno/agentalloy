@@ -70,8 +70,8 @@ class TestPortRecording:
         """Preset URLs use fixed runner ports (e.g. 11434), not {port}."""
         result = write_env("cpu", root=repo_root)
         assert result["values_written"]["RUNTIME_EMBED_BASE_URL"] == "http://localhost:11434"
-        assert result["values_written"]["LM_STUDIO_BASE_URL"] == "http://localhost:11434"
-        assert result["values_written"]["AUTHORING_EMBED_BASE_URL"] == "http://localhost:11434"
+        assert "LM_STUDIO_BASE_URL" not in result["values_written"]
+        assert "AUTHORING_EMBED_BASE_URL" not in result["values_written"]
 
 
 # ---------------------------------------------------------------------------
@@ -81,8 +81,10 @@ class TestPortRecording:
 
 class TestOverrides:
     def test_valid_override_applied(self, repo_root: Path) -> None:
-        result = write_env("cpu", overrides={"AUTHORING_MODEL": "qwen3.5:1.7b"}, root=repo_root)
-        assert result["values_written"]["AUTHORING_MODEL"] == "qwen3.5:1.7b"
+        result = write_env(
+            "cpu", overrides={"RUNTIME_EMBEDDING_MODEL": "qwen3-embedding:0.6b"}, root=repo_root
+        )
+        assert result["values_written"]["RUNTIME_EMBEDDING_MODEL"] == "qwen3-embedding:0.6b"
 
     def test_unknown_key_rejected(self) -> None:
         with pytest.raises(SystemExit):

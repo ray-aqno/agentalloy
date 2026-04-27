@@ -136,8 +136,9 @@ def run_author(
 ) -> list[DraftResult]:
     """Walk ``source_dir`` for SKILL.md files, author a draft for each."""
     settings = get_settings()
+    ac = settings.require_authoring_config()
     owned_client = client is None
-    _client = client or OpenAICompatClient(settings.lm_studio_base_url)
+    _client = client or OpenAICompatClient(ac.lm_studio_base_url)
     system_prompt = load_authoring_prompt(repo_root)
     paths.ensure_all()
 
@@ -148,7 +149,7 @@ def run_author(
             result = author_one(
                 source,
                 client=_client,
-                model=settings.authoring_model,
+                model=ac.authoring_model,
                 system_prompt=system_prompt,
                 paths=paths,
             )
@@ -257,8 +258,9 @@ def run_revise(
 ) -> list[DraftResult]:
     """Walk pending-revision/, re-author each draft using its critic feedback."""
     settings = get_settings()
+    ac = settings.require_authoring_config()
     owned = client is None
-    _client = client or OpenAICompatClient(settings.lm_studio_base_url)
+    _client = client or OpenAICompatClient(ac.lm_studio_base_url)
     system_prompt = load_authoring_prompt(repo_root)
     paths.ensure_all()
 
@@ -269,7 +271,7 @@ def run_revise(
             result = revise_one(
                 draft,
                 client=_client,
-                model=settings.authoring_model,
+                model=ac.authoring_model,
                 system_prompt=system_prompt,
                 paths=paths,
             )

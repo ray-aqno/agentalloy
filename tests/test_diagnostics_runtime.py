@@ -47,7 +47,7 @@ def _healthy_checker() -> MagicMock:
             "runtime_store": DependencyStatus(status="ok"),
             "telemetry_store": DependencyStatus(status="ok"),
             "embedding_runtime": DependencyStatus(status="ok"),
-            "assembly_runtime": DependencyStatus(status="ok"),
+            "runtime_cache": DependencyStatus(status="ok"),
         }
         return HealthResponse(status="healthy", dependencies=deps)  # type: ignore[arg-type]
 
@@ -72,7 +72,7 @@ def _degraded_checker(
             "runtime_store": dep(store_ok, "compose and retrieve will fail"),
             "telemetry_store": dep(tel_ok, "trace persistence degraded"),
             "embedding_runtime": dep(embed_ok, "semantic retrieve will fail"),
-            "assembly_runtime": dep(assemble_ok, "compose requests will fail"),
+            "runtime_cache": dep(assemble_ok, "compose requests will fail"),
         }
         if not store_ok:
             overall = "unavailable"

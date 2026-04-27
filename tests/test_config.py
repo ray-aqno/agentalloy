@@ -24,11 +24,11 @@ def test_defaults_when_env_unset(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "_xdg_data"))
     monkeypatch.chdir(tmp_path)
     s = Settings()
-    assert s.runtime_embed_base_url == "http://127.0.0.1:52625"
+    assert s.runtime_embed_base_url == "http://localhost:11434"
     expected_corpus = str(tmp_path / "_xdg_data" / "skillsmith" / "corpus")
     assert s.ladybug_db_path == f"{expected_corpus}/ladybug"
     assert s.duckdb_path == f"{expected_corpus}/skills.duck"
-    assert s.runtime_embedding_model == "embed-gemma:300m"
+    assert s.runtime_embedding_model == "qwen3-embedding:0.6b"
 
 
 def test_env_overrides(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
