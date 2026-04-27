@@ -196,7 +196,7 @@ class TestReadEnvFile:
 class TestPollHealth:
     def test_returns_true_on_ok_status(self) -> None:
         mock_resp = MagicMock()
-        mock_resp.__enter__ = lambda s: s
+        mock_resp.__enter__ = lambda s: s  # type: ignore[misc]
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_resp.read.return_value = b'{"status": "ok"}'
 
@@ -214,7 +214,7 @@ class TestPollHealth:
 
     def test_returns_false_on_degraded_status(self) -> None:
         mock_resp = MagicMock()
-        mock_resp.__enter__ = lambda s: s
+        mock_resp.__enter__ = lambda s: s  # type: ignore[misc]
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_resp.read.return_value = b'{"status": "degraded"}'
 
@@ -272,7 +272,7 @@ class TestEnableServiceContainer:
         compose_file.touch()
 
         mock_resp = MagicMock()
-        mock_resp.__enter__ = lambda s: s
+        mock_resp.__enter__ = lambda s: s  # type: ignore[misc]
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_resp.read.return_value = b'{"status": "ok"}'
 
@@ -300,7 +300,7 @@ class TestEnableServiceContainer:
         (tmp_path / "compose.radeon.yaml").touch()
 
         mock_resp = MagicMock()
-        mock_resp.__enter__ = lambda s: s
+        mock_resp.__enter__ = lambda s: s  # type: ignore[misc]
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_resp.read.return_value = b'{"status": "ok"}'
 
