@@ -15,214 +15,560 @@ always_apply: false
 phase_scope: null
 category_scope: null
 author: navistone
-change_summary: initial authoring from agents plugin source
+change_summary: "initial authoring from agents plugin source; 2026-04-28 \u2014 added Build-a-Feedback-Loop-First + Phases-After-the-Loop fragments adapted from mattpocock/skills MIT (engineering/diagnose); 2026-04-28 \u2014 re-fragmented 1\u201312 from raw_prose at proper section boundaries (prior chunker had split inside fenced markdown blocks)"
 raw_prose: "# Debugging Strategies\n\nTransform debugging from frustrating guesswork into systematic problem-solving with proven strategies, powerful tools, and methodical approaches.\n\n## When to Use This Skill\n\n- Tracking down elusive bugs\n- Investigating performance issues\n- Understanding unfamiliar codebases\n- Debugging production issues\n- Analyzing crash dumps and stack traces\n- Profiling application performance\n- Investigating memory leaks\n- Debugging distributed systems\n\n## Core Principles\n\n### 1. The Scientific Method\n\n**1. Observe**: What's the actual behavior?\n**2. Hypothesize**: What could be causing it?\n**3. Experiment**: Test your hypothesis\n**4. Analyze**: Did it prove/disprove your theory?\n**5. Repeat**: Until you find the root cause\n\n### 2. Debugging Mindset\n\n**Don't Assume:**\n\n- \"It can't be X\" - Yes it can\n- \"I didn't change Y\" - Check anyway\n- \"It works on my machine\" - Find out why\n\n**Do:**\n\n- Reproduce consistently\n- Isolate the problem\n- Keep detailed notes\n- Question everything\n- Take breaks when stuck\n\n### 3. Rubber Duck Debugging\n\nExplain your code and problem out loud (to a rubber duck, colleague, or yourself). Often reveals the issue.\n\n## Systematic Debugging Process\n\n### Phase 1: Reproduce\n\n```markdown\n## Reproduction Checklist\n\n1. **Can you reproduce it?**\n   - Always? Sometimes? Randomly?\n   - Specific conditions needed?\n   - Can others reproduce it?\n\n2. **Create minimal reproduction**\n   - Simplify to smallest example\n   - Remove unrelated code\n   - Isolate the problem\n\n3. **Document steps**\n   - Write down exact steps\n   - Note environment details\n   - Capture error messages\n```\n\n### Phase 2: Gather Information\n\n```markdown\n## Information Collection\n\n1. **Error Messages**\n   - Full stack trace\n   - Error codes\n   - Console/log output\n\n2. **Environment**\n   - OS version\n   - Language/runtime version\n   - Dependencies versions\n   - Environment variables\n\n3. **Recent Changes**\n   - Git history\n   - Deployment timeline\n   - Configuration changes\n\n4. **Scope**\n   - Affects all users or specific ones?\n   - All browsers or specific ones?\n   - Production only or also dev?\n```\n\n### Phase 3: Form Hypothesis\n\n```markdown\n## Hypothesis Formation\n\nBased on gathered info, ask:\n\n1. **What changed?**\n   - Recent code changes\n   - Dependency updates\n   - Infrastructure changes\n\n2. **What's different?**\n   - Working vs broken environment\n   - Working vs broken user\n   - Before vs after\n\n3. **Where could this fail?**\n   - Input validation\n   - Business logic\n   - Data layer\n   - External services\n```\n\n### Phase 4: Test & Verify\n\n```markdown\n## Testing Strategies\n\n1. **Binary Search**\n   - Comment out half the code\n   - Narrow down problematic section\n   - Repeat until found\n\n2. **Add Logging**\n   - Strategic console.log/print\n   - Track variable values\n   - Trace execution flow\n\n3. **Isolate Components**\n   - Test each piece separately\n   - Mock dependencies\n   - Remove complexity\n\n4. **Compare Working vs Broken**\n   - Diff configurations\n   - Diff environments\n   - Diff data\n```\n\n## Debugging Tools\n\n### JavaScript/TypeScript Debugging\n\n```typescript\n// Chrome DevTools Debugger\nfunction processOrder(order: Order) {\n  debugger; // Execution pauses here\n\n  const total = calculateTotal(order);\n  console.log(\"Total:\", total);\n\n  // Conditional breakpoint\n  if (order.items.length > 10) {\n    debugger; // Only breaks if condition true\n  }\n\n  return total;\n}\n\n// Console debugging techniques\nconsole.log(\"Value:\", value); // Basic\nconsole.table(arrayOfObjects); // Table format\nconsole.time(\"operation\");\n/* code */ console.timeEnd(\"operation\"); // Timing\nconsole.trace(); // Stack trace\nconsole.assert(value > 0, \"Value must be positive\"); // Assertion\n\n// Performance profiling\nperformance.mark(\"start-operation\");\n// ... operation code\nperformance.mark(\"end-operation\");\nperformance.measure(\"operation\", \"start-operation\", \"end-operation\");\nconsole.log(performance.getEntriesByType(\"measure\"));\n```\n\n**VS Code Debugger Configuration:**\n\n```json\n// .vscode/launch.json\n{\n  \"version\": \"0.2.0\",\n  \"configurations\": [\n    {\n      \"type\": \"node\",\n      \"request\": \"launch\",\n      \"name\": \"Debug Program\",\n      \"program\": \"${workspaceFolder}/src/index.ts\",\n      \"preLaunchTask\": \"tsc: build - tsconfig.json\",\n      \"outFiles\": [\"${workspaceFolder}/dist/**/*.js\"],\n      \"skipFiles\": [\"<node_internals>/**\"]\n    },\n    {\n      \"type\": \"node\",\n      \"request\": \"launch\",\n      \"name\": \"Debug Tests\",\n      \"program\": \"${workspaceFolder}/node_modules/jest/bin/jest\",\n      \"args\": [\"--runInBand\", \"--no-cache\"],\n      \"console\": \"integratedTerminal\"\n    }\n  ]\n}\n```\n\n### Python Debugging\n\n```python\n# Built-in debugger (pdb)\nimport pdb\n\ndef calculate_total(items):\n    total = 0\n    pdb.set_trace()  # Debugger starts here\n\n    for item in items:\n        total += item.price * item.quantity\n\n    return total\n\n# Breakpoint (Python 3.7+)\ndef process_order(order):\n    breakpoint()  # More convenient than pdb.set_trace()\n    # ... code\n\n# Post-mortem debugging\ntry:\n    risky_operation()\nexcept Exception:\n    import pdb\n    pdb.post_mortem()  # Debug at exception point\n\n# IPython debugging (ipdb)\nfrom ipdb import set_trace\nset_trace()  # Better interface than pdb\n\n# Logging for debugging\nimport logging\nlogging.basicConfig(level=logging.DEBUG)\nlogger = logging.getLogger(__name__)\n\ndef fetch_user(user_id):\n    logger.debug(f'Fetching user: {user_id}')\n    user = db.query(User).get(user_id)\n    logger.debug(f'Found user: {user}')\n    return user\n\n# Profile performance\nimport cProfile\nimport pstats\n\ncProfile.run('slow_function()', 'profile_stats')\nstats = pstats.Stats('profile_stats')\nstats.sort_stats('cumulative')\nstats.print_stats(10)  # Top 10 slowest\n```\n\n### Go Debugging\n\n```go\n// Delve debugger\n// Install: go install github.com/go-delve/delve/cmd/dlv@latest\n// Run: dlv debug main.go\n\nimport (\n    \"fmt\"\n    \"runtime\"\n    \"runtime/debug\"\n)\n\n// Print stack trace\nfunc debugStack() {\n    debug.PrintStack()\n}\n\n// Panic recovery with debugging\nfunc processRequest() {\n    defer func() {\n        if r := recover(); r != nil {\n            fmt.Println(\"Panic:\", r)\n            debug.PrintStack()\n        }\n    }()\n\n    // ... code that might panic\n}\n\n// Memory profiling\nimport _ \"net/http/pprof\"\n// Visit http://localhost:6060/debug/pprof/\n\n// CPU profiling\nimport (\n    \"os\"\n    \"runtime/pprof\"\n)\n\nf, _ := os.Create(\"cpu.prof\")\npprof.StartCPUProfile(f)\ndefer pprof.StopCPUProfile()\n// ... code to profile\n```\n\n## Advanced Debugging Techniques\n\n### Technique 1: Binary Search Debugging\n\n```bash\n# Git bisect for finding regression\ngit bisect start\ngit bisect bad                    # Current commit is bad\ngit bisect good v1.0.0            # v1.0.0 was good\n\n# Git checks out middle commit\n# Test it, then:\ngit bisect good   # if it works\ngit bisect bad    # if it's broken\n\n# Continue until bug found\ngit bisect reset  # when done\n```\n\n### Technique 2: Differential Debugging\n\nCompare working vs broken:\n\n```markdown\n## What's Different?\n\n| Aspect       | Working     | Broken         |\n| ------------ | ----------- | -------------- |\n| Environment  | Development | Production     |\n| Node version | 18.16.0     | 18.15.0        |\n| Data         | Empty DB    | 1M records     |\n| User         | Admin       | Regular user   |\n| Browser      | Chrome      | Safari         |\n| Time         | During day  | After midnight |\n\nHypothesis: Time-based issue? Check timezone handling.\n```\n\n### Technique 3: Trace Debugging\n\n```typescript\n// Function call tracing\nfunction trace(\n  target: any,\n  propertyKey: string,\n  descriptor: PropertyDescriptor,\n) {\n  const originalMethod = descriptor.value;\n\n  descriptor.value = function (...args: any[]) {\n    console.log(`Calling ${propertyKey} with args:`, args);\n    const result = originalMethod.apply(this, args);\n    console.log(`${propertyKey} returned:`, result);\n    return result;\n  };\n\n  return descriptor;\n}\n\nclass OrderService {\n  @trace\n  calculateTotal(items: Item[]): number {\n    return items.reduce((sum, item) => sum + item.price, 0);\n  }\n}\n```\n\n### Technique 4: Memory Leak Detection\n\n```typescript\n// Chrome DevTools Memory Profiler\n// 1. Take heap snapshot\n// 2. Perform action\n// 3. Take another snapshot\n// 4. Compare snapshots\n\n// Node.js memory debugging\nif (process.memoryUsage().heapUsed > 500 * 1024 * 1024) {\n  console.warn(\"High memory usage:\", process.memoryUsage());\n\n  // Generate heap dump\n  require(\"v8\").writeHeapSnapshot();\n}\n\n// Find memory leaks in tests\nlet beforeMemory: number;\n\nbeforeEach(() => {\n  beforeMemory = process.memoryUsage().heapUsed;\n});\n\nafterEach(() => {\n  const afterMemory = process.memoryUsage().heapUsed;\n  const diff = afterMemory - beforeMemory;\n\n  if (diff > 10 * 1024 * 1024) {\n    // 10MB threshold\n    console.warn(`Possible memory leak: ${diff / 1024 / 1024}MB`);\n  }\n});\n```\n\n## Debugging Patterns by Issue Type\n\n### Pattern 1: Intermittent Bugs\n\n```markdown\n## Strategies for Flaky Bugs\n\n1. **Add extensive logging**\n   - Log timing information\n   - Log all state transitions\n   - Log external interactions\n\n2. **Look for race conditions**\n   - Concurrent access to shared state\n   - Async operations completing out of order\n   - Missing synchronization\n\n3. **Check timing dependencies**\n   - setTimeout/setInterval\n   - Promise resolution order\n   - Animation frame timing\n\n4. **Stress test**\n   - Run many times\n   - Vary timing\n   - Simulate load\n```\n\n### Pattern 2: Performance\
-  \ Issues\n\n```markdown\n## Performance Debugging\n\n1. **Profile first**\n   - Don't optimize blindly\n   - Measure before and after\n   - Find bottlenecks\n\n2. **Common culprits**\n   - N+1 queries\n   - Unnecessary re-renders\n   - Large data processing\n   - Synchronous I/O\n\n3. **Tools**\n   - Browser DevTools Performance tab\n   - Lighthouse\n   - Python: cProfile, line_profiler\n   - Node: clinic.js, 0x\n```\n\n### Pattern 3: Production Bugs\n\n```markdown\n## Production Debugging\n\n1. **Gather evidence**\n   - Error tracking (Sentry, Bugsnag)\n   - Application logs\n   - User reports\n   - Metrics/monitoring\n\n2. **Reproduce locally**\n   - Use production data (anonymized)\n   - Match environment\n   - Follow exact steps\n\n3. **Safe investigation**\n   - Don't change production\n   - Use feature flags\n   - Add monitoring/logging\n   - Test fixes in staging\n```\n\n## Best Practices\n\n1. **Reproduce First**: Can't fix what you can't reproduce\n2. **Isolate the Problem**: Remove complexity until minimal case\n3. **Read Error Messages**: They're usually helpful\n4. **Check Recent Changes**: Most bugs are recent\n5. **Use Version Control**: Git bisect, blame, history\n6. **Take Breaks**: Fresh eyes see better\n7. **Document Findings**: Help future you\n8. **Fix Root Cause**: Not just symptoms\n\n## Common Debugging Mistakes\n\n- **Making Multiple Changes**: Change one thing at a time\n- **Not Reading Error Messages**: Read the full stack trace\n- **Assuming It's Complex**: Often it's simple\n- **Debug Logging in Prod**: Remove before shipping\n- **Not Using Debugger**: console.log isn't always best\n- **Giving Up Too Soon**: Persistence pays off\n- **Not Testing the Fix**: Verify it actually works\n\n## Quick Debugging Checklist\n\n```markdown\n## When Stuck, Check:\n\n- [ ] Spelling errors (typos in variable names)\n- [ ] Case sensitivity (fileName vs filename)\n- [ ] Null/undefined values\n- [ ] Array index off-by-one\n- [ ] Async timing (race conditions)\n- [ ] Scope issues (closure, hoisting)\n- [ ] Type mismatches\n- [ ] Missing dependencies\n- [ ] Environment variables\n- [ ] File paths (absolute vs relative)\n- [ ] Cache issues (clear cache)\n- [ ] Stale data (refresh database)\n```"
+  \ Issues\n\n```markdown\n## Performance Debugging\n\n1. **Profile first**\n   - Don't optimize blindly\n   - Measure before and after\n   - Find bottlenecks\n\n2. **Common culprits**\n   - N+1 queries\n   - Unnecessary re-renders\n   - Large data processing\n   - Synchronous I/O\n\n3. **Tools**\n   - Browser DevTools Performance tab\n   - Lighthouse\n   - Python: cProfile, line_profiler\n   - Node: clinic.js, 0x\n```\n\n### Pattern 3: Production Bugs\n\n```markdown\n## Production Debugging\n\n1. **Gather evidence**\n   - Error tracking (Sentry, Bugsnag)\n   - Application logs\n   - User reports\n   - Metrics/monitoring\n\n2. **Reproduce locally**\n   - Use production data (anonymized)\n   - Match environment\n   - Follow exact steps\n\n3. **Safe investigation**\n   - Don't change production\n   - Use feature flags\n   - Add monitoring/logging\n   - Test fixes in staging\n```\n\n## Best Practices\n\n1. **Reproduce First**: Can't fix what you can't reproduce\n2. **Isolate the Problem**: Remove complexity until minimal case\n3. **Read Error Messages**: They're usually helpful\n4. **Check Recent Changes**: Most bugs are recent\n5. **Use Version Control**: Git bisect, blame, history\n6. **Take Breaks**: Fresh eyes see better\n7. **Document Findings**: Help future you\n8. **Fix Root Cause**: Not just symptoms\n\n## Common Debugging Mistakes\n\n- **Making Multiple Changes**: Change one thing at a time\n- **Not Reading Error Messages**: Read the full stack trace\n- **Assuming It's Complex**: Often it's simple\n- **Debug Logging in Prod**: Remove before shipping\n- **Not Using Debugger**: console.log isn't always best\n- **Giving Up Too Soon**: Persistence pays off\n- **Not Testing the Fix**: Verify it actually works\n\n## Quick Debugging Checklist\n\n```markdown\n## When Stuck, Check:\n\n- [ ] Spelling errors (typos in variable names)\n- [ ] Case sensitivity (fileName vs filename)\n- [ ] Null/undefined values\n- [ ] Array index off-by-one\n- [ ] Async timing (race conditions)\n- [ ] Scope issues (closure, hoisting)\n- [ ] Type mismatches\n- [ ] Missing dependencies\n- [ ] Environment variables\n- [ ] File paths (absolute vs relative)\n- [ ] Cache issues (clear cache)\n- [ ] Stale data (refresh database)\n```\n\n## Build a Feedback Loop First\n\n**This is the skill.** Everything else is mechanical. If you have a fast, deterministic, agent-runnable pass/fail signal for the bug, you will find the cause \u2014 bisection, hypothesis testing, and instrumentation all just consume that signal. If you don't have one, no amount of staring at code will save you. **Spend disproportionate effort here.**\n\n### Construct one \u2014 try in roughly this order\n\n1. **Failing test** at whatever seam reaches the bug \u2014 unit, integration, or e2e.\n2. **Curl / HTTP script** against a running dev server.\n3. **CLI invocation** with a fixture input, diffing stdout against a known-good snapshot.\n4. **Headless browser script** (Playwright / Puppeteer) \u2014 drives the UI, asserts on DOM/console/network.\n5. **Replay a captured trace.** Save a real network request / payload / event log to disk; replay it through the code path in isolation.\n6. **Throwaway harness.** Spin up a minimal subset of the system (one service, mocked deps) that exercises the bug code path with a single function call.\n7. **Property / fuzz loop.** If the bug is \"sometimes wrong output\", run 1000 random inputs and look for the failure mode.\n8. **Bisection harness.** If the bug appeared between two known states (commit, dataset, version), automate \"boot at state X, check, repeat\" so you can `git bisect run` it.\n9. **Differential loop.** Run the same input through old-version vs new-version (or two configs) and diff outputs.\n10. **HITL bash script.** Last resort. If a human must click, drive *them* with a structured loop so the captured output still feeds back to the agent.\n\n### Iterate on the loop itself\n\nTreat the loop as a product. Once you have *a* loop, ask:\n\n- Can I make it **faster**? (Cache setup, skip unrelated init, narrow the test scope.)\n- Can I make the **signal sharper**? (Assert on the specific symptom, not \"didn't crash\".)\n- Can I make it **more deterministic**? (Pin time, seed RNG, isolate filesystem, freeze network.)\n\nA 30-second flaky loop is barely better than no loop. A 2-second deterministic loop is a debugging superpower.\n\n### Non-deterministic bugs\n\nThe goal is not a clean repro but a **higher reproduction rate**. Loop the trigger 100\xD7, parallelise, add stress, narrow timing windows, inject sleeps. A 50%-flake bug is debuggable; 1% is not \u2014 keep raising the rate until it is.\n\n### When you genuinely cannot build a loop\n\nStop and say so explicitly. List what you tried. Ask the operator for: (a) access to the environment that reproduces it, (b) a captured artifact (HAR file, log dump, core dump, screen recording with timestamps), or (c) permission to add temporary production instrumentation. **Do not proceed to hypothesise without a loop** \u2014 you'll generate plausible-sounding causes and have no way to falsify them.\n\n## Phases After the Loop Exists\n\nHypothesise \u2192 instrument \u2192 fix \u2192 regression-test. Each step is cheap and bounded once the loop exists.\n\n1. **Hypothesise.** Generate **3\u20135 ranked hypotheses** before testing any of them. Single-hypothesis generation anchors on the first plausible idea. Each must be **falsifiable** \u2014 state the prediction: \"If X is the cause, then changing Y will make the bug disappear.\"\n2. **Show the ranked list to the operator before testing.** They often re-rank instantly (\"we just deployed a change to #3\"). Cheap checkpoint, big time saver. Don't block on it \u2014 proceed if AFK.\n3. **Instrument minimally.** One probe per prediction. Change one variable at a time. Tag every debug log with a unique prefix (e.g. `[DEBUG-a4f2]`) so cleanup is a single grep. Prefer debugger/REPL over logs when the env supports it.\n4. **Regression test before the fix** \u2014 but only if there is a *correct seam*. A correct seam exercises the real bug pattern as it occurs at the call site. If only a too-shallow seam is available, the test gives false confidence; **note that as a finding** instead. Architecture is preventing the bug from being locked down.\n5. **Cleanup checklist before declaring done:** original repro no longer reproduces, regression test passes (or absent-seam documented), all `[DEBUG-...]` instrumentation removed (`grep` the prefix), throwaway prototypes deleted, the correct hypothesis stated in the commit/PR message.\n6. **Then ask: what would have prevented this bug?** If the answer involves architectural change, hand off to a refactor flow with the specifics. Make the recommendation **after** the fix is in \u2014 you have more information now than when you started.\n"
 fragments:
 - sequence: 1
-  fragment_type: setup
-  content: '## When to Use This Skill
+  fragment_type: rationale
+  content: |
+    # Debugging Strategies
 
+    Transform debugging from frustrating guesswork into systematic problem-solving with proven strategies, powerful tools, and methodical approaches.
+
+    ## When to Use This Skill
 
     - Tracking down elusive bugs
-
     - Investigating performance issues
-
     - Understanding unfamiliar codebases
-
     - Debugging production issues
-
     - Analyzing crash dumps and stack traces
-
     - Profiling application performance
-
     - Investigating memory leaks
-
-    - Debugging distributed systems'
+    - Debugging distributed systems
 - sequence: 2
   fragment_type: rationale
-  content: '## Core Principles
-
+  content: |
+    ## Core Principles
 
     ### 1. The Scientific Method
 
-
-    **1. Observe**: What''s the actual behavior?
-
+    **1. Observe**: What's the actual behavior?
     **2. Hypothesize**: What could be causing it?
-
     **3. Experiment**: Test your hypothesis
-
     **4. Analyze**: Did it prove/disprove your theory?
-
     **5. Repeat**: Until you find the root cause
-
 
     ### 2. Debugging Mindset
 
+    **Don't Assume:**
 
-    **Don''t Assume:**
-
-
-    - "It can''t be X" - Yes it can
-
-    - "I didn''t change Y" - Check anyway
-
+    - "It can't be X" - Yes it can
+    - "I didn't change Y" - Check anyway
     - "It works on my machine" - Find out why
-
 
     **Do:**
 
-
     - Reproduce consistently
-
     - Isolate the problem
-
     - Keep detailed notes
-
     - Question everything
-
     - Take breaks when stuck
-
 
     ### 3. Rubber Duck Debugging
 
-
-    Explain your code and problem out loud (to a rubber duck, colleague, or yourself). Often reveals the issue.'
+    Explain your code and problem out loud (to a rubber duck, colleague, or yourself). Often reveals the issue.
 - sequence: 3
-  fragment_type: verification
-  content: "## Reproduction Checklist\n\n1. **Can you reproduce it?**\n   - Always? Sometimes? Randomly?\n   - Specific conditions needed?\n   - Can others reproduce it?\n\n2. **Create minimal reproduction**\n   - Simplify to smallest example\n   - Remove unrelated code\n   - Isolate the problem\n\n3. **Document steps**\n   - Write down exact steps\n   - Note environment details\n   - Capture error messages\n```\n\n### Phase 2: Gather Information\n\n```markdown"
+  fragment_type: execution
+  content: |
+    ## Systematic Debugging Process
+
+    ### Phase 1: Reproduce
+
+    ```markdown
+    ## Reproduction Checklist
+
+    1. **Can you reproduce it?**
+       - Always? Sometimes? Randomly?
+       - Specific conditions needed?
+       - Can others reproduce it?
+
+    2. **Create minimal reproduction**
+       - Simplify to smallest example
+       - Remove unrelated code
+       - Isolate the problem
+
+    3. **Document steps**
+       - Write down exact steps
+       - Note environment details
+       - Capture error messages
+    ```
+
+    ### Phase 2: Gather Information
+
+    ```markdown
+    ## Information Collection
+
+    1. **Error Messages**
+       - Full stack trace
+       - Error codes
+       - Console/log output
+
+    2. **Environment**
+       - OS version
+       - Language/runtime version
+       - Dependencies versions
+       - Environment variables
+
+    3. **Recent Changes**
+       - Git history
+       - Deployment timeline
+       - Configuration changes
+
+    4. **Scope**
+       - Affects all users or specific ones?
+       - All browsers or specific ones?
+       - Production only or also dev?
+    ```
 - sequence: 4
   fragment_type: execution
-  content: "## Information Collection\n\n1. **Error Messages**\n   - Full stack trace\n   - Error codes\n   - Console/log output\n\n2. **Environment**\n   - OS version\n   - Language/runtime version\n   - Dependencies versions\n   - Environment variables\n\n3. **Recent Changes**\n   - Git history\n   - Deployment timeline\n   - Configuration changes\n\n4. **Scope**\n   - Affects all users or specific ones?\n   - All browsers or specific ones?\n   - Production only or also dev?\n```\n\n### Phase 3: Form Hypothesis\n\n```markdown"
-- sequence: 5
-  fragment_type: execution
-  content: "## Hypothesis Formation\n\nBased on gathered info, ask:\n\n1. **What changed?**\n   - Recent code changes\n   - Dependency updates\n   - Infrastructure changes\n\n2. **What's different?**\n   - Working vs broken environment\n   - Working vs broken user\n   - Before vs after\n\n3. **Where could this fail?**\n   - Input validation\n   - Business logic\n   - Data layer\n   - External services\n```\n\n### Phase 4: Test & Verify\n\n```markdown"
-- sequence: 6
-  fragment_type: verification
-  content: "## Testing Strategies\n\n1. **Binary Search**\n   - Comment out half the code\n   - Narrow down problematic section\n   - Repeat until found\n\n2. **Add Logging**\n   - Strategic console.log/print\n   - Track variable values\n   - Trace execution flow\n\n3. **Isolate Components**\n   - Test each piece separately\n   - Mock dependencies\n   - Remove complexity\n\n4. **Compare Working vs Broken**\n   - Diff configurations\n   - Diff environments\n   - Diff data\n```"
-- sequence: 7
-  fragment_type: rationale
-  content: "## Debugging Tools\n\n### JavaScript/TypeScript Debugging\n\n```typescript\n// Chrome DevTools Debugger\nfunction processOrder(order: Order) {\n  debugger; // Execution pauses here\n\n  const total = calculateTotal(order);\n  console.log(\"Total:\", total);\n\n  // Conditional breakpoint\n  if (order.items.length > 10) {\n    debugger; // Only breaks if condition true\n  }\n\n  return total;\n}\n\n// Console debugging techniques\nconsole.log(\"Value:\", value); // Basic\nconsole.table(arrayOfObjects); // Table format\nconsole.time(\"operation\");\n/* code */ console.timeEnd(\"operation\"); // Timing\nconsole.trace(); // Stack trace\nconsole.assert(value > 0, \"Value must be positive\"); // Assertion\n\n// Performance profiling\nperformance.mark(\"start-operation\");\n// ... operation code\nperformance.mark(\"end-operation\");\nperformance.measure(\"operation\", \"start-operation\", \"end-operation\");\nconsole.log(performance.getEntriesByType(\"measure\"));\n```\n\n**VS Code Debugger Configuration:**\n\n```json\n// .vscode/launch.json\n{\n  \"version\": \"0.2.0\",\n  \"configurations\": [\n    {\n      \"type\": \"node\",\n      \"request\": \"launch\",\n      \"name\": \"Debug Program\",\n      \"program\": \"${workspaceFolder}/src/index.ts\",\n      \"preLaunchTask\": \"tsc: build - tsconfig.json\",\n      \"outFiles\": [\"${workspaceFolder}/dist/**/*.js\"],\n      \"skipFiles\": [\"<node_internals>/**\"]\n    },\n    {\n      \"type\": \"node\",\n      \"request\": \"launch\",\n      \"name\": \"Debug Tests\",\n      \"program\": \"${workspaceFolder}/node_modules/jest/bin/jest\",\n      \"args\": [\"--runInBand\", \"--no-cache\"],\n      \"console\": \"integratedTerminal\"\n    }\n  ]\n}\n```\n\n### Python Debugging\n\n```python\n# Built-in debugger (pdb)\nimport pdb\n\ndef calculate_total(items):\n    total = 0\n    pdb.set_trace()  # Debugger starts here\n\n    for item in items:\n        total += item.price * item.quantity\n\n    return total\n\n# Breakpoint (Python 3.7+)\ndef process_order(order):\n    breakpoint()  # More convenient than pdb.set_trace()\n    # ... code\n\n# Post-mortem debugging\ntry:\n    risky_operation()\nexcept Exception:\n    import pdb\n    pdb.post_mortem()  # Debug at exception point\n\n# IPython debugging (ipdb)\nfrom ipdb import set_trace\nset_trace()  # Better interface than pdb\n\n# Logging for debugging\nimport logging\nlogging.basicConfig(level=logging.DEBUG)\nlogger = logging.getLogger(__name__)\n\ndef fetch_user(user_id):\n    logger.debug(f'Fetching user: {user_id}')\n    user = db.query(User).get(user_id)\n    logger.debug(f'Found user: {user}')\n    return user\n\n# Profile performance\nimport cProfile\nimport pstats\n\ncProfile.run('slow_function()', 'profile_stats')\nstats = pstats.Stats('profile_stats')\nstats.sort_stats('cumulative')\nstats.print_stats(10)  # Top 10 slowest\n```\n\n### Go Debugging\n\n```go\n// Delve debugger\n// Install: go install github.com/go-delve/delve/cmd/dlv@latest\n// Run: dlv debug main.go\n\nimport (\n    \"fmt\"\n    \"runtime\"\n    \"runtime/debug\"\n)\n\n// Print stack trace\nfunc debugStack() {\n    debug.PrintStack()\n}\n\n// Panic recovery with debugging\nfunc processRequest() {\n    defer func() {\n        if r := recover(); r != nil {\n            fmt.Println(\"Panic:\", r)\n            debug.PrintStack()\n        }\n    }()\n\n    // ... code that might panic\n}\n\n// Memory profiling\nimport _ \"net/http/pprof\"\n// Visit http://localhost:6060/debug/pprof/\n\n// CPU profiling\nimport (\n    \"os\"\n    \"runtime/pprof\"\n)\n\nf, _ := os.Create(\"cpu.prof\")\npprof.StartCPUProfile(f)\ndefer pprof.StopCPUProfile()\n// ... code to profile\n```"
-- sequence: 8
-  fragment_type: rationale
-  content: '## Advanced Debugging Techniques
+  content: |
+    ### Phase 3: Form Hypothesis
 
+    ```markdown
+    ## Hypothesis Formation
+
+    Based on gathered info, ask:
+
+    1. **What changed?**
+       - Recent code changes
+       - Dependency updates
+       - Infrastructure changes
+
+    2. **What's different?**
+       - Working vs broken environment
+       - Working vs broken user
+       - Before vs after
+
+    3. **Where could this fail?**
+       - Input validation
+       - Business logic
+       - Data layer
+       - External services
+    ```
+
+    ### Phase 4: Test & Verify
+
+    ```markdown
+    ## Testing Strategies
+
+    1. **Binary Search**
+       - Comment out half the code
+       - Narrow down problematic section
+       - Repeat until found
+
+    2. **Add Logging**
+       - Strategic console.log/print
+       - Track variable values
+       - Trace execution flow
+
+    3. **Isolate Components**
+       - Test each piece separately
+       - Mock dependencies
+       - Remove complexity
+
+    4. **Compare Working vs Broken**
+       - Diff configurations
+       - Diff environments
+       - Diff data
+    ```
+- sequence: 5
+  fragment_type: example
+  content: |
+    ## Debugging Tools
+
+    ### JavaScript/TypeScript Debugging
+
+    ```typescript
+    // Chrome DevTools Debugger
+    function processOrder(order: Order) {
+      debugger; // Execution pauses here
+
+      const total = calculateTotal(order);
+      console.log("Total:", total);
+
+      // Conditional breakpoint
+      if (order.items.length > 10) {
+        debugger; // Only breaks if condition true
+      }
+
+      return total;
+    }
+
+    // Console debugging techniques
+    console.log("Value:", value); // Basic
+    console.table(arrayOfObjects); // Table format
+    console.time("operation");
+    /* code */ console.timeEnd("operation"); // Timing
+    console.trace(); // Stack trace
+    console.assert(value > 0, "Value must be positive"); // Assertion
+
+    // Performance profiling
+    performance.mark("start-operation");
+    // ... operation code
+    performance.mark("end-operation");
+    performance.measure("operation", "start-operation", "end-operation");
+    console.log(performance.getEntriesByType("measure"));
+    ```
+
+    **VS Code Debugger Configuration:**
+
+    ```json
+    // .vscode/launch.json
+    {
+      "version": "0.2.0",
+      "configurations": [
+        {
+          "type": "node",
+          "request": "launch",
+          "name": "Debug Program",
+          "program": "${workspaceFolder}/src/index.ts",
+          "preLaunchTask": "tsc: build - tsconfig.json",
+          "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+          "skipFiles": ["<node_internals>/**"]
+        },
+        {
+          "type": "node",
+          "request": "launch",
+          "name": "Debug Tests",
+          "program": "${workspaceFolder}/node_modules/jest/bin/jest",
+          "args": ["--runInBand", "--no-cache"],
+          "console": "integratedTerminal"
+        }
+      ]
+    }
+    ```
+- sequence: 6
+  fragment_type: example
+  content: |
+    ### Python Debugging
+
+    ```python
+    # Built-in debugger (pdb)
+    import pdb
+
+    def calculate_total(items):
+        total = 0
+        pdb.set_trace()  # Debugger starts here
+
+        for item in items:
+            total += item.price * item.quantity
+
+        return total
+
+    # Breakpoint (Python 3.7+)
+    def process_order(order):
+        breakpoint()  # More convenient than pdb.set_trace()
+        # ... code
+
+    # Post-mortem debugging
+    try:
+        risky_operation()
+    except Exception:
+        import pdb
+        pdb.post_mortem()  # Debug at exception point
+
+    # IPython debugging (ipdb)
+    from ipdb import set_trace
+    set_trace()  # Better interface than pdb
+
+    # Logging for debugging
+    import logging
+    logging.basicConfig(level=logging.DEBUG)
+    logger = logging.getLogger(__name__)
+
+    def fetch_user(user_id):
+        logger.debug(f'Fetching user: {user_id}')
+        user = db.query(User).get(user_id)
+        logger.debug(f'Found user: {user}')
+        return user
+
+    # Profile performance
+    import cProfile
+    import pstats
+
+    cProfile.run('slow_function()', 'profile_stats')
+    stats = pstats.Stats('profile_stats')
+    stats.sort_stats('cumulative')
+    stats.print_stats(10)  # Top 10 slowest
+    ```
+- sequence: 7
+  fragment_type: example
+  content: |
+    ### Go Debugging
+
+    ```go
+    // Delve debugger
+    // Install: go install github.com/go-delve/delve/cmd/dlv@latest
+    // Run: dlv debug main.go
+
+    import (
+        "fmt"
+        "runtime"
+        "runtime/debug"
+    )
+
+    // Print stack trace
+    func debugStack() {
+        debug.PrintStack()
+    }
+
+    // Panic recovery with debugging
+    func processRequest() {
+        defer func() {
+            if r := recover(); r != nil {
+                fmt.Println("Panic:", r)
+                debug.PrintStack()
+            }
+        }()
+
+        // ... code that might panic
+    }
+
+    // Memory profiling
+    import _ "net/http/pprof"
+    // Visit http://localhost:6060/debug/pprof/
+
+    // CPU profiling
+    import (
+        "os"
+        "runtime/pprof"
+    )
+
+    f, _ := os.Create("cpu.prof")
+    pprof.StartCPUProfile(f)
+    defer pprof.StopCPUProfile()
+    // ... code to profile
+    ```
+- sequence: 8
+  fragment_type: execution
+  content: |
+    ## Advanced Debugging Techniques
 
     ### Technique 1: Binary Search Debugging
 
-
     ```bash
-
     # Git bisect for finding regression
-
     git bisect start
-
     git bisect bad                    # Current commit is bad
-
     git bisect good v1.0.0            # v1.0.0 was good
 
-
     # Git checks out middle commit
-
     # Test it, then:
-
     git bisect good   # if it works
-
-    git bisect bad    # if it''s broken
-
+    git bisect bad    # if it's broken
 
     # Continue until bug found
-
     git bisect reset  # when done
-
     ```
-
 
     ### Technique 2: Differential Debugging
 
-
     Compare working vs broken:
 
+    ```markdown
+    ## What's Different?
 
-    ```markdown'
+    | Aspect       | Working     | Broken         |
+    | ------------ | ----------- | -------------- |
+    | Environment  | Development | Production     |
+    | Node version | 18.16.0     | 18.15.0        |
+    | Data         | Empty DB    | 1M records     |
+    | User         | Admin       | Regular user   |
+    | Browser      | Chrome      | Safari         |
+    | Time         | During day  | After midnight |
+
+    Hypothesis: Time-based issue? Check timezone handling.
+    ```
 - sequence: 9
   fragment_type: execution
-  content: "## What's Different?\n\n| Aspect       | Working     | Broken         |\n| ------------ | ----------- | -------------- |\n| Environment  | Development | Production     |\n| Node version | 18.16.0     | 18.15.0        |\n| Data         | Empty DB    | 1M records     |\n| User         | Admin       | Regular user   |\n| Browser      | Chrome      | Safari         |\n| Time         | During day  | After midnight |\n\nHypothesis: Time-based issue? Check timezone handling.\n```\n\n### Technique 3: Trace Debugging\n\n```typescript\n// Function call tracing\nfunction trace(\n  target: any,\n  propertyKey: string,\n  descriptor: PropertyDescriptor,\n) {\n  const originalMethod = descriptor.value;\n\n  descriptor.value = function (...args: any[]) {\n    console.log(`Calling ${propertyKey} with args:`, args);\n    const result = originalMethod.apply(this, args);\n    console.log(`${propertyKey} returned:`, result);\n    return result;\n  };\n\n  return descriptor;\n}\n\nclass OrderService {\n  @trace\n  calculateTotal(items: Item[]): number {\n    return items.reduce((sum, item) => sum + item.price, 0);\n  }\n}\n```\n\n### Technique 4: Memory Leak Detection\n\n```typescript\n// Chrome DevTools Memory Profiler\n// 1. Take heap snapshot\n// 2. Perform action\n// 3. Take another snapshot\n// 4. Compare snapshots\n\n// Node.js memory debugging\nif (process.memoryUsage().heapUsed > 500 * 1024 * 1024) {\n  console.warn(\"High memory usage:\", process.memoryUsage());\n\n  // Generate heap dump\n  require(\"v8\").writeHeapSnapshot();\n}\n\n// Find memory leaks in tests\nlet beforeMemory: number;\n\nbeforeEach(() => {\n  beforeMemory = process.memoryUsage().heapUsed;\n});\n\nafterEach(() => {\n  const afterMemory = process.memoryUsage().heapUsed;\n  const diff = afterMemory - beforeMemory;\n\n  if (diff > 10 * 1024 * 1024) {\n    // 10MB threshold\n    console.warn(`Possible memory leak: ${diff / 1024 / 1024}MB`);\n  }\n});\n```"
+  content: |
+    ### Technique 3: Trace Debugging
+
+    ```typescript
+    // Function call tracing
+    function trace(
+      target: any,
+      propertyKey: string,
+      descriptor: PropertyDescriptor,
+    ) {
+      const originalMethod = descriptor.value;
+
+      descriptor.value = function (...args: any[]) {
+        console.log(`Calling ${propertyKey} with args:`, args);
+        const result = originalMethod.apply(this, args);
+        console.log(`${propertyKey} returned:`, result);
+        return result;
+      };
+
+      return descriptor;
+    }
+
+    class OrderService {
+      @trace
+      calculateTotal(items: Item[]): number {
+        return items.reduce((sum, item) => sum + item.price, 0);
+      }
+    }
+    ```
+
+    ### Technique 4: Memory Leak Detection
+
+    ```typescript
+    // Chrome DevTools Memory Profiler
+    // 1. Take heap snapshot
+    // 2. Perform action
+    // 3. Take another snapshot
+    // 4. Compare snapshots
+
+    // Node.js memory debugging
+    if (process.memoryUsage().heapUsed > 500 * 1024 * 1024) {
+      console.warn("High memory usage:", process.memoryUsage());
+
+      // Generate heap dump
+      require("v8").writeHeapSnapshot();
+    }
+
+    // Find memory leaks in tests
+    let beforeMemory: number;
+
+    beforeEach(() => {
+      beforeMemory = process.memoryUsage().heapUsed;
+    });
+
+    afterEach(() => {
+      const afterMemory = process.memoryUsage().heapUsed;
+      const diff = afterMemory - beforeMemory;
+
+      if (diff > 10 * 1024 * 1024) {
+        // 10MB threshold
+        console.warn(`Possible memory leak: ${diff / 1024 / 1024}MB`);
+      }
+    });
+    ```
 - sequence: 10
   fragment_type: execution
-  content: "## Strategies for Flaky Bugs\n\n1. **Add extensive logging**\n   - Log timing information\n   - Log all state transitions\n   - Log external interactions\n\n2. **Look for race conditions**\n   - Concurrent access to shared state\n   - Async operations completing out of order\n   - Missing synchronization\n\n3. **Check timing dependencies**\n   - setTimeout/setInterval\n   - Promise resolution order\n   - Animation frame timing\n\n4. **Stress test**\n   - Run many times\n   - Vary timing\n   - Simulate load\n```\n\n### Pattern 2: Performance Issues\n\n```markdown"
+  content: |
+    ## Debugging Patterns by Issue Type
+
+    ### Pattern 1: Intermittent Bugs
+
+    ```markdown
+    ## Strategies for Flaky Bugs
+
+    1. **Add extensive logging**
+       - Log timing information
+       - Log all state transitions
+       - Log external interactions
+
+    2. **Look for race conditions**
+       - Concurrent access to shared state
+       - Async operations completing out of order
+       - Missing synchronization
+
+    3. **Check timing dependencies**
+       - setTimeout/setInterval
+       - Promise resolution order
+       - Animation frame timing
+
+    4. **Stress test**
+       - Run many times
+       - Vary timing
+       - Simulate load
+    ```
+
+    ### Pattern 2: Performance Issues
+
+    ```markdown
+    ## Performance Debugging
+
+    1. **Profile first**
+       - Don't optimize blindly
+       - Measure before and after
+       - Find bottlenecks
+
+    2. **Common culprits**
+       - N+1 queries
+       - Unnecessary re-renders
+       - Large data processing
+       - Synchronous I/O
+
+    3. **Tools**
+       - Browser DevTools Performance tab
+       - Lighthouse
+       - Python: cProfile, line_profiler
+       - Node: clinic.js, 0x
+    ```
+
+    ### Pattern 3: Production Bugs
+
+    ```markdown
+    ## Production Debugging
+
+    1. **Gather evidence**
+       - Error tracking (Sentry, Bugsnag)
+       - Application logs
+       - User reports
+       - Metrics/monitoring
+
+    2. **Reproduce locally**
+       - Use production data (anonymized)
+       - Match environment
+       - Follow exact steps
+
+    3. **Safe investigation**
+       - Don't change production
+       - Use feature flags
+       - Add monitoring/logging
+       - Test fixes in staging
+    ```
 - sequence: 11
-  fragment_type: rationale
-  content: "## Performance Debugging\n\n1. **Profile first**\n   - Don't optimize blindly\n   - Measure before and after\n   - Find bottlenecks\n\n2. **Common culprits**\n   - N+1 queries\n   - Unnecessary re-renders\n   - Large data processing\n   - Synchronous I/O\n\n3. **Tools**\n   - Browser DevTools Performance tab\n   - Lighthouse\n   - Python: cProfile, line_profiler\n   - Node: clinic.js, 0x\n```\n\n### Pattern 3: Production Bugs\n\n```markdown"
-- sequence: 12
-  fragment_type: rationale
-  content: "## Production Debugging\n\n1. **Gather evidence**\n   - Error tracking (Sentry, Bugsnag)\n   - Application logs\n   - User reports\n   - Metrics/monitoring\n\n2. **Reproduce locally**\n   - Use production data (anonymized)\n   - Match environment\n   - Follow exact steps\n\n3. **Safe investigation**\n   - Don't change production\n   - Use feature flags\n   - Add monitoring/logging\n   - Test fixes in staging\n```"
-- sequence: 13
   fragment_type: guardrail
-  content: '## Best Practices
+  content: |
+    ## Best Practices
 
-
-    1. **Reproduce First**: Can''t fix what you can''t reproduce
-
+    1. **Reproduce First**: Can't fix what you can't reproduce
     2. **Isolate the Problem**: Remove complexity until minimal case
-
-    3. **Read Error Messages**: They''re usually helpful
-
+    3. **Read Error Messages**: They're usually helpful
     4. **Check Recent Changes**: Most bugs are recent
-
     5. **Use Version Control**: Git bisect, blame, history
-
     6. **Take Breaks**: Fresh eyes see better
-
     7. **Document Findings**: Help future you
+    8. **Fix Root Cause**: Not just symptoms
 
-    8. **Fix Root Cause**: Not just symptoms'
-- sequence: 14
-  fragment_type: guardrail
-  content: '## Common Debugging Mistakes
-
+    ## Common Debugging Mistakes
 
     - **Making Multiple Changes**: Change one thing at a time
-
     - **Not Reading Error Messages**: Read the full stack trace
-
-    - **Assuming It''s Complex**: Often it''s simple
-
+    - **Assuming It's Complex**: Often it's simple
     - **Debug Logging in Prod**: Remove before shipping
-
-    - **Not Using Debugger**: console.log isn''t always best
-
+    - **Not Using Debugger**: console.log isn't always best
     - **Giving Up Too Soon**: Persistence pays off
-
-    - **Not Testing the Fix**: Verify it actually works'
-- sequence: 15
+    - **Not Testing the Fix**: Verify it actually works
+- sequence: 12
   fragment_type: verification
-  content: '## When Stuck, Check:
+  content: |
+    ## Quick Debugging Checklist
 
+    ```markdown
+    ## When Stuck, Check:
 
     - [ ] Spelling errors (typos in variable names)
-
     - [ ] Case sensitivity (fileName vs filename)
-
     - [ ] Null/undefined values
-
     - [ ] Array index off-by-one
-
     - [ ] Async timing (race conditions)
-
     - [ ] Scope issues (closure, hoisting)
-
     - [ ] Type mismatches
-
     - [ ] Missing dependencies
-
     - [ ] Environment variables
-
     - [ ] File paths (absolute vs relative)
-
     - [ ] Cache issues (clear cache)
-
     - [ ] Stale data (refresh database)
-
-    ```'
+    ```
+- sequence: 13
+  fragment_type: execution
+  content: "## Build a Feedback Loop First\n\n**This is the skill.** Everything else is mechanical. If you have a fast, deterministic, agent-runnable pass/fail signal for the bug, you will find the cause \u2014 bisection, hypothesis testing, and instrumentation all just consume that signal. If you don't have one, no amount of staring at code will save you. **Spend disproportionate effort here.**\n\n### Construct one \u2014 try in roughly this order\n\n1. **Failing test** at whatever seam reaches the bug \u2014 unit, integration, or e2e.\n2. **Curl / HTTP script** against a running dev server.\n3. **CLI invocation** with a fixture input, diffing stdout against a known-good snapshot.\n4. **Headless browser script** (Playwright / Puppeteer) \u2014 drives the UI, asserts on DOM/console/network.\n5. **Replay a captured trace.** Save a real network request / payload / event log to disk; replay it through the code path in isolation.\n6. **Throwaway harness.** Spin up a minimal subset of the system (one service, mocked deps) that exercises the bug code path with a single function call.\n7. **Property / fuzz loop.** If the bug is \"sometimes wrong output\", run 1000 random inputs and look for the failure mode.\n8. **Bisection harness.** If the bug appeared between two known states (commit, dataset, version), automate \"boot at state X, check, repeat\" so you can `git bisect run` it.\n9. **Differential loop.** Run the same input through old-version vs new-version (or two configs) and diff outputs.\n10. **HITL bash script.** Last resort. If a human must click, drive *them* with a structured loop so the captured output still feeds back to the agent.\n\n### Iterate on the loop itself\n\nTreat the loop as a product. Once you have *a* loop, ask:\n\n- Can I make it **faster**? (Cache setup, skip unrelated init, narrow the test scope.)\n- Can I make the **signal sharper**? (Assert on the specific symptom, not \"didn't crash\".)\n- Can I make it **more deterministic**? (Pin time, seed RNG, isolate filesystem, freeze network.)\n\nA 30-second flaky loop is barely better than no loop. A 2-second deterministic loop is a debugging superpower.\n\n### Non-deterministic bugs\n\nThe goal is not a clean repro but a **higher reproduction rate**. Loop the trigger 100\xD7, parallelise, add stress, narrow timing windows, inject sleeps. A 50%-flake bug is debuggable; 1% is not \u2014 keep raising the rate until it is.\n\n### When you genuinely cannot build a loop\n\nStop and say so explicitly. List what you tried. Ask the operator for: (a) access to the environment that reproduces it, (b) a captured artifact (HAR file, log dump, core dump, screen recording with timestamps), or (c) permission to add temporary production instrumentation. **Do not proceed to hypothesise without a loop** \u2014 you'll generate plausible-sounding causes and have no way to falsify them.\n"
+- sequence: 14
+  fragment_type: guardrail
+  content: "## Phases After the Loop Exists\n\nHypothesise \u2192 instrument \u2192 fix \u2192 regression-test. Each step is cheap and bounded once the loop exists.\n\n1. **Hypothesise.** Generate **3\u20135 ranked hypotheses** before testing any of them. Single-hypothesis generation anchors on the first plausible idea. Each must be **falsifiable** \u2014 state the prediction: \"If X is the cause, then changing Y will make the bug disappear.\"\n2. **Show the ranked list to the operator before testing.** They often re-rank instantly (\"we just deployed a change to #3\"). Cheap checkpoint, big time saver. Don't block on it \u2014 proceed if AFK.\n3. **Instrument minimally.** One probe per prediction. Change one variable at a time. Tag every debug log with a unique prefix (e.g. `[DEBUG-a4f2]`) so cleanup is a single grep. Prefer debugger/REPL over logs when the env supports it.\n4. **Regression test before the fix** \u2014 but only if there is a *correct seam*. A correct seam exercises the real bug pattern as it occurs at the call site. If only a too-shallow seam is available, the test gives false confidence; **note that as a finding** instead. Architecture is preventing the bug from being locked down.\n5. **Cleanup checklist before declaring done:** original repro no longer reproduces, regression test passes (or absent-seam documented), all `[DEBUG-...]` instrumentation removed (`grep` the prefix), throwaway prototypes deleted, the correct hypothesis stated in the commit/PR message.\n6. **Then ask: what would have prevented this bug?** If the answer involves architectural change, hand off to a refactor flow with the specifics. Make the recommendation **after** the fix is in \u2014 you have more information now than when you started.\n"

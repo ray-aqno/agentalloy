@@ -1,0 +1,168 @@
+skill_type: domain
+skill_id: zoom-out
+canonical_name: Zoom Out (Architectural Context)
+category: engineering
+skill_class: domain
+domain_tags:
+- architecture
+- code-navigation
+- ubiquitous-language
+- comprehension
+- onboarding
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone (adapted from matt-pocock MIT)
+change_summary: adapted from mattpocock/skills MIT (engineering/zoom-out) — original
+  upstream prompt (~1 line) preserved verbatim in fragment 2; rationale, schematic
+  example, and anti-patterns authored by skillsmith. Example uses placeholder terms,
+  not a real codebase.
+raw_prose: '# Zoom Out
+
+
+  Request a higher-level perspective on an unfamiliar section of code. The agent climbs
+  one layer of abstraction, names the relevant modules and callers, and frames them
+  in the project''s ubiquitous-language vocabulary.
+
+
+  ## When to use
+
+
+  - Dropped into an unfamiliar area of the codebase.
+
+  - Reading a function whose role in the larger system is unclear.
+
+  - About to refactor or extend a module without confidence in its callers.
+
+  - Onboarding to a new repo or service.
+
+
+  ## The prompt
+
+
+  > I don''t know this area of code well. Go up a layer of abstraction. Give me a
+  map of all the relevant modules and callers, using the project''s domain glossary
+  vocabulary.
+
+
+  ## What good output looks like
+
+
+  A short map, not a deep dive. Names the modules, names the callers, uses domain
+  terms (from `CONTEXT.md` or equivalent glossary) rather than file paths. Identifies
+  which boundary the code sits on (transport, domain, persistence, integration). Avoids
+  walking through implementation details — that''s a separate request.
+
+
+  ## Why this works
+
+
+  Code agents default to the current file. They explain what the function does without
+  explaining what role it plays. Zooming out forces a system-level frame: where does
+  this fit, who depends on it, what would break if it changed. That frame is what
+  the operator needed in the first place.'
+fragments:
+- sequence: 1
+  fragment_type: rationale
+  content: '# Zoom Out
+
+
+    Request a higher-level perspective on an unfamiliar section of code. Code agents
+    default to the current file: they explain what the function does without explaining
+    what role it plays in the larger system.
+
+
+    **Use when:**
+
+    - Dropped into an unfamiliar area of the codebase.
+
+    - Reading a function whose role in the larger system is unclear.
+
+    - About to refactor or extend a module without confidence in its callers.
+
+    - Onboarding to a new repo or service.
+
+
+    **Why it works:** zooming out forces a system-level frame — where does this fit,
+    who depends on it, what would break if it changed. That frame is usually what
+    the operator needed in the first place, even if they asked a narrower question.'
+- sequence: 2
+  fragment_type: execution
+  content: '## The prompt
+
+
+    > I don''t know this area of code well. Go up a layer of abstraction. Give me
+    a map of all the relevant modules and callers, using the project''s domain glossary
+    vocabulary.
+
+
+    ## What good output looks like
+
+
+    - A short **map**, not a deep dive.
+
+    - Names the **modules** and the **callers**.
+
+    - Uses **domain terms** (from `CONTEXT.md`, `glossary.md`, or equivalent) rather
+    than raw file paths.
+
+    - Identifies which **boundary** the code sits on (transport / domain / persistence
+    / integration).
+
+    - Avoids walking through implementation details — that is a separate request.'
+- sequence: 3
+  fragment_type: example
+  content: '## Example shape (illustrative — substitute the project''s real terms)
+
+
+    Operator is reading some function `f` in module `M` and asks the agent to zoom
+    out.
+
+
+    **Bad response (default — line-by-line):**
+
+    > `f` calls `g`, then `h`, then `i`. It returns a value.
+
+
+    **Good response (zoomed out):**
+
+    > `f` is the **last step in <named workflow>** (domain term from the project glossary).
+    It is called from two places:
+
+    >
+
+    > - `<caller-1 path>` — <one-line role>.
+
+    > - `<caller-2 path>` — <one-line role>.
+
+    >
+
+    > It sits on the **<boundary name>** (transport / domain / persistence / integration).
+    Validation lives upstream in <upstream module>; persistence is downstream in <downstream
+    module>. Changes here ripple to both callers.
+
+    >
+
+    > Contract breaks if the return shape changes — both callers depend on it.
+
+
+    The shape is what matters: named workflow → callers with one-line roles → boundary
+    → ripple risk. Use the project''s actual glossary terms (from `CONTEXT.md`, `glossary.md`,
+    or equivalent), never invented ones.'
+- sequence: 4
+  fragment_type: guardrail
+  content: '## Anti-patterns
+
+
+    - **Walking through the function line by line.** That is the opposite of zooming
+    out. If the operator wanted that, they would have asked.
+
+    - **Listing every file in the repo.** Filter to the modules and callers that touch
+    this code path.
+
+    - **Skipping the domain glossary.** If `CONTEXT.md` (or equivalent) defines named
+    workflows, aggregates, or boundaries, use those terms. Raw file paths force the
+    operator to translate.
+
+    - **Mixing in implementation detail.** Save it for a follow-up. Zoom-out is the
+    map; the territory comes next.'

@@ -61,6 +61,7 @@ eval/runs/
 .DS_Store
 .vscode/
 .idea/
+.opencode/
 *.swp
 .claude/worktrees/
 

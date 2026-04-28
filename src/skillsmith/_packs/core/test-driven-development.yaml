@@ -8,7 +8,8 @@ always_apply: false
 phase_scope: null
 category_scope: null
 author: navistone
-change_summary: NXS-793 seed corpus load
+change_summary: NXS-793 seed corpus load; 2026-04-28 — added Anti-Pattern + Tracer-Bullet
+  fragment adapted from mattpocock/skills MIT (engineering/tdd)
 raw_prose: |
   # Test-Driven Development
   
@@ -384,6 +385,41 @@ raw_prose: |
   - [ ] Test names describe the behavior being verified
   - [ ] No tests were skipped or disabled
   - [ ] Coverage hasn't decreased (if tracked)
+
+  ## Anti-Pattern: Horizontal Slices
+
+  **DO NOT write all tests first, then all implementation.** Treating RED as "write all tests" and GREEN as "write all code" produces crap tests:
+
+  - Tests written in bulk verify *imagined* behavior, not actual behavior.
+  - They test the *shape* of things (data structures, function signatures) rather than user-facing behavior.
+  - They become insensitive to real changes — passing when behavior breaks, failing when behavior is fine.
+  - You commit to test structure before understanding the implementation, outrunning your headlights.
+
+  **Correct approach: vertical slices via tracer bullets.** One test → one implementation → repeat. Each test responds to what you learned from the previous cycle. Because you just wrote the code, you know exactly which behavior matters and how to verify it.
+
+  ```
+  WRONG (horizontal):
+    RED:   test1, test2, test3, test4, test5
+    GREEN: impl1, impl2, impl3, impl4, impl5
+
+  RIGHT (vertical / tracer-bullet):
+    RED→GREEN: test1→impl1
+    RED→GREEN: test2→impl2
+    RED→GREEN: test3→impl3
+  ```
+
+  **Two unbreakable rules:**
+
+  - Only enough code to pass the *current* test. Don't anticipate future tests.
+  - **Never refactor while RED.** Get to GREEN first, then refactor with the safety net.
+
+  **Per-cycle checklist:**
+
+  - [ ] Test describes behavior, not implementation
+  - [ ] Test uses the public interface only
+  - [ ] Test would survive an internal refactor
+  - [ ] Code is minimal for this test
+  - [ ] No speculative features added
 fragments:
     - sequence: 1
       fragment_type: setup
@@ -761,12 +797,49 @@ fragments:
       fragment_type: verification
       content: |
         ## Verification
-        
+
         After completing any implementation:
-        
+
         - [ ] Every new behavior has a corresponding test
         - [ ] All tests pass: `npm test`
         - [ ] Bug fixes include a reproduction test that failed before the fix
         - [ ] Test names describe the behavior being verified
         - [ ] No tests were skipped or disabled
         - [ ] Coverage hasn't decreased (if tracked)
+    - sequence: 8
+      fragment_type: guardrail
+      content: |
+        ## Anti-Pattern: Horizontal Slices
+
+        **DO NOT write all tests first, then all implementation.** Treating RED as "write all tests" and GREEN as "write all code" produces crap tests:
+
+        - Tests written in bulk verify *imagined* behavior, not actual behavior.
+        - They test the *shape* of things (data structures, function signatures) rather than user-facing behavior.
+        - They become insensitive to real changes — passing when behavior breaks, failing when behavior is fine.
+        - You commit to test structure before understanding the implementation, outrunning your headlights.
+
+        **Correct approach: vertical slices via tracer bullets.** One test → one implementation → repeat. Each test responds to what you learned from the previous cycle. Because you just wrote the code, you know exactly which behavior matters and how to verify it.
+
+        ```
+        WRONG (horizontal):
+          RED:   test1, test2, test3, test4, test5
+          GREEN: impl1, impl2, impl3, impl4, impl5
+
+        RIGHT (vertical / tracer-bullet):
+          RED→GREEN: test1→impl1
+          RED→GREEN: test2→impl2
+          RED→GREEN: test3→impl3
+        ```
+
+        **Two unbreakable rules:**
+
+        - Only enough code to pass the *current* test. Don't anticipate future tests.
+        - **Never refactor while RED.** Get to GREEN first, then refactor with the safety net.
+
+        **Per-cycle checklist:**
+
+        - [ ] Test describes behavior, not implementation
+        - [ ] Test uses the public interface only
+        - [ ] Test would survive an internal refactor
+        - [ ] Code is minimal for this test
+        - [ ] No speculative features added

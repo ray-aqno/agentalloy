@@ -1,0 +1,157 @@
+skill_type: domain
+skill_id: grill-me
+canonical_name: Grill Me (Plan Stress-Test Interview)
+category: design
+skill_class: domain
+domain_tags:
+- planning
+- alignment
+- decision-tree
+- requirements
+- interview
+- design-review
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone (adapted from matt-pocock MIT)
+change_summary: adapted from mattpocock/skills MIT (productivity/grill-me) — original
+  upstream prose (~4 lines) preserved verbatim in fragment 2; rationale, example session,
+  and anti-patterns authored by skillsmith to expand the skill into a retrievable form.
+raw_prose: '# Grill Me
+
+
+  Stress-test a plan or design by interviewing the operator relentlessly until every
+  branch of the decision tree is resolved. Use when the operator wants to harden a
+  design before writing code, or invokes /grill-me.
+
+
+  ## Core loop
+
+
+  Interview the operator about every aspect of the plan until reaching shared understanding.
+  Walk down each branch of the design tree, resolving dependencies between decisions
+  one-by-one. For each question, provide your recommended answer.
+
+
+  Ask the questions one at a time.
+
+
+  If a question can be answered by exploring the codebase, explore the codebase instead
+  of asking.
+
+
+  ## Why this works
+
+
+  Misalignment is the most common failure mode in software work. The operator believes
+  the agent understands; the agent makes plausible-sounding assumptions; the build
+  diverges. A grilling session collapses the assumption gap before code is written
+  — cheaper than re-doing the work.
+
+
+  ## Rules of cadence
+
+
+  - One question per turn. Never bundle.
+
+  - Always offer a recommended answer with the question, so the operator can confirm
+  by exception.
+
+  - Resolve dependencies first: if question B''s correct answer depends on the answer
+  to A, ask A first.
+
+  - When a question is answerable from the codebase, do not ask — read the code, state
+  the finding, and ask only if the operator should override it.
+
+  - End the session when no unresolved branch would change the implementation.'
+fragments:
+- sequence: 1
+  fragment_type: rationale
+  content: '# Grill Me
+
+
+    Stress-test a plan or design by interviewing the operator relentlessly until every
+    branch of the decision tree is resolved. Use when the operator wants to harden
+    a design before writing code, or invokes `/grill-me`.
+
+
+    **Why this matters:** misalignment is the most common failure mode in software
+    work. The operator believes the agent understands; the agent makes plausible-sounding
+    assumptions; the build diverges from intent. A grilling session collapses the
+    assumption gap before code is written — orders of magnitude cheaper than re-doing
+    the work.'
+- sequence: 2
+  fragment_type: execution
+  content: '## The interview loop
+
+
+    1. **Map the decision tree.** Identify the open questions implied by the operator''s
+    plan. Each branch is a question whose answer changes the implementation.
+
+
+    2. **Order by dependency.** If question B''s correct answer depends on the answer
+    to A, ask A first.
+
+
+    3. **For each question, ask one at a time.** Never bundle. Always offer your recommended
+    answer with the question — the operator can confirm by exception.
+
+
+    4. **Prefer the codebase to the operator.** If a question can be answered by reading
+    the code (file paths, existing conventions, current behaviour), read the code,
+    state the finding, and ask only if the operator should override it.
+
+
+    5. **Continue until no unresolved branch would change the implementation.** Then
+    summarise the resolved decisions and stop.'
+- sequence: 3
+  fragment_type: example
+  content: '## Example session
+
+
+    Operator: "I want to add a background job for sending order confirmation emails."
+
+
+    Agent (instead of running off and building):
+
+    > Q1: Synchronous on order creation (block the request until the email is queued)
+    or async via an outbox pattern (write to outbox row, separate worker delivers)?
+
+    > Recommended: outbox pattern — order writes do not depend on the mail provider
+    being up.
+
+
+    Operator: "Outbox."
+
+
+    > Q2: At-least-once or exactly-once delivery semantics? (Affects whether the email
+    body must be idempotent.)
+
+    > Recommended: at-least-once with an idempotency key in the email metadata —
+    duplicate sends are recoverable; missed sends are not.
+
+
+    [...continues until the tree is resolved...]
+
+
+    Final: "Decisions: outbox pattern, at-least-once delivery, idempotency key per
+    order, dead-letter after 5 retries, retention 30 days. Ready to plan."'
+- sequence: 4
+  fragment_type: guardrail
+  content: '## Anti-patterns
+
+
+    - **Bundling questions.** "What about auth, retries, and signing?" — operator
+    answers one, the others get lost. Ask one at a time.
+
+    - **Skipping the recommendation.** Open-ended questions stall. Always propose
+    an answer; operator confirms or redirects.
+
+    - **Asking what the codebase already says.** "What''s the current order schema?"
+    — read the file, don''t ask.
+
+    - **Stopping early.** If a branch is unresolved and would change the implementation,
+    keep grilling. Premature stopping defeats the point.
+
+    - **Stopping late.** If no remaining branch would change the implementation, stop.
+    Don''t fish for trivia.'

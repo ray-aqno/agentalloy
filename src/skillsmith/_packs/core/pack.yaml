@@ -1,5 +1,5 @@
 name: core
-version: 1.0.0
+version: 1.1.0
 description: Process & governance — TDD, code review, planning, debugging, git, brainstorming,
   verification, dispatching, dependency management. Always installed.
 author: navistone
@@ -13,6 +13,9 @@ skills:
 - skill_id: brainstorming
   file: brainstorming.yaml
   fragment_count: 10
+- skill_id: caveman
+  file: caveman.yaml
+  fragment_count: 5
 - skill_id: changelog-automation
   file: changelog-automation.yaml
   fragment_count: 6
@@ -30,7 +33,7 @@ skills:
   fragment_count: 6
 - skill_id: debugging-strategies
   file: debugging-strategies.yaml
-  fragment_count: 15
+  fragment_count: 14
 - skill_id: dependency-upgrade
   file: dependency-upgrade.yaml
   fragment_count: 14
@@ -49,6 +52,9 @@ skills:
 - skill_id: git-workflow-and-versioning
   file: git-workflow-and-versioning.yaml
   fragment_count: 6
+- skill_id: grill-me
+  file: grill-me.yaml
+  fragment_count: 4
 - skill_id: idea-refine
   file: idea-refine.yaml
   fragment_count: 8
@@ -69,7 +75,7 @@ skills:
   fragment_count: 10
 - skill_id: planning-and-task-breakdown
   file: planning-and-task-breakdown.yaml
-  fragment_count: 13
+  fragment_count: 14
 - skill_id: postmortem-writing
   file: postmortem-writing.yaml
   fragment_count: 11
@@ -99,7 +105,7 @@ skills:
   fragment_count: 9
 - skill_id: test-driven-development
   file: test-driven-development.yaml
-  fragment_count: 7
+  fragment_count: 8
 - skill_id: using-agent-skills
   file: using-agent-skills.yaml
   fragment_count: 10
