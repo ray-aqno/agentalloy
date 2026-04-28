@@ -1,5 +1,5 @@
 name: containers
-version: 1.0.0
+version: 1.1.0
 description: Container orchestration — Kubernetes, Helm, service mesh (Istio/Linkerd),
   mTLS, multi-cloud networking.
 author: navistone
@@ -33,4 +33,7 @@ skills:
   fragment_count: 7
 - skill_id: multi-cloud-architecture
   file: multi-cloud-architecture.yaml
+  fragment_count: 8
+- skill_id: podman-rootless
+  file: podman-rootless.yaml
   fragment_count: 8

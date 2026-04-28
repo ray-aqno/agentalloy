@@ -1,0 +1,426 @@
+skill_type: domain
+skill_id: prisma-orm-patterns
+canonical_name: Prisma ORM Patterns (Schema, Migrations, Client)
+category: engineering
+skill_class: domain
+domain_tags: [prisma, orm, postgres, mongodb, schema, migrations, typescript, nodejs]
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: Initial authoring — covers Prisma schema/model definition (current syntax with `prisma-client` generator), relations, migrations workflow, Prisma Client query patterns, transactions, soft deletes, type-safe queries. Sourced from docs.prisma.io 2026-04-28.
+raw_prose: |
+  # Prisma ORM Patterns
+
+  ## Overview
+
+  Prisma is a TypeScript-first ORM built around three pieces:
+  - **Prisma schema** (`schema.prisma`) — declarative model definitions
+  - **Prisma Client** — generated, fully-typed query builder
+  - **Prisma Migrate** — schema-to-SQL migration tool
+
+  Prisma generates a TypeScript client from your schema, so every query is type-checked against the actual model. Wrong field name = compile error, not runtime exception.
+
+  ## When to use
+
+  - You have a relational database (Postgres, MySQL, SQLite, SQL Server, CockroachDB) — Prisma's strongest support
+  - MongoDB if you want a typed query layer on top
+  - You want migrations that are diffable, reviewable, version-controlled SQL files
+  - You want one source of truth (the schema) for both DB structure and TS types
+
+  ## Stack alignment
+
+  Aligns with NestJS + Postgres + TypeScript. Prisma Client integrates as an injectable service in NestJS.
+
+fragments:
+  - sequence: 1
+    fragment_type: setup
+    content: |
+      ## Setup
+
+      ```bash
+      pnpm add -D prisma
+      pnpm add @prisma/client
+      pnpm prisma init --datasource-provider postgresql
+      ```
+
+      Generated layout:
+
+      ```
+      prisma/
+        schema.prisma           # source of truth: datasource + generator + models
+        migrations/             # generated SQL migration history (commit this)
+      .env                       # DATABASE_URL=postgresql://...
+      ```
+
+      ### `schema.prisma`
+
+      ```prisma
+      datasource db {
+        provider = "postgresql"
+        url      = env("DATABASE_URL")
+      }
+
+      generator client {
+        // Two generator providers exist:
+        //   "prisma-client-js"  ← legacy default created by `prisma init`
+        //   "prisma-client"     ← newer ESM-friendly variant; opt in by changing this line
+        provider = "prisma-client-js"
+        output   = "../src/generated/prisma"
+      }
+      ```
+
+      Commit the schema and the migrations directory; do NOT commit the generated client.
+
+      ### Connection URL conventions
+
+      ```
+      postgresql://user:pass@host:5432/dbname?schema=public&connection_limit=20&pool_timeout=20
+      ```
+
+      Set `connection_limit` explicitly in production. Prisma Client opens its own pool — set it lower than the Postgres `max_connections` divided by the number of app instances.
+
+  - sequence: 2
+    fragment_type: execution
+    content: |
+      ## Defining models
+
+      ```prisma
+      enum UserRole {
+        ADMIN
+        VENDOR
+        CUSTOMER
+      }
+
+      model User {
+        id        String   @id @default(cuid())
+        email     String   @unique
+        name      String?
+        role      UserRole @default(CUSTOMER)
+        createdAt DateTime @default(now())
+        updatedAt DateTime @updatedAt
+        deletedAt DateTime?               // soft-delete pattern
+        orders    Order[]
+
+        @@index([email])
+        @@index([deletedAt])
+      }
+
+      model Order {
+        id         String      @id @default(cuid())
+        userId     String
+        user       User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+        amount     Decimal     @db.Decimal(12, 2)   // money: never Float
+        currency   String      @db.Char(3)
+        status     OrderStatus @default(PENDING)
+        createdAt  DateTime    @default(now())
+        items      OrderItem[]
+
+        @@index([userId, createdAt])              // composite index
+      }
+
+      enum OrderStatus {
+        PENDING
+        PAID
+        SHIPPED
+        CANCELLED
+      }
+      ```
+
+      ### ID strategy
+
+      | Type | Use when |
+      |---|---|
+      | `Int @id @default(autoincrement())` | Internal-only IDs, sequential tables |
+      | `String @id @default(cuid())` | Public IDs, distributed (cuid sorts roughly chronologically) |
+      | `String @id @default(uuid())` | When uuid v4 is required for compatibility |
+      | `String @id` (no default) | Externally-provided IDs (e.g., Stripe `cust_*`) |
+
+      ### Native types
+
+      `@db.Decimal(12, 2)` for money. `@db.VarChar(255)` for fixed-length strings. `@db.Uuid` if your column is a Postgres `uuid` (faster than text). Prisma maps these to the correct DB column type.
+
+  - sequence: 3
+    fragment_type: execution
+    content: |
+      ## Migrations workflow
+
+      ```bash
+      # During development — generates migration + applies + regenerates client
+      pnpm prisma migrate dev --name add_orders
+
+      # CI / production — applies pending migrations, no schema changes
+      pnpm prisma migrate deploy
+
+      # When you've edited the schema but want to inspect SQL before committing
+      pnpm prisma migrate dev --create-only --name plan_change
+      # ... review prisma/migrations/<timestamp>_plan_change/migration.sql ...
+      pnpm prisma migrate dev    # apply
+
+      # Reset (DEV ONLY — drops everything)
+      pnpm prisma migrate reset
+      ```
+
+      ### Production rule
+
+      Never use `prisma db push` in production. It bypasses the migration history and skips the shadow database checks. Use `migrate dev` locally, commit the generated SQL, and `migrate deploy` in CI/CD.
+
+      ### Drift handling
+
+      If `migrate deploy` reports drift, the production DB has changes the migration history doesn't know about. **Stop and investigate.** Common causes: someone ran ad-hoc DDL, a previous deploy partially failed, a hot-fix bypassed Prisma. Resolve via `prisma migrate resolve --applied` or `--rolled-back`.
+
+  - sequence: 4
+    fragment_type: execution
+    content: |
+      ## Prisma Client query patterns
+
+      ```typescript
+      import { PrismaClient } from './generated/prisma';
+
+      const prisma = new PrismaClient();
+
+      // Find with selects (only fetches columns you need)
+      const user = await prisma.user.findUnique({
+        where: { email: 'a@b.com' },
+        select: { id: true, name: true, role: true },
+      });
+
+      // Eager-load relations
+      const userWithOrders = await prisma.user.findUnique({
+        where: { id: '...' },
+        include: {
+          orders: {
+            where: { status: 'PAID' },
+            orderBy: { createdAt: 'desc' },
+            take: 10,
+          },
+        },
+      });
+
+      // Pagination — cursor (preferred for large datasets)
+      const page = await prisma.order.findMany({
+        take: 20,
+        cursor: lastSeenCursor ? { id: lastSeenCursor } : undefined,
+        skip: lastSeenCursor ? 1 : 0,
+        orderBy: { id: 'asc' },
+      });
+
+      // Aggregate
+      const stats = await prisma.order.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+        _sum: { amount: true },
+      });
+      ```
+
+      ### Transactions
+
+      ```typescript
+      // Interactive transaction — runs your callback inside a single TX
+      const result = await prisma.$transaction(async (tx) => {
+        const order = await tx.order.create({ data: { /* ... */ } });
+        await tx.inventory.update({
+          where: { sku: 'X' },
+          data: { qty: { decrement: 1 } },
+        });
+        return order;
+      }, {
+        timeout: 5000,            // ms; default 5s
+        isolationLevel: 'Serializable',
+      });
+
+      // Sequential write — guarantees both happen, but each in its own TX (cheaper)
+      const [user, order] = await prisma.$transaction([
+        prisma.user.create({ data: { email: 'x@y' } }),
+        prisma.order.create({ data: { /* ... */ } }),
+      ]);
+      ```
+
+      Use the **interactive** form when you need to read-then-write atomically. Use the **array** form for batched independent writes.
+
+  - sequence: 5
+    fragment_type: execution
+    content: |
+      ## Soft-delete + auto-filter
+
+      Prisma doesn't ship a built-in soft-delete, but Client extensions make it ergonomic:
+
+      ```typescript
+      import { PrismaClient } from './generated/prisma';
+
+      const base = new PrismaClient();
+
+      export const prisma = base.$extends({
+        query: {
+          user: {
+            // Reads — exclude soft-deleted by default
+            async findMany({ args, query }) {
+              args.where = { ...args.where, deletedAt: null };
+              return query(args);
+            },
+            async findFirst({ args, query }) {
+              args.where = { ...args.where, deletedAt: null };
+              return query(args);
+            },
+            async findFirstOrThrow({ args, query }) {
+              args.where = { ...args.where, deletedAt: null };
+              return query(args);
+            },
+            async findUnique({ args, query }) {
+              args.where = { ...args.where, deletedAt: null };
+              return query(args);
+            },
+            async findUniqueOrThrow({ args, query }) {
+              args.where = { ...args.where, deletedAt: null };
+              return query(args);
+            },
+            async count({ args, query }) {
+              args.where = { ...args.where, deletedAt: null };
+              return query(args);
+            },
+            // Writes — convert delete to soft-delete; updates exclude already-deleted rows
+            async delete({ args }) {
+              return base.user.update({
+                where: args.where,
+                data: { deletedAt: new Date() },
+              });
+            },
+            async deleteMany({ args }) {
+              return base.user.updateMany({
+                where: args.where,
+                data: { deletedAt: new Date() },
+              });
+            },
+            async update({ args, query }) {
+              args.where = { ...args.where, deletedAt: null };
+              return query(args);
+            },
+            async updateMany({ args, query }) {
+              args.where = { ...args.where, deletedAt: null };
+              return query(args);
+            },
+          },
+        },
+      });
+      ```
+
+      All read paths and write paths are covered. Without overrides on every method, deleted rows leak through whichever method you missed.
+
+      Cost: every read adds a `WHERE deletedAt IS NULL` clause. Index it (`@@index([deletedAt])`).
+
+      ### NestJS service wrapper
+
+      ```typescript
+      // src/prisma/prisma.service.ts
+      import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+      import { PrismaClient } from '../generated/prisma';
+
+      @Injectable()
+      export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+        async onModuleInit() { await this.$connect(); }
+        async onModuleDestroy() { await this.$disconnect(); }
+      }
+      ```
+
+      Inject and use anywhere: `constructor(private readonly prisma: PrismaService) {}`.
+
+  - sequence: 6
+    fragment_type: example
+    content: |
+      ## End-to-end: order creation with stock decrement
+
+      ```typescript
+      import { Prisma } from '@prisma/client';   // for Prisma.Decimal
+
+      async function createOrder(userId: string, items: { sku: string; qty: number }[]) {
+        return prisma.$transaction(async (tx) => {
+          // 1. Lock inventory rows
+          const skus = items.map((i) => i.sku);
+          const stock = await tx.inventory.findMany({
+            where: { sku: { in: skus } },
+            // SELECT ... FOR UPDATE — Prisma supports this via raw, or
+            // use Postgres advisory locks for higher-level coordination
+          });
+
+          // 2. Validate stock
+          for (const item of items) {
+            const row = stock.find((s) => s.sku === item.sku);
+            if (!row || row.qty < item.qty) {
+              throw new Error(`Insufficient stock for ${item.sku}`);
+            }
+          }
+
+          // 3. Decrement
+          for (const item of items) {
+            await tx.inventory.update({
+              where: { sku: item.sku },
+              data: { qty: { decrement: item.qty } },
+            });
+          }
+
+          // 4. Create order
+          const order = await tx.order.create({
+            data: {
+              userId,
+              amount: stock.reduce(
+                (s, r, i) => s.add(r.price.mul(items[i].qty)),
+                new Prisma.Decimal(0),
+              ),
+              currency: 'USD',
+              items: {
+                create: items.map((i) => ({ sku: i.sku, qty: i.qty })),
+              },
+            },
+            include: { items: true },
+          });
+
+          return order;
+        }, { isolationLevel: 'Serializable', timeout: 10_000 });
+      }
+      ```
+
+      Real concurrent-safe stock decrement also wants Postgres `SELECT … FOR UPDATE` (run via `tx.$queryRaw`) or an advisory lock — see the postgres pack.
+
+  - sequence: 7
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      | Anti-pattern | Problem | Fix |
+      |---|---|---|
+      | `prisma db push` in CI/prod | Skips migration history, no rollback story | Always `migrate dev` locally → commit SQL → `migrate deploy` in CI |
+      | `Float` for money | Binary FP rounding errors compound | `Decimal` with `@db.Decimal(p, s)` and `decimal.js` (which Prisma uses) |
+      | N+1: `findMany` then loop fetching relations | Hundreds of round-trips | Use `include` or `select` to fetch in one query |
+      | Long-running interactive transactions | Holds row locks; can deadlock | Keep TX bodies < 100ms; do prep work outside |
+      | `findUnique` followed by `update` (TOCTOU) | Race conditions | `update({ where })` directly throws if missing; or use `upsert` |
+      | Indexes added without `@@index` | Slow queries in prod | Define every multi-column lookup with `@@index([cols...])` |
+      | One PrismaClient per request | Connection storm | Singleton instance, shared across the process |
+      | Catching all errors as `Error` | Loses Prisma's typed errors | Catch `Prisma.PrismaClientKnownRequestError` and inspect `.code` (e.g., `P2002` unique violation, `P2025` not found) |
+      | Using `any` types around Prisma results | Loses generated type safety | Use `Prisma.UserGetPayload<{ include: ... }>` for derived types |
+      | `select: { password: true }` returned to clients | Leaks secrets | Define a "safe user" DTO; never return password fields |
+
+      ### Schema hygiene
+
+      - Every model has a `createdAt`/`updatedAt`. Always.
+      - Every foreign key has an explicit `onDelete` policy (`Cascade`, `Restrict`, `SetNull`).
+      - Every public-facing ID is a `cuid()` or `uuid()`, not an autoincrement int (no enumeration attack surface).
+      - Every "where" lookup pattern that runs in production is backed by an index.
+
+  - sequence: 8
+    fragment_type: verification
+    content: |
+      ## Verification checklist
+
+      - [ ] `schema.prisma` is the only place models are defined (no parallel TypeORM/Sequelize)
+      - [ ] `pnpm prisma validate` passes
+      - [ ] Every migration in `prisma/migrations/` is committed and reviewed
+      - [ ] `prisma migrate deploy` runs in CI before app deploy
+      - [ ] No `prisma db push` calls in any CI/prod path
+      - [ ] PrismaClient is instantiated once per process (singleton or NestJS DI)
+      - [ ] All money columns are `Decimal` with `@db.Decimal(p, s)`, no Float
+      - [ ] `connection_limit` set in `DATABASE_URL` for production
+      - [ ] `onDelete` policy explicit on every relation
+      - [ ] `@@index` on every column used in a hot `where` clause
+      - [ ] Errors caught as `Prisma.PrismaClientKnownRequestError` where DB-specific behavior matters
+      - [ ] Generated client is gitignored (`src/generated/prisma/` or wherever your `output` points)
+      - [ ] Connection close on graceful shutdown (`prisma.$disconnect()` in SIGTERM handler)

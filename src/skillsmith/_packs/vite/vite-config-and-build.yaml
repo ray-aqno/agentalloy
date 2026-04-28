@@ -1,0 +1,430 @@
+skill_type: domain
+skill_id: vite-config-and-build
+canonical_name: Vite Config, Plugins, and Production Build
+category: engineering
+skill_class: domain
+domain_tags: [vite, react, frontend, build, hmr, esm, rolldown]
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: Initial authoring — vite.config.ts patterns, env vars (import.meta.env), aliases, plugins (React, SVGR, PWA), proxy for dev API, build modes, code splitting. Vite 6 / Rolldown bundler. Sourced from vite.dev 2026-04-28.
+raw_prose: |
+  # Vite Config, Plugins, and Production Build
+
+  ## Overview
+
+  Vite is the de-facto frontend dev server + build tool for modern web apps. Two parts:
+  - **Dev server** — native ESM, no bundling; HMR is near-instant
+  - **Build** — production bundling via **Rolldown** (Vite 6+) — the rust-based replacement for Rollup
+
+  Requires Node.js 20.19+ or 22.12+.
+
+  ## When to use
+
+  - React, Vue, Svelte, Solid, vanilla TS — all first-class
+  - You want HMR that doesn't slow down as the codebase grows
+  - You want minimal config out of the box and escape hatches when you need them
+
+  ## Stack alignment
+
+  Pairs with React 18 + TypeScript per the user's frontend stack. `pnpm create vite my-app --template react-ts` is the one-liner.
+
+fragments:
+  - sequence: 1
+    fragment_type: setup
+    content: |
+      ## Scaffolding
+
+      ```bash
+      pnpm create vite my-app --template react-ts
+      cd my-app
+      pnpm install
+      pnpm dev
+      ```
+
+      Templates: `vanilla`, `vanilla-ts`, `react`, `react-ts`, `vue`, `vue-ts`, `svelte`, `svelte-ts`, `lit`, `lit-ts`, `preact`, `preact-ts`, `solid`, `solid-ts`, `qwik`, `qwik-ts`.
+
+      Generated layout:
+
+      ```
+      my-app/
+        public/             # static files; copied as-is to dist root
+        src/
+          main.tsx          # entry
+          App.tsx
+          index.css
+        index.html          # entry HTML — Vite reads this directly
+        vite.config.ts
+        tsconfig.json
+        package.json
+      ```
+
+      ### Default scripts
+
+      ```json
+      {
+        "scripts": {
+          "dev": "vite",                  // dev server with HMR
+          "build": "tsc -b && vite build", // type-check then bundle
+          "preview": "vite preview"        // serve dist/ locally to test prod build
+        }
+      }
+      ```
+
+      `vite preview` is for local prod-bundle testing only — not a real prod server. Deploy `dist/` to a static host or CDN.
+
+  - sequence: 2
+    fragment_type: execution
+    content: |
+      ## `vite.config.ts` essentials
+
+      ```typescript
+      import { defineConfig, loadEnv } from 'vite';
+      import react from '@vitejs/plugin-react';
+      import path from 'node:path';
+
+      export default defineConfig(({ mode }) => {
+        // Make .env.* values available before plugin construction
+        const env = loadEnv(mode, process.cwd(), '');
+
+        return {
+          plugins: [react()],
+
+          // Path aliases — match these in tsconfig.json `paths` too
+          resolve: {
+            alias: {
+              '@': path.resolve(__dirname, 'src'),
+              '@/components': path.resolve(__dirname, 'src/components'),
+            },
+          },
+
+          // Dev server
+          server: {
+            port: 5173,
+            host: '0.0.0.0',           // accept LAN connections (e.g., mobile testing)
+            strictPort: true,           // fail rather than auto-increment
+            proxy: {
+              '/api': {
+                target: env.VITE_API_URL ?? 'http://localhost:3000',
+                changeOrigin: true,
+                rewrite: (p) => p.replace(/^\/api/, ''),
+              },
+            },
+          },
+
+          // Production build
+          build: {
+            // Vite 6 default = Baseline Widely Available (browsers ≥ 2.5 years old).
+            // Override only when you need specific transforms — e.g., 'es2022' to
+            // skip lowering optional-chaining, or 'es2017' for older browsers.
+            // Leave the default by simply omitting `target`.
+            target: 'es2022',
+            sourcemap: true,            // ship to error tracker; don't expose publicly
+            cssCodeSplit: true,
+            rollupOptions: {
+              output: {
+                manualChunks: {
+                  vendor: ['react', 'react-dom', 'react-router-dom'],
+                },
+              },
+            },
+          },
+
+          // Optimize deps for cold dev start
+          optimizeDeps: {
+            include: ['react', 'react-dom'],
+          },
+        };
+      });
+      ```
+
+      ### tsconfig.json paths must mirror
+
+      ```json
+      {
+        "compilerOptions": {
+          "baseUrl": ".",
+          "paths": {
+            "@/*": ["src/*"],
+            "@/components/*": ["src/components/*"]
+          }
+        }
+      }
+      ```
+
+      Vite resolves at runtime; TypeScript needs the same map for IDE / tsc to work.
+
+  - sequence: 3
+    fragment_type: execution
+    content: |
+      ## Environment variables
+
+      Vite exposes env vars to client code under `import.meta.env`. ONLY variables prefixed `VITE_` are exposed — everything else stays server-side / build-time-only.
+
+      ```bash
+      # .env (committed; non-secret defaults)
+      VITE_API_URL=http://localhost:3000
+      VITE_APP_NAME=Skillsmith
+
+      # .env.local (gitignored; per-developer overrides)
+      VITE_API_URL=https://staging.api.example.com
+
+      # .env.production (per-mode)
+      VITE_API_URL=https://api.example.com
+      ```
+
+      ```typescript
+      // src/config.ts
+      const apiUrl = import.meta.env.VITE_API_URL;
+      const isDev = import.meta.env.DEV;          // true in dev
+      const isProd = import.meta.env.PROD;        // true in build
+      ```
+
+      ### Type the env
+
+      ```typescript
+      // src/vite-env.d.ts
+      /// <reference types="vite/client" />
+
+      interface ImportMetaEnv {
+        readonly VITE_API_URL: string;
+        readonly VITE_APP_NAME: string;
+      }
+
+      interface ImportMeta {
+        readonly env: ImportMetaEnv;
+      }
+      ```
+
+      ### Hard rule
+
+      **Never put secrets in `VITE_` vars.** Anything prefixed `VITE_` is inlined into the client bundle and visible in DevTools. Secrets stay on the backend; the client gets short-lived tokens via authenticated requests.
+
+  - sequence: 4
+    fragment_type: execution
+    content: |
+      ## Plugins worth knowing
+
+      Vite's plugin API extends Rollup's; most Rollup plugins work too.
+
+      ### `@vitejs/plugin-react` — Fast Refresh + JSX
+
+      ```typescript
+      import react from '@vitejs/plugin-react';
+      plugins: [react()];
+      ```
+
+      For SWC-based (faster) transforms:
+
+      ```bash
+      pnpm add -D @vitejs/plugin-react-swc
+      ```
+
+      ### `vite-plugin-svgr` — import SVG as React component
+
+      ```typescript
+      import svgr from 'vite-plugin-svgr';
+      plugins: [svgr()];
+
+      // Then:
+      import Logo from './logo.svg?react';
+      <Logo width={32} height={32} />;
+      ```
+
+      ### `vite-plugin-pwa` — service worker + manifest
+
+      ```typescript
+      import { VitePWA } from 'vite-plugin-pwa';
+      plugins: [
+        VitePWA({
+          registerType: 'autoUpdate',
+          manifest: { name: 'My App', short_name: 'App', theme_color: '#000' },
+          workbox: { globPatterns: ['**/*.{js,css,html,svg}'] },
+        }),
+      ];
+      ```
+
+      ### `unplugin-icons` — type-safe icon imports
+
+      ```typescript
+      import Icons from 'unplugin-icons/vite';
+      plugins: [Icons({ compiler: 'jsx', jsx: 'react' })];
+
+      // src/components/Header.tsx
+      import IconHome from '~icons/lucide/home';
+      <IconHome />;
+      ```
+
+      ### `vite-tsconfig-paths` — pick up tsconfig paths automatically
+
+      Useful when you want one source of truth for path aliases:
+
+      ```typescript
+      import tsconfigPaths from 'vite-tsconfig-paths';
+      plugins: [tsconfigPaths()];
+      // Drop the `resolve.alias` block; tsconfig is now authoritative.
+      ```
+
+  - sequence: 5
+    fragment_type: example
+    content: |
+      ## Realistic full config (React 18 + Vitest + proxy + manual chunks)
+
+      ```typescript
+      import { defineConfig, loadEnv } from 'vite';
+      import react from '@vitejs/plugin-react-swc';
+      import tsconfigPaths from 'vite-tsconfig-paths';
+      import svgr from 'vite-plugin-svgr';
+
+      export default defineConfig(({ mode }) => {
+        const env = loadEnv(mode, process.cwd(), '');
+
+        return {
+          plugins: [
+            tsconfigPaths(),
+            react(),
+            svgr({ include: '**/*.svg?react' }),
+          ],
+
+          server: {
+            port: 5173,
+            proxy: {
+              '/api': {
+                target: env.VITE_API_URL ?? 'http://localhost:3000',
+                changeOrigin: true,
+                rewrite: (p) => p.replace(/^\/api/, ''),
+              },
+              '/ws': {
+                target: env.VITE_WS_URL ?? 'ws://localhost:3000',
+                ws: true,
+                changeOrigin: true,
+              },
+            },
+          },
+
+          build: {
+            target: 'es2022',
+            sourcemap: true,
+            chunkSizeWarningLimit: 600,
+            rollupOptions: {
+              output: {
+                manualChunks(id) {
+                  if (id.includes('node_modules')) {
+                    if (id.includes('react')) return 'react-vendor';
+                    if (id.includes('@tanstack')) return 'query-vendor';
+                    return 'vendor';
+                  }
+                },
+              },
+            },
+          },
+
+          // Vitest config (when using Vite + Vitest)
+          test: {
+            environment: 'jsdom',
+            setupFiles: ['./src/test/setup.ts'],
+            globals: true,
+            coverage: { provider: 'v8', reporter: ['text', 'html'] },
+          },
+        };
+      });
+      ```
+
+      Use `pnpm vite build --mode staging` to load `.env.staging` for staging-specific builds.
+
+  - sequence: 6
+    fragment_type: example
+    content: |
+      ## Bundle analysis + performance
+
+      Inspect what's making your bundle big:
+
+      ```bash
+      pnpm add -D rollup-plugin-visualizer
+      ```
+
+      ```typescript
+      import { visualizer } from 'rollup-plugin-visualizer';
+
+      plugins: [
+        visualizer({
+          filename: 'dist/stats.html',
+          open: true,
+          gzipSize: true,
+          brotliSize: true,
+        }),
+      ];
+      ```
+
+      Run `pnpm build` and `dist/stats.html` opens with a treemap of every module's size. Common findings:
+      - `lodash` imported as `import _ from 'lodash'` — replace with named imports OR switch to `lodash-es`.
+      - `moment` — drop for `date-fns` or `dayjs`.
+      - Duplicate React because of mixed CommonJS/ESM dependency — set `resolve.dedupe: ['react', 'react-dom']`.
+
+      ### Code splitting
+
+      ```typescript
+      // Route-level lazy load
+      const Dashboard = lazy(() => import('./pages/Dashboard'));
+
+      // Vendor chunks for cache-friendly long-term caching
+      build: {
+        rollupOptions: {
+          output: {
+            manualChunks: {
+              react: ['react', 'react-dom'],
+              router: ['react-router-dom'],
+              query: ['@tanstack/react-query'],
+            },
+          },
+        },
+      }
+      ```
+
+      Manual chunks let `react-vendor.js` stay byte-stable while `index.js` changes — users keep the cached vendor file across deploys.
+
+  - sequence: 7
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      | Anti-pattern | Problem | Fix |
+      |---|---|---|
+      | Secrets in `VITE_` env vars | Inlined into the client bundle, visible in DevTools | Backend proxies; client only ever sees public config |
+      | Path aliases in vite but not tsconfig (or vice versa) | Works in dev, broken at build OR works at build, broken in IDE | Use `vite-tsconfig-paths` to keep one source |
+      | Importing `node:` modules in client code | Crashes at build / runtime | Server code goes through a backend; client has no Node modules |
+      | `vite preview` exposed publicly | Not a hardened production server | Deploy `dist/` to S3/CloudFront/Vercel/Netlify; preview is local-only |
+      | Missing `cssCodeSplit` consideration | Big single CSS file for SPAs | Default is `true` (split per chunk) — leave it on |
+      | `import 'lodash'` (default) | Pulls the entire lib | Named imports (`import { debounce } from 'lodash-es'`) or replace with platform built-ins |
+      | Sourcemaps disabled in production | Stack traces unintelligible in error tracker | `sourcemap: true`; upload sourcemaps to Sentry/Datadog (don't expose `.map` files publicly if your code is sensitive) |
+      | Forgetting `--host 0.0.0.0` for mobile testing | Phone can't connect to dev server | `vite --host` or set `server.host: '0.0.0.0'` |
+      | Mixing CJS and ESM packages | Duplicate React, weird import errors | `resolve.dedupe`, prefer `*-es` variants |
+      | Dynamic `import()` paths Vite can't analyze | Build fails OR runtime 404 | Use template literals with a known prefix: `import(`./pages/${page}.tsx`)` so Vite can glob-prebuild |
+
+      ### Dev vs. prod parity
+
+      Vite's dev server (ESM, unbundled) behaves slightly differently from prod (Rolldown bundle). Bugs that only show up in prod usually involve:
+      - **Side-effect imports** — Rolldown tree-shakes more aggressively. Mark side-effecting modules in package.json: `"sideEffects": ["./src/effects.ts"]`.
+      - **Module resolution** — dev resolves at request time; prod resolves at build time. A path that works in dev may fail at build if the file isn't statically importable.
+      - **Env vars** — `import.meta.env.MODE` differs.
+
+      Always test the prod build (`pnpm build && pnpm preview`) before deploying.
+
+  - sequence: 8
+    fragment_type: verification
+    content: |
+      ## Verification checklist
+
+      - [ ] Node.js version ≥ 20.19 or ≥ 22.12 (matches Vite's requirement)
+      - [ ] Path aliases match between `vite.config.ts` and `tsconfig.json` (or use `vite-tsconfig-paths`)
+      - [ ] No secrets in any `VITE_*` env var
+      - [ ] `import.meta.env` typed via `vite-env.d.ts`
+      - [ ] `pnpm build` runs `tsc -b` first (catches type errors before bundling)
+      - [ ] `pnpm preview` serves the production build cleanly (no console errors, no missing assets)
+      - [ ] Bundle analysis shows no surprise vendors (`rollup-plugin-visualizer`)
+      - [ ] Manual chunks defined for stable vendors (react, query libs) so user caches survive deploys
+      - [ ] Sourcemaps generated (and uploaded to error tracker, not publicly exposed if code is sensitive)
+      - [ ] Dev server proxies match backend routes; backend never reached at a different origin in dev
+      - [ ] CI runs `pnpm build` to catch prod-only failures (tree-shaking, dynamic imports)
+      - [ ] HMR works for: React component file (preserves state via Fast Refresh), CSS file (instant). `.env*` changes auto-restart the dev server (Vite watches them); no manual restart needed.

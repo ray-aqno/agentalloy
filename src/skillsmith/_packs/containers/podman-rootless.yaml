@@ -1,0 +1,358 @@
+skill_type: domain
+skill_id: podman-rootless
+canonical_name: Podman (Rootless Containers, Compose, Systemd Integration)
+category: engineering
+skill_class: domain
+domain_tags: [podman, containers, rootless, podman-compose, systemd, oci, quadlet]
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: Initial authoring — daemonless rootless model, podman-compose vs. podman play kube vs. Quadlet, image build, network namespace gotchas, systemd-managed containers.
+raw_prose: |
+  # Podman (Rootless Containers, Compose, Systemd Integration)
+
+  ## Overview
+
+  Podman is a daemonless, OCI-compatible container engine. Drop-in CLI compatible with Docker (`alias docker=podman` works for most commands), but architecturally different:
+  - **No central daemon** — each `podman` invocation forks a short-lived process. No background root daemon to attack.
+  - **Rootless by default** — containers run as your user, isolated via user namespaces. No setuid root, no `docker.sock` privilege escalation.
+  - **Systemd-native** — Quadlet integrates containers as systemd units; `podman generate systemd` for one-off conversions.
+  - **No swarm** — for clustering, podman expects k8s. Single-host orchestration via compose or Quadlet.
+
+  ## When to choose podman over docker
+
+  - You don't want a long-running root daemon
+  - You're running on systemd (every modern Linux distro)
+  - You want OCI compatibility (build with `buildah`, run with `podman`, push to any OCI registry)
+  - Multi-tenant workstations or CI runners where users shouldn't share a docker.sock
+
+fragments:
+  - sequence: 1
+    fragment_type: setup
+    content: |
+      ## Setup (Linux, rootless mode)
+
+      ```bash
+      # Fedora / RHEL
+      sudo dnf install -y podman podman-compose
+
+      # Ubuntu / Debian (24.04+ has packaged versions; older needs the Kubic repo)
+      sudo apt install -y podman podman-compose
+
+      # macOS (via podman-machine, a Linux VM)
+      brew install podman
+      podman machine init
+      podman machine start
+      ```
+
+      ### macOS caveat
+
+      `podman` on macOS is actually `podman` running inside a small Linux VM (`podman machine`). Implications:
+      - **Volumes**: mounting a host path mounts a path inside the VM, which is bridged to your Mac's filesystem via gRPC-FUSE. File-watch / inotify is slower than native Linux.
+      - **Networking**: containers are reachable via `localhost` from your Mac because the VM forwards ports — but inter-host scenarios (LAN access to the container) require explicit `podman machine` configuration.
+      - **Resources**: the VM has its own RAM/CPU caps. Tune with `podman machine init --memory 8192 --cpus 4`.
+      - **Performance**: workloads that hammer fs I/O run noticeably slower than on Linux. Move dev DBs into named volumes (kept inside the VM) rather than bind-mounting the project dir.
+
+      ### Verify rootless
+
+      ```bash
+      podman info --format '{{.Host.Security.Rootless}}'   # → true
+      id -u                                                  # → your uid (not 0)
+      podman run --rm alpine id                              # → uid 0 INSIDE; mapped to your uid OUTSIDE
+      ```
+
+      ### subuid / subgid (one-time setup if missing)
+
+      Rootless containers map a range of your user's subordinate UIDs/GIDs into the container.
+
+      ```bash
+      grep $(whoami) /etc/subuid /etc/subgid
+      # If empty, on Fedora/RHEL the install handles it. Otherwise:
+      sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $(whoami)
+      podman system migrate
+      ```
+
+      ### Docker-compat alias (optional)
+
+      ```bash
+      # ~/.bashrc
+      alias docker=podman
+      # podman ships a docker socket activation unit; enable it for tools that talk to /var/run/docker.sock
+      systemctl --user enable --now podman.socket
+      export DOCKER_HOST="unix:///run/user/$(id -u)/podman/podman.sock"
+      ```
+
+  - sequence: 2
+    fragment_type: execution
+    content: |
+      ## Day-to-day commands
+
+      Identical to Docker for the common cases:
+
+      ```bash
+      # Run a one-off
+      podman run --rm -it alpine sh
+
+      # Detached service with port + volume
+      podman run -d --name redis \
+        -p 6379:6379 \
+        -v redis-data:/data \
+        --restart=on-failure \
+        docker.io/redis:7-alpine
+
+      # Build (Containerfile or Dockerfile both work)
+      podman build -t myapp:latest .
+
+      # Push to a registry
+      podman login ghcr.io
+      podman push myapp:latest ghcr.io/me/myapp:latest
+
+      # Inspect / logs / exec
+      podman ps --all
+      podman logs --follow redis
+      podman exec -it redis redis-cli
+      podman inspect redis | jq '.[0].State'
+      ```
+
+      ### Image storage
+
+      Rootless podman stores images at `~/.local/share/containers/storage/` — separate from any system docker. Images aren't shared across users.
+
+      ### Cleanup
+
+      ```bash
+      podman system prune -a --volumes    # everything not in use
+      podman system df                    # disk usage report
+      ```
+
+      ### Pulling from non-default registries
+
+      Unlike Docker, podman doesn't default to `docker.io`. Specify explicitly OR configure `~/.config/containers/registries.conf`:
+
+      ```toml
+      unqualified-search-registries = ["docker.io", "ghcr.io", "quay.io"]
+      ```
+
+  - sequence: 3
+    fragment_type: execution
+    content: |
+      ## podman-compose
+
+      Reads `docker-compose.yml`. Supports most compose v3 features. Some gaps vs. Docker Compose: limited swarm-only directives, occasional driver mismatches.
+
+      ```yaml
+      # compose.yaml
+      services:
+        api:
+          build: .
+          ports:
+            - "3000:3000"
+          environment:
+            DATABASE_URL: postgresql://app:app@db:5432/app
+          depends_on:
+            db:
+              condition: service_healthy
+          restart: unless-stopped
+
+        db:
+          image: docker.io/postgres:16-alpine
+          environment:
+            POSTGRES_USER: app
+            POSTGRES_PASSWORD: app
+            POSTGRES_DB: app
+          volumes:
+            - pgdata:/var/lib/postgresql/data
+          healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U app"]
+            interval: 5s
+            timeout: 3s
+            retries: 5
+
+      volumes:
+        pgdata:
+      ```
+
+      ```bash
+      podman compose up -d                  # podman 4.7+ subcommand
+      podman compose logs --follow api
+      podman compose down -v                # -v removes named volumes too
+      ```
+
+      Note: `podman compose` is a thin wrapper that shells out to whichever compose tool is on PATH (`podman-compose` Python package, OR Docker Compose v2 binary if installed). It is not a native re-implementation. Behavior follows the underlying tool — install `podman-compose` for the more podman-aware experience, or rely on Docker Compose v2 if you want stricter Docker-compat semantics.
+
+      ### Networking gotcha (rootless)
+
+      Rootless podman uses `slirp4netns` or `pasta` for networking. Inter-container DNS works inside a podman-created network, but **the default network behavior differs from Docker**:
+      - Each compose run creates a network named after the project; services resolve each other by service name.
+      - For a service to receive connections from another podman invocation, both must be on the same network: `podman network create shared && podman run --network shared ...`
+      - Host port binding still works via slirp4netns; no `iptables` MASQUERADE under root.
+
+  - sequence: 4
+    fragment_type: execution
+    content: |
+      ## Quadlet — first-class systemd integration
+
+      Quadlet (podman 4.4+) is the modern way to run a container as a systemd service. Drop a `.container` file into `~/.config/containers/systemd/`, reload systemd, and you have a managed service with restart policies, logging via journald, and dependency ordering.
+
+      ```ini
+      # ~/.config/containers/systemd/redis.container
+      [Unit]
+      Description=Redis (rootless)
+      After=network-online.target
+
+      [Container]
+      Image=docker.io/redis:7-alpine
+      ContainerName=redis
+      PublishPort=6379:6379
+      Volume=redis-data:/data
+      AutoUpdate=registry
+      Network=app.network
+      Environment=TZ=UTC
+
+      [Service]
+      Restart=on-failure
+      TimeoutStartSec=900
+
+      [Install]
+      WantedBy=default.target
+      ```
+
+      ```bash
+      systemctl --user daemon-reload
+      systemctl --user start redis             # name = filename without .container
+      systemctl --user enable redis            # autostart at user login
+      journalctl --user -u redis --follow      # logs via journald
+      ```
+
+      Companion `.network`, `.volume`, `.kube`, `.image` files orchestrate higher-level setups. Quadlet replaces the old `podman generate systemd` flow (which is now considered legacy).
+
+      ### Auto-update
+
+      `AutoUpdate=registry` in the .container file enables `podman auto-update` to pull and restart on new image digests:
+
+      ```bash
+      systemctl --user enable --now podman-auto-update.timer
+      ```
+
+      Daily check, restart only when the image actually changed.
+
+  - sequence: 5
+    fragment_type: example
+    content: |
+      ## Building a multi-stage image (Containerfile)
+
+      ```dockerfile
+      # Containerfile (or Dockerfile — podman accepts both filenames)
+      FROM docker.io/node:24-alpine AS builder
+      WORKDIR /app
+      COPY package.json pnpm-lock.yaml ./
+      RUN corepack enable && pnpm install --frozen-lockfile
+      COPY . .
+      RUN pnpm build && pnpm prune --prod
+
+      FROM docker.io/node:24-alpine
+      WORKDIR /app
+      RUN addgroup -S app && adduser -S -G app app
+      COPY --from=builder --chown=app:app /app/dist ./dist
+      COPY --from=builder --chown=app:app /app/node_modules ./node_modules
+      COPY --from=builder --chown=app:app /app/package.json ./
+      USER app
+      EXPOSE 3000
+      ENV NODE_ENV=production
+      CMD ["node", "dist/main.js"]
+      ```
+
+      Build:
+
+      ```bash
+      podman build -t myapp:1.0.0 -f Containerfile .
+      ```
+
+      ### Build with `buildah` (no daemon, scriptable)
+
+      ```bash
+      ctr=$(buildah from docker.io/node:24-alpine)
+      buildah copy "$ctr" . /app
+      buildah run "$ctr" -- npm ci --omit=dev
+      buildah config --cmd "node /app/dist/main.js" "$ctr"
+      buildah commit "$ctr" myapp:1.0.0
+      ```
+
+  - sequence: 6
+    fragment_type: example
+    content: |
+      ## Skillsmith service as a Quadlet (real-world)
+
+      The user's existing `compose.yaml` for skillsmith maps cleanly to Quadlet:
+
+      ```ini
+      # ~/.config/containers/systemd/skillsmith.container
+      [Unit]
+      Description=Skillsmith composition service
+      After=network-online.target
+
+      [Container]
+      Image=ghcr.io/nrmeyers/skillsmith:latest
+      ContainerName=skillsmith
+      PublishPort=47950:47950
+      EnvironmentFile=%h/.config/skillsmith/.env
+      Volume=%h/.local/share/skillsmith/corpus:/corpus:Z
+      AutoUpdate=registry
+
+      [Service]
+      Restart=on-failure
+      TimeoutStartSec=300
+
+      [Install]
+      WantedBy=default.target
+      ```
+
+      ```bash
+      systemctl --user daemon-reload
+      systemctl --user enable --now skillsmith
+      ```
+
+      `%h` expands to the user's home dir. The `:Z` mount option relabels for SELinux (no-op on Ubuntu).
+
+  - sequence: 7
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      | Anti-pattern | Problem | Fix |
+      |---|---|---|
+      | Running `sudo podman` | Defeats rootless, falls back to root containers | Use rootless; only use `sudo` for system-wide services in `/etc/containers/systemd/` |
+      | Mounting host paths the user can't read | Permission denied because of UID mapping | Mount under your home OR use `:U` to chown into the container's mapped UID |
+      | Privileged port bind in rootless | `PublishPort=80` fails (ports < 1024) | **Preferred**: bind to a high port (8080) + reverse proxy on the host (Caddy/nginx/Traefik). **Alternatives**: `setcap cap_net_bind_service=+ep $(which podman)` per-binary, OR system-wide `sysctl net.ipv4.ip_unprivileged_port_start=80` (affects all unprivileged users) |
+      | Image pinned by tag, not digest, in production | Tag can move under you | Pin by digest: `image@sha256:...` |
+      | `:latest` in production | Surprise breaking changes | Tagged immutable versions; auto-update only with `AutoUpdate=registry` and tested rollback |
+      | One container per `podman run` for production services | No restart, no logging integration | Quadlet `.container` units; managed by systemd |
+      | Sharing podman.sock across users | Defeats isolation | Each user has their own socket at `/run/user/$UID/podman/podman.sock` |
+      | Building as `root` user inside the container | Process inside runs as uid 0 (mapped to your uid externally, but bad hygiene) | Add `RUN adduser app && USER app` |
+      | Forgetting `--init` for processes that don't reap zombies | Zombie processes accumulate | `podman run --init ...` for any container that doesn't run a proper init |
+      | Storing volumes in the project dir without explicit naming | `compose down` may delete them; messy paths | Named volumes (`pgdata:`) declared at the top level |
+
+      ### When podman bites you (and how)
+
+      - **`docker-compose` files using build args from .env may need `--env-file`** explicitly: `podman compose --env-file .env up`.
+      - **`network_mode: host`** behaves differently rootless — there's no host networking; `slirp4netns` simulates it.
+      - **Inotify across mount boundaries** sometimes works less well than under Docker; for hot-reload dev loops, mount with `:Z,U` and check.
+
+  - sequence: 8
+    fragment_type: verification
+    content: |
+      ## Verification checklist
+
+      - [ ] `podman info --format '{{.Host.Security.Rootless}}'` returns `true`
+      - [ ] User has subuid/subgid range in `/etc/subuid` and `/etc/subgid`
+      - [ ] `unqualified-search-registries` configured (or every image fully qualified)
+      - [ ] Production images pinned by digest, not tag
+      - [ ] Long-running services managed by Quadlet `.container` units, not raw `podman run`
+      - [ ] `systemctl --user enable` applied so services start at login
+      - [ ] `linger` enabled if services need to run when the user isn't logged in: `loginctl enable-linger <user>`
+      - [ ] Volumes are named (not anonymous, not bind-mounted to project root)
+      - [ ] Containers run as a non-root user inside (`USER app` in the Containerfile)
+      - [ ] Health checks defined; systemd `Restart=on-failure` set
+      - [ ] `podman auto-update.timer` enabled if using `AutoUpdate=registry`
+      - [ ] Logs flow to journald (`journalctl --user -u <service>`)

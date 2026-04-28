@@ -1,0 +1,388 @@
+skill_type: domain
+skill_id: postgres-deep-patterns
+canonical_name: PostgreSQL Deep Patterns (EXPLAIN, Indexes, jsonb, Locks, Transactions)
+category: engineering
+skill_class: domain
+domain_tags: [postgres, postgresql, sql, explain, indexes, jsonb, advisory-locks, transactions, performance]
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: Initial authoring — fills the gap left by the original `postgresql` skill which only covered table design. Sourced from postgresql.org/docs/current/.
+raw_prose: |
+  # PostgreSQL Deep Patterns
+
+  ## Overview
+
+  Practical Postgres for backends that have moved past CREATE TABLE: query planning with EXPLAIN, choosing the right index type, jsonb for semi-structured data, advisory locks for distributed coordination, and transaction isolation levels.
+
+  ## When to use
+
+  - A query is slow and you need to understand why (EXPLAIN ANALYZE)
+  - You're deciding between B-tree, GIN, GiST, BRIN for a workload
+  - You have JSON columns and need indexed lookups (jsonb + GIN)
+  - Multiple app instances need to coordinate (advisory locks, SELECT FOR UPDATE)
+  - You need isolation guarantees stronger than READ COMMITTED
+
+  Pairs with the `prisma` pack: when Prisma's query builder isn't expressive enough, drop to `$queryRaw` with the patterns here.
+
+fragments:
+  - sequence: 1
+    fragment_type: setup
+    content: |
+      ## EXPLAIN as your first tool
+
+      Before optimizing, run `EXPLAIN (ANALYZE, BUFFERS) <query>` and read the plan.
+
+      ```sql
+      EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+      SELECT u.id, u.email, count(o.id) AS order_count
+      FROM users u
+      LEFT JOIN orders o ON o.user_id = u.id
+      WHERE u.created_at > now() - interval '30 days'
+      GROUP BY u.id;
+      ```
+
+      Read the output bottom-up. Things to look at:
+
+      | Signal | Meaning | Action |
+      |---|---|---|
+      | `Seq Scan` on a large table | No usable index OR planner thinks scan is faster | Add index OR `ANALYZE` to update stats |
+      | `rows=10000` actual vs `rows=10` estimated | Stale statistics → wrong plan | `ANALYZE <table>` |
+      | `Sort` with `Disk: NNN kB` | Sort spilled to disk | Increase `work_mem` for the session OR add covering index |
+      | `Hash Join` with huge `Hash Batches` | Hash didn't fit in memory | Increase `work_mem` OR `hash_mem_multiplier` |
+      | `Buffers: read=...` (large) | Cold cache; first run | Re-run; if still slow, real I/O cost |
+      | `Buffers: hit=...` (large) | All in shared_buffers | Good — that's cache working |
+      | `Filter` removed many rows | Predicate not pushed into index | Make the index match the predicate columns |
+
+      Use `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` and paste into https://explain.dalibo.com or `pgMustard` for visual exploration.
+
+  - sequence: 2
+    fragment_type: execution
+    content: |
+      ## Index types — picking the right one
+
+      | Type | Use for |
+      |---|---|
+      | **B-tree** (default) | Equality + range on scalar columns. Sortable. Most common. |
+      | **GIN** | Multi-value columns: `jsonb`, `array`, full-text search (`tsvector`). |
+      | **GiST** | Range types, geometric, full-text on small docs, exclusion constraints. |
+      | **BRIN** | Massive append-only tables where rows are physically clustered (e.g., timestamp on a log table). Tiny size, narrow but useful. |
+      | **Hash** | Equality only, since v10 crash-safe. Rarely better than B-tree in practice. |
+
+      ### B-tree composite — column order matters
+
+      ```sql
+      -- Lookups: WHERE user_id = ? AND status = ?  → uses this
+      -- Lookups: WHERE user_id = ?                  → uses this (leftmost prefix)
+      -- Lookups: WHERE status = ?                   → does NOT use this
+      CREATE INDEX idx_orders_user_status ON orders(user_id, status);
+      ```
+
+      Lead with the column you query most often. If you frequently sort, append the sort column with the right direction:
+
+      ```sql
+      CREATE INDEX idx_orders_user_created ON orders(user_id, created_at DESC);
+      -- WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20  → seek + walk, no sort
+      ```
+
+      ### Partial index — for sparse predicates
+
+      ```sql
+      CREATE INDEX idx_active_users ON users(email) WHERE deleted_at IS NULL;
+      ```
+
+      Smaller index, faster scan, only used when query has the same predicate.
+
+      ### Covering index (INCLUDE) — Postgres 11+
+
+      ```sql
+      CREATE INDEX idx_orders_user_inc ON orders(user_id) INCLUDE (status, amount);
+      -- Index-only scan possible: SELECT status, amount FROM orders WHERE user_id = $1
+      ```
+
+      Requires Postgres 11+ (the `INCLUDE` clause for B-tree indexes was added then). On older versions, use a composite `CREATE INDEX … (user_id, status, amount)` — slightly larger but functionally similar.
+
+      ### Concurrent index creation
+
+      ```sql
+      CREATE INDEX CONCURRENTLY idx_users_email ON users(email);
+      ```
+
+      `CONCURRENTLY` doesn't lock the table for writes (only takes a SHARE UPDATE EXCLUSIVE lock for a moment at start/end). **Required** in production. Caveat: can fail and leave an `INVALID` index — drop it with `DROP INDEX CONCURRENTLY idx_users_email` and retry.
+
+  - sequence: 3
+    fragment_type: execution
+    content: |
+      ## jsonb — semi-structured columns
+
+      Use `jsonb` (binary, indexed) over `json` (text). `json` is rarely the right choice in modern Postgres.
+
+      ```sql
+      CREATE TABLE events (
+        id          bigserial PRIMARY KEY,
+        type        text NOT NULL,
+        payload     jsonb NOT NULL,
+        received_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      -- GIN index for arbitrary key-value lookups
+      CREATE INDEX idx_events_payload ON events USING GIN (payload);
+
+      -- GIN with jsonb_path_ops — smaller, faster, but only supports @> (contains)
+      CREATE INDEX idx_events_payload_path ON events USING GIN (payload jsonb_path_ops);
+      ```
+
+      ### Common queries
+
+      ```sql
+      -- Containment (most common; uses GIN)
+      SELECT * FROM events WHERE payload @> '{"user_id": 42}';
+
+      -- Path extraction (text)
+      SELECT payload->>'user_id' AS user_id FROM events;
+
+      -- Path extraction (jsonb, for further indexing)
+      SELECT payload->'shipping'->>'city' AS city FROM events;
+
+      -- Existence
+      SELECT * FROM events WHERE payload ? 'discount_code';
+
+      -- Update a key (immutable — produces new jsonb)
+      UPDATE events SET payload = payload || '{"processed": true}' WHERE id = $1;
+      ```
+
+      ### Functional/expression index for hot paths
+
+      ```sql
+      -- If "user_id" is queried by equality often:
+      CREATE INDEX idx_events_user ON events ((payload->>'user_id'));
+      SELECT * FROM events WHERE payload->>'user_id' = '42';
+      ```
+
+      ### Anti-pattern
+
+      Don't use jsonb as a substitute for proper relational modeling. If your "key" is queried, joined, or constrained, give it a real column.
+
+  - sequence: 4
+    fragment_type: execution
+    content: |
+      ## Locks — row, advisory, and transaction isolation
+
+      ### `SELECT … FOR UPDATE`
+
+      Pessimistic row lock. Blocks other transactions trying to modify the same rows until you commit.
+
+      ```sql
+      BEGIN;
+      SELECT * FROM accounts WHERE id = $1 FOR UPDATE;
+      -- ... do work ...
+      UPDATE accounts SET balance = balance - $2 WHERE id = $1;
+      COMMIT;
+      ```
+
+      Variants:
+      - `FOR UPDATE` — full lock; blocks other reads-for-update and writes.
+      - `FOR NO KEY UPDATE` — allows concurrent FK references; preferred when you're not changing PK/unique columns.
+      - `FOR SHARE` — read lock; blocks writers, allows other readers.
+      - `SKIP LOCKED` — skip already-locked rows (queue/worker pattern).
+      - `NOWAIT` — fail immediately if the row is locked.
+
+      ### Worker-queue pattern
+
+      ```sql
+      BEGIN;
+      SELECT * FROM job_queue
+        WHERE status = 'pending'
+        ORDER BY id
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED;     -- multiple workers pick distinct rows
+      -- claim it
+      UPDATE job_queue SET status = 'running' WHERE id = $1;
+      COMMIT;
+      ```
+
+      ### Advisory locks
+
+      App-level locks Postgres tracks but doesn't enforce on rows. Use for distributed coordination across app instances.
+
+      ```sql
+      -- Try to acquire; returns false if already held (no wait)
+      SELECT pg_try_advisory_lock(42);
+
+      -- Acquire and wait (releases at session end OR explicit unlock)
+      SELECT pg_advisory_lock(42);
+
+      -- Release
+      SELECT pg_advisory_unlock(42);
+
+      -- Transaction-scoped (auto-released on COMMIT/ROLLBACK)
+      SELECT pg_advisory_xact_lock(42);
+      ```
+
+      Pick a stable integer (or hash a string with `hashtext()`) for the lock key. Pair `pg_try_advisory_xact_lock` with a single transaction for the safest "only one runs this at a time" pattern.
+
+      ### Isolation levels
+
+      | Level | Reads can see | Use when |
+      |---|---|---|
+      | READ COMMITTED (default) | Latest committed values, may change mid-tx | Default; most workloads |
+      | REPEATABLE READ | Same snapshot for the whole tx | Multi-step reports |
+      | SERIALIZABLE | As if all txs ran sequentially | Strong correctness, e.g., balance transfers — but expect occasional `40001` serialization failures and retry |
+
+      Set per-transaction:
+
+      ```sql
+      BEGIN ISOLATION LEVEL SERIALIZABLE;
+      -- ...
+      COMMIT;
+      ```
+
+  - sequence: 5
+    fragment_type: example
+    content: |
+      ## End-to-end: stock decrement under concurrency
+
+      ```sql
+      -- Transaction-scoped advisory lock keyed by SKU; serializes per-SKU
+      BEGIN;
+      SELECT pg_advisory_xact_lock(hashtext('SKU-' || $1));
+
+      SELECT qty FROM inventory WHERE sku = $1 FOR UPDATE;
+      -- check qty >= requested in the app
+
+      UPDATE inventory
+         SET qty = qty - $2
+       WHERE sku = $1
+         AND qty >= $2     -- belt-and-suspenders: also enforced in WHERE
+      RETURNING qty;
+      -- if RETURNING is empty, the row didn't satisfy qty >= $2 → 409 Conflict
+
+      COMMIT;
+      ```
+
+      From Prisma:
+
+      ```typescript
+      await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${'SKU-' + sku}))`;
+        const updated = await tx.$executeRaw`
+          UPDATE inventory SET qty = qty - ${requested}
+          WHERE sku = ${sku} AND qty >= ${requested}
+        `;
+        if (updated === 0) throw new ConflictError('insufficient stock');
+      });
+      ```
+
+  - sequence: 6
+    fragment_type: example
+    content: |
+      ## Fast pagination — keyset / cursor
+
+      Avoid `OFFSET` for deep pagination — Postgres still scans every skipped row.
+
+      ```sql
+      -- First page
+      SELECT id, created_at, ...
+        FROM orders
+       WHERE user_id = $1
+       ORDER BY created_at DESC, id DESC
+       LIMIT 20;
+
+      -- Subsequent pages — pass the last (created_at, id) as cursor
+      SELECT id, created_at, ...
+        FROM orders
+       WHERE user_id = $1
+         AND (created_at, id) < ($2, $3)
+       ORDER BY created_at DESC, id DESC
+       LIMIT 20;
+      ```
+
+      Index: `(user_id, created_at DESC, id DESC)`.
+
+  - sequence: 7
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      | Anti-pattern | Problem | Fix |
+      |---|---|---|
+      | `SELECT *` in production | Returns columns you didn't ask for; breaks if schema changes; bigger network payload | Always list columns |
+      | `OFFSET 100000` | O(N) scan even with index | Keyset pagination |
+      | `LIKE '%foo%'` on a B-tree-indexed column | Can't use B-tree (leading wildcard) | `pg_trgm` GIN/GiST + `ILIKE`, or full-text `tsvector` |
+      | `ORDER BY random() LIMIT 1` | Full scan | Pick a random `id` from a known range, or use `tablesample` |
+      | DELETE without index on the predicate | Locks scanned rows + slow | Index the WHERE; consider DELETE in batches |
+      | `bytea` for files larger than ~1 MB | Bloats TOAST, slow row reads | Store in S3, keep a reference URL/key in PG |
+      | Missing FK indexes | Cascading DELETEs do seq scans on children | Always index FK columns |
+      | `now()` in the SELECT projection assumed stable | `now()` returns the tx start time; subtle bugs in long txs | Use `clock_timestamp()` if you actually need wall-clock |
+      | One giant transaction | Holds locks too long; blocks others | Break into smaller txs; use SAVEPOINTs if you need rollback granularity |
+      | Indexes added without `CONCURRENTLY` in prod | Locks the table for writes | Always `CREATE INDEX CONCURRENTLY` in prod |
+
+      ### Pool tuning + PgBouncer
+
+      Each backend Postgres connection is a process. Don't let your app open more than the server can handle.
+
+      - Max safe connections per Postgres = `max_connections` minus reserved for superuser/replication.
+      - Per-app `pool_size` × number of replicas should stay well under that.
+      - For high-concurrency apps, put **PgBouncer** in front (transaction-mode pooling).
+
+      **Prisma + PgBouncer requires two URLs:**
+
+      ```bash
+      DATABASE_URL=postgresql://app:secret@pgbouncer:6432/app?pgbouncer=true&connection_limit=10
+      DIRECT_URL=postgresql://app:secret@postgres:5432/app
+      ```
+
+      ```prisma
+      datasource db {
+        provider  = "postgresql"
+        url       = env("DATABASE_URL")    // routed through PgBouncer for runtime
+        directUrl = env("DIRECT_URL")      // direct to Postgres for migrations
+      }
+      ```
+
+      Without `directUrl`, `prisma migrate deploy` fails because PgBouncer's transaction-mode pooling breaks the multi-statement / advisory-lock patterns the migrator uses. The runtime traffic flows through PgBouncer; migrations bypass it.
+
+      ### `pg_stat_statements` — find slow queries in production
+
+      The single best Postgres perf tool. Tracks each normalized query's total time, mean time, calls, rows returned.
+
+      ```sql
+      -- One-time setup (in postgresql.conf):
+      shared_preload_libraries = 'pg_stat_statements'
+      pg_stat_statements.track = all
+      -- Then restart Postgres and:
+      CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
+      -- Top 10 queries by total time (the ones to optimize first)
+      SELECT
+        substring(query, 1, 80) AS q,
+        calls,
+        total_exec_time::int AS total_ms,
+        mean_exec_time::int AS mean_ms,
+        rows
+      FROM pg_stat_statements
+      ORDER BY total_exec_time DESC
+      LIMIT 10;
+      ```
+
+      "Total time" beats "mean time" for prioritization — a query taking 5ms × 1M calls/day matters more than a 5s query that runs once.
+
+  - sequence: 8
+    fragment_type: verification
+    content: |
+      ## Verification checklist
+
+      Before merging or deploying:
+
+      - [ ] Every slow-query candidate has an `EXPLAIN (ANALYZE, BUFFERS)` plan reviewed
+      - [ ] No `Seq Scan` on tables > 100k rows in hot paths
+      - [ ] Foreign-key columns are indexed
+      - [ ] Frequent `WHERE`/`ORDER BY` columns are indexed (composite, with correct order)
+      - [ ] `jsonb` (not `json`) for semi-structured columns; GIN index if queried
+      - [ ] Money columns: `numeric(p, s)` not `float`
+      - [ ] Timestamps: `timestamptz` (with TZ) not `timestamp` (without)
+      - [ ] All indexes in production created `CONCURRENTLY`
+      - [ ] Long-running transactions broken up; advisory or row locks scoped to small windows
+      - [ ] Connection pool sized; PgBouncer in front if N replicas × pool_size > max_connections
+      - [ ] Backups verified: `pg_basebackup` or equivalent, and at least one restore drill done

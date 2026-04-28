@@ -1,5 +1,5 @@
 name: agents
-version: 1.0.0
+version: 1.1.0
 description: Agentic development — prompt engineering, RAG, LangChain, MCP, LLM evaluation,
   vector search, audit trails.
 author: navistone
@@ -10,6 +10,9 @@ homepage: https://github.com/nrmeyers/skillsmith
 always_install: false
 depends_on: []
 skills:
+- skill_id: claude-api-patterns
+  file: claude-api-patterns.yaml
+  fragment_count: 8
 - skill_id: context-engineering
   file: context-engineering.yaml
   fragment_count: 17

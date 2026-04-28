@@ -1,0 +1,16 @@
+name: mocha-chai
+version: 1.0.0
+description: Mocha test runner + Chai BDD assertions + Sinon spies/stubs/mocks for Node.js/TypeScript projects.
+author: navistone
+embed_model: qwen3-embedding:0.6b
+embedding_dim: 1024
+license: MIT
+homepage: https://github.com/nrmeyers/skillsmith
+always_install: false
+depends_on:
+- nodejs
+- typescript
+skills:
+- skill_id: mocha-chai-sinon
+  file: mocha-chai-sinon.yaml
+  fragment_count: 8

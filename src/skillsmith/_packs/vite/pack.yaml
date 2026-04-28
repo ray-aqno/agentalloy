@@ -1,0 +1,15 @@
+name: vite
+version: 1.0.0
+description: Vite build tool — config patterns, plugins, env vars, dev proxy, production builds with Rolldown, code splitting, bundle analysis.
+author: navistone
+embed_model: qwen3-embedding:0.6b
+embedding_dim: 1024
+license: MIT
+homepage: https://github.com/nrmeyers/skillsmith
+always_install: false
+depends_on:
+- typescript
+skills:
+- skill_id: vite-config-and-build
+  file: vite-config-and-build.yaml
+  fragment_count: 8

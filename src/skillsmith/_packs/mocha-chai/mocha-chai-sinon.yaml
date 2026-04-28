@@ -1,0 +1,455 @@
+skill_type: domain
+skill_id: mocha-chai-sinon
+canonical_name: Mocha + Chai + Sinon Testing Patterns
+category: engineering
+skill_class: domain
+domain_tags: [mocha, chai, sinon, testing, javascript, typescript, bdd, unit-tests]
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: Initial authoring — Mocha test runner, Chai BDD assertions, Sinon spies/stubs/mocks for JS/TS projects.
+raw_prose: |
+  # Mocha + Chai + Sinon Testing Patterns
+
+  ## Overview
+
+  The classic Node.js testing stack:
+  - **Mocha** — test runner, lifecycle hooks, async support
+  - **Chai** — assertion library (BDD: `expect(...).to.equal(...)`)
+  - **Sinon** — spies, stubs, mocks, fake timers
+
+  Stable, mature APIs that haven't churned in years. Pairs naturally with `nyc` (Istanbul) for coverage.
+
+  ## When to use
+
+  - Existing project uses Mocha (don't migrate to Vitest/Jest just for fashion)
+  - You want a small, predictable runner without bundling
+  - You need fine-grained Sinon-style spies and fake timers
+
+  Vitest is faster and ESM-native; Jest is one-stop-shop with built-in mocks. Mocha+Chai+Sinon wins on flexibility — every layer is a separate package, replaceable.
+
+fragments:
+  - sequence: 1
+    fragment_type: setup
+    content: |
+      ## Setup (TypeScript)
+
+      ```bash
+      pnpm add -D mocha @types/mocha \
+                 chai @types/chai chai-as-promised @types/chai-as-promised \
+                 sinon @types/sinon \
+                 tsx c8
+      ```
+
+      ### Run TypeScript via `tsx --import` (Node 20+)
+
+      `tsx` is the simplest TS runner — no separate config, ESM-native. Run mocha through it via the package script:
+
+      ```json
+      {
+        "scripts": {
+          "test": "node --import tsx --test-reporter=spec node_modules/mocha/bin/mocha.js",
+          "test:watch": "pnpm test --watch",
+          "coverage": "c8 --reporter=text --reporter=html pnpm test"
+        }
+      }
+      ```
+
+      Why `node --import tsx` (not the historical `--loader tsx/esm`)? The loader API is deprecated in Node 22+; `--import` is the supported path. Recent tsx ships an internal hook that registers via `--import tsx`.
+
+      Older codebases on `ts-node`:
+
+      ```json
+      {
+        "scripts": {
+          "test": "mocha --loader=ts-node/esm"
+        }
+      }
+      ```
+
+      ### `.mocharc.cjs`
+
+      ```js
+      module.exports = {
+        extension: ['ts', 'tsx'],
+        spec: ['test/**/*.test.ts', 'src/**/*.test.ts'],
+        timeout: 5000,
+        slow: 200,
+        reporter: 'spec',
+        recursive: true,
+      };
+      ```
+
+      No `loader:` field — the loader registration happens via the `node --import tsx` script command above.
+
+      ### Coverage with `c8`
+
+      `c8` uses Node's built-in V8 coverage. Faster than `nyc` and works natively with TypeScript via tsx's source maps — no separate Istanbul instrumentation needed.
+
+      `.c8rc.json`:
+
+      ```json
+      {
+        "include": ["src/**/*.ts"],
+        "exclude": ["src/**/*.test.ts", "src/**/*.d.ts", "src/generated/**"],
+        "reporter": ["text", "html", "lcov"],
+        "check-coverage": true,
+        "lines": 80,
+        "branches": 75,
+        "functions": 80
+      }
+      ```
+
+      If you must stay on `nyc`: it requires Istanbul instrumentation, which works via `ts-node` (not tsx). Most new TS-on-Node projects pick c8.
+
+      Run a single file: `pnpm mocha path/to/foo.test.ts`. Run a subset: `pnpm mocha --grep 'auth'`.
+
+  - sequence: 2
+    fragment_type: execution
+    content: |
+      ## Mocha test structure and lifecycle
+
+      ```typescript
+      // test/setup.ts — load chai plugins once, imported by every test file
+      import { use } from 'chai';
+      import chaiAsPromised from 'chai-as-promised';
+      use(chaiAsPromised);
+
+      // test/orders.test.ts
+      import { expect } from 'chai';
+      import './setup';      // ensures plugins are registered before assertions run
+
+      describe('OrderService', () => {
+        // Lifecycle hooks — order of execution per `describe`:
+        //   before        (once before all tests in the block)
+        //   beforeEach    (before every test)
+        //   <it tests>
+        //   afterEach     (after every test)
+        //   after         (once after all)
+
+        before(async () => {
+          // expensive one-time setup: spin up test DB, load fixtures
+        });
+
+        beforeEach(() => {
+          // per-test setup: reset shared state, recreate sut
+        });
+
+        afterEach(() => {
+          // per-test cleanup
+        });
+
+        it('creates an order with default status', async () => {
+          const order = await service.create({ userId: 'u1', total: 100 });
+          expect(order.id).to.be.a('string');
+          expect(order.status).to.equal('pending');
+        });
+
+        it('rejects negative totals', async () => {
+          await expect(service.create({ userId: 'u1', total: -5 }))
+            .to.be.rejectedWith(/total must be non-negative/);
+        });
+
+        // Skip a test:    it.skip('todo', ...)
+        // Run only this:  it.only('focus', ...)
+      });
+      ```
+
+      ### Async patterns
+
+      Mocha supports async tests three ways. Pick one and stick with it:
+
+      ```typescript
+      // 1. async/await (preferred)
+      it('does X', async () => {
+        const result = await doX();
+        expect(result).to.equal(42);
+      });
+
+      // 2. Returned Promise
+      it('does X', () => doX().then((r) => expect(r).to.equal(42)));
+
+      // 3. done callback (legacy; only when wrapping callback APIs)
+      it('does X', (done) => {
+        doX((err, r) => {
+          if (err) return done(err);
+          try { expect(r).to.equal(42); done(); } catch (e) { done(e); }
+        });
+      });
+      ```
+
+      Never mix `done` and `async` — Mocha will throw a "double done" error.
+
+  - sequence: 3
+    fragment_type: execution
+    content: |
+      ## Chai BDD assertions
+
+      ```typescript
+      import { expect, use } from 'chai';
+      import chaiAsPromised from 'chai-as-promised';
+      use(chaiAsPromised);    // for `.to.be.rejectedWith` and friends
+
+      // Equality
+      expect(2 + 2).to.equal(4);                  // strict
+      expect({ a: 1 }).to.deep.equal({ a: 1 });   // structural
+
+      // Type
+      expect(x).to.be.a('string');                // typeof
+      expect(arr).to.be.an('array');
+
+      // Properties
+      expect(user).to.have.property('email').that.equals('a@b');
+      expect(user).to.include({ id: 'u1', role: 'admin' });
+      expect(arr).to.have.lengthOf(3);
+      expect(arr).to.include('foo');
+      expect(arr).to.have.members(['foo', 'bar']);   // order-independent
+
+      // Truthiness / nullish
+      expect(x).to.exist;        // not null AND not undefined
+      expect(x).to.be.null;
+      expect(x).to.be.undefined;
+      expect(x).to.be.true;
+      expect(arr).to.be.empty;
+
+      // Numeric
+      expect(n).to.be.greaterThan(0);
+      expect(n).to.be.closeTo(3.14, 0.01);
+      expect(n).to.be.within(0, 100);
+
+      // Errors (sync)
+      expect(() => parse('bad')).to.throw(SyntaxError, /unexpected token/);
+
+      // Errors (async — needs chai-as-promised)
+      await expect(asyncFn()).to.be.rejectedWith(TypeError, /bad input/);
+      await expect(asyncFn()).to.be.fulfilled;
+
+      // Negation
+      expect(x).to.not.equal(null);
+      expect(arr).to.not.include('forbidden');
+      ```
+
+      Two style choices:
+
+      | Style | Example |
+      |---|---|
+      | `expect(x).to.equal(y)` | BDD with chained language; recommended |
+      | `assert.equal(x, y)` | TDD style; more terse |
+      | `x.should.equal(y)` | Polluted prototype; avoid |
+
+  - sequence: 4
+    fragment_type: execution
+    content: |
+      ## Sinon — spies, stubs, mocks, clocks
+
+      ```typescript
+      import sinon from 'sinon';
+      import { expect } from 'chai';
+
+      // SPY: records calls without changing behavior
+      const spy = sinon.spy(emailer, 'send');
+      await service.notifyUser('u1');
+      expect(spy.calledOnce).to.be.true;
+      expect(spy.firstCall.args[0]).to.deep.equal({ to: 'a@b', subject: 'Hi' });
+
+      // STUB: replaces behavior
+      const stub = sinon.stub(paymentGateway, 'charge').resolves({ id: 'ch_1' });
+      const order = await service.checkout(...);
+      expect(stub.calledWith({ amount: 100, currency: 'usd' })).to.be.true;
+
+      // STUB returning different values per call
+      stub.onFirstCall().resolves({ id: 'ch_1' });
+      stub.onSecondCall().rejects(new Error('declined'));
+
+      // STUB throwing
+      stub.throws(new Error('boom'));
+
+      // MOCK: stub + expectation in one (less common; verify before assertions)
+      const mock = sinon.mock(emailer);
+      mock.expects('send').once().withArgs(sinon.match({ to: 'a@b' }));
+      await service.notifyUser('u1');
+      mock.verify();          // throws if expectations not met
+      mock.restore();
+
+      // FAKE TIMERS — control Date.now / setTimeout / setInterval
+      const clock = sinon.useFakeTimers(new Date('2026-04-28'));
+      const session = createSession();           // captures "now"
+      clock.tick(60_000);                         // advance 1 minute
+      expect(isExpired(session)).to.be.true;
+      clock.restore();
+      ```
+
+      ### Always restore
+
+      Sinon mutates the target object. Without `.restore()` the stub leaks into other tests. Use `afterEach`:
+
+      ```typescript
+      afterEach(() => sinon.restore());    // restores ALL spies/stubs/mocks
+      ```
+
+      Or use a sandbox per test:
+
+      ```typescript
+      let sandbox: sinon.SinonSandbox;
+      beforeEach(() => { sandbox = sinon.createSandbox(); });
+      afterEach(() => { sandbox.restore(); });
+
+      it('charges card', async () => {
+        sandbox.stub(paymentGateway, 'charge').resolves({ id: 'ch_1' });
+        // ...
+      });
+      ```
+
+      Sandboxes are safer in nested `describe` blocks where global `sinon.restore()` could miss things.
+
+  - sequence: 5
+    fragment_type: example
+    content: |
+      ## End-to-end: testing a service that hits a DB and sends email
+
+      ```typescript
+      // src/orders/order-service.test.ts
+      import { expect, use } from 'chai';
+      import chaiAsPromised from 'chai-as-promised';
+      import sinon from 'sinon';
+      import { OrderService } from './order-service';
+
+      use(chaiAsPromised);
+
+      describe('OrderService', () => {
+        let service: OrderService;
+        let prismaMock: any;
+        let emailerMock: any;
+
+        beforeEach(() => {
+          prismaMock = {
+            order: {
+              create: sinon.stub(),
+              findUnique: sinon.stub(),
+            },
+          };
+          emailerMock = { send: sinon.stub().resolves() };
+          service = new OrderService(prismaMock, emailerMock);
+        });
+
+        afterEach(() => sinon.restore());
+
+        describe('createOrder', () => {
+          it('persists the order and sends a confirmation', async () => {
+            prismaMock.order.create.resolves({
+              id: 'o1', userId: 'u1', total: 100, status: 'pending',
+            });
+
+            const order = await service.createOrder('u1', [{ sku: 'A', qty: 1 }]);
+
+            expect(order.id).to.equal('o1');
+            expect(prismaMock.order.create.calledOnce).to.be.true;
+            expect(emailerMock.send.calledOnce).to.be.true;
+            expect(emailerMock.send.firstCall.args[0]).to.include({
+              template: 'order-confirmation',
+            });
+          });
+
+          it('does not send email if persistence fails', async () => {
+            prismaMock.order.create.rejects(new Error('db down'));
+            await expect(service.createOrder('u1', [])).to.be.rejectedWith(/db down/);
+            expect(emailerMock.send.called).to.be.false;
+          });
+        });
+      });
+      ```
+
+  - sequence: 6
+    fragment_type: example
+    content: |
+      ## Integration tests — real DB, isolated per-test schema
+
+      ```typescript
+      // test/integration/orders.spec.ts
+      import { expect } from 'chai';
+      import { PrismaClient } from '@prisma/client';
+
+      describe('Order persistence (integration)', function () {
+        this.timeout(30_000);    // DB ops can be slow on CI
+        let prisma: PrismaClient;
+
+        before(async () => {
+          // Use a dedicated test DB; reset each test run
+          prisma = new PrismaClient({ datasources: { db: { url: process.env.TEST_DB_URL } } });
+          await prisma.$executeRawUnsafe('TRUNCATE TABLE "Order", "User" RESTART IDENTITY CASCADE');
+        });
+
+        after(async () => {
+          await prisma.$disconnect();
+        });
+
+        beforeEach(async () => {
+          await prisma.user.create({ data: { id: 'u1', email: 'a@b' } });
+        });
+
+        afterEach(async () => {
+          await prisma.$executeRawUnsafe('TRUNCATE TABLE "Order", "User" RESTART IDENTITY CASCADE');
+        });
+
+        it('round-trips an order', async () => {
+          const order = await prisma.order.create({
+            data: { userId: 'u1', total: 100, status: 'pending' },
+          });
+          const found = await prisma.order.findUnique({ where: { id: order.id } });
+          expect(found).to.deep.include({ userId: 'u1', total: 100 });
+        });
+      });
+      ```
+
+      Mark integration tests differently so unit tests stay fast:
+
+      ```js
+      // .mocharc.cjs
+      module.exports = {
+        spec: process.env.INTEGRATION
+          ? ['test/integration/**/*.spec.ts']
+          : ['src/**/*.test.ts'],
+      };
+      ```
+
+  - sequence: 7
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      | Anti-pattern | Problem | Fix |
+      |---|---|---|
+      | Forgetting to await async assertions | Test passes even when assertion fails | Always `await expect(...)` for async; lint with `no-floating-promises` |
+      | `it.only` left in main | Other tests silently skipped | Lint rule (`mocha/no-exclusive-tests`) + CI grep guard |
+      | Skipping `sinon.restore()` | Stubs bleed across tests | `afterEach(() => sinon.restore())` always |
+      | Mocking own implementation | You test the mock, not the code | Mock at I/O boundaries (DB, HTTP, email); use real code in between |
+      | Snapshot-only tests | Reviewers rubber-stamp; flakiness ignored | Assert on shape with explicit `expect(...).to.deep.equal({...})` |
+      | Fixed wall-clock dates in tests | Flake near midnight / DST / timezone | `sinon.useFakeTimers(new Date('2026-04-28'))` |
+      | Sharing state between tests via module-level vars | Order-dependent failures | All state in `beforeEach`; never module-scope |
+      | Tests that hit network | Slow, flaky, dependent on external services | Stub HTTP at the boundary (sinon stub on the client) |
+      | One giant `it` per behavior | Bad failure messages | Many small `it`s with descriptive names |
+      | `sinon.spy()` on a function declared with `const` | Can't replace; spy fails silently | Spy on object properties: `sinon.spy(obj, 'method')` |
+
+      ### Naming and structure
+
+      - Test name should describe BEHAVIOR, not implementation: `'returns 401 when token is missing'` not `'calls verifyToken'`.
+      - One assertion (or one tightly-coupled assertion group) per `it`.
+      - Group with `describe(ServiceName)` → `describe(method)` → `it(behavior)`.
+
+  - sequence: 8
+    fragment_type: verification
+    content: |
+      ## Verification checklist
+
+      - [ ] `.mocharc.cjs` configured; `pnpm test` runs cleanly
+      - [ ] Coverage threshold enforced via `nyc check-coverage`
+      - [ ] No `it.only` or `describe.only` in committed code (CI grep + ESLint)
+      - [ ] Every test file uses `afterEach(() => sinon.restore())` OR a per-test sandbox
+      - [ ] Async tests use `async/await` (or returned promises with `chai-as-promised`); no mixed `done` callbacks
+      - [ ] Time-dependent code tested with `sinon.useFakeTimers`
+      - [ ] Stubs at boundaries (DB client, HTTP client, email service) — internal logic uses real code
+      - [ ] Test names describe expected behavior in plain English
+      - [ ] Integration tests separated from unit tests via mocharc spec patterns
+      - [ ] No network calls in unit tests; CI passes offline
+      - [ ] `tsx` (or `ts-node/esm`) loader configured for TypeScript

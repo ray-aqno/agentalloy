@@ -1,0 +1,416 @@
+skill_type: domain
+skill_id: opentelemetry-nodejs
+canonical_name: OpenTelemetry for Node.js (Auto-Instrumentation, Manual Spans, Exporters)
+category: engineering
+skill_class: domain
+domain_tags: [opentelemetry, otel, observability, tracing, metrics, nodejs, instrumentation, distributed-tracing]
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: Initial authoring — NodeSDK + auto-instrumentations setup, OTLP exporters (HTTP/gRPC), manual spans for business logic, semantic conventions, common backends (Tempo, Datadog, Honeycomb). Sourced from opentelemetry.io 2026-04-28.
+raw_prose: |
+  # OpenTelemetry for Node.js
+
+  ## Overview
+
+  OpenTelemetry (OTel) is the vendor-neutral observability standard. One instrumentation library, one wire format (OTLP), every backend supported. Replaces vendor-specific SDKs (Datadog DD trace, NewRelic agent, Sentry tracing) with portable spans/metrics/logs.
+
+  Three signals:
+  - **Traces** — request paths across services
+  - **Metrics** — counters, gauges, histograms
+  - **Logs** — structured events (still maturing in OTel JS — many teams keep using pino/winston and bridge later)
+
+  ## When to use
+
+  - You have more than one service and want distributed tracing
+  - You want vendor flexibility (start with Tempo, switch to Datadog without code changes)
+  - Existing instrumentation is ad-hoc; you want a coherent model
+
+  ## Stack alignment
+
+  Auto-instrumentations cover Express, Fastify, NestJS (via `@nestjs/opentelemetry-setup` or auto), Prisma, Redis, MongoDB, AWS SDK v3, http/https. Most backend code "just works" once the SDK initializes.
+
+fragments:
+  - sequence: 1
+    fragment_type: setup
+    content: |
+      ## Install
+
+      ```bash
+      pnpm add @opentelemetry/sdk-node \
+               @opentelemetry/api \
+               @opentelemetry/auto-instrumentations-node \
+               @opentelemetry/sdk-trace-node \
+               @opentelemetry/sdk-metrics \
+               @opentelemetry/exporter-trace-otlp-http \
+               @opentelemetry/exporter-metrics-otlp-http \
+               @opentelemetry/resources \
+               @opentelemetry/semantic-conventions
+      ```
+
+      ### Single-file SDK init
+
+      `instrumentation.ts` (must be loaded BEFORE your app code — see next fragment for how):
+
+      ```typescript
+      // instrumentation.ts
+      // Requires @opentelemetry/resources >= 1.27 (resourceFromAttributes factory)
+      // and @opentelemetry/semantic-conventions >= 1.27 (ATTR_* string-constants form).
+      // Older codebases may use `new Resource({...})` + `SemanticResourceAttributes.SERVICE_NAME`.
+      import { NodeSDK } from '@opentelemetry/sdk-node';
+      import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
+      import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+      import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
+      import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
+      import { resourceFromAttributes } from '@opentelemetry/resources';
+      import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
+
+      const sdk = new NodeSDK({
+        resource: resourceFromAttributes({
+          [ATTR_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME ?? 'unknown-service',
+          [ATTR_SERVICE_VERSION]: process.env.OTEL_SERVICE_VERSION ?? '0.0.0',
+          'deployment.environment': process.env.NODE_ENV ?? 'development',
+        }),
+        traceExporter: new OTLPTraceExporter({
+          url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT
+            ? `${process.env.OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces`
+            : 'http://localhost:4318/v1/traces',
+        }),
+        metricReader: new PeriodicExportingMetricReader({
+          exporter: new OTLPMetricExporter({
+            url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT
+              ? `${process.env.OTEL_EXPORTER_OTLP_ENDPOINT}/v1/metrics`
+              : 'http://localhost:4318/v1/metrics',
+          }),
+          exportIntervalMillis: 60_000,
+        }),
+        instrumentations: [
+          getNodeAutoInstrumentations({
+            // Disable noisy ones case-by-case:
+            '@opentelemetry/instrumentation-fs': { enabled: false },
+            // Tune one:
+            '@opentelemetry/instrumentation-http': {
+              ignoreIncomingRequestHook: (req) => req.url === '/health',
+            },
+          }),
+        ],
+      });
+
+      sdk.start();
+
+      // Graceful shutdown — flush in-flight spans
+      process.on('SIGTERM', () => {
+        sdk.shutdown().finally(() => process.exit(0));
+      });
+      ```
+
+  - sequence: 2
+    fragment_type: execution
+    content: |
+      ## Loading the SDK before app code (critical)
+
+      OTel auto-instrumentation works by monkey-patching imported libraries. **It must run before any patched module is loaded** — Express, http, Prisma, etc.
+
+      ### Option A: `--import` flag (Node 20+, recommended)
+
+      ```bash
+      node --import ./instrumentation.ts dist/main.js
+      # or for tsx during dev:
+      tsx --import ./instrumentation.ts src/main.ts
+      ```
+
+      ### Option B: `--require` for CommonJS
+
+      ```bash
+      node --require ./dist/instrumentation.js dist/main.js
+      ```
+
+      ### Option C: Inside `main.ts` BEFORE other imports (last resort)
+
+      ```typescript
+      // src/main.ts
+      import './instrumentation';     // MUST be first
+      import express from 'express';   // OTel patches this on import
+      // ...
+      ```
+
+      Top of file. No other imports above. Risky because the next refactor that re-orders imports breaks tracing silently.
+
+      ### Verifying SDK loaded
+
+      ```bash
+      OTEL_LOG_LEVEL=info node --import ./instrumentation.ts dist/main.js
+      # Expect: "Instrumentation suppressed by attribute" / "Patching express" / etc.
+      ```
+
+  - sequence: 3
+    fragment_type: execution
+    content: |
+      ## Manual spans for business logic
+
+      Auto-instrumentation gives you HTTP/DB spans. Wrap your business logic to add domain context:
+
+      ```typescript
+      import { trace, SpanStatusCode } from '@opentelemetry/api';
+
+      const tracer = trace.getTracer('orders');
+
+      async function createOrder(input: CreateOrderInput) {
+        return tracer.startActiveSpan('orders.create', async (span) => {
+          try {
+            span.setAttribute('order.user_id', input.userId);
+            span.setAttribute('order.item_count', input.items.length);
+
+            const order = await persistOrder(input);
+            span.setAttribute('order.id', order.id);
+            span.setStatus({ code: SpanStatusCode.OK });
+            return order;
+          } catch (err) {
+            span.recordException(err as Error);
+            span.setStatus({
+              code: SpanStatusCode.ERROR,
+              message: (err as Error).message,
+            });
+            throw err;
+          } finally {
+            span.end();
+          }
+        });
+      }
+      ```
+
+      ### Attributes — semantic conventions
+
+      Use OTel-defined attribute names where they exist. Examples:
+
+      ```typescript
+      import { ATTR_HTTP_REQUEST_METHOD, ATTR_HTTP_RESPONSE_STATUS_CODE } from '@opentelemetry/semantic-conventions';
+
+      span.setAttribute(ATTR_HTTP_REQUEST_METHOD, 'POST');
+      span.setAttribute(ATTR_HTTP_RESPONSE_STATUS_CODE, 201);
+      span.setAttribute('user.id', userId);              // custom; lowercase + dotted
+      span.setAttribute('order.total_cents', totalCents);
+      ```
+
+      Conventions matter because backends (Datadog, Honeycomb, Grafana) build dashboards keyed on the standard names. Custom attributes go in your service-specific namespace.
+
+      ### Adding spans without disrupting flow
+
+      ```typescript
+      // Helper for the common "wrap an async fn" case
+      async function tracedAsync<T>(name: string, fn: () => Promise<T>): Promise<T> {
+        return tracer.startActiveSpan(name, async (span) => {
+          try {
+            const result = await fn();
+            span.setStatus({ code: SpanStatusCode.OK });
+            return result;
+          } catch (err) {
+            span.recordException(err as Error);
+            span.setStatus({ code: SpanStatusCode.ERROR });
+            throw err;
+          } finally {
+            span.end();
+          }
+        });
+      }
+
+      // Usage
+      const result = await tracedAsync('checkout.charge_card', () =>
+        stripe.charges.create(...)
+      );
+      ```
+
+  - sequence: 4
+    fragment_type: execution
+    content: |
+      ## Metrics — counters, gauges, histograms
+
+      ```typescript
+      import { metrics } from '@opentelemetry/api';
+
+      const meter = metrics.getMeter('orders');
+
+      const ordersCreated = meter.createCounter('orders.created.count', {
+        description: 'Number of orders successfully created',
+      });
+
+      const orderTotal = meter.createHistogram('orders.total_cents', {
+        description: 'Order total in cents',
+        unit: 'cents',
+      });
+
+      const queueDepth = meter.createObservableGauge('jobs.queue_depth', {
+        description: 'Pending background jobs',
+      });
+      queueDepth.addCallback(async (result) => {
+        result.observe(await getQueueDepth(), { queue: 'emails' });
+      });
+
+      // Usage
+      ordersCreated.add(1, { tenant: 'acme', currency: 'USD' });
+      orderTotal.record(orderTotalCents, { tenant: 'acme' });
+      ```
+
+      ### Histogram > counter for "how long / how big"
+
+      Histograms give you p50/p95/p99 percentiles automatically. Counters only give you total volume. For latency / sizes / values, always histograms.
+
+  - sequence: 5
+    fragment_type: example
+    content: |
+      ## Wiring to common backends
+
+      All speak OTLP, so the SDK code stays the same — only the endpoint and auth headers change.
+
+      ### Grafana / Tempo / Loki (self-hosted)
+
+      ```bash
+      OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo.observability.svc:4318
+      ```
+
+      No auth needed inside the cluster.
+
+      ### Honeycomb
+
+      ```bash
+      OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io
+      OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=YOUR_API_KEY
+      ```
+
+      ### Datadog (via OTel Collector)
+
+      Run an OTel Collector with the Datadog exporter; point your app at the collector. Datadog also has a direct OTLP intake on `https://otlp.<region>.datadoghq.com`.
+
+      ### New Relic
+
+      ```bash
+      OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp.nr-data.net
+      OTEL_EXPORTER_OTLP_HEADERS=api-key=YOUR_LICENSE_KEY
+      ```
+
+      ### Recommended topology — apps → OTel Collector → backend(s)
+
+      For anything beyond a single dev service, deploy an [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) between your apps and your backend(s). It buffers, samples, and routes:
+
+      ```
+      [app-1] ─┐
+      [app-2] ─┼─→  [otel-collector]  ─→  Tempo / Datadog / Honeycomb
+      [app-3] ─┘     (sampling, batching,
+                      attribute scrubbing,
+                      multi-backend fan-out)
+      ```
+
+      The Collector lets you change backends without redeploying apps, apply tail-based sampling (only keep traces with errors / slow spans), and centralize PII redaction. Apps export to `http://otel-collector:4318` (or `:4317` for gRPC) regardless of the eventual destination.
+
+      ### Local dev — Jaeger or print-to-console
+
+      ```typescript
+      // For local dev: just dump spans to stdout
+      import { ConsoleSpanExporter } from '@opentelemetry/sdk-trace-node';
+      // ... in NodeSDK config:
+      traceExporter: process.env.NODE_ENV === 'development'
+        ? new ConsoleSpanExporter()
+        : new OTLPTraceExporter({ url: '...' }),
+      ```
+
+      Or run Jaeger locally:
+
+      ```bash
+      podman run -d --name jaeger \
+        -p 16686:16686 -p 4317:4317 -p 4318:4318 \
+        docker.io/jaegertracing/all-in-one:latest
+      # UI at http://localhost:16686
+      ```
+
+  - sequence: 6
+    fragment_type: example
+    content: |
+      ## NestJS integration
+
+      NestJS doesn't need a special package — auto-instrumentations handle Express/Fastify under the hood. But you can add a NestJS interceptor to attach the active span to each request:
+
+      ```typescript
+      // src/observability/tracing.interceptor.ts
+      import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
+      import { trace } from '@opentelemetry/api';
+      import { Observable, tap, catchError, throwError } from 'rxjs';
+
+      @Injectable()
+      export class TracingInterceptor implements NestInterceptor {
+        intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
+          const span = trace.getActiveSpan();
+          const handler = ctx.getHandler().name;
+          const controller = ctx.getClass().name;
+
+          if (span) {
+            span.setAttribute('nest.controller', controller);
+            span.setAttribute('nest.handler', handler);
+          }
+
+          return next.handle().pipe(
+            tap(() => span?.setAttribute('nest.outcome', 'success')),
+            catchError((err) => {
+              span?.recordException(err);
+              return throwError(() => err);
+            }),
+          );
+        }
+      }
+      ```
+
+      Register globally in `main.ts`:
+
+      ```typescript
+      app.useGlobalInterceptors(new TracingInterceptor());
+      ```
+
+      Now every request span has `nest.controller` + `nest.handler` for filtering in your backend.
+
+  - sequence: 7
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      | Anti-pattern | Problem | Fix |
+      |---|---|---|
+      | Loading SDK after app imports | Instrumentation patches modules already loaded; some libs untraced | Use `--import` flag OR import `instrumentation` first, before anything else |
+      | High-cardinality attribute values (`user.id`, `request.id`) | Storage/query backends choke on millions of distinct values | Put high-cardinality values in span attributes (per-trace, fine), NOT in metric labels (per-aggregate, deadly) |
+      | Logging at TRACE level inside spans | Span attributes blow up in size | Set attributes only for things you'll filter/group by |
+      | No `process.on('SIGTERM', sdk.shutdown)` | Crashes lose in-flight spans | Always shutdown gracefully |
+      | Catching exceptions and not calling `span.recordException` | Errors invisible in traces | Wrap with `try/catch + recordException + setStatus(ERROR)` |
+      | Disabling no instrumentations | `fs` instrumentation traces every file read; massive noise | `'@opentelemetry/instrumentation-fs': { enabled: false }` |
+      | One service.name for many services | Can't separate traces in the backend | Set `OTEL_SERVICE_NAME` per service, distinctly |
+      | Hardcoded backend URL | Can't switch vendors | Use `OTEL_EXPORTER_OTLP_ENDPOINT` env var; SDK reads it automatically |
+      | Sampling 100% in production | Storage cost + noise | Use head sampler at the SDK or tail sampler at a Collector; e.g., `OTEL_TRACES_SAMPLER=parentbased_traceidratio OTEL_TRACES_SAMPLER_ARG=0.1` for 10% |
+      | Manual instrumentation duplicating auto | Two spans for the same operation | Lean on auto-instrumentation; add manual only for business logic NOT covered |
+
+      ### What to instrument
+
+      ✅ HTTP server / client (auto)
+      ✅ DB query (auto: Prisma, pg, mongoose)
+      ✅ Outgoing API calls (auto via http/fetch)
+      ✅ Business operations (manual: `checkout.charge`, `orders.create`)
+      ✅ Background jobs (manual: span around the job's execute method)
+
+      ❌ Inner loops, hot paths < 1ms — span overhead exceeds the work
+      ❌ Per-line tracing — that's what logs are for
+
+  - sequence: 8
+    fragment_type: verification
+    content: |
+      ## Verification checklist
+
+      - [ ] `OTEL_SERVICE_NAME` set per service in env
+      - [ ] `OTEL_EXPORTER_OTLP_ENDPOINT` configured for the destination backend
+      - [ ] SDK loaded BEFORE app code via `--import` (or `--require` for CJS)
+      - [ ] Auto-instrumentations enabled; noisy ones (`fs`, sometimes `dns`) disabled
+      - [ ] `service.name`, `service.version`, `deployment.environment` set on the resource
+      - [ ] Health-check / readiness endpoints excluded from traces (`ignoreIncomingRequestHook`)
+      - [ ] Manual spans wrap business operations with try/catch + `recordException` + `setStatus(ERROR)`
+      - [ ] Span attributes use OTel semantic-convention names where defined
+      - [ ] `process.on('SIGTERM', () => sdk.shutdown())` registered
+      - [ ] Sampling configured: 100% in dev, sampled in prod (head or tail)
+      - [ ] Histograms (not counters) for latency/size measurements
+      - [ ] No high-cardinality values in metric labels
+      - [ ] Trace appears in the backend with `service.name`, parent/child relationships, and DB spans visible

@@ -1,0 +1,394 @@
+skill_type: domain
+skill_id: mongodb-patterns
+canonical_name: MongoDB Patterns (Schema Design, Aggregation, Indexes, Transactions)
+category: engineering
+skill_class: domain
+domain_tags: [mongodb, nosql, document-database, aggregation, indexes, change-streams, mongoose, transactions]
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: Initial authoring — schema design (embed vs. reference), aggregation pipeline patterns, indexes (compound, text, multikey), transactions, change streams, and the official Node driver vs. Mongoose tradeoffs.
+raw_prose: |
+  # MongoDB Patterns
+
+  ## Overview
+
+  MongoDB is a document database. Each row is a JSON-like BSON document; collections are loosely typed; indexes look like Postgres but operate on document field paths. The hard part isn't the API — it's the schema decisions: what to embed, what to reference, when to denormalize.
+
+  ## When to use over a relational DB
+
+  - Document-shaped data with deeply nested structures that you mostly read together (CMS content, order lines that always travel with the order, audit events).
+  - Schema that varies per row in legitimate ways (multi-tenant feature flags, polymorphic events).
+  - Read-heavy workloads where you want to fetch one document with all its dependencies in a single round-trip.
+
+  ### When NOT to use
+
+  - You need true ACID across multiple entities (Mongo has multi-document transactions but they're slower; relational DBs are still the safer pick).
+  - Your data is fundamentally relational (orders ↔ line items ↔ products with frequent joins) — Postgres jsonb gives you flexibility without losing relational power.
+  - You need strong consistency on every write — Mongo's defaults are eventually consistent across replicas.
+
+fragments:
+  - sequence: 1
+    fragment_type: setup
+    content: |
+      ## Setup (Node.js / TypeScript)
+
+      Two clients to choose from — pick one and stick with it.
+
+      ### Official driver — `mongodb`
+
+      Lower-level, no schema enforcement. Best when:
+      - You want raw aggregation pipelines
+      - You're using TypeScript and want types from your own interfaces, not a runtime layer
+
+      ```bash
+      pnpm add mongodb
+      ```
+
+      ```typescript
+      import { MongoClient, ServerApiVersion, ObjectId, Decimal128 } from 'mongodb';
+
+      const client = new MongoClient(process.env.MONGODB_URL!, {
+        // Use modern defaults — these are mostly defaults already in v6+
+        maxPoolSize: 50,
+        retryWrites: true,
+        readConcern: { level: 'majority' },
+        writeConcern: { w: 'majority' },
+        // Pin to versioned API for forward compatibility (Atlas-recommended).
+        // strict: true rejects calls to commands not in the versioned API.
+        serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
+      });
+      await client.connect();
+      const db = client.db('app');
+      ```
+
+      ### Mongoose — schema-on-top ODM
+
+      Schema validation, hooks, populate (joins). Best when:
+      - You want runtime schema enforcement
+      - You're coming from an ORM background and want familiarity
+
+      ```bash
+      pnpm add mongoose
+      ```
+
+      For a TS-first NestJS-flavored backend, the official driver + Zod for runtime validation is often cleaner than Mongoose's two type systems. For a quick app, Mongoose's productivity is hard to beat.
+
+      ### Connection URL
+
+      ```
+      mongodb+srv://user:pass@cluster.mongodb.net/dbname?retryWrites=true&w=majority&readPreference=primaryPreferred
+      ```
+
+      Use `mongodb+srv://` for Atlas; `mongodb://` for self-hosted with explicit hosts.
+
+  - sequence: 2
+    fragment_type: execution
+    content: |
+      ## Schema design — embed vs. reference
+
+      The core decision in Mongo schema design.
+
+      ### Embed when
+
+      - The child only ever exists in the context of the parent (order line items, comment list on a post)
+      - The child is bounded in size (≤ a few hundred items, ≤ 16 MB document limit)
+      - You always read child + parent together
+      - You never query children independently across parents
+
+      ```typescript
+      // GOOD: embed (Node driver syntax)
+      import { Decimal128 } from 'mongodb';
+
+      const orderDoc = {
+        _id: new ObjectId(),
+        userId: new ObjectId('...'),
+        items: [
+          { sku: 'A', qty: 2, priceAtPurchase: Decimal128.fromString('19.99') },
+          { sku: 'B', qty: 1, priceAtPurchase: Decimal128.fromString('29.99') },
+        ],
+        total: Decimal128.fromString('69.97'),
+        createdAt: new Date(),
+      };
+      // Note: in the mongo shell you'd write `NumberDecimal('19.99')` and `ISODate(...)`;
+      // the Node driver uses `Decimal128.fromString(...)` and `new Date(...)`.
+      ```
+
+      ### Reference when
+
+      - The child can grow unboundedly (a user's lifetime activity events)
+      - You need to query the child collection on its own dimensions
+      - The same child is referenced by many parents (a Product referenced from many Orders)
+
+      ```typescript
+      // GOOD: reference (and denormalize the small projection you care about)
+      {
+        _id: ObjectId,
+        userId: ObjectId,           // reference
+        userEmail: 'a@b',           // denormalized snapshot — accept slight drift
+        items: [{ productId: ObjectId, qty: 2 }],
+      }
+      ```
+
+      ### Denormalization is OK
+
+      Storing `userEmail` next to `userId` violates 3NF but matches Mongo's "fetch in one round-trip" model. Acceptable when:
+      - The denormalized field is rarely updated
+      - You have a job that re-syncs it on the rare update
+      - You'd otherwise need a `$lookup` (join) on every read
+
+      ### `_id` strategy
+
+      Default `ObjectId` is fine for internal IDs. Use a `cuid()` or `uuid()` if IDs are externally exposed (no enumeration leaks).
+
+  - sequence: 3
+    fragment_type: execution
+    content: |
+      ## Aggregation pipeline
+
+      Mongo's most powerful feature. A pipeline is a sequence of stages; each stage transforms the documents flowing through.
+
+      ```javascript
+      const stats = await db.collection('orders').aggregate([
+        // 1. Filter — runs first; uses indexes
+        { $match: { status: 'paid', createdAt: { $gte: startOfMonth } } },
+
+        // 2. Project — drop fields we don't need (smaller docs in pipeline)
+        { $project: { userId: 1, total: 1, createdAt: 1 } },
+
+        // 3. Group
+        {
+          $group: {
+            _id: '$userId',
+            orderCount: { $sum: 1 },
+            totalSpent: { $sum: '$total' },
+            firstOrder: { $min: '$createdAt' },
+          },
+        },
+
+        // 4. Sort + limit
+        { $sort: { totalSpent: -1 } },
+        { $limit: 100 },
+
+        // 5. Optional: join with users
+        {
+          $lookup: {
+            from: 'users',
+            localField: '_id',
+            foreignField: '_id',
+            as: 'user',
+            pipeline: [{ $project: { email: 1, name: 1 } }],
+          },
+        },
+        { $unwind: '$user' },
+      ]).toArray();
+      ```
+
+      ### Stage ordering rules
+
+      1. `$match` first — it's the only stage that can use indexes (and only at the start of the pipeline).
+      2. `$project`/`$unset` early to drop large fields before they flow through expensive stages.
+      3. `$lookup` is the costliest stage; minimize the documents reaching it.
+      4. `$limit` after `$sort` is optimized into a top-K — no full sort needed.
+
+      ### `$lookup` quirks
+
+      - Use the pipeline form (`pipeline: [...]`) to filter/project on the joined collection rather than dragging entire documents into memory.
+      - `$lookup` on unindexed `foreignField` does a collection scan per input document — index it.
+
+  - sequence: 4
+    fragment_type: execution
+    content: |
+      ## Indexes
+
+      Mongo's index API mirrors B-tree concepts but operates on document paths.
+
+      ```javascript
+      await db.collection('orders').createIndex({ userId: 1, createdAt: -1 });
+      // Compound — matches:
+      //   find({ userId: X })
+      //   find({ userId: X, createdAt: { $gte: D } })
+      //   find({ userId: X }).sort({ createdAt: -1 })
+      // Does NOT match: find({ createdAt: { $gte: D } })   (leftmost-prefix rule)
+      ```
+
+      ### Common types
+
+      | Type | Use |
+      |---|---|
+      | `{ field: 1 }` (asc) / `{ field: -1 }` (desc) | Standard B-tree |
+      | `{ field: 'text' }` | Full-text search (one per collection) |
+      | `{ field: '2dsphere' }` | Geo |
+      | `{ field: 'hashed' }` | Sharding key candidate |
+      | Multikey (auto, when field is an array) | Lookups inside array fields |
+      | Partial: `{ partialFilterExpression: { ... } }` | Sparse predicates |
+      | TTL: `{ expireAfterSeconds: N }` | Auto-delete after age |
+
+      ### Multikey example
+
+      ```javascript
+      await db.collection('posts').createIndex({ tags: 1 });
+      // Tags is an array; index has one entry per tag value
+      await db.collection('posts').find({ tags: 'mongodb' });   // uses index
+      ```
+
+      Mongo allows at most one multikey field per compound index.
+
+      ### `explain()` to verify
+
+      ```javascript
+      await db.collection('orders').find({ userId: x }).explain('executionStats');
+      // Look for:
+      //   stage: 'IXSCAN'   ← good
+      //   stage: 'COLLSCAN' ← bad, probably missing index
+      //   nReturned vs totalKeysExamined ratio close to 1 ← good
+      ```
+
+  - sequence: 5
+    fragment_type: execution
+    content: |
+      ## Transactions and change streams
+
+      ### Multi-document transactions (replica set / sharded only)
+
+      ```typescript
+      const session = client.startSession();
+      try {
+        await session.withTransaction(async () => {
+          await db.collection('orders').insertOne({ /* ... */ }, { session });
+          await db.collection('inventory').updateOne(
+            { sku: 'X' },
+            { $inc: { qty: -1 } },
+            { session },
+          );
+        }, {
+          readConcern: { level: 'snapshot' },
+          writeConcern: { w: 'majority' },
+        });
+      } finally {
+        await session.endSession();
+      }
+      ```
+
+      Cost: transactions in Mongo are slower than single-document operations. Prefer schema designs where the atomic unit fits in one document.
+
+      ### Change streams — listening for writes
+
+      Real-time tail of oplog. Used for cache invalidation, downstream sync, audit feeds.
+
+      ```typescript
+      const stream = db.collection('orders').watch([
+        { $match: { 'fullDocument.status': 'paid' } },
+      ], { fullDocument: 'updateLookup' });
+
+      for await (const change of stream) {
+        // change.operationType: 'insert' | 'update' | 'delete' | ...
+        // change.documentKey._id
+        // change.fullDocument          (insert/replace; update with updateLookup option)
+        // change.updateDescription    (update: which fields changed)
+        await handleOrderPaid(change.fullDocument);
+      }
+      ```
+
+      Resume on disconnect using `change.resumeToken` so you don't miss events:
+
+      ```typescript
+      const stream = db.collection('orders').watch([], {
+        resumeAfter: lastSavedToken,
+      });
+      ```
+
+  - sequence: 6
+    fragment_type: example
+    content: |
+      ## NestJS service wrapper (official driver)
+
+      ```typescript
+      // src/mongo/mongo.module.ts
+      import { Module, Global, OnModuleDestroy } from '@nestjs/common';
+      import { MongoClient, Db } from 'mongodb';
+
+      @Global()
+      @Module({
+        providers: [
+          {
+            provide: 'MONGO_DB',
+            useFactory: async (): Promise<Db> => {
+              const client = new MongoClient(process.env.MONGODB_URL!, {
+                maxPoolSize: 50,
+                retryWrites: true,
+              });
+              await client.connect();
+              return client.db();
+            },
+          },
+        ],
+        exports: ['MONGO_DB'],
+      })
+      export class MongoModule implements OnModuleDestroy {
+        async onModuleDestroy() {
+          // grab the client and close — pseudocode; in practice keep a ref
+        }
+      }
+      ```
+
+      Inject with `@Inject('MONGO_DB') private readonly db: Db`.
+
+      ### Type-safe collection access
+
+      ```typescript
+      interface Order {
+        _id: ObjectId;
+        userId: ObjectId;
+        total: Decimal128;
+        items: Array<{ sku: string; qty: number; priceAtPurchase: Decimal128 }>;
+        status: 'pending' | 'paid' | 'shipped' | 'cancelled';
+        createdAt: Date;
+      }
+
+      const orders = db.collection<Order>('orders');
+      // All inserts/finds/updates are now type-checked against `Order`.
+      ```
+
+  - sequence: 7
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      | Anti-pattern | Problem | Fix |
+      |---|---|---|
+      | Embedding unbounded children | Document hits 16 MB limit; reads get massive | Reference for unbounded; embed for bounded |
+      | Storing money as `Number` (Double) | Binary FP precision loss | `Decimal128` (`NumberDecimal('19.99')`) |
+      | Forgetting indexes on `$lookup` foreign field | Per-document collection scan | Index the joined collection's `localField` |
+      | `$where` (server-side JS) | Slow, deprecated, security risk | Use proper operators or aggregation expressions |
+      | Long-running aggregation in foreground | Blocks the connection slot | Use `allowDiskUse: true` + a queue/worker pattern |
+      | One MongoClient per request | Connection storm | Singleton MongoClient per process |
+      | `replaceOne` when you meant `updateOne` | Wipes fields you didn't include | `updateOne({ $set: { ... } })` |
+      | Schema drift via `Mongoose.find().lean()` returning `any` | Loses type safety quietly | Always type your models, or use the official driver with explicit interfaces |
+      | Missing `writeConcern: 'majority'` on critical writes | Acknowledged write may be lost on primary failover | Set `writeConcern: { w: 'majority' }` |
+      | Polling instead of change streams | Wasted reads, lag | `db.watch()` for real-time |
+
+      ### Production posture
+
+      - Replica set or Atlas — never standalone in production. Transactions and change streams require a replica set.
+      - Monitor `Aggregation` slow queries via `slow query log` (`profile = 1`, `slowms = 100`).
+      - Set `--wiredTigerCacheSizeGB` to ~50% of RAM (Atlas does this for you).
+
+  - sequence: 8
+    fragment_type: verification
+    content: |
+      ## Verification checklist
+
+      - [ ] Connection URL is `mongodb+srv://` (Atlas) or specifies a replica set
+      - [ ] One `MongoClient` per process, reused
+      - [ ] `writeConcern: { w: 'majority' }` on durable writes
+      - [ ] Money fields use `Decimal128`, not `Number`
+      - [ ] All compound indexes follow leftmost-prefix; verified with `.explain('executionStats')`
+      - [ ] No `COLLSCAN` on hot queries
+      - [ ] `$lookup` foreign fields indexed; `pipeline` form used to project early
+      - [ ] Embed vs. reference decision documented per collection (in code comments or schema docs)
+      - [ ] Change streams use `resumeAfter` for crash-safe consumption
+      - [ ] Transactions kept short; consider redesign before adding multi-document transactions
+      - [ ] Backups: Atlas continuous backup OR `mongodump` schedule + restore drill verified
+      - [ ] Slow query profiler enabled in non-production at minimum: `db.setProfilingLevel('slow_only', { slowms: 100 })` (Node driver v6+ uses string levels: `'off'` / `'slow_only'` / `'all'`; the legacy `0`/`1`/`2` ints work in the shell only)

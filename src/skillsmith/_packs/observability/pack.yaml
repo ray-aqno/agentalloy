@@ -1,5 +1,5 @@
 name: observability
-version: 1.0.0
+version: 1.1.0
 description: Observability — Prometheus, Grafana, distributed tracing, SLO implementation,
   service mesh observability.
 author: navistone
@@ -16,6 +16,9 @@ skills:
 - skill_id: grafana-dashboards
   file: grafana-dashboards.yaml
   fragment_count: 10
+- skill_id: opentelemetry-nodejs
+  file: opentelemetry-nodejs.yaml
+  fragment_count: 8
 - skill_id: prometheus-configuration
   file: prometheus-configuration.yaml
   fragment_count: 11
