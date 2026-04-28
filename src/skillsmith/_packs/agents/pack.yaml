@@ -1,0 +1,45 @@
+name: agents
+version: 1.0.0
+description: Agentic development — prompt engineering, RAG, LangChain, MCP, LLM evaluation,
+  vector search, audit trails.
+author: navistone
+embed_model: qwen3-embedding:0.6b
+embedding_dim: 1024
+license: MIT
+homepage: https://github.com/nrmeyers/skillsmith
+always_install: false
+depends_on: []
+skills:
+- skill_id: context-engineering
+  file: context-engineering.yaml
+  fragment_count: 17
+- skill_id: embedding-strategies
+  file: embedding-strategies.yaml
+  fragment_count: 13
+- skill_id: hybrid-search-implementation
+  file: hybrid-search-implementation.yaml
+  fragment_count: 7
+- skill_id: langchain-architecture
+  file: langchain-architecture.yaml
+  fragment_count: 14
+- skill_id: llm-evaluation
+  file: llm-evaluation.yaml
+  fragment_count: 11
+- skill_id: prompt-engineering-patterns
+  file: prompt-engineering-patterns.yaml
+  fragment_count: 13
+- skill_id: protect-mcp-setup
+  file: protect-mcp-setup.yaml
+  fragment_count: 11
+- skill_id: rag-implementation
+  file: rag-implementation.yaml
+  fragment_count: 13
+- skill_id: signed-audit-trails-recipe
+  file: signed-audit-trails-recipe.yaml
+  fragment_count: 16
+- skill_id: similarity-search-patterns
+  file: similarity-search-patterns.yaml
+  fragment_count: 7
+- skill_id: vector-index-tuning
+  file: vector-index-tuning.yaml
+  fragment_count: 8

@@ -42,10 +42,21 @@ def add_parser(
     p.set_defaults(func=_run)
 
 
+def _packs_dir() -> Path:
+    """Return the directory containing pack manifests.
+
+    Resolves to ``src/skillsmith/_packs/`` in both editable and wheel
+    installs (the path is the same because editable installs point
+    Python at the repo's `src/skillsmith/` directly).
+    """
+    import skillsmith
+    return Path(skillsmith.__file__).resolve().parent / "_packs"
+
+
 def _run(args: argparse.Namespace) -> int:
     from skillsmith.install.state import _repo_root  # pyright: ignore[reportPrivateUsage]
     root = _repo_root()
-    packs_root = root / "seeds" / "packs"
+    packs_root = _packs_dir()
 
     available = _discover_packs(packs_root)
     if not available:

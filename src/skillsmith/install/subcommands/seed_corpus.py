@@ -89,42 +89,71 @@ def _check_ladybug(ladybug_path: Path) -> int:
     return count
 
 
+def _initialize_empty_corpus(user_corpus: Path) -> None:
+    """Initialize LadybugDB schema + DuckDB stores in an empty corpus dir.
+
+    LadybugDB requires explicit ``migrate()`` to create the Skill /
+    SkillVersion / Fragment node tables and edge tables. Without this
+    step, ``ingest`` fails with "Table Skill does not exist". DuckDB
+    schemas are created automatically by ``open_or_create``.
+    """
+    user_corpus.mkdir(parents=True, exist_ok=True)
+    duck_path = user_corpus / "skills.duck"
+    ladybug_path = user_corpus / "ladybug"
+
+    from skillsmith.storage.ladybug import LadybugStore
+    from skillsmith.storage.vector_store import open_or_create
+
+    with LadybugStore(str(ladybug_path)) as store:
+        store.migrate()
+    with open_or_create(duck_path) as _:
+        pass
+
+
 def check_corpus(root: Path | None = None) -> dict[str, Any]:  # noqa: ARG001 — back-compat
     """Run the seed-corpus presence + integrity check.
 
     The corpus lives at ``${XDG_DATA_HOME:-~/.local/share}/skillsmith/corpus/``
-    (user-scoped). On first run, copies the bundled corpus from inside
-    the wheel package into that location.
+    (user-scoped). The wheel no longer ships a pre-built corpus; this step
+    initializes an empty corpus (LadybugDB + DuckDB) so the subsequent
+    ``install-packs`` step can populate it from chosen packs.
     """
     t0 = time.monotonic()
 
-    # First-run seed: copy the bundled corpus out of the wheel into the
-    # user data dir if not already present.
     user_corpus, was_seeded = install_state.ensure_corpus_seeded()
 
     duck_path = user_corpus / "skills.duck"
     ladybug_path = user_corpus / "ladybug"
 
-    remediation = (
-        "Reinstall skillsmith (`pip install --force-reinstall skillsmith`) "
-        "to restore the bundled corpus, or run `python -m skillsmith.install "
-        "install-pack <name>` to add a corpus from a pack."
-    )
-
-    # 1. File presence
-    missing: list[str] = []
-    if not duck_path.exists():
-        missing.append(str(duck_path))
-    if not ladybug_path.exists():
-        missing.append(str(ladybug_path))
-
-    if missing:
+    # New flow: if the bundled corpus is empty (post-pack-refactor wheels),
+    # initialize empty stores. Don't return missing_files — that's the old
+    # behavior from when the wheel shipped a populated corpus.
+    if not duck_path.exists() or not ladybug_path.exists():
+        try:
+            _initialize_empty_corpus(user_corpus)
+        except Exception as exc:
+            duration_ms = int((time.monotonic() - t0) * 1000)
+            return {
+                "schema_version": SCHEMA_VERSION,
+                "action": "init_failed",
+                "error": f"Could not initialize empty corpus stores: {exc}",
+                "remediation": (
+                    "Verify ${XDG_DATA_HOME:-~/.local/share}/skillsmith/corpus/ "
+                    "is writable and re-run `skillsmith seed-corpus`."
+                ),
+                "duration_ms": duration_ms,
+            }
         duration_ms = int((time.monotonic() - t0) * 1000)
         return {
             "schema_version": SCHEMA_VERSION,
-            "action": "missing_files",
-            "missing": missing,
-            "remediation": remediation,
+            "action": "initialized_empty",
+            "corpus_path": str(user_corpus),
+            "skill_count": 0,
+            "fragment_count": 0,
+            "remediation": (
+                "Empty corpus initialized. Run `skillsmith install-packs` "
+                "to opt into skill packs."
+            ),
             "duration_ms": duration_ms,
         }
 

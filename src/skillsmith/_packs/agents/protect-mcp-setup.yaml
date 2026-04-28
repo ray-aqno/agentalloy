@@ -1,0 +1,175 @@
+skill_type: domain
+skill_id: protect-mcp-setup
+canonical_name: protect-mcp — Policy Enforcement + Signed Receipts
+category: ops
+skill_class: domain
+domain_tags:
+- mcp
+- security
+- server-setup
+- tool-validation
+- sandboxing
+- authentication
+- audit
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: initial authoring from agents plugin source
+raw_prose: "# protect-mcp — Policy Enforcement + Signed Receipts\n\nCryptographic governance for every Claude Code tool call. Each invocation is\nevaluated against a Cedar policy and produces an Ed25519-signed receipt that\nanyone can verify offline.\n\n## Overview\n\nClaude Code runs powerful tools: `Bash`, `Edit`, `Write`, `WebFetch`. By default\nthere is no audit trail, no policy enforcement, and no way to prove what was\ndecided after the fact. `protect-mcp` closes all three gaps:\n\n- **Cedar policies** (AWS's open authorization engine) evaluate every tool call\n  before execution. Cedar deny is authoritative.\n- **Ed25519 receipts** record each decision with its inputs, the policy that\n  governed it, and the outcome. Receipts are hash-chained.\n- **Offline verification** via `npx @veritasacta/verify`. No server, no account,\n  no trust in the operator.\n\n## Problem\n\nAI agents make decisions that affect money, safety, and rights. The Claude Code\nsession log records what happened, but the log is:\n\n- Mutable — anyone with access can edit it\n- Unsigned — there is no way to prove integrity\n- Operator-bound — verification requires trusting whoever holds the log\n\nFor compliance contexts (finance, healthcare, regulated research), this is not\nsufficient. You need tamper-evident evidence that can be verified by third\nparties without trusting you.\n\n## Solution\n\nAdd `protect-mcp` to your Claude Code project:\n\n```bash\n# 1. Install the plugin (adds hooks + skill to your project)\nclaude plugin install wshobson/agents/protect-mcp\n\n# 2. Configure hooks in .claude/settings.json (see below)\n\n# 3. Start the receipt-signing server (runs locally, no external calls)\nnpx protect-mcp@latest serve --enforce\n\n# 4. Use Claude Code normally. Every tool call is now policy-evaluated\n#    and produces a signed receipt in ./receipts/\n```\n\n## Hook Configuration\n\nAdd the following to your project's `.claude/settings.json`:\n\n```json\n{\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\n        \"matcher\": \".*\",\n        \"hook\": {\n          \"type\": \"command\",\n          \"command\": \"npx protect-mcp@latest evaluate --policy ./protect.cedar --tool \\\"$TOOL_NAME\\\" --input \\\"$TOOL_INPUT\\\" || exit 2\"\n        }\n      }\n    ],\n    \"PostToolUse\": [\n      {\n        \"matcher\": \".*\",\n        \"hook\": {\n          \"type\": \"command\",\n          \"command\": \"npx protect-mcp@latest sign --tool \\\"$TOOL_NAME\\\" --input \\\"$TOOL_INPUT\\\" --output \\\"$TOOL_OUTPUT\\\" --receipts ./receipts/\"\n        }\n      }\n    ]\n  }\n}\n```\n\n### What each hook does\n\n**PreToolUse** — Runs BEFORE the tool executes. Evaluates the tool call against\nyour Cedar policy file. If Cedar returns `deny`, the hook exits with code 2 and\nClaude Code blocks the tool call entirely.\n\n**PostToolUse** — Runs AFTER the tool completes. Signs a receipt containing the\ntool name, input hash, output hash, decision, policy digest, and timestamp.\nWrites the receipt to `./receipts/<timestamp>.json`.\n\n## Cedar Policy File\n\nCreate `./protect.cedar` at the project root:\n\n```cedar\n// Allow read-only tools by default\npermit (\n    principal,\n    action in [Action::\"Read\", Action::\"Glob\", Action::\"Grep\", Action::\"WebFetch\"],\n    resource\n);\n\n// Require explicit allow for destructive tools\npermit (\n    principal,\n    action == Action::\"Bash\",\n    resource\n) when {\n    // Allow safe commands only\n    context.command_pattern in [\"git\", \"npm\", \"ls\", \"cat\", \"echo\", \"pwd\", \"test\"]\n};\n\n// Never allow recursive deletion\nforbid (\n    principal,\n    action == Action::\"Bash\",\n    resource\n) when {\n    context.command_pattern == \"rm -rf\"\n};\n\n// Require confirmation for writes outside the project\nforbid (\n    principal,\n    action in [Action::\"Edit\", Action::\"Write\"],\n    resource\n) when {\n    context.path_starts_with != \".\"\n};\n```\n\n## Verification\n\nVerify a single receipt:\n\n```bash\nnpx @veritasacta/verify receipts/2026-04-15T10-30-00Z.json\n# Exit 0 = valid\n# Exit 1 = tampered\n# Exit 2 = malformed\n```\n\nVerify the entire chain:\n\n```bash\nnpx @veritasacta/verify receipts/*.json\n```\n\nUse the plugin's slash commands from within Claude Code:\n\n```\n/verify-receipt receipts/latest.json\n/audit-chain ./receipts/ --last 20\n```\n\n## Receipt Format\n\nEach receipt is a JSON file with this structure:\n\n```json\n{\n  \"receipt_id\": \"rec_8f92a3b1\",\n  \"receipt_version\": \"1.0\",\n  \"issuer_id\": \"claude-code-protect-mcp\",\n  \"event_time\": \"2026-04-15T10:30:00.000Z\",\n  \"tool_name\": \"Bash\",\n  \"input_hash\": \"sha256:a3f8...\",\n  \"decision\": \"allow\",\n  \"policy_id\": \"autoresearch-safe\",\n  \"policy_digest\": \"sha256:b7e2...\",\n  \"parent_receipt_id\": \"rec_3d1ab7c2\",\n  \"public_key\": \"4437ca56815c0516...\",\n  \"signature\": \"4cde814b7889e987...\"\n}\n```\n\n- **Ed25519** signatures (RFC 8032)\n- **JCS canonicalization** (RFC 8785) before signing\n- **Hash-chained** to the previous receipt via `parent_receipt_id`\n- **Offline verifiable** — no network call, no vendor lookup\n\n## Why This Matters\n\n| Before | After |\n|--------|-------|\n| \"Trust me, the agent only read files\" | Cryptographically provable: every Read logged and signed |\n| \"The log shows it happened\" | The receipt proves it happened, and no one can edit it |\n| \"You'd have to audit our system\" | Anyone can verify every receipt offline |\n| \"Logs might be different by now\" | Ed25519 signatures lock the record at signing time |\n\n## Standards\n\n- **Ed25519** — RFC 8032 (digital signatures)\n- **JCS** — RFC 8785 (deterministic JSON canonicalization)\n- **Cedar** — AWS's open authorization policy language\n- **IETF draft** — [draft-farley-acta-signed-receipts](https://datatracker.ietf.org/doc/draft-farley-acta-signed-receipts/)\n\n## Related\n\n- **npm**: [protect-mcp](https://www.npmjs.com/package/protect-mcp) (v0.5.5, 10K+ monthly downloads)\n- **Verify CLI**: [@veritasacta/verify](https://www.npmjs.com/package/@veritasacta/verify)\n- **Source**: [github.com/ScopeBlind/scopeblind-gateway](https://github.com/ScopeBlind/scopeblind-gateway)\n- **Protocol**: [veritasacta.com](https://veritasacta.com)\n- **Integrations**: Microsoft Agent Governance Toolkit (PR #667), AWS cedar-policy/cedar-for-agents (PR #64)"
+fragments:
+- sequence: 1
+  fragment_type: rationale
+  content: '# protect-mcp — Policy Enforcement + Signed Receipts
+
+
+    Cryptographic governance for every Claude Code tool call. Each invocation is
+
+    evaluated against a Cedar policy and produces an Ed25519-signed receipt that
+
+    anyone can verify offline.'
+- sequence: 2
+  fragment_type: rationale
+  content: "## Overview\n\nClaude Code runs powerful tools: `Bash`, `Edit`, `Write`, `WebFetch`. By default\nthere is no audit trail, no policy enforcement, and no way to prove what was\ndecided after the fact. `protect-mcp` closes all three gaps:\n\n- **Cedar policies** (AWS's open authorization engine) evaluate every tool call\n  before execution. Cedar deny is authoritative.\n- **Ed25519 receipts** record each decision with its inputs, the policy that\n  governed it, and the outcome. Receipts are hash-chained.\n- **Offline verification** via `npx @veritasacta/verify`. No server, no account,\n  no trust in the operator."
+- sequence: 3
+  fragment_type: rationale
+  content: '## Problem
+
+
+    AI agents make decisions that affect money, safety, and rights. The Claude Code
+
+    session log records what happened, but the log is:
+
+
+    - Mutable — anyone with access can edit it
+
+    - Unsigned — there is no way to prove integrity
+
+    - Operator-bound — verification requires trusting whoever holds the log
+
+
+    For compliance contexts (finance, healthcare, regulated research), this is not
+
+    sufficient. You need tamper-evident evidence that can be verified by third
+
+    parties without trusting you.'
+- sequence: 4
+  fragment_type: execution
+  content: '## Solution
+
+
+    Add `protect-mcp` to your Claude Code project:
+
+
+    ```bash
+
+    # 1. Install the plugin (adds hooks + skill to your project)
+
+    claude plugin install wshobson/agents/protect-mcp
+
+
+    # 2. Configure hooks in .claude/settings.json (see below)
+
+
+    # 3. Start the receipt-signing server (runs locally, no external calls)
+
+    npx protect-mcp@latest serve --enforce
+
+
+    # 4. Use Claude Code normally. Every tool call is now policy-evaluated
+
+    #    and produces a signed receipt in ./receipts/
+
+    ```'
+- sequence: 5
+  fragment_type: execution
+  content: "## Hook Configuration\n\nAdd the following to your project's `.claude/settings.json`:\n\n```json\n{\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\n        \"matcher\": \".*\",\n        \"hook\": {\n          \"type\": \"command\",\n          \"command\": \"npx protect-mcp@latest evaluate --policy ./protect.cedar --tool \\\"$TOOL_NAME\\\" --input \\\"$TOOL_INPUT\\\" || exit 2\"\n        }\n      }\n    ],\n    \"PostToolUse\": [\n      {\n        \"matcher\": \".*\",\n        \"hook\": {\n          \"type\": \"command\",\n          \"command\": \"npx protect-mcp@latest sign --tool \\\"$TOOL_NAME\\\" --input \\\"$TOOL_INPUT\\\" --output \\\"$TOOL_OUTPUT\\\" --receipts ./receipts/\"\n        }\n      }\n    ]\n  }\n}\n```\n\n### What each hook does\n\n**PreToolUse** — Runs BEFORE the tool executes. Evaluates the tool call against\nyour Cedar policy file. If Cedar returns `deny`, the hook exits with code 2 and\nClaude Code blocks the tool call entirely.\n\n**PostToolUse** — Runs AFTER the tool completes. Signs a receipt containing the\ntool name, input hash, output hash, decision, policy digest, and timestamp.\nWrites the receipt to `./receipts/<timestamp>.json`."
+- sequence: 6
+  fragment_type: execution
+  content: "## Cedar Policy File\n\nCreate `./protect.cedar` at the project root:\n\n```cedar\n// Allow read-only tools by default\npermit (\n    principal,\n    action in [Action::\"Read\", Action::\"Glob\", Action::\"Grep\", Action::\"WebFetch\"],\n    resource\n);\n\n// Require explicit allow for destructive tools\npermit (\n    principal,\n    action == Action::\"Bash\",\n    resource\n) when {\n    // Allow safe commands only\n    context.command_pattern in [\"git\", \"npm\", \"ls\", \"cat\", \"echo\", \"pwd\", \"test\"]\n};\n\n// Never allow recursive deletion\nforbid (\n    principal,\n    action == Action::\"Bash\",\n    resource\n) when {\n    context.command_pattern == \"rm -rf\"\n};\n\n// Require confirmation for writes outside the project\nforbid (\n    principal,\n    action in [Action::\"Edit\", Action::\"Write\"],\n    resource\n) when {\n    context.path_starts_with != \".\"\n};\n```"
+- sequence: 7
+  fragment_type: verification
+  content: '## Verification
+
+
+    Verify a single receipt:
+
+
+    ```bash
+
+    npx @veritasacta/verify receipts/2026-04-15T10-30-00Z.json
+
+    # Exit 0 = valid
+
+    # Exit 1 = tampered
+
+    # Exit 2 = malformed
+
+    ```
+
+
+    Verify the entire chain:
+
+
+    ```bash
+
+    npx @veritasacta/verify receipts/*.json
+
+    ```
+
+
+    Use the plugin''s slash commands from within Claude Code:
+
+
+    ```
+
+    /verify-receipt receipts/latest.json
+
+    /audit-chain ./receipts/ --last 20
+
+    ```'
+- sequence: 8
+  fragment_type: execution
+  content: "## Receipt Format\n\nEach receipt is a JSON file with this structure:\n\n```json\n{\n  \"receipt_id\": \"rec_8f92a3b1\",\n  \"receipt_version\": \"1.0\",\n  \"issuer_id\": \"claude-code-protect-mcp\",\n  \"event_time\": \"2026-04-15T10:30:00.000Z\",\n  \"tool_name\": \"Bash\",\n  \"input_hash\": \"sha256:a3f8...\",\n  \"decision\": \"allow\",\n  \"policy_id\": \"autoresearch-safe\",\n  \"policy_digest\": \"sha256:b7e2...\",\n  \"parent_receipt_id\": \"rec_3d1ab7c2\",\n  \"public_key\": \"4437ca56815c0516...\",\n  \"signature\": \"4cde814b7889e987...\"\n}\n```\n\n- **Ed25519** signatures (RFC 8032)\n- **JCS canonicalization** (RFC 8785) before signing\n- **Hash-chained** to the previous receipt via `parent_receipt_id`\n- **Offline verifiable** — no network call, no vendor lookup"
+- sequence: 9
+  fragment_type: rationale
+  content: '## Why This Matters
+
+
+    | Before | After |
+
+    |--------|-------|
+
+    | "Trust me, the agent only read files" | Cryptographically provable: every Read logged and signed |
+
+    | "The log shows it happened" | The receipt proves it happened, and no one can edit it |
+
+    | "You''d have to audit our system" | Anyone can verify every receipt offline |
+
+    | "Logs might be different by now" | Ed25519 signatures lock the record at signing time |'
+- sequence: 10
+  fragment_type: execution
+  content: '## Standards
+
+
+    - **Ed25519** — RFC 8032 (digital signatures)
+
+    - **JCS** — RFC 8785 (deterministic JSON canonicalization)
+
+    - **Cedar** — AWS''s open authorization policy language
+
+    - **IETF draft** — [draft-farley-acta-signed-receipts](https://datatracker.ietf.org/doc/draft-farley-acta-signed-receipts/)'
+- sequence: 11
+  fragment_type: rationale
+  content: '## Related
+
+
+    - **npm**: [protect-mcp](https://www.npmjs.com/package/protect-mcp) (v0.5.5, 10K+ monthly downloads)
+
+    - **Verify CLI**: [@veritasacta/verify](https://www.npmjs.com/package/@veritasacta/verify)
+
+    - **Source**: [github.com/ScopeBlind/scopeblind-gateway](https://github.com/ScopeBlind/scopeblind-gateway)
+
+    - **Protocol**: [veritasacta.com](https://veritasacta.com)
+
+    - **Integrations**: Microsoft Agent Governance Toolkit (PR #667), AWS cedar-policy/cedar-for-agents (PR #64)'

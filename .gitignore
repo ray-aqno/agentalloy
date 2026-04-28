@@ -64,9 +64,9 @@ eval/runs/
 *.swp
 .claude/worktrees/
 
-skill-source/
-agents/
-agency-agents/
-vercel-labs-agent-skills/
-agent-skills/
-.claude/
+/skill-source/
+/agents/
+/agency-agents/
+/vercel-labs-agent-skills/
+/agent-skills/
+/.claude/

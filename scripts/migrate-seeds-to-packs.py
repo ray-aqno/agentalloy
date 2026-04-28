@@ -24,7 +24,8 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SEEDS = REPO_ROOT / "seeds"
-PACKS_DIR = SEEDS / "packs"
+# Packs live INSIDE the package so they ship with the wheel.
+PACKS_DIR = REPO_ROOT / "src" / "skillsmith" / "_packs"
 
 # Order matters: first match wins.
 # Strategy: framework-specific patterns first, then services, cross-cutting

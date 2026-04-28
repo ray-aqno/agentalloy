@@ -1,0 +1,209 @@
+skill_type: domain
+skill_id: signed-audit-trails-recipe
+canonical_name: Signed Audit Trails for Claude Code Tool Calls
+category: review
+skill_class: domain
+domain_tags:
+- audit-trail
+- signing
+- integrity
+- tamper-proof
+- logging
+- compliance
+- cryptographic
+- chain-of-custody
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: initial authoring from agents plugin source
+raw_prose: "# Signed Audit Trails for Claude Code Tool Calls\n\nCookbook-style walkthrough for cryptographically signed receipts on every\nClaude Code tool call. This is the teaching skill. For the runtime\nimplementation, install the [`protect-mcp`](../../protect-mcp/) plugin.\n\n## What this gives you\n\nEvery tool call (`Bash`, `Edit`, `Write`, `WebFetch`) is:\n\n1. **Evaluated against a Cedar policy** before execution. If the policy denies\n   the call, the tool does not run.\n2. **Signed as an Ed25519 receipt** after execution. Receipts are\n   JCS-canonical, hash-chained, and verifiable offline by anyone with the\n   public key.\n\nAn auditor, regulator, or counterparty can verify the full chain later with a\nsingle CLI command (`npx @veritasacta/verify receipts/*.json`). No network\ncall, no vendor lookup, no trust in the operator.\n\n## When to use the pattern\n\n- **Regulated environments** (finance, healthcare, critical infrastructure)\n  where you need tamper-evident evidence of agent behavior\n- **CI/CD pipelines** where you want to prove that a policy gate held for\n  every automated build step\n- **Multi-party collaboration** where a counterparty wants to verify your\n  agent's behavior without trusting your operator\n- **Compliance contexts** (EU AI Act Article 12, SLSA provenance for\n  agent-built software) where standard logging is not sufficient\n\n## Step 1: Install the hook configuration\n\nCreate `.claude/settings.json` in your project root:\n\n```json\n{\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\n        \"matcher\": \".*\",\n        \"hook\": {\n          \"type\": \"command\",\n          \"command\": \"npx protect-mcp@latest evaluate --policy ./protect.cedar --tool \\\"$TOOL_NAME\\\" --input \\\"$TOOL_INPUT\\\" --fail-on-missing-policy false\"\n        }\n      }\n    ],\n    \"PostToolUse\": [\n      {\n        \"matcher\": \".*\",\n        \"hook\": {\n          \"type\": \"command\",\n          \"command\": \"npx protect-mcp@latest sign --tool \\\"$TOOL_NAME\\\" --input \\\"$TOOL_INPUT\\\" --output \\\"$TOOL_OUTPUT\\\" --receipts ./receipts/ --key ./protect-mcp.key\"\n        }\n      }\n    ]\n  }\n}\n```\n\nThe first run of `protect-mcp sign` generates `./protect-mcp.key` (Ed25519\nprivate key) if one does not exist. Commit the **public** key fingerprint\n(visible in any receipt's `public_key` field); do not commit the private\nkey.\n\nAdd the private key and receipt directory to `.gitignore`:\n\n```bash\necho \"./protect-mcp.key\" >> .gitignore\necho \"./receipts/\" >> .gitignore\n```\n\n## Step 2: Write a Cedar policy\n\nCreate `./protect.cedar`:\n\n```cedar\n// Allow all read-oriented tools by default.\npermit (\n    principal,\n    action in [Action::\"Read\", Action::\"Glob\", Action::\"Grep\", Action::\"WebSearch\"],\n    resource\n);\n\n// Allow Bash commands from a safe list only.\npermit (\n    principal,\n    action == Action::\"Bash\",\n    resource\n) when {\n    context.command_pattern in [\n        \"git\", \"npm\", \"pnpm\", \"yarn\", \"ls\", \"cat\", \"pwd\",\n        \"echo\", \"test\", \"node\", \"python\", \"make\"\n    ]\n};\n\n// Explicit deny on destructive commands. Cedar deny is authoritative.\nforbid (\n    principal,\n    action == Action::\"Bash\",\n    resource\n) when {\n    context.command_pattern in [\"rm -rf\", \"dd\", \"mkfs\", \"shred\"]\n};\n\n// Restrict writes to the project directory.\npermit (\n    principal,\n    action in [Action::\"Write\", Action::\"Edit\"],\n    resource\n) when {\n    context.path_starts_with == \"./\"\n};\n```\n\nFour rules:\n\n- Read-oriented tools always allowed\n- `Bash` allowed for safe command patterns (`git`, `npm`, etc.)\n- `Bash rm -rf` and similar destructive commands explicitly denied\n- Writes allowed only within the project (`./` prefix)\n\nCedar `forbid` rules take precedence over `permit` rules, so destructive\ncommands cannot be bypassed by a later permissive rule.\n\n## Step 3: Use Claude Code normally\n\nStart Claude Code. Every tool call goes through both hooks:\n\n```\nYou: Please read the README and summarize it.\n\nClaude: I will read README.md.\n  [PreToolUse: Read ./README.md -> allow]\n  [Tool: Read executes]\n  [PostToolUse: receipt rcpt-a8f3c9d2 signed to ./receipts/]\n\n... summary of README ...\n```\n\nA session of 20 tool calls produces 20 receipts, each hash-chained to its\npredecessor.\n\n## Step 4: Inspect a receipt\n\n```bash\ncat ./receipts/$(ls -t ./receipts/ | head -1)\n```\n\n```json\n{\n  \"receipt_id\": \"rcpt-a8f3c9d2\",\n  \"receipt_version\": \"1.0\",\n  \"issuer_id\": \"claude-code-protect-mcp\",\n  \"event_time\": \"2026-04-17T12:34:56.123Z\",\n  \"tool_name\": \"Read\",\n  \"input_hash\": \"sha256:a3f8c9d2e1b7465f...\",\n  \"decision\": \"allow\",\n  \"policy_id\": \"protect.cedar\",\n  \"policy_digest\": \"sha256:b7e2f4a6c8d0e1f3...\",\n  \"parent_receipt_id\": \"rcpt-3d1ab7c2\",\n  \"public_key\": \"4437ca56815c0516...\",\n  \"signature\": \"4cde814b7889e987...\"\n}\n```\n\nEvery field except `signature` and `public_key` is covered by the Ed25519\nsignature. Modifying any field after signing invalidates the signature.\n\n## Step 5: Verify the receipt chain\n\n```bash\nnpx @veritasacta/verify ./receipts/*.json\n```\n\nExit codes:\n\n| Code | Meaning |\n|------|---------|\n| `0`  | All receipts verified; chain intact |\n| `1`  | A receipt failed signature verification (tampered, or wrong key) |\n| `2`  | A receipt was malformed |\n\n## Step 6: Demonstrate tamper detection\n\nModify any receipt's `decision` field from `allow` to `deny`:\n\n```bash\npython3 -c \"\nimport json, os\npath = './receipts/' + sorted(os.listdir('./receipts'))[-1]\nr = json.loads(open(path).read())\nr['decision'] = 'deny'\nopen(path, 'w').write(json.dumps(r))\n\"\n\nnpx @veritasacta/verify ./receipts/*.json\n```\n\nThe verifier exits with code `1` and reports which receipt failed. The\nEd25519 signature no longer matches the JCS-canonical bytes of the\ntampered payload.\n\nRestore the field and verification passes again.\n\n## How the cryptography works\n\nThree invariants make receipts verifiable offline across any conformant\nimplementation:\n\n1. **JCS canonicalization (RFC 8785)** before signing. Keys sorted,\n   whitespace minimized, strings NFC-normalized. Two independent\n   implementations produce byte-identical signing payloads for the same\n   receipt content.\n2. **Ed25519 signatures (RFC 8032)** over the canonical bytes.\n   Deterministic, fixed-size, no nonce dependency.\n3. **Hash chain linkage.** Each receipt's `parent_receipt_hash` is the\n   SHA-256 of the predecessor's canonical form. Insertions, deletions, and\n   reorderings break later receipts.\n\nFor the formal wire format see\n[draft-farley-acta-signed-receipts](https://datatracker.ietf.org/doc/draft-farley-acta-signed-receipts/).\n\n## Cross-implementation interop\n\nThe receipt format has four independent implementations today:\n\n| Implementation | Language | Use case |\n|----------------|----------|----------|\n| [protect-mcp](https://www.npmjs.com/package/protect-mcp) | TypeScript | Claude Code, Cursor, MCP hosts |\n| [protect-mcp-adk](https://pypi.org/project/protect-mcp-adk/) | Python | Google Agent Development Kit |\n| [sb-runtime](https://github.com/ScopeBlind/sb-runtime) | Rust | OS-level sandbox (Landlock + seccomp) |\n| APS governance hook | Python | CrewAI, LangChain |\n\nA receipt produced by any of them verifies against\n[`@veritasacta/verify`](https://www.npmjs.com/package/@veritasacta/verify).\nThe auditor does not need to trust the operator's tooling choice: the format\nis the contract.\n\n## CI/CD integration\n\nGate merges on receipt chain verification so no build lands with a broken\nevidence chain:\n\n```yaml\n# .github/workflows/verify-receipts.yml\nname: Verify Decision Receipts\non: [push, pull_request]\n\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-node@v4\n        with: { node-version: '20' }\n      - name: Run governed agent\n        run: python scripts/run_agent.py > receipts.jsonl\n      - name: Verify receipt chain\n        run: npx @veritasacta/verify receipts.jsonl\n```\n\nArchive the receipts as an artifact so the chain survives beyond the job run:\n\n```yaml\n      - name: Upload receipts\n        if: always()\n        uses: actions/upload-artifact@v4\n        with:\n          name: decision-receipts\n          path: receipts/\n```\n\n## Composition with SLSA provenance for agent-built software\n\nWhen Claude Code builds and releases software (running `npm install`,\n`npm build`, `npm publish` as tool calls), the receipt chain is the\nper-step build log. SLSA Provenance v1 has an extension point for this: the\n`byproducts` field can reference the receipt chain alongside the build\nattestation.\n\nThe [agent-commit build type](https://refs.arewm.com/agent-commit/v0.2)\ndocuments the pattern using the ResourceDescriptor shape:\n\n```json\n{\n  \"name\": \"decision-receipts\",\n  \"digest\": { \"sha256\": \"...\" },\n  \"uri\": \"oci://registry/org/build-xyz/receipts:sha256-...\",\n  \"annotations\": {\n    \"predicateType\": \"https://veritasacta.com/attestation/decision-receipt/v0.1\",\n    \"signerRole\": \"supervisor-hook\"\n  }\n}\n```\n\nThe SLSA provenance is signed by the builder identity; the receipt\nattestation is signed by the supervisor-hook identity. Two trust domains,\ncross-referenced at the byproduct layer. See\n[slsa-framework/slsa#1594](https://github.com/slsa-framework/slsa/issues/1594)\nfor the composition discussion.\n\n## Common pitfalls\n\n**Private key in version control.** The generated `./protect-mcp.key` must\nnot be committed. The examples above add it to `.gitignore`. If a key is\naccidentally committed, rotate immediately (delete the key file and let the\nhook regenerate on next run).\n\n**Hook command quoting.** The hooks receive `$TOOL_NAME` and `$TOOL_INPUT`\nas environment variables.\
+  \ Keep the quoting `\"$TOOL_INPUT\"` so inputs with\nspaces or special characters pass through intact.\n\n**Receipts directory in CI.** If Claude Code runs in CI, upload receipts as\nan artifact at the end of the job or the chain is lost at job end.\n\n**Policy is missing.** The example `PreToolUse` hook uses\n`--fail-on-missing-policy false` so an absent `./protect.cedar` does not\nbreak Claude Code out of the box. Remove this flag in production so a\nmissing policy is treated as a hard failure.\n\n## Related in this marketplace\n\n- [`protect-mcp`](../../protect-mcp/) — the runtime hook implementation\n  (use this plugin in production)\n- [`review-agent-governance`](../../review-agent-governance/) — require\n  human approval before review-surface actions; composes with protect-mcp\n\n## References\n\n- [`draft-farley-acta-signed-receipts`](https://datatracker.ietf.org/doc/draft-farley-acta-signed-receipts/) — IETF draft, receipt wire format\n- [RFC 8032](https://datatracker.ietf.org/doc/html/rfc8032) — Ed25519\n- [RFC 8785](https://datatracker.ietf.org/doc/html/rfc8785) — JCS\n- [Cedar policy language](https://docs.cedarpolicy.com/)\n- [protect-mcp on npm](https://www.npmjs.com/package/protect-mcp)\n- [@veritasacta/verify on npm](https://www.npmjs.com/package/@veritasacta/verify)\n- [in-toto/attestation#549](https://github.com/in-toto/attestation/pull/549) — Decision Receipt predicate proposal\n- [agent-commit build type](https://refs.arewm.com/agent-commit/v0.2) — SLSA provenance for agent-produced commits\n- [Microsoft Agent Governance Toolkit](https://github.com/microsoft/agent-governance-toolkit) (`examples/protect-mcp-governed/`)\n- [AWS Cedar for Agents](https://github.com/cedar-policy/cedar-for-agents)"
+fragments:
+- sequence: 1
+  fragment_type: rationale
+  content: '# Signed Audit Trails for Claude Code Tool Calls
+
+
+    Cookbook-style walkthrough for cryptographically signed receipts on every
+
+    Claude Code tool call. This is the teaching skill. For the runtime
+
+    implementation, install the [`protect-mcp`](../../protect-mcp/) plugin.'
+- sequence: 2
+  fragment_type: rationale
+  content: "## What this gives you\n\nEvery tool call (`Bash`, `Edit`, `Write`, `WebFetch`) is:\n\n1. **Evaluated against a Cedar policy** before execution. If the policy denies\n   the call, the tool does not run.\n2. **Signed as an Ed25519 receipt** after execution. Receipts are\n   JCS-canonical, hash-chained, and verifiable offline by anyone with the\n   public key.\n\nAn auditor, regulator, or counterparty can verify the full chain later with a\nsingle CLI command (`npx @veritasacta/verify receipts/*.json`). No network\ncall, no vendor lookup, no trust in the operator."
+- sequence: 3
+  fragment_type: setup
+  content: "## When to use the pattern\n\n- **Regulated environments** (finance, healthcare, critical infrastructure)\n  where you need tamper-evident evidence of agent behavior\n- **CI/CD pipelines** where you want to prove that a policy gate held for\n  every automated build step\n- **Multi-party collaboration** where a counterparty wants to verify your\n  agent's behavior without trusting your operator\n- **Compliance contexts** (EU AI Act Article 12, SLSA provenance for\n  agent-built software) where standard logging is not sufficient"
+- sequence: 4
+  fragment_type: execution
+  content: "## Step 1: Install the hook configuration\n\nCreate `.claude/settings.json` in your project root:\n\n```json\n{\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\n        \"matcher\": \".*\",\n        \"hook\": {\n          \"type\": \"command\",\n          \"command\": \"npx protect-mcp@latest evaluate --policy ./protect.cedar --tool \\\"$TOOL_NAME\\\" --input \\\"$TOOL_INPUT\\\" --fail-on-missing-policy false\"\n        }\n      }\n    ],\n    \"PostToolUse\": [\n      {\n        \"matcher\": \".*\",\n        \"hook\": {\n          \"type\": \"command\",\n          \"command\": \"npx protect-mcp@latest sign --tool \\\"$TOOL_NAME\\\" --input \\\"$TOOL_INPUT\\\" --output \\\"$TOOL_OUTPUT\\\" --receipts ./receipts/ --key ./protect-mcp.key\"\n        }\n      }\n    ]\n  }\n}\n```\n\nThe first run of `protect-mcp sign` generates `./protect-mcp.key` (Ed25519\nprivate key) if one does not exist. Commit the **public** key fingerprint\n(visible in any receipt's `public_key` field); do not commit the private\nkey.\n\nAdd the private key and receipt directory to `.gitignore`:\n\n```bash\necho \"./protect-mcp.key\" >> .gitignore\necho \"./receipts/\" >> .gitignore\n```"
+- sequence: 5
+  fragment_type: execution
+  content: "## Step 2: Write a Cedar policy\n\nCreate `./protect.cedar`:\n\n```cedar\n// Allow all read-oriented tools by default.\npermit (\n    principal,\n    action in [Action::\"Read\", Action::\"Glob\", Action::\"Grep\", Action::\"WebSearch\"],\n    resource\n);\n\n// Allow Bash commands from a safe list only.\npermit (\n    principal,\n    action == Action::\"Bash\",\n    resource\n) when {\n    context.command_pattern in [\n        \"git\", \"npm\", \"pnpm\", \"yarn\", \"ls\", \"cat\", \"pwd\",\n        \"echo\", \"test\", \"node\", \"python\", \"make\"\n    ]\n};\n\n// Explicit deny on destructive commands. Cedar deny is authoritative.\nforbid (\n    principal,\n    action == Action::\"Bash\",\n    resource\n) when {\n    context.command_pattern in [\"rm -rf\", \"dd\", \"mkfs\", \"shred\"]\n};\n\n// Restrict writes to the project directory.\npermit (\n    principal,\n    action in [Action::\"Write\", Action::\"Edit\"],\n    resource\n) when {\n    context.path_starts_with == \"./\"\n};\n```\n\nFour rules:\n\n- Read-oriented tools always allowed\n- `Bash` allowed for safe command patterns (`git`, `npm`, etc.)\n- `Bash rm -rf` and similar destructive commands explicitly denied\n- Writes allowed only within the project (`./` prefix)\n\nCedar `forbid` rules take precedence over `permit` rules, so destructive\ncommands cannot be bypassed by a later permissive rule."
+- sequence: 6
+  fragment_type: execution
+  content: "## Step 3: Use Claude Code normally\n\nStart Claude Code. Every tool call goes through both hooks:\n\n```\nYou: Please read the README and summarize it.\n\nClaude: I will read README.md.\n  [PreToolUse: Read ./README.md -> allow]\n  [Tool: Read executes]\n  [PostToolUse: receipt rcpt-a8f3c9d2 signed to ./receipts/]\n\n... summary of README ...\n```\n\nA session of 20 tool calls produces 20 receipts, each hash-chained to its\npredecessor."
+- sequence: 7
+  fragment_type: execution
+  content: "## Step 4: Inspect a receipt\n\n```bash\ncat ./receipts/$(ls -t ./receipts/ | head -1)\n```\n\n```json\n{\n  \"receipt_id\": \"rcpt-a8f3c9d2\",\n  \"receipt_version\": \"1.0\",\n  \"issuer_id\": \"claude-code-protect-mcp\",\n  \"event_time\": \"2026-04-17T12:34:56.123Z\",\n  \"tool_name\": \"Read\",\n  \"input_hash\": \"sha256:a3f8c9d2e1b7465f...\",\n  \"decision\": \"allow\",\n  \"policy_id\": \"protect.cedar\",\n  \"policy_digest\": \"sha256:b7e2f4a6c8d0e1f3...\",\n  \"parent_receipt_id\": \"rcpt-3d1ab7c2\",\n  \"public_key\": \"4437ca56815c0516...\",\n  \"signature\": \"4cde814b7889e987...\"\n}\n```\n\nEvery field except `signature` and `public_key` is covered by the Ed25519\nsignature. Modifying any field after signing invalidates the signature."
+- sequence: 8
+  fragment_type: verification
+  content: '## Step 5: Verify the receipt chain
+
+
+    ```bash
+
+    npx @veritasacta/verify ./receipts/*.json
+
+    ```
+
+
+    Exit codes:
+
+
+    | Code | Meaning |
+
+    |------|---------|
+
+    | `0`  | All receipts verified; chain intact |
+
+    | `1`  | A receipt failed signature verification (tampered, or wrong key) |
+
+    | `2`  | A receipt was malformed |'
+- sequence: 9
+  fragment_type: example
+  content: '## Step 6: Demonstrate tamper detection
+
+
+    Modify any receipt''s `decision` field from `allow` to `deny`:
+
+
+    ```bash
+
+    python3 -c "
+
+    import json, os
+
+    path = ''./receipts/'' + sorted(os.listdir(''./receipts''))[-1]
+
+    r = json.loads(open(path).read())
+
+    r[''decision''] = ''deny''
+
+    open(path, ''w'').write(json.dumps(r))
+
+    "
+
+
+    npx @veritasacta/verify ./receipts/*.json
+
+    ```
+
+
+    The verifier exits with code `1` and reports which receipt failed. The
+
+    Ed25519 signature no longer matches the JCS-canonical bytes of the
+
+    tampered payload.
+
+
+    Restore the field and verification passes again.'
+- sequence: 10
+  fragment_type: execution
+  content: "## How the cryptography works\n\nThree invariants make receipts verifiable offline across any conformant\nimplementation:\n\n1. **JCS canonicalization (RFC 8785)** before signing. Keys sorted,\n   whitespace minimized, strings NFC-normalized. Two independent\n   implementations produce byte-identical signing payloads for the same\n   receipt content.\n2. **Ed25519 signatures (RFC 8032)** over the canonical bytes.\n   Deterministic, fixed-size, no nonce dependency.\n3. **Hash chain linkage.** Each receipt's `parent_receipt_hash` is the\n   SHA-256 of the predecessor's canonical form. Insertions, deletions, and\n   reorderings break later receipts.\n\nFor the formal wire format see\n[draft-farley-acta-signed-receipts](https://datatracker.ietf.org/doc/draft-farley-acta-signed-receipts/)."
+- sequence: 11
+  fragment_type: execution
+  content: '## Cross-implementation interop
+
+
+    The receipt format has four independent implementations today:
+
+
+    | Implementation | Language | Use case |
+
+    |----------------|----------|----------|
+
+    | [protect-mcp](https://www.npmjs.com/package/protect-mcp) | TypeScript | Claude Code, Cursor, MCP hosts |
+
+    | [protect-mcp-adk](https://pypi.org/project/protect-mcp-adk/) | Python | Google Agent Development Kit |
+
+    | [sb-runtime](https://github.com/ScopeBlind/sb-runtime) | Rust | OS-level sandbox (Landlock + seccomp) |
+
+    | APS governance hook | Python | CrewAI, LangChain |
+
+
+    A receipt produced by any of them verifies against
+
+    [`@veritasacta/verify`](https://www.npmjs.com/package/@veritasacta/verify).
+
+    The auditor does not need to trust the operator''s tooling choice: the format
+
+    is the contract.'
+- sequence: 12
+  fragment_type: execution
+  content: "## CI/CD integration\n\nGate merges on receipt chain verification so no build lands with a broken\nevidence chain:\n\n```yaml\n# .github/workflows/verify-receipts.yml\nname: Verify Decision Receipts\non: [push, pull_request]\n\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-node@v4\n        with: { node-version: '20' }\n      - name: Run governed agent\n        run: python scripts/run_agent.py > receipts.jsonl\n      - name: Verify receipt chain\n        run: npx @veritasacta/verify receipts.jsonl\n```\n\nArchive the receipts as an artifact so the chain survives beyond the job run:\n\n```yaml\n      - name: Upload receipts\n        if: always()\n        uses: actions/upload-artifact@v4\n        with:\n          name: decision-receipts\n          path: receipts/\n```"
+- sequence: 13
+  fragment_type: execution
+  content: "## Composition with SLSA provenance for agent-built software\n\nWhen Claude Code builds and releases software (running `npm install`,\n`npm build`, `npm publish` as tool calls), the receipt chain is the\nper-step build log. SLSA Provenance v1 has an extension point for this: the\n`byproducts` field can reference the receipt chain alongside the build\nattestation.\n\nThe [agent-commit build type](https://refs.arewm.com/agent-commit/v0.2)\ndocuments the pattern using the ResourceDescriptor shape:\n\n```json\n{\n  \"name\": \"decision-receipts\",\n  \"digest\": { \"sha256\": \"...\" },\n  \"uri\": \"oci://registry/org/build-xyz/receipts:sha256-...\",\n  \"annotations\": {\n    \"predicateType\": \"https://veritasacta.com/attestation/decision-receipt/v0.1\",\n    \"signerRole\": \"supervisor-hook\"\n  }\n}\n```\n\nThe SLSA provenance is signed by the builder identity; the receipt\nattestation is signed by the supervisor-hook identity. Two trust domains,\ncross-referenced at the byproduct layer. See\n[slsa-framework/slsa#1594](https://github.com/slsa-framework/slsa/issues/1594)\nfor the composition discussion."
+- sequence: 14
+  fragment_type: guardrail
+  content: '## Common pitfalls
+
+
+    **Private key in version control.** The generated `./protect-mcp.key` must
+
+    not be committed. The examples above add it to `.gitignore`. If a key is
+
+    accidentally committed, rotate immediately (delete the key file and let the
+
+    hook regenerate on next run).
+
+
+    **Hook command quoting.** The hooks receive `$TOOL_NAME` and `$TOOL_INPUT`
+
+    as environment variables. Keep the quoting `"$TOOL_INPUT"` so inputs with
+
+    spaces or special characters pass through intact.
+
+
+    **Receipts directory in CI.** If Claude Code runs in CI, upload receipts as
+
+    an artifact at the end of the job or the chain is lost at job end.
+
+
+    **Policy is missing.** The example `PreToolUse` hook uses
+
+    `--fail-on-missing-policy false` so an absent `./protect.cedar` does not
+
+    break Claude Code out of the box. Remove this flag in production so a
+
+    missing policy is treated as a hard failure.'
+- sequence: 15
+  fragment_type: rationale
+  content: "## Related in this marketplace\n\n- [`protect-mcp`](../../protect-mcp/) — the runtime hook implementation\n  (use this plugin in production)\n- [`review-agent-governance`](../../review-agent-governance/) — require\n  human approval before review-surface actions; composes with protect-mcp"
+- sequence: 16
+  fragment_type: rationale
+  content: '## References
+
+
+    - [`draft-farley-acta-signed-receipts`](https://datatracker.ietf.org/doc/draft-farley-acta-signed-receipts/) — IETF draft, receipt wire format
+
+    - [RFC 8032](https://datatracker.ietf.org/doc/html/rfc8032) — Ed25519
+
+    - [RFC 8785](https://datatracker.ietf.org/doc/html/rfc8785) — JCS
+
+    - [Cedar policy language](https://docs.cedarpolicy.com/)
+
+    - [protect-mcp on npm](https://www.npmjs.com/package/protect-mcp)
+
+    - [@veritasacta/verify on npm](https://www.npmjs.com/package/@veritasacta/verify)
+
+    - [in-toto/attestation#549](https://github.com/in-toto/attestation/pull/549) — Decision Receipt predicate proposal
+
+    - [agent-commit build type](https://refs.arewm.com/agent-commit/v0.2) — SLSA provenance for agent-produced commits
+
+    - [Microsoft Agent Governance Toolkit](https://github.com/microsoft/agent-governance-toolkit) (`examples/protect-mcp-governed/`)
+
+    - [AWS Cedar for Agents](https://github.com/cedar-policy/cedar-for-agents)'

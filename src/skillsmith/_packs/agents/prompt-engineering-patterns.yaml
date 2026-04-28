@@ -1,0 +1,326 @@
+skill_type: domain
+skill_id: prompt-engineering-patterns
+canonical_name: Prompt Engineering Patterns
+category: engineering
+skill_class: domain
+domain_tags:
+- prompt-engineering
+- structured-output
+- chain-of-thought
+- few-shot
+- system-prompts
+- pydantic
+- json-mode
+- prompt-caching
+- rag
+- progressive-disclosure
+- error-recovery
+- token-efficiency
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: revised after adversarial QA — expanded seq 1 rationale, reclassified seq 5 (example) and seq 6 (setup), split seq 8 (roles vs caching), added token-efficiency and RAG examples, expanded self-consistency, expanded domain_tags
+raw_prose: '# Prompt Engineering Patterns
+
+
+  Maximize LLM performance, reliability, and controllability in production: structured outputs, few-shot, chain-of-thought, role-based system prompts, error recovery, prompt caching.
+
+
+  ## When to Use
+
+
+  - Designing complex prompts for production LLM applications
+
+  - Optimizing prompt performance and consistency
+
+  - Implementing structured reasoning (CoT, tree-of-thought, self-consistency)
+
+  - Few-shot systems with dynamic example selection
+
+  - Reusable templates with variable interpolation
+
+  - Debugging inconsistent outputs
+
+  - System prompts for specialized AI assistants
+
+  - Structured outputs (JSON mode) for reliable parsing
+
+  - RAG integration with citation-style answers
+
+
+  ## Core Patterns
+
+
+  Structured output (Pydantic), chain-of-thought with self-verification, self-consistency (sample N reasoning paths, take majority), few-shot with semantic selector, progressive disclosure, error recovery with fallback, role-based system prompts, prompt caching (90%+ token reduction).
+
+
+  ## Token Efficiency
+
+
+  Verbose prompts ("I would like you to please take...") waste budget without quality gain. Concise prompts ("Summarize:") match accuracy at fraction of tokens.
+
+
+  ## RAG Integration
+
+
+  Provide retrieved context, instruct citation notation `[1], [2]`, instruct refusal when context is insufficient. Validate cited passages against retrieved set.
+
+
+  ## Best Practices
+
+
+  Be specific. Show don''t tell. Structured outputs. Test extensively. Iterate rapidly. Monitor in production. Version control. Document intent.
+
+
+  ## Common Pitfalls
+
+
+  Over-engineering, example pollution, context overflow, ambiguous instructions, ignoring edge cases, no error handling, hardcoded values.
+
+
+  ## Success Metrics
+
+
+  Accuracy, consistency, latency (P50/P95/P99), token usage, success rate (parseable outputs), user satisfaction.'
+fragments:
+- sequence: 1
+  fragment_type: rationale
+  content: '# Why Prompt Engineering Matters
+
+
+    LLM behavior in production is determined by three layers: model weights, decoding parameters, and the prompt. Of those three, the prompt is the only one a typical application can change. Treating prompts as code — versioned, regression-tested, A/B tested in production — is the difference between an LLM feature that improves over time and one that drifts unpredictably with every model update.
+
+
+    **Why specificity beats vagueness.** A vague prompt ("be helpful, summarize this") gives the model multiple plausible interpretations; the model picks one stochastically. A specific prompt ("Summarize in exactly 3 bullets, each under 15 words, focusing on findings, conclusions, implications") collapses the response distribution. Specificity is how you trade away creativity in exchange for consistency — usually the right trade in production.
+
+
+    **Why structured outputs reduce downstream brittleness.** When a prompt returns free-form prose, every consumer must parse it with regex or a follow-up LLM call. When the same prompt returns Pydantic-validated JSON, consumers get type safety, schema-aware error handling, and a contract that survives prompt revisions. Structured outputs are infrastructure, not a nice-to-have.
+
+
+    **Why prompts as code.** Prompts that are checked in, code-reviewed, regression-tested against fixtures, and rolled out behind feature flags fail predictably and recoverably. Prompts edited live in admin UIs fail silently and irreversibly — no diff log, no rollback, no audit trail. The same engineering hygiene that applies to code applies to prompts.
+
+
+    **Core principle:** Be specific, show don''t tell, enforce structure, measure performance.'
+- sequence: 2
+  fragment_type: setup
+  content: '## When to Use
+
+
+    - Designing prompts for production LLM applications
+
+    - Optimizing prompt performance and consistency
+
+    - Implementing structured reasoning (chain-of-thought, tree-of-thought, self-consistency)
+
+    - Few-shot systems with dynamic example selection
+
+    - Reusable templates with variable interpolation
+
+    - Debugging inconsistent outputs
+
+    - System prompts for specialized AI assistants
+
+    - Structured outputs (JSON mode) for reliable parsing
+
+    - RAG integration with citation-style answers'
+- sequence: 3
+  fragment_type: example
+  content: "## Structured Output with Pydantic\n\n```python\nfrom pydantic import BaseModel, Field\nfrom typing import Literal\n\nclass SentimentAnalysis(BaseModel):\n    sentiment: Literal[\"positive\", \"negative\", \"neutral\"]\n    confidence: float = Field(ge=0, le=1)\n    key_phrases: list[str]\n    reasoning: str\n\n# LangChain\nstructured_llm = llm.with_structured_output(SentimentAnalysis)\nresult: SentimentAnalysis = await structured_llm.ainvoke(prompt)\n\n# Or instruct model to emit JSON, then parse + validate\nresponse = client.messages.create(model=\"claude-sonnet-4-6\", ...)\nparsed = SentimentAnalysis(**json.loads(response.content[0].text))\n```\n\nHandle `ValidationError` and `JSONDecodeError` with fallback (see error-recovery fragment)."
+- sequence: 4
+  fragment_type: example
+  content: '## Chain-of-Thought with Self-Verification
+
+
+    ```
+
+    Solve this problem step by step.
+
+
+    Problem: {problem}
+
+
+    Instructions:
+
+    1. Break down the problem into clear steps
+
+    2. Work through each step showing your reasoning
+
+    3. State your final answer
+
+    4. Verify your answer by checking it against the original problem
+
+
+    Format:
+
+    ## Steps
+
+    [step-by-step reasoning]
+
+
+    ## Answer
+
+    [final answer]
+
+
+    ## Verification
+
+    [check that answer is correct]
+
+    ```
+
+
+    **Self-consistency variant.** Sample the same prompt N times (typically 3-10) at temperature > 0, then take the majority answer across reasoning paths. Trades latency and cost for higher accuracy on multi-step reasoning. Most useful when the answer space is small (multiple choice, numeric, classification) so a majority vote is well-defined.'
+- sequence: 5
+  fragment_type: example
+  content: "## Few-Shot with Dynamic Example Selection\n\nAvoid context overflow from including all examples. Pick the k most semantically similar:\n\n```python\nfrom langchain_core.example_selectors import SemanticSimilarityExampleSelector\n\nexample_selector = SemanticSimilarityExampleSelector.from_examples(\n    examples=[...],\n    embeddings=VoyageAIEmbeddings(model=\"voyage-3-large\"),\n    vectorstore_cls=Chroma,\n    k=2  # top-2 most similar\n)\n\nexamples = await example_selector.aselect_examples({\"input\": query})\nexamples_text = \"\\n\".join(\n    f\"User: {ex['input']}\\nAssistant: {ex['output']}\"\n    for ex in examples\n)\n```\n\nPick examples that match the target task — example pollution (off-topic examples) hurts more than no examples."
+- sequence: 6
+  fragment_type: setup
+  content: '## Progressive Disclosure — Pick the Right Level
+
+
+    Start simple. Escalate complexity only when measured failure modes demand it.
+
+
+    | Level | Prompt | Use When |
+
+    |---|---|---|
+
+    | 1. Simple | "Summarize this: {text}" | Try first, baseline |
+
+    | 2. Constrained | "Summarize in 3 bullets, focusing on: findings, conclusions, implications. {text}" | Output format inconsistent |
+
+    | 3. Reasoning | "1. Identify thesis. 2. Extract key points. 3. Summarize in 3 bullets." | Quality inconsistent |
+
+    | 4. Few-shot | Add 1-2 in-context examples | Format AND quality inconsistent |
+
+
+    Don''t jump to level 4. Each level adds tokens, latency, and complexity. Most production prompts plateau at level 2 or 3 — measure whether level 4 actually improves the metric you care about before paying for it.'
+- sequence: 7
+  fragment_type: execution
+  content: "## Error Recovery and Fallback\n\nDon't crash on parse failures. Wrap structured calls with a fallback path:\n\n```python\ntry:\n    response = await llm.ainvoke(structured_prompt)\n    return ResponseModel(**json.loads(response.content))\nexcept (json.JSONDecodeError, ValidationError):\n    # Fallback: unstructured prompt\n    simple_response = await llm.ainvoke(simple_prompt)\n    return ResponseModel(\n        answer=simple_response.content,\n        confidence=0.5,\n        sources=[\"fallback extraction\"],\n    )\n```\n\nConfidence-aware prompts: instruct the model to return `confidence: 0.0-1.0` and explain when it cannot determine the answer from context. Downstream consumers can route low-confidence responses for human review."
+- sequence: 8
+  fragment_type: example
+  content: "## Role-Based System Prompts\n\nEncode role, responsibilities, communication style, and constraints. One prompt per role, reused across calls.\n\n```python\nSYSTEM_PROMPTS = {\n    \"code_reviewer\": \"\"\"You are a senior software engineer conducting code reviews.\n\nReview criteria:\n- Correctness, security, performance, maintainability, best practices\n\nOutput format:\n1. Summary assessment (approve/request changes)\n2. Critical issues (must fix)\n3. Suggestions (nice to have)\n4. Positive feedback (what's done well)\"\"\",\n\n    \"analyst\": \"\"\"You are a senior data analyst with expertise in SQL and BI.\n- Write efficient, well-documented queries\n- Explain methodology\n- Highlight insights and recommendations\n- Flag data quality concerns\"\"\",\n\n    \"rag_assistant\": \"\"\"You answer questions based on provided context.\n1. Answer ONLY based on the provided context\n2. If context lacks the answer, say \"I don't have that information\"\n3. Cite specific passages using [1], [2] notation\n4. Ask for clarification when ambiguous\"\"\",\n}\n```\n\nDistinct prompt per role. Version-control them, regression-test outputs, A/B variations in production."
+- sequence: 9
+  fragment_type: execution
+  content: "## Prompt Caching for Static System Prompts\n\nWhen a long system prompt is reused across many calls (RAG, role prompts, instruction blocks), use Anthropic's prompt caching to amortize the input tokens:\n\n```python\nresponse = client.messages.create(\n    model=\"claude-sonnet-4-6\",\n    max_tokens=1000,\n    system=[\n        {\n            \"type\": \"text\",\n            \"text\": LONG_SYSTEM_PROMPT,\n            \"cache_control\": {\"type\": \"ephemeral\"}\n        }\n    ],\n    messages=[{\"role\": \"user\", \"content\": user_query}]\n)\n```\n\nThe cached prefix is billed at ~10% of normal input cost on cache hit. For production deployments with long static prompts (1k+ tokens), this delivers 90%+ token cost reduction on repeated calls. Cache TTL is ~5 minutes; for high-traffic endpoints, the cache stays warm and savings are continuous.\n\nPlace cache-control breakpoints at the boundary between static (system prompt, schema, examples) and dynamic (user query) content. The static portion gets cached; the dynamic portion does not."
+- sequence: 10
+  fragment_type: example
+  content: '## Token Efficiency — Verbose vs Concise
+
+
+    Verbose prompts waste budget without improving quality:
+
+
+    ```python
+
+    # Verbose — ~150 tokens
+
+    verbose_prompt = """
+
+    I would like you to please take the following text and provide me with a
+
+    comprehensive summary of the main points. The summary should capture the key
+
+    ideas and important details while being concise and easy to understand.
+
+    """
+
+
+    # Concise — ~30 tokens
+
+    concise_prompt = """Summarize the key points concisely:
+
+
+    {text}
+
+
+    Summary:"""
+
+    ```
+
+
+    Same accuracy, 5x fewer input tokens, ~5x lower cost per call. At production scale (millions of calls/day), verbose prompts are a measurable line item — concision is free quality.
+
+
+    Audit production prompts periodically for "I would like you to...", "please", "kindly", "if you could...", and "comprehensive" — these are tells that the prompt was written conversationally and can be cut.'
+- sequence: 11
+  fragment_type: example
+  content: '## RAG Integration — Citation-Style Answers
+
+
+    ```
+
+    You are a knowledgeable assistant that answers questions based on provided context.
+
+
+    Context (retrieved from knowledge base):
+
+    {context}
+
+
+    Instructions:
+
+    1. Answer ONLY based on the provided context
+
+    2. If the context doesn''t contain the answer, say "I don''t have information about that in my knowledge base"
+
+    3. Cite specific passages using [1], [2] notation
+
+    4. If the question is ambiguous, ask for clarification
+
+
+    Question: {question}
+
+
+    Answer:
+
+    ```
+
+
+    The `[1], [2]` citation notation lets downstream UI render footnotes linking back to the retrieved passages, and lets evaluation pipelines verify that cited indices correspond to passages that actually contain the claim. Refusal-when-insufficient ("I don''t have information…") is critical: without it, the model hallucinates plausible-sounding answers from training data when retrieval fails, and users cannot tell the difference.'
+- sequence: 12
+  fragment_type: guardrail
+  content: '## Common Pitfalls
+
+
+    - **Over-engineering** — complex prompts before trying simple ones
+
+    - **Example pollution** — examples that don''t match the target task
+
+    - **Context overflow** — too many examples, exceeding token limits
+
+    - **Ambiguous instructions** — leaving room for multiple interpretations
+
+    - **Ignoring edge cases** — only testing happy path
+
+    - **No error handling** — assuming outputs always well-formed
+
+    - **Hardcoded values** — not parameterizing prompts for reuse
+
+    - **Editing prompts in admin UIs** — bypasses version control, no rollback path
+
+    - **Mixing static and dynamic content** without cache breakpoints — defeats prompt caching'
+- sequence: 13
+  fragment_type: verification
+  content: '## Success Metrics
+
+
+    Track these KPIs in production:
+
+
+    - **Accuracy** — correctness of outputs (vs ground-truth labels)
+
+    - **Consistency** — reproducibility across similar inputs (run same prompt N times, measure variance)
+
+    - **Latency** — response time (P50, P95, P99)
+
+    - **Token usage** — average tokens per request (input + output, separately)
+
+    - **Success rate** — % of valid, parseable outputs (no JSONDecodeError, no ValidationError)
+
+    - **User satisfaction** — explicit ratings, downstream task completion, retention
+
+
+    A passing test fixture is necessary but not sufficient. Production observability — sampling real traffic into an evaluation harness, alerting when success rate or accuracy regress — is what catches drift after model updates or upstream prompt changes.'
