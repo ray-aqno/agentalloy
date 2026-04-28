@@ -6,7 +6,6 @@ the dependency picker's missing-dep warning.
 """
 from __future__ import annotations
 
-import textwrap
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -16,7 +15,6 @@ import yaml
 
 from skillsmith.install.subcommands import install_pack as ip
 from skillsmith.install.subcommands import install_packs as ips
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -206,8 +204,9 @@ class TestInstallLocalPack:
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """Same dim, different model → warn but don't block."""
-        from skillsmith.install.subcommands import install_pack as _ip
         from unittest.mock import MagicMock
+
+        from skillsmith.install.subcommands import install_pack as _ip
 
         manifest = {"embedding_dim": 1024, "embed_model": "pack-model"}
         fake_vs = MagicMock()
@@ -221,7 +220,7 @@ class TestInstallLocalPack:
             patch("skillsmith.storage.vector_store.open_or_create",
                   return_value=MagicMock(__enter__=lambda s: fake_vs, __exit__=lambda *a: None)),
         ):
-            err_before = capsys.readouterr().err
+            capsys.readouterr()  # clear any pre-existing capture
             result = _ip._check_embedding_dim(manifest, tmp_path)  # pyright: ignore[reportPrivateUsage]
             err_after = capsys.readouterr().err
 
