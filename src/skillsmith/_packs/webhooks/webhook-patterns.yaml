@@ -1,0 +1,326 @@
+skill_type: domain
+skill_id: webhook-patterns
+canonical_name: Webhook Patterns (HMAC Signing, Replay Protection, Retries, Dead-Letter)
+category: engineering
+skill_class: domain
+domain_tags: [webhooks, hmac, hmac-sha256, signing, replay-protection, retries, exponential-backoff, dead-letter-queue, idempotency, stripe, github]
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: Initial authoring (verified 2026-04-28). Sources — stripe.com/docs/webhooks, docs.github.com/webhooks, standardwebhooks.com.
+raw_prose: |
+  # Webhook Patterns
+
+  ## Overview
+
+  HMAC signing, replay protection, retry-with-backoff, and a dead-letter queue are the four non-negotiables for receiving webhooks from third parties (Stripe, GitHub, GitLab, Slack, Linear, Svix-managed senders). Skip any one and you ship either an injection vector or a silent data-loss surface.
+
+  HMAC-SHA256 is the field consensus signing primitive (verified 2026-04-28). HMAC-SHA1 is legacy only — GitHub's `X-Hub-Signature` is deprecated; use `X-Hub-Signature-256`.
+
+  ## When to use
+
+  - Receiving webhooks from any third party (payment, VCS, chat, support tools).
+  - Building your own webhook delivery system (sending events to customers).
+  - Reviewing existing webhook code for the four non-negotiables.
+
+  ## Authoritative sources (verified 2026-04-28)
+
+  - Stripe webhook signatures: https://stripe.com/docs/webhooks/signatures
+  - GitHub webhook validation: https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
+  - Standard Webhooks v1.0: https://www.standardwebhooks.com/
+
+  Pairs with the `engineering` pack's `error-handling-patterns` for the operator surface around DLQs, and with `redis` if the dedup table or DLQ lives in Redis instead of Postgres.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Webhook Patterns
+
+      HMAC signing, replay protection, retry-with-backoff, and a dead-letter queue are the four non-negotiables for receiving webhooks from third parties (Stripe, GitHub, GitLab, Slack, Linear, Svix-managed senders). Skip any one and you ship either an injection vector or a silent data-loss surface.
+
+      HMAC-SHA256 is the field consensus signing primitive (verified 2026-04-28). HMAC-SHA1 is legacy only — GitHub's `X-Hub-Signature` is deprecated; use `X-Hub-Signature-256`.
+
+      **Use this skill when:** receiving webhooks from any third party (payment, VCS, chat, support tools); building your own webhook delivery system; or reviewing existing webhook code for the four non-negotiables.
+
+  - sequence: 2
+    fragment_type: setup
+    content: |
+      ## Standards landscape (verified 2026-04-28)
+
+      - **Stripe** — `Stripe-Signature: t=<unix-ts>,v1=<hex-hmac-sha256>`. Default replay tolerance 5 minutes. Retries with exponential backoff for up to ~3 days in live mode (exact attempt count not specified by Stripe); events past that window stop being retried. Source: https://stripe.com/docs/webhooks#retries.
+      - **GitHub** — `X-Hub-Signature-256: sha256=<hex-hmac-sha256>`. No timestamp in the header — replay protection is your responsibility (idempotency on the included `X-GitHub-Delivery` UUID). Source: https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries.
+      - **Standard Webhooks v1.0** — vendor-neutral spec adopted by Svix, Zapier, Twilio. Headers `webhook-id`, `webhook-timestamp`, `webhook-signature`. Source: https://www.standardwebhooks.com/.
+
+      **Required env vars** for every webhook receiver:
+
+      ```
+      STRIPE_WEBHOOK_SECRET=whsec_...        # Stripe-issued, per-endpoint
+      GITHUB_WEBHOOK_SECRET=...              # operator-chosen, set in GitHub repo settings
+      ```
+
+      **Middleware order matters.** Mount the raw-body capture *before* any JSON parser:
+
+      ```ts
+      // Express — mount raw body for the webhook route, JSON parser elsewhere
+      import express from 'express';
+      const app = express();
+      app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), stripeHandler);
+      app.use(express.json()); // every other route gets parsed JSON
+      ```
+
+      If your framework auto-parses JSON globally, the signature verification will silently fail because the body bytes you hash differ from the bytes Stripe hashed.
+
+  - sequence: 3
+    fragment_type: execution
+    content: |
+      ## HMAC-SHA256 verification
+
+      ### Stripe (uses the SDK helper)
+
+      ```ts
+      import Stripe from 'stripe';
+
+      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+      const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET!;
+
+      app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), (req, res) => {
+        const sig = req.headers['stripe-signature'] as string;
+        let event: Stripe.Event;
+
+        try {
+          // constructEvent verifies HMAC-SHA256 + checks timestamp tolerance (default 300s)
+          event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+        } catch (err) {
+          console.error('webhook signature verification failed', (err as Error).message);
+          return res.status(400).send('invalid signature');
+        }
+
+        // event is verified — safe to act on
+        return res.status(200).json({ received: true });
+      });
+      ```
+
+      ### GitHub (raw HMAC, no SDK helper)
+
+      ```ts
+      import crypto from 'crypto';
+
+      function verifyGitHubSignature(rawBody: Buffer, signatureHeader: string, secret: string): boolean {
+        const hmac = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+        const expected = `sha256=${hmac}`;
+        // timingSafeEqual prevents timing attacks; both buffers must be equal length
+        const a = Buffer.from(expected);
+        const b = Buffer.from(signatureHeader);
+        return a.length === b.length && crypto.timingSafeEqual(a, b);
+      }
+
+      app.post('/webhooks/github', express.raw({ type: 'application/json' }), (req, res) => {
+        const sig = req.headers['x-hub-signature-256'] as string;
+        if (!sig || !verifyGitHubSignature(req.body, sig, process.env.GITHUB_WEBHOOK_SECRET!)) {
+          return res.status(401).send('invalid signature');
+        }
+        // safe to JSON.parse(req.body) here
+        return res.status(200).end();
+      });
+      ```
+
+      Always use `crypto.timingSafeEqual`, never `===` — string comparison leaks signature bytes through timing side channels.
+
+  - sequence: 4
+    fragment_type: execution
+    content: |
+      ## Replay protection
+
+      A signed request without replay protection is a forever-replayable token. Two layers:
+
+      **Layer 1 — timestamp tolerance.** Reject any signed request whose timestamp is more than N seconds old. Stripe's default is 300s (5 minutes); the Stripe SDK's `constructEvent` enforces this for you. For GitHub, there's no header timestamp — fall back to layer 2.
+
+      **Layer 2 — idempotency on the event ID.** Both Stripe (`event.id` like `evt_...`) and GitHub (`X-GitHub-Delivery` UUID) include a unique delivery ID. Persist a row in a small dedup table; refuse to re-process IDs you've already seen.
+
+      ```sql
+      CREATE TABLE webhook_deliveries (
+        provider     text NOT NULL,
+        delivery_id  text NOT NULL,
+        received_at  timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (provider, delivery_id)
+      );
+      ```
+
+      ```ts
+      // After signature verification, before doing the work
+      try {
+        await db.query(
+          'INSERT INTO webhook_deliveries (provider, delivery_id) VALUES ($1, $2)',
+          ['stripe', event.id]
+        );
+      } catch (err) {
+        if ((err as { code?: string }).code === '23505') {
+          // unique violation — already processed; respond 200 so sender stops retrying
+          return res.status(200).json({ duplicate: true });
+        }
+        throw err;
+      }
+      // ... do the work ...
+      ```
+
+      **Both layers together** defend against (a) attackers replaying a captured signature past the tolerance window and (b) the sender retrying because the receiver crashed mid-handler.
+
+  - sequence: 5
+    fragment_type: execution
+    content: |
+      ## Retry policy with exponential backoff + jitter
+
+      When *you* are the sender (delivering webhooks to customers), retry on connection error or non-2xx response. The pattern, with jitter to prevent thundering herd:
+
+      ```ts
+      type Attempt = { url: string; payload: string; secret: string; retryCount: number };
+
+      const MAX_RETRIES = 12;             // suggested default — tune to your retention budget; not a Stripe-cited value
+      const BASE_DELAY_MS = 1_000;        // 1s
+      const MAX_DELAY_MS = 6 * 60 * 60_000; // 6 hours
+
+      function nextDelayMs(attempt: number): number {
+        const exp = Math.min(BASE_DELAY_MS * 2 ** attempt, MAX_DELAY_MS);
+        // full jitter — uniform 0..exp, not "exp ± small noise"
+        return Math.floor(Math.random() * exp);
+      }
+
+      async function deliverOnce(a: Attempt): Promise<{ ok: boolean; status?: number; error?: string }> {
+        const sig = signHmacSha256(a.payload, a.secret);
+        try {
+          const res = await fetch(a.url, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'webhook-signature': sig,
+              'webhook-timestamp': String(Math.floor(Date.now() / 1000)),
+            },
+            body: a.payload,
+            signal: AbortSignal.timeout(10_000), // 10s connect+read total
+          });
+          return { ok: res.ok, status: res.status };
+        } catch (err) {
+          return { ok: false, error: (err as Error).message };
+        }
+      }
+      ```
+
+      **Honor `Retry-After`.** If the receiver returns 429 or 503 with a `Retry-After: <seconds>` header, use that value instead of the computed backoff.
+
+      **Cap at the hard limit (`MAX_RETRIES`).** Stripe caps at 3 days; pick a cap your operators can monitor and afford to retain. Past the cap, hand off to the DLQ.
+
+  - sequence: 6
+    fragment_type: execution
+    content: |
+      ## Dead-letter queue
+
+      Past the retry cap, archive the full attempt for human inspection. Schema:
+
+      ```sql
+      CREATE TABLE webhook_dead_letter (
+        id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        endpoint_url    text NOT NULL,
+        event_id        text NOT NULL,
+        payload         jsonb NOT NULL,           -- the body we tried to deliver
+        request_headers jsonb NOT NULL,           -- including signature for forensic verification
+        last_status     int,                       -- HTTP status of last attempt (null if connection failed)
+        last_error      text,                      -- error message of last attempt
+        retry_count     int NOT NULL,
+        first_attempt_at timestamptz NOT NULL,
+        last_attempt_at  timestamptz NOT NULL,
+        archived_at     timestamptz NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX idx_dlq_endpoint_archived ON webhook_dead_letter(endpoint_url, archived_at);
+      ```
+
+      **Retention 30–90 days** is industry norm. After that, drop or move to cold storage. Surfaces to expose to operators:
+
+      - List DLQ entries by endpoint, paginated.
+      - Replay one entry on demand (re-enqueue with `retry_count = 0`).
+      - Bulk replay all DLQ entries for an endpoint after a customer fixes their receiver.
+      - Drop / write off (delete row, log who did it).
+
+      **What goes in `last_error` matters.** "fetch failed" tells the operator nothing. Capture the underlying cause: DNS lookup failure, TLS handshake error, connection refused, HTTP 5xx with response body excerpt. Operators classify by error and route fixes to the right team.
+
+  - sequence: 7
+    fragment_type: example
+    content: |
+      ## End-to-end example: receive Stripe webhook, three paths
+
+      The R4 case-space coverage: happy delivery, failed signature, duplicate delivery — all three paths in one handler.
+
+      ```ts
+      import express from 'express';
+      import Stripe from 'stripe';
+
+      const app = express();
+      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+      const secret = process.env.STRIPE_WEBHOOK_SECRET!;
+
+      app.post('/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+        const sig = req.headers['stripe-signature'] as string;
+
+        // PATH 1: failed signature → 400, log, exit
+        let event: Stripe.Event;
+        try {
+          event = stripe.webhooks.constructEvent(req.body, sig, secret);
+        } catch (err) {
+          console.warn('stripe webhook bad signature', (err as Error).message);
+          return res.status(400).send('invalid signature');
+        }
+
+        // PATH 2: duplicate delivery → 200 (so Stripe stops retrying), exit without re-processing
+        try {
+          await db.query(
+            'INSERT INTO webhook_deliveries (provider, delivery_id) VALUES ($1, $2)',
+            ['stripe', event.id]
+          );
+        } catch (err) {
+          if ((err as { code?: string }).code === '23505') {
+            return res.status(200).json({ duplicate: true });
+          }
+          throw err;
+        }
+
+        // PATH 3: happy path → process the event, 200
+        try {
+          await processEvent(event); // your business logic
+          return res.status(200).json({ received: true });
+        } catch (err) {
+          // Important: return 5xx so Stripe retries this one (don't write a partial dedup row)
+          await db.query('DELETE FROM webhook_deliveries WHERE provider = $1 AND delivery_id = $2',
+            ['stripe', event.id]);
+          console.error('stripe webhook handler error', err);
+          return res.status(500).send('internal error');
+        }
+      });
+      ```
+
+      The DELETE on the failure path matters: if you keep the dedup row after a 500, Stripe's retry will be deduped and the event is silently lost. Either commit the dedup + handler atomically (single transaction) or roll back the dedup on handler failure as shown.
+
+  - sequence: 8
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      For any webhook receiver, mechanical checks:
+
+      - [ ] Signature verified against the **raw** request body (grep handler for `express.raw` or framework equivalent before the verify call).
+      - [ ] Verification function uses `crypto.timingSafeEqual`, not `===` (grep for the receiver's verify helper).
+      - [ ] Webhook secret loaded from environment, not hard-coded (`grep -rn "whsec_" src/` should return nothing).
+      - [ ] Idempotency table exists and the handler inserts before doing work (`grep -n "INSERT INTO webhook_deliveries" src/`).
+      - [ ] Duplicate-delivery path returns 200 (so the sender stops retrying), not 4xx.
+      - [ ] Failed-signature path returns 400 or 401, never 200.
+      - [ ] Failed-handler path returns 5xx so the sender retries. Code-review item (not grep-checkable): the same code path that returns 5xx must roll back or remove the dedup-table row so the retry isn't suppressed. `grep -B2 -A20 "INSERT INTO webhook_deliveries" src/` then read each call site.
+
+      For any webhook sender, mechanical checks:
+
+      - [ ] Retry schedule: exponential backoff with **full** jitter (`Math.random() * exp`, not `exp ± noise`).
+      - [ ] Hard retry cap configured and tested (force an always-failing endpoint, watch the cap fire).
+      - [ ] DLQ table exists with the schema fields above; an entry is created when retry_count reaches the cap.
+      - [ ] DLQ entries capture diagnostic detail. Spot-check: `psql -c "SELECT last_status, left(last_error, 200) FROM webhook_dead_letter ORDER BY archived_at DESC LIMIT 5"` — no row should have a bare `"fetch failed"` with no further cause.
+      - [ ] DLQ retention policy enforced (cron or scheduled job that drops or archives entries older than 30–90 days).
+      - [ ] Operator surface exists: list DLQ entries by endpoint, replay one, bulk replay all.

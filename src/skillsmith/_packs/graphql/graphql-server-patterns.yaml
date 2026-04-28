@@ -1,0 +1,364 @@
+skill_type: domain
+skill_id: graphql-server-patterns
+canonical_name: GraphQL Server Patterns (Apollo, Yoga, Mercurius, DataLoader, Federation)
+category: engineering
+skill_class: domain
+domain_tags: [graphql, apollo, apollo-server, graphql-yoga, mercurius, dataloader, n-plus-one, graphql-ws, subscriptions, federation, apollo-federation, hive, graphos, persisted-queries]
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: Initial authoring (verified 2026-04-28). Sources — apollographql.com/docs/apollo-server, the-guild.dev/graphql/yoga-server, mercurius.dev, github.com/graphql/dataloader, github.com/enisdenjo/graphql-ws.
+raw_prose: |
+  # GraphQL Server Patterns
+
+  ## Overview
+
+  Build a GraphQL server in Node.js without N+1 queries, with subscriptions on the standard transport, and with optional Apollo Federation v2 for multi-team graphs. Three production-grade servers in scope: Apollo Server (broadest ecosystem), GraphQL Yoga (highest perf, The Guild), Mercurius (Fastify-native, lowest overhead).
+
+  REST and GraphQL coexist in 2026 — pick by use case. GraphQL wins for typed mobile/SPA clients with deep relations; REST wins for simple resource endpoints, public APIs, and caching layers.
+
+  ## When to use
+
+  - Standing up a new GraphQL server (greenfield).
+  - Diagnosing slow GraphQL endpoints — almost always N+1.
+  - Migrating subscriptions off the dead `subscriptions-transport-ws` package.
+  - Splitting a monolith schema into Apollo Federation v2 subgraphs.
+  - Reviewing existing GraphQL code for the per-request DataLoader rule.
+
+  ## Authoritative sources (verified 2026-04-28)
+
+  - Apollo Server: https://www.apollographql.com/docs/apollo-server (v5 current; v4 EOL 2026-01-26; v3 EOL 2024-10-22)
+  - GraphQL Yoga: https://the-guild.dev/graphql/yoga-server
+  - Mercurius (Fastify): https://mercurius.dev
+  - DataLoader: https://github.com/graphql/dataloader (one loader per request)
+  - graphql-ws transport: https://github.com/enisdenjo/graphql-ws (replaces dead subscriptions-transport-ws)
+  - Apollo Federation v2: https://www.apollographql.com/docs/federation
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # GraphQL Server Patterns
+
+      Build a GraphQL server in Node.js without N+1 queries, with subscriptions on the standard transport, and with optional Apollo Federation v2 for multi-team graphs. The four hazards this skill addresses: **N+1 resolvers**, **dead subscription transports**, **federation directives without resolvers**, and **introspection in production**.
+
+      Three production-grade Node.js servers in scope (verified 2026-04-28):
+
+      - **Apollo Server** v5 current; **v4 is end-of-life as of 2026-01-26** and v3 EOL 2024-10-22 — new code targets v5. Broadest ecosystem; default choice.
+      - **GraphQL Yoga** v5.x — high throughput, smaller core, from The Guild.
+      - **Mercurius** v16.x — Fastify-native, lowest framework overhead.
+
+      REST and GraphQL coexist in 2026; pick by use case. GraphQL wins for typed mobile/SPA clients consuming deep relations. REST wins for simple resource endpoints, public APIs, and HTTP-cache-friendly reads. No "winner" — both ship.
+
+  - sequence: 2
+    fragment_type: setup
+    content: |
+      ## Schema-first vs code-first
+
+      **Schema-first** — author SDL (`type Query { ... }`) as the source of truth, generate or hand-write resolvers to match. Easier to share with non-Node clients and tooling (codegen, IDE plugins). Default for Apollo and Yoga.
+
+      **Code-first** — author resolvers and types in TypeScript via Pothos, TypeGraphQL, or Nexus; SDL is generated. Better TypeScript ergonomics, but the SDL becomes a build artifact rather than a checked-in spec.
+
+      For a 1-team service, code-first is fine. For a multi-team graph, schema-first wins — the SDL is the contract.
+
+      ### SDL conventions worth keeping
+
+      - Every public field has a `description` (renders in Apollo Studio / GraphiQL).
+      - Mutation results return a payload type with `success`, `errors[]`, and the affected entity — never `Boolean`. Errors include code + message; clients pattern-match on code.
+      - Input objects for mutations (one `input` arg, not 5 positional) — easier evolution.
+      - Use enums for closed sets (`UserStatus`, `OrderType`); never bare strings.
+      - Connection-style pagination (`edges`, `pageInfo` with `hasNextPage` + `endCursor`) for any list that can grow — REST-style offset pagination doesn't survive scale.
+
+  - sequence: 3
+    fragment_type: execution
+    content: |
+      ## Apollo Server v5 minimal app
+
+      ```ts
+      import { ApolloServer } from '@apollo/server';
+      import { startStandaloneServer } from '@apollo/server/standalone';
+      import { gql } from 'graphql-tag';
+      import DataLoader from 'dataloader';
+
+      const typeDefs = gql`
+        type User { id: ID!, name: String!, posts: [Post!]! }
+        type Post { id: ID!, title: String!, author: User! }
+        type Query { users: [User!]!, post(id: ID!): Post }
+      `;
+
+      const resolvers = {
+        Query: {
+          users: (_p: unknown, _a: unknown, ctx: Ctx) => ctx.db.users.all(),
+          post:  (_p: unknown, a: { id: string }, ctx: Ctx) => ctx.postLoader.load(a.id),
+        },
+        Post: {
+          // batched per-request to avoid N+1
+          author: (post: Post, _a: unknown, ctx: Ctx) => ctx.userLoader.load(post.authorId),
+        },
+      };
+
+      type Ctx = {
+        db: Db;
+        userLoader: DataLoader<string, User>;
+        postLoader: DataLoader<string, Post>;
+      };
+
+      const server = new ApolloServer<Ctx>({ typeDefs, resolvers });
+      const { url } = await startStandaloneServer(server, {
+        // CRITICAL: build a fresh context per request — see fragment 5 for why
+        context: async () => ({
+          db,
+          userLoader: new DataLoader((ids) => db.users.batchByIds(ids as string[])),
+          postLoader: new DataLoader((ids) => db.posts.batchByIds(ids as string[])),
+        }),
+        listen: { port: 4000 },
+      });
+      console.log(`apollo ready at ${url}`);
+      ```
+
+      Migration notes if you're on v4 (now EOL 2026-01-26 — verified 2026-04-28): `expressMiddleware` moved from `@apollo/server/express4` to a separate package `@as-integrations/express4`; `gql` template tag still imports from `graphql-tag`; the `startStandaloneServer` and `ApolloServer` shapes are unchanged. v3 has been EOL since 2024-10-22 and is unsupported.
+
+  - sequence: 4
+    fragment_type: execution
+    content: |
+      ## GraphQL Yoga as the higher-perf alternative
+
+      Same schema + resolvers; different runtime.
+
+      ```ts
+      import { createYoga } from 'graphql-yoga';
+      import { createServer } from 'node:http';
+      import { makeExecutableSchema } from '@graphql-tools/schema';
+      import DataLoader from 'dataloader';
+
+      const schema = makeExecutableSchema({ typeDefs, resolvers });
+
+      const yoga = createYoga<Ctx>({
+        schema,
+        // context is called per request; return a fresh object every time
+        context: () => ({
+          db,
+          userLoader: new DataLoader((ids) => db.users.batchByIds(ids as string[])),
+          postLoader: new DataLoader((ids) => db.posts.batchByIds(ids as string[])),
+        }),
+        // disable introspection in prod by env or by passing introspection: false
+        graphqlEndpoint: '/graphql',
+      });
+
+      const server = createServer(yoga);
+      server.listen(4000, () => console.log('yoga ready on :4000'));
+      ```
+
+      Yoga benchmarks ~2–3× the throughput of Apollo Server on the same hardware (verified by The Guild's published benchmarks 2026-04-28). The migration is mostly a one-line server constructor swap; resolvers and SDL stay identical.
+
+      For Fastify shops, **Mercurius** (`mercurius` v16.9.x) plugs into Fastify directly:
+
+      ```ts
+      import Fastify from 'fastify';
+      import mercurius from 'mercurius';
+
+      const app = Fastify();
+      app.register(mercurius, { schema, resolvers, context: () => buildCtx() });
+      app.listen({ port: 4000 });
+      ```
+
+  - sequence: 5
+    fragment_type: execution
+    content: |
+      ## DataLoader for N+1 — one loader per request, no exceptions
+
+      The N+1 hazard: each parent in a list triggers one child query. List 100 posts, fetch each author one-by-one → 1 + 100 queries.
+
+      **DataLoader batches and caches per-request.** All `.load(id)` calls within one tick are batched into a single `batchFn(ids[])` call.
+
+      ### The right way — instantiate in context
+
+      ```ts
+      import DataLoader from 'dataloader';
+
+      const userLoader = new DataLoader<string, User>(async (ids) => {
+        const rows = await db.users.findMany({ where: { id: { in: ids as string[] } } });
+        // CRITICAL: return rows in the SAME ORDER as ids — DataLoader's contract
+        const byId = new Map(rows.map((r) => [r.id, r]));
+        return ids.map((id) => byId.get(id) ?? new Error(`user ${id} not found`));
+      });
+
+      // In Apollo/Yoga context factory — fresh loader per request:
+      context: async () => ({ userLoader: new DataLoader(/* ... */) }),
+      ```
+
+      ### The wrong way — module-level loader
+
+      ```ts
+      // DO NOT: module-level loader is shared across all requests
+      // → request A's user data cached and returned to request B (data leak)
+      // → loader's per-request cache never resets
+      const userLoader = new DataLoader(/* ... */);
+      ```
+
+      DataLoader's caching semantics assume a single request's lifetime. A module-level loader leaks data across requests and never frees its cache. This is the #1 GraphQL bug in the wild — covered in DataLoader's README under "Creating a New DataLoader per Request".
+
+  - sequence: 6
+    fragment_type: execution
+    content: |
+      ## Subscriptions on `graphql-ws` — `subscriptions-transport-ws` is dead
+
+      The legacy `subscriptions-transport-ws` package is unmaintained as of 2023 and shouldn't ship in new code. Use `graphql-ws` (v6.0.x verified 2026-04-28) — it's the standard transport baked into Yoga and the Apollo Server subscriptions guide.
+
+      ```ts
+      import { ApolloServer } from '@apollo/server';
+      // v5: expressMiddleware moved to a separate package — install @as-integrations/express4
+      import { expressMiddleware } from '@as-integrations/express4';
+      import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer';
+      import express from 'express';
+      import { createServer } from 'node:http';
+      import { WebSocketServer } from 'ws';
+      import { useServer } from 'graphql-ws/use/ws';
+      import { makeExecutableSchema } from '@graphql-tools/schema';
+
+      const schema = makeExecutableSchema({ typeDefs, resolvers });
+      const app = express();
+      const httpServer = createServer(app);
+
+      // graphql-ws on /graphql/subscriptions
+      const wsServer = new WebSocketServer({ server: httpServer, path: '/graphql/subscriptions' });
+      const serverCleanup = useServer({ schema, context: () => buildCtx() }, wsServer);
+
+      const apollo = new ApolloServer({
+        schema,
+        plugins: [
+          ApolloServerPluginDrainHttpServer({ httpServer }),
+          { async serverWillStart() { return { async drainServer() { await serverCleanup.dispose(); } }; } },
+        ],
+      });
+      await apollo.start();
+      app.use('/graphql', express.json(), expressMiddleware(apollo, { context: async () => buildCtx() }));
+
+      httpServer.listen(4000);
+      ```
+
+      Yoga handles this automatically — subscriptions arrive on the same `/graphql` URL with the WebSocket upgrade path baked in. Mercurius wires `mercurius`'s built-in `subscription: true` option.
+
+      **Auth on the WebSocket upgrade** is its own concern — see the `websockets` skill for the upgrade-time vs first-message tradeoff.
+
+  - sequence: 7
+    fragment_type: execution
+    content: |
+      ## Apollo Federation v2 — subgraphs + gateway
+
+      Federation lets multiple teams own slices of one schema and expose them as a single graph. v2 (verified 2026-04-28) is the stable line; Hive is the recommended managed schema registry; GraphOS is Apollo's broader platform.
+
+      ### Subgraph (one per team/service)
+
+      ```ts
+      import { ApolloServer } from '@apollo/server';
+      import { buildSubgraphSchema } from '@apollo/subgraph';
+      import gql from 'graphql-tag';
+
+      const typeDefs = gql`
+        extend schema @link(url: "https://specs.apollo.dev/federation/v2.5", import: ["@key"])
+        type User @key(fields: "id") {
+          id: ID!
+          email: String!
+        }
+      `;
+
+      const resolvers = {
+        User: {
+          // CRITICAL: every @key type needs a __resolveReference resolver
+          __resolveReference: (ref: { id: string }) => db.users.findById(ref.id),
+        },
+      };
+
+      const subgraph = new ApolloServer({ schema: buildSubgraphSchema({ typeDefs, resolvers }) });
+      ```
+
+      ### Gateway (composes subgraphs)
+
+      Use Apollo Router (Rust binary, the modern path) or `@apollo/gateway` (Node) in front of your subgraphs. Apollo Router is the production recommendation — it's faster and is the only path that GraphOS schema checks gate against.
+
+      ### Federation pitfalls
+
+      - **`@requires` and `@external` directives without matching resolvers** — null propagates upstream silently. Test every federated boundary explicitly with a query that fans out across subgraphs.
+      - **Subgraph schema drift** — without a registry, two subgraphs can publish overlapping types. Use Hive or GraphOS schema checks in CI to catch composition errors before deploy.
+
+  - sequence: 8
+    fragment_type: example
+    content: |
+      ## End-to-end example: same query through Apollo + Yoga
+
+      The R4 case-space coverage: same schema/resolvers/loaders, two servers, both must work without N+1.
+
+      ```ts
+      // shared.ts — schema, resolvers, context factory
+      import { gql } from 'graphql-tag';
+      import DataLoader from 'dataloader';
+
+      export const typeDefs = gql`
+        type User { id: ID!, name: String! }
+        type Post { id: ID!, title: String!, author: User! }
+        type Query { posts: [Post!]! }
+      `;
+
+      export const resolvers = {
+        Query: { posts: (_p: unknown, _a: unknown, ctx: Ctx) => ctx.db.posts.all() },
+        Post: { author: (post: { authorId: string }, _a: unknown, ctx: Ctx) =>
+          ctx.userLoader.load(post.authorId) },
+      };
+
+      export type Ctx = { db: Db; userLoader: DataLoader<string, User> };
+      export const buildCtx = (): Ctx => ({
+        db,
+        userLoader: new DataLoader((ids) => db.users.batchByIds(ids as string[])),
+      });
+      ```
+
+      ```ts
+      // server-apollo.ts
+      import { ApolloServer } from '@apollo/server';
+      import { startStandaloneServer } from '@apollo/server/standalone';
+      import { typeDefs, resolvers, buildCtx } from './shared';
+      const server = new ApolloServer({ typeDefs, resolvers });
+      await startStandaloneServer(server, { context: async () => buildCtx(), listen: { port: 4000 } });
+      ```
+
+      ```ts
+      // server-yoga.ts
+      import { createYoga } from 'graphql-yoga';
+      import { createServer } from 'node:http';
+      import { makeExecutableSchema } from '@graphql-tools/schema';
+      import { typeDefs, resolvers, buildCtx } from './shared';
+      const schema = makeExecutableSchema({ typeDefs, resolvers });
+      createServer(createYoga({ schema, context: () => buildCtx() })).listen(4001);
+      ```
+
+      Query both:
+
+      ```bash
+      curl -s -X POST http://localhost:4000/graphql \
+        -H 'content-type: application/json' \
+        -d '{"query":"{ posts { id title author { name } } }"}'
+      curl -s -X POST http://localhost:4001/graphql \
+        -H 'content-type: application/json' \
+        -d '{"query":"{ posts { id title author { name } } }"}'
+      ```
+
+      Both should return identical JSON. Database query log should show **2 queries total per request** (`posts.all()` + `users.batchByIds([...])`), not `1 + N`. If you see N+1, your DataLoader is wrong (probably module-level — see fragment 5).
+
+  - sequence: 9
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      Mechanical checks for any GraphQL server:
+
+      - [ ] DataLoader instantiated **per request** in the context factory — `grep -rn "new DataLoader" src/` should show all occurrences inside a function (`context:`, `buildCtx`, etc.), never at module scope.
+      - [ ] Database query log shows ≤2 queries per resolved field-with-children (1 parent + 1 batched child), not 1+N. Run the example query under a query logger and count.
+      - [ ] Subscriptions transport is `graphql-ws` — `grep -rn "subscriptions-transport-ws" .` should return zero hits.
+      - [ ] Introspection disabled in production — for Apollo, `introspection: process.env.NODE_ENV !== 'production'`; for Yoga, pass `graphiql: false` or `disableSchema: true` in production builds.
+      - [ ] Every Federation `@key` type has a `__resolveReference` resolver — `grep -B2 -A2 "@key" src/` to confirm.
+      - [ ] Mutations return a payload type (`success`, `errors[]`, entity), not `Boolean` — schema review.
+      - [ ] List queries that can grow use connection-style pagination (`edges`, `pageInfo`, `endCursor`), not offset.
+      - [ ] Persisted queries / APQ enabled if exposed publicly — limits payload size and protects against arbitrary expensive queries.
+      - [ ] Query depth + complexity limits configured (`@graphql-tools/depth-limit` or Yoga's `useDepthLimit` plugin) — caps adversarial nested queries.

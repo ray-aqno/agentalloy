@@ -1,7 +1,7 @@
 name: engineering
-version: 1.1.0
+version: 1.2.0
 description: Generic engineering patterns — API design, error handling, ADRs, microservices,
-  performance, CQRS, event sourcing. Always installed.
+  performance, CQRS, event sourcing, feature flags. Always installed.
 author: navistone
 embed_model: qwen3-embedding:0.6b
 embedding_dim: 1024
@@ -39,6 +39,9 @@ skills:
   fragment_count: 26
 - skill_id: event-store-design
   file: event-store-design.yaml
+  fragment_count: 8
+- skill_id: feature-flags-openfeature
+  file: feature-flags-openfeature.yaml
   fragment_count: 8
 - skill_id: microservices-patterns
   file: microservices-patterns.yaml

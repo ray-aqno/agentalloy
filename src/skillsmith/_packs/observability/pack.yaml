@@ -1,7 +1,7 @@
 name: observability
-version: 1.1.0
+version: 1.2.0
 description: Observability — Prometheus, Grafana, distributed tracing, SLO implementation,
-  service mesh observability.
+  service mesh observability, Sentry error tracking.
 author: navistone
 embed_model: qwen3-embedding:0.6b
 embedding_dim: 1024
@@ -25,6 +25,9 @@ skills:
 - skill_id: python-observability
   file: python-observability.yaml
   fragment_count: 9
+- skill_id: sentry-error-tracking
+  file: sentry-error-tracking.yaml
+  fragment_count: 8
 - skill_id: service-mesh-observability
   file: service-mesh-observability.yaml
   fragment_count: 11

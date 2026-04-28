@@ -1,0 +1,348 @@
+skill_type: domain
+skill_id: websocket-scaling
+canonical_name: WebSocket Scaling (Redis Pub/Sub Fan-Out, Sticky Sessions, Auth on Upgrade, Reconnection)
+category: engineering
+skill_class: domain
+domain_tags: [websockets, websocket, socket-io, ws, redis-pub-sub, sticky-sessions, horizontal-scaling, auth-on-upgrade, reconnection, exponential-backoff, heartbeat, ping-pong, fan-out]
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: Initial authoring (verified 2026-04-28). Sources — socket.io/docs/v4, github.com/websockets/ws, OWASP WebSocket cheat sheet.
+raw_prose: |
+  # WebSocket Scaling
+
+  ## Overview
+
+  Single-node WebSocket works until traffic outgrows one process. Then four problems show up at once: messages don't fan out across nodes, polling fallback breaks behind a load balancer, auth handshakes get bypassed, and connections silently rot when networks blip.
+
+  This skill covers the four patterns that fix them: **Redis pub/sub fan-out**, **sticky sessions**, **auth on the WebSocket upgrade**, and **heartbeat + reconnection with backoff**.
+
+  Library landscape (verified 2026-04-28):
+
+  - `ws@8.20.x` — raw WebSocket, no protocol overhead, you build the framing semantics.
+  - `socket.io@4.8.x` — high-level: rooms, namespaces, polling fallback, auto-reconnect. Pairs with `@socket.io/redis-adapter@7.x` (requires socket.io 4.3.1+).
+  - `uWebSockets.js` — extreme throughput, lower-level than Socket.IO; use when `ws` isn't fast enough.
+  - **Bun** native `Bun.serve({ websocket })` — production-grade in Bun ≥1.0; competitive with uWebSockets.js.
+
+  ## When to use
+
+  - Adding a second WebSocket node behind a load balancer.
+  - Diagnosing "messages drop sometimes" or "polling fallback fails".
+  - Reviewing auth on the WebSocket handshake (the most common security gap).
+  - Building robust client reconnection that doesn't thunder-herd a recovering server.
+
+  ## Authoritative sources (verified 2026-04-28)
+
+  - Socket.IO multiple nodes: https://socket.io/docs/v4/using-multiple-nodes/
+  - Socket.IO Redis adapter: https://socket.io/docs/v4/redis-adapter/
+  - `ws` README: https://github.com/websockets/ws
+  - OWASP WebSocket cheat sheet: https://cheatsheetseries.owasp.org/cheatsheets/WebSocket_Cheat_Sheet.html
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # WebSocket Scaling
+
+      Single-node WebSocket works until traffic outgrows one process. Then four problems show up at once: **messages don't fan out across nodes**, **polling fallback breaks behind a load balancer** (sticky sessions missing), **auth handshakes get bypassed** (auth-on-upgrade missing), and **connections silently rot** when networks blip (no heartbeat, no client backoff).
+
+      This skill covers the four patterns that fix them: **Redis pub/sub fan-out** for cross-node delivery, **sticky sessions** so polling and the upgrade reach the same node, **auth on the WebSocket upgrade** to reject unauthenticated sockets before any frame, and **heartbeat + reconnection with exponential backoff and jitter** so client and server detect dead links and recover without thundering the recovering server.
+
+      Library landscape (verified 2026-04-28): `ws@8.20.x` (raw), `socket.io@4.8.x` (high-level + polling fallback + Redis adapter), `uWebSockets.js` (extreme throughput), Bun native (production-grade in Bun ≥1.0).
+
+  - sequence: 2
+    fragment_type: setup
+    content: |
+      ## Picking the library
+
+      | Need | Use | Why |
+      |---|---|---|
+      | Browser SPA, rooms, polling fallback, auto-reconnect | `socket.io` v4 + `@socket.io/redis-adapter` | The defaults are right; the Redis adapter is the only path that scales horizontally with sticky polling. |
+      | Native WebSocket clients, you control framing | `ws` v8 | Smallest API, no Socket.IO protocol overhead. Pair with your own pub/sub for fan-out. |
+      | Throughput is the bottleneck | `uWebSockets.js` or Bun native | Both ~5–10× `ws` throughput on a single node. |
+      | Fastify shop | `@fastify/websocket` (wraps `ws`) | Lives in the request lifecycle; auth on upgrade via Fastify hooks. |
+
+      Connection-state recovery (Socket.IO 4.6+) is **not yet supported by the Redis adapter** (verified 2026-04-28) — if you need it, you're single-node or need to wait for adapter parity.
+
+      ### Default budget
+
+      For a single Node.js process: assume ~10–20k idle WebSocket connections per GB of RAM, hard-capped by file-descriptor limit (`ulimit -n`). Past that, scale horizontally — which means everything that follows in this skill.
+
+  - sequence: 3
+    fragment_type: execution
+    content: |
+      ## Socket.IO + Redis adapter for cross-node fan-out
+
+      The fan-out problem: client A is connected to node 1, client B to node 2. When node 1 emits `io.to('room-x').emit('event', ...)`, only clients on node 1 receive it. The Redis adapter publishes the emit on a Redis pub/sub channel; every node subscribes and re-emits to its local sockets.
+
+      ```ts
+      import { Server } from 'socket.io';
+      import { createAdapter } from '@socket.io/redis-adapter';
+      import { createClient } from 'redis';
+      import { createServer } from 'node:http';
+
+      const httpServer = createServer();
+      const io = new Server(httpServer);
+
+      // pub + sub clients — duplicate() so the SUBSCRIBE doesn't block other commands
+      const pubClient = createClient({ url: process.env.REDIS_URL });
+      const subClient = pubClient.duplicate();
+      await Promise.all([pubClient.connect(), subClient.connect()]);
+
+      io.adapter(createAdapter(pubClient, subClient));
+
+      io.on('connection', (socket) => {
+        socket.on('join', (room: string) => socket.join(room));
+        // Now io.to(room).emit(...) reaches every node's clients in that room.
+      });
+
+      httpServer.listen(3000);
+      ```
+
+      ### Stale-key cleanup
+
+      The Redis adapter uses keys like `socket.io#/#<room>`. If a node crashes mid-message, those keys can linger. Set a sensible Redis maxmemory + lru-policy, or run a cron that scans and drops stale subscription-set entries older than a chosen TTL.
+
+      ### Backpressure
+
+      A slow Redis blocks emit fan-out. Watch publish latency and Redis client-side queue depth via your usual Redis dashboard (oliver006/redis_exporter exposes `redis_pubsub_channels`, `redis_pubsub_patterns`, plus per-command latency). Alert when publish p99 exceeds your message-rate budget.
+
+  - sequence: 4
+    fragment_type: execution
+    content: |
+      ## Sticky sessions
+
+      The polling-fallback problem: Socket.IO clients in a hostile network environment (corporate proxy, restrictive firewall) fall back from WebSocket to HTTP long-polling. Long-polling is a series of separate HTTP requests. Each request hits whichever node the load balancer picks. A handshake started on node 1 + a polling poll routed to node 2 = "Session ID unknown" error.
+
+      Fix: route every request from the same client to the same node. Two implementations.
+
+      ### Cookie-based (recommended)
+
+      The LB injects a session cookie on first hit; every subsequent request honors it.
+
+      ```nginx
+      # nginx — sticky cookie is the recommended path. Requires nginx-plus, Tengine,
+      # or the open-source `nginx-sticky-module-ng` build. Without it, fall back to
+      # ip_hash — but ip_hash breaks behind any upstream proxy that NATs source IPs.
+      upstream socketio {
+        sticky cookie srv_id expires=1h domain=.example.com path=/;
+        # Fallback if sticky module unavailable:
+        # ip_hash;
+        server node1:3000;
+        server node2:3000;
+      }
+
+      server {
+        listen 80;
+        location /socket.io/ {
+          proxy_pass http://socketio;
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection "upgrade";
+          proxy_read_timeout 60s;               # MUST exceed Socket.IO ping interval
+          proxy_set_header Host $host;
+        }
+      }
+      ```
+
+      ### Heroku/Fly/Cloudflare
+
+      - **Heroku** has no sticky session feature on its router — Socket.IO on Heroku must use WebSocket-only (no polling fallback) by setting `transports: ['websocket']` on the client.
+      - **Fly.io** offers `fly-replay` headers to redirect a request to a specific machine.
+      - **Cloudflare Workers / Pages** support WebSockets (https://developers.cloudflare.com/workers/runtime-apis/websockets/) but don't provide HTTP-session affinity for Socket.IO's polling fallback. If you deploy behind Cloudflare, set `transports: ['websocket']` on the client and verify fallback is disabled (verified 2026-04-28).
+
+      ### Verification
+
+      ```bash
+      curl -c /tmp/c.txt 'http://lb.example.com/socket.io/?EIO=4&transport=polling' > /tmp/r1.txt
+      curl -b /tmp/c.txt 'http://lb.example.com/socket.io/?EIO=4&transport=polling' > /tmp/r2.txt
+      # Both responses should come from the SAME node — check via a debug header your LB injects.
+      # Quote the URL: unquoted '&' forks the shell.
+      ```
+
+      WebSocket-only deployments (`transports: ['websocket']` on the client) don't need sticky sessions because there's only one upgrade request per connection.
+
+  - sequence: 5
+    fragment_type: execution
+    content: |
+      ## Auth on the WebSocket upgrade
+
+      The auth-bypass hazard: many tutorials authenticate inside the first message after connection, which means an unauthenticated socket sits in your event loop until that message arrives. Bots can hold those slots open indefinitely. Authenticate **on the upgrade** request, before the WebSocket is established.
+
+      ### Cookie-based auth (recommended for browser SPAs)
+
+      The browser sends the same session/JWT cookie on the upgrade as on regular HTTP. Read it in middleware.
+
+      ```ts
+      import { Server } from 'socket.io';
+      const io = new Server(httpServer, {
+        cookie: { name: 'sid', httpOnly: true, sameSite: 'strict' },
+      });
+
+      io.use(async (socket, next) => {
+        const cookies = parseCookies(socket.request.headers.cookie ?? '');
+        const session = await sessions.find(cookies.sid);
+        if (!session) return next(new Error('unauthenticated'));
+        socket.data.userId = session.userId; // attach for handlers
+        next();
+      });
+      ```
+
+      ### Query-param token (acceptable for non-browser clients)
+
+      ```ts
+      // ws library — verify in the upgrade handler
+      import { WebSocketServer } from 'ws';
+      const wss = new WebSocketServer({ noServer: true });
+      httpServer.on('upgrade', async (req, socket, head) => {
+        const url = new URL(req.url!, `http://${req.headers.host}`);
+        const token = url.searchParams.get('token');
+        const claims = await verifyJwt(token);
+        if (!claims) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return; }
+        wss.handleUpgrade(req, socket, head, (ws) => {
+          (ws as any).userId = claims.sub;
+          wss.emit('connection', ws, req);
+        });
+      });
+      ```
+
+      ### Anti-pattern: `Sec-WebSocket-Protocol` token
+
+      ```ts
+      // DO NOT use the protocol header to smuggle tokens.
+      // It appears in the browser's DevTools Network panel under "Sec-WebSocket-Protocol",
+      // and most proxies log it. Use cookies for browsers, Authorization-style query
+      // params (over wss://) for non-browsers.
+      ```
+
+      Always use `wss://` (TLS), never `ws://`, in production. Without TLS, query-param tokens leak in transit logs and the cookie hijack surface widens.
+
+  - sequence: 6
+    fragment_type: execution
+    content: |
+      ## Heartbeat + client reconnection with backoff
+
+      ### Server: heartbeat below LB idle timeout
+
+      Load balancers idle out connections after N seconds (nginx default `proxy_read_timeout` 60s; AWS NLB 350s; Cloudflare 100s). The WebSocket must ping more often than the LB times out, or the LB silently kills the socket.
+
+      Socket.IO defaults: `pingInterval: 25_000` + `pingTimeout: 20_000`. Combined budget is ~45s — under nginx's default 60s. Verify your LB's idle timeout is **larger** than `pingInterval + pingTimeout`.
+
+      ```ts
+      const io = new Server(httpServer, {
+        pingInterval: 25_000,
+        pingTimeout: 20_000,
+        // For raw `ws`, implement your own:
+        // setInterval(() => ws.ping(), 25_000); ws.on('pong', () => isAlive = true);
+      });
+      ```
+
+      ### Client: exponential backoff with full jitter and a cap
+
+      A wave of disconnected clients all reconnecting at the same delay thunder-herds the recovering server. Spread retries across the backoff window with full jitter.
+
+      ```ts
+      // Browser, plain WebSocket — Socket.IO's client does this automatically with reconnection options
+      const BASE_MS = 500;
+      const MAX_MS = 30_000;
+      const MAX_RETRIES = Infinity; // or cap if you want to stop trying
+
+      function backoffDelay(attempt: number): number {
+        const exp = Math.min(BASE_MS * 2 ** attempt, MAX_MS);
+        return Math.random() * exp; // FULL jitter (uniform 0..exp), not exp ± noise
+      }
+
+      function connect(attempt = 0): WebSocket {
+        const ws = new WebSocket('wss://api.example.com/ws?token=' + getToken());
+        ws.addEventListener('open', () => { attempt = 0; });
+        ws.addEventListener('close', (ev) => {
+          if (ev.code === 1008) return; // policy violation — auth failed; don't retry
+          setTimeout(() => connect(attempt + 1), backoffDelay(attempt));
+        });
+        return ws;
+      }
+      ```
+
+      ### Socket.IO client equivalent
+
+      ```ts
+      import { io } from 'socket.io-client';
+      const socket = io('https://api.example.com', {
+        reconnection: true,
+        reconnectionDelay: 500,
+        reconnectionDelayMax: 30_000,
+        randomizationFactor: 0.5, // jitter
+        // No retry on auth failure — listen for 'connect_error' and stop manually
+      });
+      socket.on('connect_error', (err) => {
+        if (err.message === 'unauthenticated') socket.disconnect();
+      });
+      ```
+
+  - sequence: 7
+    fragment_type: example
+    content: |
+      ## End-to-end: multi-node deployment, server crash, client reconnect
+
+      The R4 case-space coverage: connect through LB → broadcast across nodes → server crash → client reconnects with backoff → heartbeat re-establishes.
+
+      ### Topology
+
+      ```
+      Browser ──▶ nginx (sticky cookie) ──▶ ┌── node-1 (socket.io) ──┐
+                                            │                        ├── Redis (pub/sub adapter)
+                                            └── node-2 (socket.io) ──┘
+      ```
+
+      ### Walkthrough
+
+      1. Client connects: `io('https://app.example.com')`. nginx routes by sticky cookie to `node-1`.
+      2. Upgrade: `io.use(authMiddleware)` reads the session cookie, attaches `socket.data.userId`. If invalid, `next(new Error('unauthenticated'))` — client receives `connect_error` with that message and **does not retry** (auth failed).
+      3. Client joins room `org-42`: `socket.emit('join', 'org-42')`.
+      4. Another client (on `node-2`) emits `io.to('org-42').emit('update', payload)`. The Redis adapter on `node-2` publishes; the adapter on `node-1` receives and re-emits locally; the original client gets `update`.
+      5. `node-1` crashes. The TCP socket dies; the client's `WebSocket.onclose` fires with code 1006 (abnormal closure).
+      6. Client backoff: first retry at `Math.random() * 500`ms (≤500ms), second at `Math.random() * 1000`ms, etc., cap at 30s.
+      7. nginx reroutes to `node-2` (sticky cookie's original target is dead; LB falls back). Upgrade re-runs auth from cookie.
+      8. Client `socket.io-client` automatically re-emits `join 'org-42'` after reconnect (`socket.io-client` keeps room state on the client; raw `ws` requires you to re-join manually).
+
+      ### Manual room re-join (raw `ws` clients)
+
+      ```ts
+      const subscribed = new Set<string>();
+      function send(ws: WebSocket, type: string, payload: unknown) {
+        ws.send(JSON.stringify({ type, payload }));
+      }
+      ws.addEventListener('open', () => {
+        for (const room of subscribed) send(ws, 'join', { room }); // restore subscriptions
+      });
+      ```
+
+      ### Failure-path verification
+
+      ```bash
+      # 1. Connect a client.
+      # 2. SIGTERM node-1.
+      # 3. Watch client logs: backoff retries with increasing delay; eventually reconnect.
+      # 4. Emit from node-2; client receives.
+      # 5. Restart node-1; LB cookie may pin some new clients there.
+      ```
+
+  - sequence: 8
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      Mechanical checks for any horizontally-scaled WebSocket deployment:
+
+      - [ ] More than one WebSocket node behind the LB → Redis adapter (or equivalent pub/sub) wired. `grep -rn "createAdapter\\|RedisAdapter" src/` shows a hit; without it, fan-out is broken across nodes.
+      - [ ] `pingInterval + pingTimeout < LB idle timeout`. Compute and assert. For nginx default 60s + Socket.IO defaults: `25 + 20 = 45 < 60`. Document the LB timeout in repo and revisit if the LB changes.
+      - [ ] Sticky sessions configured on the LB, OR `transports: ['websocket']` on the client to skip polling. Verify with two `curl` calls sharing a cookie jar (see fragment 4) — both should land on the same node.
+      - [ ] Auth runs on the **upgrade**, not on the first message. `grep -rn "io.use\\|wss.handleUpgrade" src/` shows the auth middleware in the upgrade path.
+      - [ ] No `Sec-WebSocket-Protocol`-based token auth. `grep -rn "Sec-WebSocket-Protocol" src/` should return only protocol-name uses, never tokens.
+      - [ ] TLS only — `wss://` in client URLs; `grep -rn "ws://" src/` returns only test/dev paths.
+      - [ ] Reconnection backoff has **full jitter** (`Math.random() * exp`) and a cap (`MAX_MS`). `grep -A5 "reconnection" src/client/` to verify.
+      - [ ] Auth failure (1008 policy violation OR `connect_error: unauthenticated`) stops retries; doesn't loop forever.
+      - [ ] `wss.handleUpgrade` returns 401 (writes `HTTP/1.1 401`) on auth failure rather than completing the upgrade and disconnecting.
+      - [ ] On reconnect, room subscriptions are restored. Socket.IO clients restore automatically; raw `ws` clients need explicit re-join (see fragment 7).
+      - [ ] Server side: `ulimit -n` is set above expected concurrent connection count; otherwise fd exhaustion silently caps capacity.

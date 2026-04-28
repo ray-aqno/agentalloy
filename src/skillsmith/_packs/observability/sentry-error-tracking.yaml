@@ -1,0 +1,358 @@
+skill_type: domain
+skill_id: sentry-error-tracking
+canonical_name: Sentry Error Tracking (SDK 8+, Spans, Source-Map Upload, PII Redaction)
+category: engineering
+skill_class: domain
+domain_tags: [sentry, error-tracking, exception-monitoring, source-maps, performance-monitoring, spans, traces, profiling, beforeSend, pii-redaction, release-tracking]
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: Initial authoring (verified 2026-04-28). Sources — docs.sentry.io/platforms/javascript, github.com/getsentry/sentry-javascript MIGRATION.md.
+raw_prose: |
+  # Sentry Error Tracking
+
+  ## Overview
+
+  Sentry catches unhandled exceptions, ties them to a release + git SHA + source map, groups them by stack-trace fingerprint, and surfaces them in a queryable dashboard. Complementary to OpenTelemetry: OTel measures *what's slow*, Sentry surfaces *what's broken*.
+
+  Three breaking changes since v7 to be aware of (verified 2026-04-28):
+
+  - **v7 → v8+:** "Transactions" renamed to "Spans". `Sentry.startSpan` is the new API; `Sentry.startTransaction` still works but is deprecated.
+  - **Source-map upload:** `npx @sentry/wizard@latest -i sourcemaps` is the recommended path; the older `sentry-cli releases files upload-sourcemaps` still works but is being phased out.
+  - **Profiling SDK** is now a separate opt-in integration (`@sentry/profiling-node`), not bundled.
+
+  ## When to use
+
+  - Setting up a new Node.js / Next.js / React app for error tracking.
+  - Migrating an app from Sentry v7 to v8/v10 SDK.
+  - Diagnosing why source maps don't show in stack traces.
+  - Adding PII redaction before shipping a public surface.
+
+  ## Authoritative sources (verified 2026-04-28)
+
+  - Sentry JS SDK: https://docs.sentry.io/platforms/javascript/
+  - Migration v7 → v8+: https://github.com/getsentry/sentry-javascript/blob/master/MIGRATION.md
+  - Source-map upload: https://docs.sentry.io/platforms/javascript/sourcemaps/uploading/
+  - PII / data scrubbing: https://docs.sentry.io/platforms/javascript/data-management/sensitive-data/
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Sentry Error Tracking
+
+      Sentry catches unhandled exceptions, ties them to a release + git SHA + source map, groups them by stack-trace fingerprint, and surfaces them in a queryable dashboard. **Complementary to OpenTelemetry**: OTel measures *what's slow*, Sentry surfaces *what's broken*. Most teams ship both; they answer different questions.
+
+      Three breaking changes since v7 to be aware of (verified 2026-04-28):
+
+      - **v7 → v8+:** "Transactions" renamed to "Spans". `Sentry.startSpan` is the new API; `Sentry.startTransaction` still works but is deprecated.
+      - **Source-map upload:** `npx @sentry/wizard@latest -i sourcemaps` is the recommended path; the older `sentry-cli releases files upload-sourcemaps` still works but is being phased out.
+      - **Profiling SDK** is now a separate opt-in integration (`@sentry/profiling-node`), not bundled — install if you want CPU profiling.
+
+      Use this skill when setting up a new Node.js/Next.js/React app for **error tracking**, migrating from v7 to v8/v10, diagnosing missing **source maps** in stack traces, or adding PII redaction before shipping a public surface. Covers **performance monitoring** via spans and the `beforeSend` redaction hook.
+
+  - sequence: 2
+    fragment_type: setup
+    content: |
+      ## Init
+
+      Versions (verified 2026-04-28): `@sentry/node@10.50.x`, `@sentry/react@10.50.x`, `@sentry/nextjs@10.50.x`, `@sentry/cli@2.x`, `@sentry/profiling-node@10.50.x` (optional).
+
+      ### Node.js
+
+      ```ts
+      // instrument.ts — load this BEFORE any other import (use `node --import ./instrument.js`)
+      import * as Sentry from '@sentry/node';
+      import { nodeProfilingIntegration } from '@sentry/profiling-node';
+
+      Sentry.init({
+        dsn: process.env.SENTRY_DSN,
+        environment: process.env.NODE_ENV ?? 'development',
+        release: process.env.SENTRY_RELEASE, // CI/CD injects: git SHA or semver tag
+        integrations: [nodeProfilingIntegration()],
+        tracesSampleRate: 0.1,    // 10% of requests get a trace — see fragment 4
+        profilesSampleRate: 0.1,  // of those, 10% get a profile — multiplicative cost
+        // beforeSend redacts PII — see fragment 5
+        beforeSend(event) { return scrubPii(event); },
+      });
+      ```
+
+      Critical: `Sentry.init` must run **before** any HTTP framework, ORM, or worker library is imported. The auto-instrumentation patches modules at import time. Use `--import ./instrument.js` (Node 20.6+) or `--require ./instrument.cjs` to guarantee load order.
+
+      ### Next.js
+
+      ```ts
+      // sentry.client.config.ts, sentry.server.config.ts, sentry.edge.config.ts — three files
+      import * as Sentry from '@sentry/nextjs';
+      Sentry.init({ dsn: process.env.NEXT_PUBLIC_SENTRY_DSN, tracesSampleRate: 0.1 });
+      ```
+
+      ```js
+      // next.config.js
+      import { withSentryConfig } from '@sentry/nextjs';
+      export default withSentryConfig(nextConfig, {
+        org: 'my-org', project: 'my-project',
+        authToken: process.env.SENTRY_AUTH_TOKEN,
+        hideSourceMaps: true, // upload them to Sentry but strip from public bundles
+      });
+      ```
+
+  - sequence: 3
+    fragment_type: execution
+    content: |
+      ## Source-map upload
+
+      Without source maps, every error in the dashboard shows minified `t.s` and `e.fn` instead of your function names. The fix has two paths.
+
+      ### Modern (recommended) — wizard auto-configures the build
+
+      ```bash
+      npx @sentry/wizard@latest -i sourcemaps
+      ```
+
+      The wizard adds a build hook for your stack (Vite, Webpack, Next, Rollup, esbuild) that uploads source maps as part of `npm run build`. It writes a `.sentryclirc` and configures auth via `SENTRY_AUTH_TOKEN` env var.
+
+      ### Legacy fallback — manual `sentry-cli` in CI
+
+      For build systems the wizard doesn't cover, or to keep control:
+
+      ```bash
+      # In CI after build:
+      RELEASE=$(git rev-parse HEAD)
+      npx @sentry/cli releases new "$RELEASE"
+      npx @sentry/cli sourcemaps inject ./dist
+      npx @sentry/cli sourcemaps upload --release "$RELEASE" ./dist
+      npx @sentry/cli releases finalize "$RELEASE"
+      ```
+
+      The `sourcemaps inject` step adds a Debug ID to each minified file so Sentry matches stack frames to maps even when filenames differ between CDN and source. This step is what made the `releases files upload-sourcemaps` legacy path obsolete (verified 2026-04-28).
+
+      ### Verify the upload landed
+
+      ```bash
+      npx @sentry/cli releases files "$RELEASE" list
+      ```
+
+      Should list every `.js.map`. If the list is empty, the SDK's `release` config doesn't match `$RELEASE` — they have to be string-equal.
+
+      **Strip source maps from public bundles.** `hideSourceMaps: true` in Next.js, or post-build `find dist -name '*.map' -delete` after upload. Source maps in your CDN expose your source code.
+
+  - sequence: 4
+    fragment_type: execution
+    content: |
+      ## Performance monitoring with `Sentry.startSpan`
+
+      The v8+ API for tracing arbitrary work:
+
+      ```ts
+      import * as Sentry from '@sentry/node';
+
+      // Wrap a unit of work — span is auto-finished when the callback resolves
+      const user = await Sentry.startSpan(
+        { op: 'db.query', name: 'users.findById' },
+        async () => db.users.findById(userId)
+      );
+
+      // Nested spans automatically chain — Sentry shows the tree in the trace view
+      await Sentry.startSpan({ op: 'http.server', name: 'POST /orders' }, async () => {
+        const items = await Sentry.startSpan({ op: 'db.query', name: 'cart.load' }, () => loadCart());
+        await Sentry.startSpan({ op: 'http.client', name: 'stripe.charge' }, () => charge(items));
+      });
+
+      // Manual finish for fire-and-forget work
+      const span = Sentry.startInactiveSpan({ op: 'queue.publish', name: 'orders.created' });
+      try { await publish(event); } finally { span?.end(); }
+      ```
+
+      `Sentry.startTransaction` (v7) is deprecated. New code uses `startSpan` (callback) or `startInactiveSpan` (manual finish).
+
+      ### Sample-rate guidance
+
+      - `tracesSampleRate: 0.1` is a safe default. **Combined cost is multiplicative** — `tracesSampleRate * profilesSampleRate` of all requests get a profile. At 1.0 × 1.0, profiling alone can add 10–30% CPU overhead.
+      - For high-traffic services, `tracesSampler` (function) lets you bias: 100% sampling on `POST /checkout`, 0.01 on `GET /healthz`.
+      - **Never ship `1.0` to production** for tracesSampleRate without measuring overhead first.
+
+      Integrations to know: `httpIntegration()` auto-spans outbound HTTP, `prismaIntegration()` for Prisma, `expressIntegration()` for Express middleware.
+
+  - sequence: 5
+    fragment_type: execution
+    content: |
+      ## PII redaction in `beforeSend`
+
+      Sentry v10 has **no automatic PII filter** (verified 2026-04-28). The default config can ship cookies, Authorization headers, full URLs with tokens, and user IPs to Sentry's servers. You must redact in `beforeSend`.
+
+      ```ts
+      import * as Sentry from '@sentry/node';
+      // Types are re-exported from each platform package since v8; @sentry/types is being phased out.
+      import type { Event } from '@sentry/node';
+
+      function scrubPii(event: Event): Event | null {
+        // 1. Headers — drop auth + cookies
+        if (event.request?.headers) {
+          delete event.request.headers['authorization'];
+          delete event.request.headers['cookie'];
+          delete event.request.headers['x-api-key'];
+          delete event.request.headers['set-cookie'];
+        }
+        // 2. URL — strip query strings that may carry tokens
+        if (event.request?.url) {
+          event.request.url = event.request.url.split('?')[0];
+        }
+        // 3. Cookie object (separate from headers)
+        if (event.request) delete event.request.cookies;
+        // 4. User — keep id for grouping but never email/IP
+        if (event.user) {
+          delete event.user.email;
+          delete event.user.ip_address;
+          event.user = { id: event.user.id };
+        }
+        // 5. Body — drop entirely; bodies are unbounded PII surface
+        if (event.request?.data) delete event.request.data;
+        // 6. Breadcrumbs — strip URLs with tokens
+        if (event.breadcrumbs) {
+          event.breadcrumbs = event.breadcrumbs.map((b) => {
+            if (b.data?.url) b.data.url = String(b.data.url).split('?')[0];
+            return b;
+          });
+        }
+        return event;
+      }
+
+      Sentry.init({
+        dsn: process.env.SENTRY_DSN,
+        beforeSend: scrubPii,
+        beforeBreadcrumb: (b) => (b.category === 'console' ? null : b), // optional: drop console breadcrumbs
+      });
+      ```
+
+      Return `null` from `beforeSend` to drop the event entirely — useful for known-noisy errors (`AbortError`, expected 404s).
+
+      ### `Sentry.withScope` for request-scoped context
+
+      Avoid `Sentry.setUser`/`setTag` at module scope — those leak across requests in long-lived processes.
+
+      ```ts
+      app.use((req, _res, next) => {
+        Sentry.withScope((scope) => {
+          scope.setUser({ id: req.userId });        // request-scoped only
+          scope.setTag('route', req.route?.path);
+          next();
+        });
+      });
+      ```
+
+  - sequence: 6
+    fragment_type: execution
+    content: |
+      ## Release version pinned to git SHA
+
+      Source maps only link if the SDK's `release` string matches the release the maps were uploaded under. The fix: set `release` from the same env var you upload under.
+
+      ### CI-side (GitHub Actions example)
+
+      ```yaml
+      env:
+        SENTRY_RELEASE: ${{ github.sha }}
+        SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        SENTRY_ORG: my-org
+        SENTRY_PROJECT: my-project
+      steps:
+        - run: npm ci && npm run build
+        - run: npx @sentry/cli releases new "$SENTRY_RELEASE"
+        - run: npx @sentry/cli sourcemaps inject ./dist
+        - run: npx @sentry/cli sourcemaps upload --release "$SENTRY_RELEASE" ./dist
+        - run: npx @sentry/cli releases finalize "$SENTRY_RELEASE"
+      ```
+
+      ### App-side (Sentry.init)
+
+      ```ts
+      Sentry.init({
+        dsn: process.env.SENTRY_DSN,
+        release: process.env.SENTRY_RELEASE, // SAME env var as upload step
+      });
+      ```
+
+      ### Common drift pattern
+
+      The CI uploads under `release: abc123def` (git SHA) but the app reads `release: '1.0.0'` (package.json version). Stack traces stay minified forever and nobody can figure out why. Always source from the same env var, and verify with `npx @sentry/cli releases files <release> list` after deploy.
+
+      ### Associate commits to releases
+
+      ```bash
+      npx @sentry/cli releases set-commits "$SENTRY_RELEASE" --auto
+      ```
+
+      Sentry's "suspect commits" feature uses this to point at the likely-buggy commit per error.
+
+  - sequence: 7
+    fragment_type: example
+    content: |
+      ## Express + Next.js side-by-side
+
+      The R4 case-space coverage: a captured error per stack with redaction firing.
+
+      ### Express
+
+      ```ts
+      // instrument.ts
+      import * as Sentry from '@sentry/node';
+      Sentry.init({
+        dsn: process.env.SENTRY_DSN,
+        release: process.env.SENTRY_RELEASE,
+        tracesSampleRate: 0.1,
+        beforeSend: scrubPii,
+      });
+
+      // server.ts — load instrument first
+      import './instrument.js';
+      import express from 'express';
+      import * as Sentry from '@sentry/node';
+
+      const app = express();
+      app.get('/oops', () => { throw new Error('intentional — Sentry should capture'); });
+      Sentry.setupExpressErrorHandler(app); // v8+ API; replaces the v7 errorHandler middleware
+      app.listen(3000);
+      ```
+
+      Trigger:
+
+      ```bash
+      curl http://localhost:3000/oops
+      # Sentry dashboard: error appears within ~30s, grouped by fingerprint.
+      # Headers section: no Authorization, no cookies. URL: no query string.
+      ```
+
+      ### Next.js (App Router)
+
+      ```ts
+      // app/api/oops/route.ts
+      export async function GET() {
+        throw new Error('intentional — Sentry should capture');
+      }
+      ```
+
+      `@sentry/nextjs` auto-wraps API routes and middleware via `withSentryConfig`. No manual error handler needed.
+
+      ### Verify redaction fired
+
+      In the Sentry event detail, the `request.headers` panel should NOT show `Authorization`, `Cookie`, `Set-Cookie`, or `X-Api-Key`. The `request.url` should be path-only (no `?token=...`). `request.data` should be absent. `user` should have only `id`.
+
+  - sequence: 8
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      Mechanical checks for any Sentry integration:
+
+      - [ ] DSN loaded from env, not hard-coded — `grep -rn "https://.*@sentry.io" src/` returns nothing.
+      - [ ] `Sentry.init` runs before any other framework import (Node: `--import ./instrument.js`; Next: three config files at the framework's expected paths).
+      - [ ] `tracesSampleRate ≤ 0.1` and `profilesSampleRate ≤ 0.1` in production config — `grep -A3 "Sentry.init" src/` to confirm.
+      - [ ] No `Sentry.startTransaction` calls in new code — `grep -rn "startTransaction" src/` returns zero (use `startSpan` / `startInactiveSpan`).
+      - [ ] Source maps uploaded under the same release the SDK reports — `npx @sentry/cli releases files "$SENTRY_RELEASE" list` returns a non-empty list of `.js.map` files.
+      - [ ] Source maps **not** in public CDN — `curl https://your-cdn/main.js.map` returns 404 (or `hideSourceMaps: true` in Next config).
+      - [ ] `beforeSend` deletes `request.headers.authorization`, `request.headers.cookie`, `request.cookies`, `user.email`, `user.ip_address`, `request.data` — read the implementation.
+      - [ ] Request-scoped user/tags use `Sentry.withScope`, not module-level `setUser` — `grep -rn "Sentry.setUser\\|Sentry.setTag" src/` should be inside `withScope` callbacks.
+      - [ ] `sourcemaps inject` ran before `sourcemaps upload` (so Debug IDs are written) — verify in CI logs.
+      - [ ] `releases set-commits --auto` ran in CI — enables Sentry's "suspect commits" pointer.

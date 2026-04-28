@@ -1,0 +1,17 @@
+name: graphql
+version: 1.0.0
+description: GraphQL server patterns — Apollo Server, GraphQL Yoga, Mercurius, DataLoader
+  for N+1 mitigation, graphql-ws subscriptions, Apollo Federation v2.
+author: navistone
+embed_model: qwen3-embedding:0.6b
+embedding_dim: 1024
+license: MIT
+homepage: https://github.com/nrmeyers/skillsmith
+always_install: false
+depends_on:
+- engineering
+- nodejs
+skills:
+- skill_id: graphql-server-patterns
+  file: graphql-server-patterns.yaml
+  fragment_count: 9

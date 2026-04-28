@@ -1,0 +1,349 @@
+skill_type: domain
+skill_id: feature-flags-openfeature
+canonical_name: Feature Flags with OpenFeature (GrowthBook, LaunchDarkly, Unleash, Kill Switches, Percentage Rollouts)
+category: engineering
+skill_class: domain
+domain_tags: [feature-flags, openfeature, growthbook, launchdarkly, unleash, kill-switch, experiment-flags, permission-flags, percentage-rollout, consistent-hashing, stale-flags, vendor-neutral]
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: Initial authoring (verified 2026-04-28). Sources — openfeature.dev, docs.growthbook.io, docs.launchdarkly.com, docs.getunleash.io.
+raw_prose: |
+  # Feature Flags with OpenFeature
+
+  ## Overview
+
+  Lead with **OpenFeature** as the canonical interface; treat GrowthBook, LaunchDarkly, and Unleash as interchangeable providers. The OpenFeature spec (https://openfeature.dev) is now the consensus vendor-neutral interface (verified 2026-04-28) — all three vendors ship OpenFeature provider packages, and authoring against the spec instead of per-vendor SDKs reduces lock-in and survives vendor swaps.
+
+  Three flag categories that are not interchangeable:
+
+  - **Kill switches** — binary instant-off, no targeting, no analytics. Used to disable a misbehaving feature in seconds. Always boolean. Expected lifetime: indefinite.
+  - **Experiment flags** — A/B/n with variant assignment + metric tracking. Used to test hypotheses. Expected lifetime: weeks; archive after the experiment concludes.
+  - **Permission flags** — entitlement gates ("can this user see Pro features?"). Driven by user attributes (plan, role, org). Expected lifetime: indefinite.
+
+  Mixing these is the most common failure mode — teams put a kill switch behind an experiment platform and lose seconds-to-disable, or run experiments on permission-style targeting and contaminate the metrics.
+
+  ## When to use
+
+  - Standing up a new flag platform.
+  - Reviewing existing flag code that's locked into a vendor SDK.
+  - Diagnosing percentage-rollout drift (same user seeing different variants).
+  - Auditing the corpus of flags for stale entries to delete.
+
+  ## Authoritative sources (verified 2026-04-28)
+
+  - OpenFeature spec: https://openfeature.dev/specification/
+  - GrowthBook: https://docs.growthbook.io
+  - LaunchDarkly: https://docs.launchdarkly.com
+  - Unleash: https://docs.getunleash.io
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Feature Flags with OpenFeature
+
+      Three **feature flag** categories are not interchangeable, and conflating them is the most common failure mode:
+
+      - **Kill switches** — binary instant-off, no targeting, no analytics. Used to disable a misbehaving feature in seconds. Always boolean. Indefinite lifetime.
+      - **Experiment flags** — A/B/n variant assignment plus metric tracking. Used to test hypotheses. Weeks-long lifetime; archive after the experiment concludes.
+      - **Permission flags** — entitlement gates ("can this user see Pro features?"). Driven by user attributes (plan, role, org). Indefinite lifetime.
+
+      Mixing them: kill switches behind an experiment platform lose seconds-to-disable; experiments running on permission-style targeting contaminate the metrics. Pick the right tool per category.
+
+      Lead with **OpenFeature** as the canonical interface; treat **GrowthBook**, **LaunchDarkly**, and **Unleash** as interchangeable providers (verified 2026-04-28). All three ship OpenFeature provider packages — authoring against the spec instead of vendor SDKs reduces lock-in and survives vendor swaps.
+
+      Use this skill when standing up a new flag platform, reviewing flag code locked into a vendor SDK, diagnosing percentage-rollout drift, or auditing flags for stale entries to delete.
+
+  - sequence: 2
+    fragment_type: setup
+    content: |
+      ## OpenFeature SDK init + provider registration
+
+      Versions (verified 2026-04-28): `@openfeature/server-sdk@1.x`, `@openfeature/web-sdk@1.x`, plus per-vendor provider packages.
+
+      ```ts
+      // Browser / web (the OpenFeature GrowthBook provider in js-sdk-contrib is web/client only)
+      import { OpenFeature } from '@openfeature/web-sdk';
+      import { GrowthBookClientProvider } from '@openfeature/growthbook-client-provider';
+
+      await OpenFeature.setProviderAndWait(new GrowthBookClientProvider({
+        clientKey: process.env.GROWTHBOOK_CLIENT_KEY!,
+        apiHost: 'https://cdn.growthbook.io',
+      }));
+
+      const client = OpenFeature.getClient();
+      ```
+
+      Server-side (Node.js): use `@openfeature/server-sdk`. Note (verified 2026-04-28): the OpenFeature contrib repo (js-sdk-contrib) ships LaunchDarkly + Unleash server providers but **not** a first-party server-side GrowthBook provider — for Node.js GrowthBook either use the native `@growthbook/growthbook` SDK directly or write a thin OpenFeature-shaped wrapper around it.
+
+      ### Why this shape
+
+      - **One init for the process.** The provider is set globally; clients can be obtained anywhere.
+      - **Switch vendors by changing the provider line.** Every other piece of code keeps working unchanged.
+      - **Provider initialization is async on some vendors.** Await `OpenFeature.setProviderAndWait(provider)` if you need to block startup until flags are available; otherwise rely on provider defaults during the cold-start window.
+
+      ### Required attributes per evaluation
+
+      Every flag evaluation runs against an **evaluation context** carrying user attributes (`targetingKey`, `country`, `plan`, etc.). Pass it explicitly per call to avoid leaking one user's context to another's evaluation.
+
+  - sequence: 3
+    fragment_type: execution
+    content: |
+      ## Evaluating a flag (boolean, string, number, object)
+
+      The OpenFeature client exposes one method per type. Each takes a flag key, default value, and an evaluation context:
+
+      ```ts
+      import { OpenFeature, EvaluationContext } from '@openfeature/server-sdk';
+
+      const client = OpenFeature.getClient();
+
+      const ctx: EvaluationContext = {
+        targetingKey: user.id,        // stable identifier for percentage rollout hashing
+        plan: user.plan,              // for permission flags
+        country: user.countryCode,    // for geo targeting
+      };
+
+      // Boolean — kill switches and simple toggles
+      const newCheckoutEnabled = await client.getBooleanValue(
+        'new-checkout', false, ctx,
+      );
+
+      // String — variant assignment (treat-cell-A / treat-cell-B / control)
+      const variant = await client.getStringValue(
+        'pricing-experiment', 'control', ctx,
+      );
+
+      // Number — numeric rollout percentage or threshold
+      const maxItems = await client.getNumberValue(
+        'cart-max-items', 50, ctx,
+      );
+
+      // Object — typed flag with multiple fields
+      const config = await client.getObjectValue<{ retries: number; timeoutMs: number }>(
+        'http-client-config', { retries: 3, timeoutMs: 5000 }, ctx,
+      );
+      ```
+
+      **Defaults are the first line of defense.** If the flag platform is unreachable, the default value is what runs. Pick defaults that fail safe: for a new feature flag, the default is `false` (feature off); for a kill switch, the default reflects the original (pre-flag) behavior.
+
+      ### Detail mode for variant + reason
+
+      ```ts
+      const detail = await client.getStringDetails('pricing-experiment', 'control', ctx);
+      // detail.value, detail.variant, detail.reason ('TARGETING_MATCH' | 'DEFAULT' | 'ERROR' | ...)
+      // detail.errorCode if reason === 'ERROR' — log this; default values silently mask outages
+      ```
+
+  - sequence: 4
+    fragment_type: execution
+    content: |
+      ## Provider snapshots
+
+      Three production-grade providers, all OpenFeature-compatible (verified 2026-04-28). Pick by deployment model and evaluation locality.
+
+      ### GrowthBook (open-source, self-host or cloud)
+
+      ```ts
+      import { GrowthBook } from '@growthbook/growthbook'; // native SDK (Node + browser)
+      // Browser-only OpenFeature path: @openfeature/growthbook-client-provider
+      // No first-party server-side OpenFeature GrowthBook provider as of 2026-04-28.
+
+      const gb = new GrowthBook({
+        apiHost: 'https://cdn.growthbook.io',
+        clientKey: 'sdk-...',
+        attributes: { id: userId, country: 'US' },
+        trackingCallback: (exp, result) => analytics.track('exp_viewed', { exp: exp.key, variant: result.variationId }),
+      });
+      await gb.init();
+      ```
+
+      Local evaluation; no per-call network. SDK ~7KB gzip. Free tier exists; OSS self-host is straightforward.
+
+      ### LaunchDarkly (SaaS only)
+
+      ```ts
+      import * as LDClient from '@launchdarkly/js-client-sdk';
+      const ld = LDClient.initialize('client-side-id', { kind: 'user', key: userId, plan: 'pro' });
+      await ld.waitForInitialization();
+      const v = ld.variation('flag-key', false);
+      ```
+
+      v4+ uses **contexts** (multi-attribute) not "users" — migration from v3 is breaking. Evaluation is server-streamed; SDK keeps a local cache for offline. No self-host option.
+
+      ### Unleash (open-source, self-host)
+
+      ```ts
+      import { initialize } from 'unleash-client';
+      const unleash = initialize({
+        url: 'https://unleash.example.com/api',
+        appName: 'my-app',
+        instanceId: 'instance-1',
+        customHeaders: { Authorization: process.env.UNLEASH_TOKEN! },
+      });
+      const enabled = unleash.isEnabled('my-flag', { userId });
+      ```
+
+      Local evaluation via streaming updates; edge proxy (`unleash-proxy`) for browser/mobile so client keys don't leak.
+
+      ### Picking
+
+      | Need | Pick |
+      |---|---|
+      | Self-host, OSS, low cost | GrowthBook OR Unleash |
+      | Built-in experimentation analytics | GrowthBook |
+      | Highest-feature SaaS, willing to pay | LaunchDarkly |
+      | Edge proxy for browser/mobile flags | Unleash |
+      | Vendor-neutral code | OpenFeature + any of the three |
+
+  - sequence: 5
+    fragment_type: execution
+    content: |
+      ## Percentage rollouts with consistent hashing
+
+      Roll a feature out to 5% → 25% → 50% → 100% over time, with the **same user always seeing the same variant** at a given rollout percentage. The mechanism: hash the user ID into a [0,1) bucket; a 25% rollout includes any user whose bucket < 0.25.
+
+      All three vendors implement this correctly when given a stable `targetingKey` (or `userId`). The most common bug is passing the wrong key.
+
+      ```ts
+      // CORRECT — stable identifier the user always presents
+      const ctx = { targetingKey: user.id };
+
+      // WRONG — session ID changes per login, so the user flips variants
+      const ctx = { targetingKey: req.sessionId };
+
+      // WRONG — IP changes between mobile/wifi, so the user flips variants
+      const ctx = { targetingKey: req.ip };
+      ```
+
+      ### Anonymous traffic
+
+      For pre-login traffic, pick a stable cookie that survives browser sessions (a first-party `aid` cookie set on first hit) and use that as the `targetingKey`. After login, switch to user ID — but accept that anonymous→authenticated transitions can flip the user's variant once. Document it.
+
+      ### Multivariate rollouts
+
+      ```ts
+      // 50% A / 30% B / 20% control — all three vendors support weighted variants
+      const variant = await client.getStringValue('pricing-test', 'control', { targetingKey: user.id });
+      // variant in {'cell-a','cell-b','control'} based on hash(user.id) → bucket → weighted partition
+      ```
+
+      The weights and the partition logic live in the flag platform's UI. Code uses `getStringValue` and switches on the returned variant.
+
+  - sequence: 6
+    fragment_type: execution
+    content: |
+      ## Kill switches vs experiment flags
+
+      The two are operationally different and need separate platforms or, at minimum, separate flag types within the same platform.
+
+      | Aspect | Kill switch | Experiment flag |
+      |---|---|---|
+      | Type | Boolean only | String/Object (variants) |
+      | Targeting | None or simple kill list | Hash-based percentage |
+      | Analytics | Audit log only | Variant + outcome metric tracking |
+      | Default value | Whatever preserves prior behavior | Control variant |
+      | Lifetime | Indefinite | Weeks; archive after experiment |
+      | Eval reason expected | TARGETING_MATCH or DEFAULT | TARGETING_MATCH (variant assigned) |
+      | When to flip | Incident response (seconds) | Scheduled rollout |
+
+      ### Kill switch shape
+
+      ```ts
+      // Wrap any new code path with a kill switch from day 1
+      const useNewPath = await client.getBooleanValue('feature.new-checkout.enabled', false, ctx);
+      if (useNewPath) {
+        return newCheckout(req); // can be disabled instantly if it breaks
+      }
+      return legacyCheckout(req);
+      ```
+
+      Default `false` so the legacy path runs if the flag platform is down. After the new path has been at 100% for 30 days with no incidents, archive the flag and remove the conditional.
+
+      ### Experiment shape
+
+      ```ts
+      const detail = await client.getStringDetails('experiment.pricing.v2', 'control', ctx);
+      const variant = detail.value;
+
+      // Track that THIS user saw THIS variant — required to attribute outcomes
+      analytics.track('experiment_exposed', {
+        experiment: 'pricing.v2',
+        variant: detail.value,
+        userId: ctx.targetingKey,
+      });
+
+      const price = pickPriceForVariant(variant);
+      ```
+
+      Track exposure exactly once per user-experiment-variant tuple. Most platforms have a `trackingCallback` (GrowthBook) or auto-track (LaunchDarkly Experiments) — use it instead of hand-rolling.
+
+  - sequence: 7
+    fragment_type: example
+    content: |
+      ## End-to-end: rollout and rollback
+
+      The R4 case-space coverage: flag created → 5% → 25% → 100% → marked stale → archived, AND the rollback path (toggle to 0%) for a misbehaving rollout.
+
+      ### Day 0 — flag created
+
+      ```ts
+      // Wrap new code path
+      if (await client.getBooleanValue('feature.search-v2.enabled', false, ctx)) {
+        return searchV2(query);
+      }
+      return searchV1(query);
+      ```
+
+      Flag in platform: type=Boolean, default=false, rollout=0%. Deploy.
+
+      ### Day 1 — 5% canary
+
+      Platform UI: rollout 5% by `targetingKey` hash. Watch error rate, latency p99, conversion. If healthy after 24h, advance.
+
+      ### Day 2 — 25%
+
+      Same dashboard discipline. The `getBooleanValue` doesn't change in code — only the platform-side rollout percentage moves.
+
+      ### Day 5 — 100%
+
+      All users on v2.
+
+      ### Day 35 — stale, archive
+
+      Stale-flag consensus: **>30 days at 100%** with no incidents = archive. Two-step:
+
+      1. Remove the conditional in code:
+
+         ```ts
+         return searchV2(query); // unconditional
+         ```
+
+      2. After the deploy lands, archive the flag in the platform UI. Order matters — code-first means a stale flag in the platform briefly returns true while v2 is unconditional, which is harmless. Platform-first means the flag is gone but the code still calls it; the SDK returns the default `false`, sending users to the dead `searchV1`.
+
+      ### Rollback path — flip to 0%
+
+      Mid-rollout, error rate spikes 4× on `searchV2`. Operator opens the platform UI and sets rollout to **0%** — every user reverts to `searchV1` within the SDK's polling/streaming interval (5–30s for streaming providers, up to a minute for polling).
+
+      Do **not** redeploy code to roll back. The whole point of the kill switch is to avoid the deploy-cycle latency. Code redeploys are for the post-incident cleanup (remove the v2 path or fix the bug).
+
+  - sequence: 8
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      Mechanical checks for any feature-flag setup:
+
+      - [ ] OpenFeature provider initialized **before** first flag evaluation. `grep -rn "OpenFeature.setProvider\\|setProviderAndWait" src/` shows a hit at startup; flag evaluations don't run before that line.
+      - [ ] Evaluation context uses a **stable** `targetingKey` per user, not session ID, IP, or device fingerprint. `grep -rn "targetingKey" src/` and audit each call site.
+      - [ ] Default values fail safe: kill switches default to whatever preserves pre-flag behavior; new-feature flags default to `false`. Read each `getBooleanValue/getStringValue` call.
+      - [ ] No vendor SDK class names in business logic if you've adopted OpenFeature. `grep -rn "GrowthBook\\|LDClient\\|unleash" src/` should return only the provider-init line.
+      - [ ] Experiment flags emit exposure events. `grep -rn "experiment_exposed\\|trackingCallback" src/` confirms tracking is wired.
+      - [ ] Stale-flag report exists: `>30 days at 100%` flags listed via the platform's API or UI, reviewed monthly.
+      - [ ] Client-side bundle does not embed sensitive flag values (e.g., entitlement decisions). Server-side eval for any flag whose value is sensitive; client-side only for UI cosmetic flags.
+      - [ ] Sensitive flags evaluated server-side. Inspect the network panel of the deployed SPA: no flag value that gates entitlement should be visible in JS bundles or network responses.
+      - [ ] Rollback path tested: flip a non-prod flag to 0% and confirm the conditional flips for active sessions within the SDK's polling interval.
+      - [ ] Provider error handling: `getBooleanDetails` (or equivalent) reason is logged when `reason === 'ERROR'`. Default values silently mask outages otherwise.
+      - [ ] Anonymous→authenticated transition documented. The `targetingKey` change at login can flip a user's variant exactly once; test that the rollout percentage stays consistent before and after for a stable cookie+ID pair.
