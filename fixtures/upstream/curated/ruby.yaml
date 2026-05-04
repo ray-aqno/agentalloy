@@ -1,0 +1,70 @@
+language: Ruby
+version_anchor: Ruby 3.4
+generated_at: 2026-05-01
+canonical:
+  language_reference: https://docs.ruby-lang.org/en/master/
+  library_reference: https://docs.ruby-lang.org/en/master/
+  spec_or_standard: null
+  release_notes: https://www.ruby-lang.org/en/news/2024/12/25/ruby-3-4-0-released/
+topics:
+  concurrency_and_async:
+    description: Fiber scheduler, Ractors, Thread, and Queue for concurrency
+    urls:
+      - https://docs.ruby-lang.org/en/master/Fiber.html
+      - https://docs.ruby-lang.org/en/master/Ractor.html
+      - https://docs.ruby-lang.org/en/master/Thread.html
+  error_handling_and_exceptions:
+    description: Exception class hierarchy, rescue/ensure/raise, and retry patterns
+    urls:
+      - https://docs.ruby-lang.org/en/master/Exception.html
+      - https://docs.ruby-lang.org/en/master/StandardError.html
+  typing_and_generics:
+    description: RBS type signatures and duck typing conventions (see known_gaps — canonical RBS docs not on docs.ruby-lang.org)
+    urls: []
+  memory_and_performance:
+    description: ObjectSpace, GC module, and object allocation patterns
+    urls:
+      - https://docs.ruby-lang.org/en/master/GC.html
+      - https://docs.ruby-lang.org/en/master/ObjectSpace.html
+  packaging_and_dependency_management:
+    description: Bundler and RubyGems — gem management and Gemfile conventions
+    urls:
+      - https://bundler.io/docs.html
+      - https://guides.rubygems.org/
+  testing_idioms:
+    description: MiniTest is the built-in test framework (see known_gaps — direct Minitest page not resolving on docs.ruby-lang.org/master)
+    urls: []
+  security_and_crypto_primitives:
+    description: OpenSSL module bindings for hashing, signing, and TLS
+    urls:
+      - https://docs.ruby-lang.org/en/master/OpenSSL.html
+      - https://docs.ruby-lang.org/en/master/OpenSSL/Digest.html
+  io_and_filesystem:
+    description: File, IO, Pathname, and Dir classes for filesystem operations
+    urls:
+      - https://docs.ruby-lang.org/en/master/File.html
+      - https://docs.ruby-lang.org/en/master/IO.html
+      - https://docs.ruby-lang.org/en/master/Pathname.html
+  networking_and_http_client:
+    description: Net::HTTP for HTTP client, Socket for raw networking
+    urls:
+      - https://docs.ruby-lang.org/en/master/Net/HTTP.html
+      - https://docs.ruby-lang.org/en/master/Socket.html
+  serialization_json_binary:
+    description: JSON stdlib module and Marshal for binary serialization
+    urls:
+      - https://docs.ruby-lang.org/en/master/JSON.html
+      - https://docs.ruby-lang.org/en/master/Marshal.html
+  logging_and_observability:
+    description: Logger stdlib class and its configuration (see known_gaps — Logger page not resolving on docs.ruby-lang.org/master)
+    urls: []
+  language_evolution_and_deprecation:
+    description: NEWS file per release and compatibility notes
+    urls:
+      - https://www.ruby-lang.org/en/news/
+known_gaps:
+  - docs.ruby-lang.org/en/master/ class pages (Minitest, Logger, Queue, RBS) returned 404 during verification — URL structure may differ per Ruby version; supplement with ruby-doc.org class pages
+  - docs.ruby-lang.org/en/master/ tracks master, not a stable 3.4 snapshot; URLs may shift
+  - No formal language specification; behavior is defined by MRI implementation
+  - Bundler and RubyGems are hosted separately from ruby-lang.org
+  - Ractors are still experimental at 3.4; docs are sparse

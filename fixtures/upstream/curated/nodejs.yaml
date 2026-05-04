@@ -1,0 +1,82 @@
+language: Node.js
+version_anchor: Node.js 22 LTS
+generated_at: 2026-05-01
+canonical:
+  language_reference: https://nodejs.org/docs/latest-v22.x/api/
+  library_reference: https://nodejs.org/docs/latest-v22.x/api/
+  spec_or_standard: null
+  release_notes: https://nodejs.org/en/blog/release/v22.0.0
+topics:
+  concurrency_and_async:
+    description: Event loop, worker_threads, async_hooks, and AsyncLocalStorage
+    urls:
+      - https://nodejs.org/docs/latest-v22.x/api/async_context.html
+      - https://nodejs.org/docs/latest-v22.x/api/worker_threads.html
+      - https://nodejs.org/docs/latest-v22.x/api/async_hooks.html
+      - https://nodejs.org/docs/latest-v22.x/api/events.html
+  error_handling_and_exceptions:
+    description: Error classes, error codes, uncaughtException, and unhandledRejection
+    urls:
+      - https://nodejs.org/docs/latest-v22.x/api/errors.html
+      - https://nodejs.org/docs/latest-v22.x/api/process.html#event-uncaughtexception
+  typing_and_generics:
+    description: TypeScript types for Node.js are in @types/node; no stdlib equivalent
+    urls:
+      - https://nodejs.org/docs/latest-v22.x/api/globals.html
+  memory_and_performance:
+    description: v8 module, --inspect profiling, and process.memoryUsage
+    urls:
+      - https://nodejs.org/docs/latest-v22.x/api/v8.html
+      - https://nodejs.org/docs/latest-v22.x/api/perf_hooks.html
+      - https://nodejs.org/docs/latest-v22.x/api/process.html#processmemoryusage
+  packaging_and_dependency_management:
+    description: package.json exports, ESM/CJS interop, and node_modules resolution
+    urls:
+      - https://nodejs.org/docs/latest-v22.x/api/modules.html
+      - https://nodejs.org/docs/latest-v22.x/api/esm.html
+      - https://nodejs.org/docs/latest-v22.x/api/packages.html
+  testing_idioms:
+    description: Built-in node:test runner and assert module
+    urls:
+      - https://nodejs.org/docs/latest-v22.x/api/test.html
+      - https://nodejs.org/docs/latest-v22.x/api/assert.html
+  security_and_crypto_primitives:
+    description: crypto module for hashing, signing, ciphers, and TLS
+    urls:
+      - https://nodejs.org/docs/latest-v22.x/api/crypto.html
+      - https://nodejs.org/docs/latest-v22.x/api/tls.html
+      - https://nodejs.org/docs/latest-v22.x/api/https.html
+  io_and_filesystem:
+    description: fs/promises, streams, readline, and path module
+    urls:
+      - https://nodejs.org/docs/latest-v22.x/api/fs.html
+      - https://nodejs.org/docs/latest-v22.x/api/stream.html
+      - https://nodejs.org/docs/latest-v22.x/api/path.html
+      - https://nodejs.org/docs/latest-v22.x/api/readline.html
+  networking_and_http_client:
+    description: http, https, net, http2, and the built-in fetch (v21+)
+    urls:
+      - https://nodejs.org/docs/latest-v22.x/api/http.html
+      - https://nodejs.org/docs/latest-v22.x/api/https.html
+      - https://nodejs.org/docs/latest-v22.x/api/http2.html
+      - https://nodejs.org/docs/latest-v22.x/api/net.html
+  serialization_json_binary:
+    description: Buffer, JSON global, and TextEncoder/TextDecoder
+    urls:
+      - https://nodejs.org/docs/latest-v22.x/api/buffer.html
+      - https://nodejs.org/docs/latest-v22.x/api/globals.html#textencoder
+  logging_and_observability:
+    description: console, diagnostics_channel, and --inspect protocol
+    urls:
+      - https://nodejs.org/docs/latest-v22.x/api/console.html
+      - https://nodejs.org/docs/latest-v22.x/api/diagnostics_channel.html
+      - https://nodejs.org/docs/latest-v22.x/api/inspector.html
+  language_evolution_and_deprecation:
+    description: Deprecations list and release schedule for LTS planning
+    urls:
+      - https://nodejs.org/docs/latest-v22.x/api/deprecations.html
+      - https://nodejs.org/en/about/previous-releases
+known_gaps:
+  - fetch() is built-in at v22 but undici internals docs are sparse
+  - No canonical HTTP framework guidance; Express/Fastify are outside nodejs.org
+  - WebSocket support (node:websocket) added in v22 but docs are thin at LTS release

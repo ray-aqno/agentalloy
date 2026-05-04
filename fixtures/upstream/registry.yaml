@@ -1,0 +1,438 @@
+# Upstream documentation registry for skill authoring (R1 source step).
+#
+# Tiers:
+#   tier-1: both llms.txt (index) and llms-full.txt (source) available.
+#           Use llms.txt to enumerate skill briefs, llms-full.txt to source fragments.
+#   tier-2: llms.txt only. Use it as a curated URL list; fetch the specific pages
+#           it points to for fragment source.
+#   tier-3: neither. Fall back to manual fetch flow (today's R1).
+#
+# Probed 2026-05-04. Re-probe before each authoring batch; sites add llms.txt frequently.
+#
+# Field semantics:
+#   llms_url        — index URL (lists what this vendor documents)
+#   llms_full_url   — full concatenated docs URL (R1 source replacement)
+#   packs           — existing skill-source/_packs/ that map to this vendor (informational)
+#   notes           — caveats: alternate paths, partial coverage, license
+
+version: 1
+probed_at: 2026-05-04
+
+vendors:
+
+  # ────────────── tier-1: index + full content ──────────────
+
+  anthropic:
+    tier: 1
+    llms_url: https://docs.anthropic.com/llms.txt
+    llms_full_url: https://docs.anthropic.com/llms-full.txt
+    packs: []
+    notes: Claude API, SDK, prompt caching, tool use.
+
+  launchdarkly:
+    tier: 1
+    llms_url: https://docs.launchdarkly.com/llms.txt
+    llms_full_url: https://docs.launchdarkly.com/llms-full.txt
+    packs: []
+    notes: Feature flags. Marketing-site copy also at launchdarkly.com — prefer docs subdomain.
+
+  linear:
+    tier: 1
+    llms_url: https://developers.linear.app/llms.txt
+    llms_full_url: https://developers.linear.app/llms-full.txt
+    packs: []
+    notes: Linear API + SDK. linear.app/* also serves but developers subdomain is canonical for API.
+
+  vercel:
+    tier: 1
+    llms_url: https://vercel.com/llms.txt
+    llms_full_url: https://vercel.com/llms-full.txt
+    packs: []
+
+  supabase:
+    tier: 1
+    llms_url: https://supabase.com/llms.txt
+    llms_full_url: https://supabase.com/llms-full.txt
+    packs: []
+
+  cloudflare:
+    tier: 1
+    llms_url: https://developers.cloudflare.com/llms.txt
+    llms_full_url: https://developers.cloudflare.com/llms-full.txt
+    packs: []
+    notes: Workers, R2, D1, Queues, Pages.
+
+  hono:
+    tier: 1
+    llms_url: https://hono.dev/llms.txt
+    llms_full_url: https://hono.dev/llms-full.txt
+    packs: []
+
+  drizzle:
+    tier: 1
+    llms_url: https://orm.drizzle.team/llms.txt
+    llms_full_url: https://orm.drizzle.team/llms-full.txt
+    packs: []
+
+  prisma:
+    tier: 1
+    llms_url: https://www.prisma.io/llms.txt
+    llms_full_url: https://www.prisma.io/llms-full.txt
+    packs: [prisma]
+
+  slack_api:
+    tier: 1
+    llms_url: https://api.slack.com/llms.txt
+    llms_full_url: https://api.slack.com/llms-full.txt
+    packs: []
+
+  expo:
+    tier: 1
+    llms_url: https://docs.expo.dev/llms.txt
+    llms_full_url: https://docs.expo.dev/llms-full.txt
+    packs: []
+
+  vue:
+    tier: 1
+    llms_url: https://vuejs.org/llms.txt
+    llms_full_url: https://vuejs.org/llms-full.txt
+    packs: [vue]
+
+  fastify:
+    tier: 1
+    llms_url: https://fastify.dev/llms.txt
+    llms_full_url: https://fastify.dev/llms-full.txt
+    packs: [fastify]
+
+  nestjs:
+    tier: 1
+    llms_url: https://docs.nestjs.com/llms.txt
+    llms_full_url: https://docs.nestjs.com/llms-full.txt
+    packs: [nestjs]
+
+  temporal:
+    tier: 1
+    llms_url: https://docs.temporal.io/llms.txt
+    llms_full_url: https://docs.temporal.io/llms-full.txt
+    packs: [temporal]
+
+  dbt:
+    tier: 1
+    llms_url: https://docs.getdbt.com/llms.txt
+    llms_full_url: https://docs.getdbt.com/llms-full.txt
+    packs: [data-engineering]
+
+  sentry:
+    tier: 1
+    llms_url: https://sentry.io/llms.txt
+    llms_full_url: https://sentry.io/llms-full.txt
+    packs: [observability]
+    notes: Use sentry.io root, NOT docs.sentry.io (404).
+
+  docker:
+    tier: 1
+    llms_url: https://docs.docker.com/llms.txt
+    llms_full_url: https://docs.docker.com/llms-full.txt
+    packs: [containers]
+
+  turborepo:
+    tier: 1
+    llms_url: https://turbo.build/llms.txt
+    llms_full_url: https://turbo.build/llms-full.txt
+    packs: [monorepo]
+
+  vite:
+    tier: 1
+    llms_url: https://vitejs.dev/llms.txt
+    llms_full_url: https://vitejs.dev/llms-full.txt
+    packs: [vite]
+
+  vitest:
+    tier: 1
+    llms_url: https://vitest.dev/llms.txt
+    llms_full_url: https://vitest.dev/llms-full.txt
+    packs: [testing]
+
+  pydantic:
+    tier: 1
+    llms_url: https://docs.pydantic.dev/llms.txt
+    llms_full_url: https://docs.pydantic.dev/llms-full.txt
+    packs: [python]
+
+  django:
+    tier: 1
+    llms_url: https://docs.djangoproject.com/llms.txt
+    llms_full_url: https://docs.djangoproject.com/llms-full.txt
+    packs: []
+
+  sqlalchemy:
+    tier: 1
+    llms_url: https://docs.sqlalchemy.org/llms.txt
+    llms_full_url: https://docs.sqlalchemy.org/llms-full.txt
+    packs: [python]
+
+  kotlin:
+    tier: 1
+    llms_url: https://kotlinlang.org/llms.txt
+    llms_full_url: https://kotlinlang.org/llms-full.txt
+    packs: []
+    notes: Only JVM-ecosystem source with llms.txt. Java SE / OpenJDK / Spring are all tier-3.
+
+  # ────────────── tier-2: index only ──────────────
+
+  stripe:
+    tier: 2
+    llms_url: https://docs.stripe.com/llms.txt
+    packs: []
+    notes: Webhooks, signing, idempotency. No llms-full.txt — fetch indexed pages.
+
+  growthbook:
+    tier: 2
+    llms_url: https://www.growthbook.io/llms.txt
+    packs: []
+
+  resend:
+    tier: 2
+    llms_url: https://resend.com/llms.txt
+    packs: []
+
+  svix:
+    tier: 2
+    llms_url: https://docs.svix.com/llms.txt
+    packs: [webhooks]
+    notes: Webhook delivery patterns.
+
+  github:
+    tier: 2
+    llms_url: https://docs.github.com/llms.txt
+    packs: [cicd]
+    notes: Covers Actions, REST/GraphQL API, PR workflows.
+
+  nextjs:
+    tier: 2
+    llms_url: https://nextjs.org/llms.txt
+    packs: [nextjs]
+
+  tanstack:
+    tier: 2
+    llms_url: https://tanstack.com/llms.txt
+    packs: [react]
+    notes: Query, Router, Table, Form.
+
+  mongodb:
+    tier: 2
+    llms_url: https://www.mongodb.com/llms.txt
+    packs: [mongodb]
+
+  redis:
+    tier: 2
+    llms_url: https://redis.io/llms.txt
+    packs: [redis]
+
+  react:
+    tier: 2
+    llms_url: https://react.dev/llms.txt
+    packs: [react]
+
+  pytorch:
+    tier: 2
+    llms_url: https://pytorch.org/llms.txt
+    packs: []
+    notes: Index includes blog posts, not just docs — filter when slicing briefs.
+
+  # ────────────── tier-3: neither (fetch fallback) ──────────────
+  #
+  # Note: language stdlib / spec docs are systematically tier-3.
+  # llms.txt is a SaaS/CMS convention; standards orgs and language foundations
+  # (python.org, openjdk.org, golang.org, rust-lang.org, MDN, TC39, Oracle)
+  # have not adopted it. Use curated URL lists at skill-source/upstream/curated/
+  # for these.
+
+  postgresql:
+    tier: 3
+    packs: [postgres]
+    fallback_root: https://www.postgresql.org/docs/current/
+
+  rust:
+    tier: 3
+    packs: [rust]
+    fallback_root: https://doc.rust-lang.org/
+
+  go:
+    tier: 3
+    packs: [go]
+    fallback_root: https://go.dev/doc/
+
+  terraform:
+    tier: 3
+    packs: [iac]
+    fallback_root: https://developer.hashicorp.com/terraform/docs
+
+  github_actions:
+    tier: 3
+    packs: [cicd]
+    fallback_root: https://docs.github.com/en/actions
+    notes: docs.github.com/llms.txt (tier-2) covers Actions; this entry kept for direct subtree fetch.
+
+  airflow:
+    tier: 3
+    packs: [data-engineering]
+    fallback_root: https://airflow.apache.org/docs/
+
+  tailwind:
+    tier: 3
+    packs: [ui-design]
+    fallback_root: https://tailwindcss.com/docs
+
+  kubernetes:
+    tier: 3
+    packs: []
+    fallback_root: https://kubernetes.io/docs/
+
+  nginx:
+    tier: 3
+    packs: []
+    fallback_root: https://nginx.org/en/docs/
+
+  pnpm:
+    tier: 3
+    packs: []
+    fallback_root: https://pnpm.io/
+
+  playwright:
+    tier: 3
+    packs: [testing]
+    fallback_root: https://playwright.dev/docs/
+
+  fastapi:
+    tier: 3
+    packs: [fastapi]
+    fallback_root: https://fastapi.tiangolo.com/
+
+  python:
+    tier: 3
+    packs: [python]
+    fallback_root: https://docs.python.org/3/
+
+  graphql:
+    tier: 3
+    packs: [graphql]
+    fallback_root: https://graphql.org/learn/
+
+  astro:
+    tier: 3
+    packs: []
+    fallback_root: https://docs.astro.build/
+
+  biome:
+    tier: 3
+    packs: [linting]
+    fallback_root: https://biomejs.dev/guides/
+
+  # Language stdlibs / specs (systematically tier-3 — see note above)
+
+  java_se:
+    tier: 3
+    packs: []
+    fallback_root: https://docs.oracle.com/en/java/javase/
+    notes: docs.oracle.com/javase/llms.txt returns 200 but is HTML soft-404 — do not use.
+
+  openjdk:
+    tier: 3
+    packs: []
+    fallback_root: https://openjdk.org/jeps/
+
+  spring:
+    tier: 3
+    packs: []
+    fallback_root: https://docs.spring.io/spring-framework/reference/
+
+  nodejs:
+    tier: 3
+    packs: [nodejs]
+    fallback_root: https://nodejs.org/api/
+
+  typescript:
+    tier: 3
+    packs: [typescript]
+    fallback_root: https://www.typescriptlang.org/docs/
+
+  mdn:
+    tier: 3
+    packs: []
+    fallback_root: https://developer.mozilla.org/en-US/docs/Web/
+
+  tc39:
+    tier: 3
+    packs: []
+    fallback_root: https://tc39.es/ecma262/
+
+  dotnet:
+    tier: 3
+    packs: []
+    fallback_root: https://learn.microsoft.com/en-us/dotnet/
+
+  ruby:
+    tier: 3
+    packs: []
+    fallback_root: https://docs.ruby-lang.org/en/master/
+
+  rails:
+    tier: 3
+    packs: []
+    fallback_root: https://guides.rubyonrails.org/
+
+  php:
+    tier: 3
+    packs: []
+    fallback_root: https://www.php.net/manual/en/
+
+  laravel:
+    tier: 3
+    packs: []
+    fallback_root: https://laravel.com/docs
+
+  swift:
+    tier: 3
+    packs: []
+    fallback_root: https://docs.swift.org/swift-book/
+
+  elixir:
+    tier: 3
+    packs: []
+    fallback_root: https://hexdocs.pm/elixir/
+
+  fastapi_lib:
+    tier: 3
+    packs: [fastapi]
+    fallback_root: https://fastapi.tiangolo.com/
+
+  flask:
+    tier: 3
+    packs: []
+    fallback_root: https://flask.palletsprojects.com/en/stable/
+
+  numpy:
+    tier: 3
+    packs: []
+    fallback_root: https://numpy.org/doc/stable/
+
+  pandas:
+    tier: 3
+    packs: []
+    fallback_root: https://pandas.pydata.org/docs/
+
+  scikit_learn:
+    tier: 3
+    packs: []
+    fallback_root: https://scikit-learn.org/stable/
+
+  tensorflow:
+    tier: 3
+    packs: []
+    fallback_root: https://www.tensorflow.org/api_docs
+
+  peps:
+    tier: 3
+    packs: [python]
+    fallback_root: https://peps.python.org/

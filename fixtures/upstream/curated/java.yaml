@@ -1,0 +1,80 @@
+language: Java
+version_anchor: Java 21 LTS
+generated_at: 2026-05-01
+canonical:
+  language_reference: https://docs.oracle.com/en/java/javase/21/docs/api/index.html
+  library_reference: https://docs.oracle.com/en/java/javase/21/docs/api/java.base/module-summary.html
+  spec_or_standard: https://docs.oracle.com/javase/specs/jls/se21/html/index.html
+  release_notes: https://www.oracle.com/java/technologies/javase/21-relnote-issues.html
+topics:
+  concurrency_and_async:
+    description: Virtual threads, structured concurrency, CompletableFuture, and java.util.concurrent
+    urls:
+      - https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/package-summary.html
+      - https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Thread.html
+      - https://openjdk.org/jeps/444
+      - https://openjdk.org/jeps/453
+  error_handling_and_exceptions:
+    description: Exception hierarchy, checked/unchecked distinction, and try-with-resources
+    urls:
+      - https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Exception.html
+      - https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Throwable.html
+      - https://docs.oracle.com/javase/specs/jls/se21/html/jls-14.html#jls-14.20
+  typing_and_generics:
+    description: Generics, bounded wildcards, type erasure, and sealed classes
+    urls:
+      - https://docs.oracle.com/javase/specs/jls/se21/html/jls-4.html
+      - https://docs.oracle.com/en/java/javase/21/language/sealed-classes-and-interfaces.html
+      - https://openjdk.org/jeps/441
+  memory_and_performance:
+    description: GC algorithms, JVM flags, and heap management
+    urls:
+      - https://docs.oracle.com/en/java/javase/21/gctuning/introduction-garbage-collection-tuning.html
+      - https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/ref/package-summary.html
+  packaging_and_dependency_management:
+    description: Java modules system (JPMS) and JAR packaging
+    urls:
+      - https://docs.oracle.com/en/java/javase/21/docs/api/java.base/module-summary.html
+      - https://openjdk.org/jeps/261
+      - https://docs.oracle.com/en/java/javase/21/module-system/overview-module-system.html
+  testing_idioms:
+    description: JUnit 5 is not stdlib; canonical testing entry point is JDK tooling
+    urls:
+      - https://docs.oracle.com/en/java/javase/21/docs/specs/man/java.html
+  security_and_crypto_primitives:
+    description: JCA/JCE cryptography framework, MessageDigest, Cipher, and KeyStore
+    urls:
+      - https://docs.oracle.com/en/java/javase/21/security/java-cryptography-architecture-jca-reference-guide.html
+      - https://docs.oracle.com/en/java/javase/21/docs/api/java.base/javax/crypto/package-summary.html
+      - https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/security/package-summary.html
+  io_and_filesystem:
+    description: java.nio.file (NIO.2), Path API, and file I/O patterns
+    urls:
+      - https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/nio/file/package-summary.html
+      - https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/nio/file/Path.html
+      - https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/io/package-summary.html
+  networking_and_http_client:
+    description: java.net.http HttpClient (11+) and URL/Socket APIs
+    urls:
+      - https://docs.oracle.com/en/java/javase/21/docs/api/java.net.http/java/net/http/HttpClient.html
+      - https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/net/package-summary.html
+  serialization_json_binary:
+    description: Java serialization; canonical JSON handled by third-party (known gap)
+    urls:
+      - https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/io/Serializable.html
+      - https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html
+  logging_and_observability:
+    description: java.util.logging (JUL) — the stdlib logging facility
+    urls:
+      - https://docs.oracle.com/en/java/javase/21/docs/api/java.logging/java/util/logging/package-summary.html
+      - https://docs.oracle.com/en/java/javase/21/core/java-logging-overview.html
+  language_evolution_and_deprecation:
+    description: JEP index for tracking language feature additions and deprecations
+    urls:
+      - https://openjdk.org/jeps/0
+      - https://docs.oracle.com/en/java/javase/21/migrate/getting-started.html
+known_gaps:
+  - No canonical JSON serialization in stdlib; supplement with Jackson or Gson framework-tier skills
+  - JUnit 5 / Mockito testing not covered by Oracle docs; need separate framework-tier skill
+  - Build tooling (Maven, Gradle) is entirely outside canonical Java docs
+  - Records and pattern matching canonical docs fragmented across JEPs and JLS

@@ -1,0 +1,101 @@
+# Curated-list authoring targets.
+#
+# For each entry, fill {LANGUAGE} and {VERSION_ANCHOR} into _prompt-template.md
+# and run against your local LLM.
+#
+# Version-anchor strategy: pick a version 6–18 months old that has STRONG model
+# training-data coverage rather than the bleeding edge. Canonical doc URLs
+# either redirect from versioned paths or use /latest/ — model recall on a
+# well-known stable matters more than tracking the newest release.
+#
+# After authoring, re-anchor to the current stable in the resulting yaml's
+# `version_anchor` field if you want; the URLs themselves rarely need to change.
+
+targets:
+
+  # ── Highest priority (core to existing packs / next-batch menu) ──
+
+  - language: Python
+    version_anchor: Python 3.13
+    priority: 1
+    notes: docs.python.org versioned paths are stable; PEPs are immutable.
+
+  - language: Java
+    version_anchor: Java 21 LTS
+    priority: 1
+    notes: docs.oracle.com/en/java/javase/21/. JEPs at openjdk.org/jeps.
+
+  - language: Go
+    version_anchor: Go 1.23
+    priority: 1
+    notes: go.dev/doc, go.dev/ref/spec, pkg.go.dev/std stable paths.
+
+  - language: TypeScript
+    version_anchor: TypeScript 5.7
+    priority: 1
+    notes: typescriptlang.org/docs/handbook stable; minor versions don't move pages.
+
+  - language: Node.js
+    version_anchor: Node.js 22 LTS
+    priority: 1
+    notes: nodejs.org/api/<module>.html — deterministic per-stdlib-module pattern.
+
+  - language: Rust
+    version_anchor: Rust stable (1.83+)
+    priority: 1
+    notes: doc.rust-lang.org/{book,reference,std,nomicon}. rust-lang.github.io/api-guidelines.
+
+  # ── Second tier (less code-volume in pack inventory but worth covering) ──
+
+  - language: C#
+    version_anchor: .NET 9 / C# 13
+    priority: 2
+    notes: learn.microsoft.com/en-us/dotnet/. Versioned subtrees can drift — prefer feature pages.
+
+  - language: Ruby
+    version_anchor: Ruby 3.4
+    priority: 2
+    notes: docs.ruby-lang.org/en/master/. ruby-doc.org for stdlib class pages.
+
+  - language: PHP
+    version_anchor: PHP 8.4
+    priority: 2
+    notes: php.net/manual/en/ — mirror selection in URLs is fine.
+
+  - language: Swift
+    version_anchor: Swift 6.0
+    priority: 2
+    notes: docs.swift.org/swift-book/. developer.apple.com/documentation/swift.
+
+  - language: Kotlin
+    version_anchor: Kotlin 2.1
+    priority: 2
+    notes: tier-1 has llms.txt — curated list mostly redundant; do last or skip.
+
+  # ── Third tier (defer unless directly authoring in the language) ──
+
+  - language: Elixir
+    version_anchor: Elixir 1.18
+    priority: 3
+    notes: hexdocs.pm/elixir/{Module}.html.
+
+  - language: Scala
+    version_anchor: Scala 3.5
+    priority: 3
+
+  - language: Clojure
+    version_anchor: Clojure 1.12
+    priority: 3
+
+  - language: Haskell
+    version_anchor: GHC 9.10
+    priority: 3
+
+  - language: OCaml
+    version_anchor: OCaml 5.2
+    priority: 3
+
+  - language: Zig
+    version_anchor: Zig 0.13
+    priority: 3
+    notes: API still unstable; expect more known_gaps.
