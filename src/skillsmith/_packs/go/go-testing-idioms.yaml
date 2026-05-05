@@ -1,0 +1,421 @@
+skill_type: domain
+skill_id: go-testing-idioms
+canonical_name: Go Testing Idioms (Table-Driven Tests, Subtests, Benchmarks, Fuzzing)
+category: quality
+skill_class: domain
+domain_tags: [table-driven-tests, subtest-isolation, testing-helper, benchmark-loops, fuzz-corpus]
+always_apply: false
+phase_scope: null
+category_scope: language
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-05. Sources — testing package https://pkg.go.dev/testing (verified 2026-05-05 against fixtures/upstream/curated/go.yaml topic `testing_idioms`); How to Write Go Code — Testing https://go.dev/doc/code#Testing; Go fuzzing tutorial https://go.dev/doc/fuzz/. Skill scope: how the `testing` package's idioms shape Go test code — table-driven cases, `t.Run` subtests, `t.Helper`, parallel tests, benchmarks, fuzz tests; not test-driven development methodology, not test doubles/mocking patterns (covered in foundation tier), not assertion libraries beyond a brief mention.
+
+raw_prose: |
+  # Go Testing Idioms
+
+  Go's `testing` package is deliberately minimal: it gives you `t.Errorf` / `t.Fatalf` and a way to discover and run `TestXxx` functions, and trusts you to compose the rest. The idiomatic shape — table-driven cases, `t.Run` subtests, `t.Helper`, parallel-where-safe — emerged from the Go standard library and is now the convention. The rule is one sentence: write each test as a table of inputs and expected outputs, drive each row through a `t.Run` subtest so failures point at the specific case, mark helpers with `t.Helper` so failures report the caller's line, and reach for `testing/quick` or fuzzing when the input space is too large to enumerate by hand. Most production Go test bugs come from shared mutable state across subtests, missing `t.Helper` in assertion functions, or treating benchmarks as performance tests rather than relative measurements.
+
+  ## File and function naming
+
+  Test files live next to the code they test, named `xxx_test.go`. Files in `xxx_test.go` are compiled into the test binary and not into the package's normal output. Functions:
+
+  - **`TestXxx(t *testing.T)`** — a unit test. Capital `T` after `Test` is required by the toolchain.
+  - **`BenchmarkXxx(b *testing.B)`** — a benchmark.
+  - **`FuzzXxx(f *testing.F)`** — a fuzz test.
+  - **`ExampleXxx()`** — runs as a test (compared against the trailing `// Output:` comment) and rendered in godoc.
+
+  Two package modes for tests:
+
+  - **Same package** — `package foo` in `foo_test.go`. Test sees unexported identifiers. Use for tightly coupled internal tests.
+  - **External test package** — `package foo_test` in `foo_test.go`. Test only sees the exported API. Use to verify the public contract (and to avoid import cycles when the test wants to use packages that import `foo`).
+
+  Mix freely. A single package can have both `foo_internal_test.go` (`package foo`) and `foo_test.go` (`package foo_test`).
+
+  ## Table-driven tests
+
+  The dominant pattern. A test enumerates cases as a slice of structs, then loops:
+
+  ```go
+  func TestParse(t *testing.T) {
+      cases := []struct {
+          name    string
+          input   string
+          want    int
+          wantErr bool
+      }{
+          {"empty", "", 0, true},
+          {"single", "42", 42, false},
+          {"trailing space", "42 ", 42, false},
+          {"non-numeric", "abc", 0, true},
+      }
+      for _, tc := range cases {
+          t.Run(tc.name, func(t *testing.T) {
+              got, err := Parse(tc.input)
+              if (err != nil) != tc.wantErr {
+                  t.Fatalf("Parse(%q) err = %v, wantErr %v", tc.input, err, tc.wantErr)
+              }
+              if got != tc.want {
+                  t.Errorf("Parse(%q) = %d, want %d", tc.input, got, tc.want)
+              }
+          })
+      }
+  }
+  ```
+
+  Why it works:
+
+  - Adding a case is a one-line addition; no new function.
+  - `t.Run(tc.name, ...)` makes failures report `TestParse/trailing_space`, pointing at the exact row.
+  - The body is one path; one bug-fix cleans up all cases at once.
+
+  Use `t.Run` per row even when there is only one case — it costs nothing and you usually add a second case soon.
+
+  ## `t.Helper` for assertion helpers
+
+  When you factor out a helper that calls `t.Errorf`, mark it with `t.Helper()`:
+
+  ```go
+  func assertEqual(t *testing.T, got, want any) {
+      t.Helper()
+      if got != want {
+          t.Errorf("got %v, want %v", got, want)
+      }
+  }
+  ```
+
+  Without `t.Helper`, failure messages report the line *inside* the helper, which is useless. With it, the test runner walks up to the caller's line.
+
+  Same applies to setup helpers that call `t.Fatalf` ("failed to seed test DB") — mark them.
+
+  ## Parallel tests
+
+  `t.Parallel()` at the top of a test (or subtest) tells the runner this test is safe to run concurrently with other parallel tests. Tests run in parallel only if they all opt in.
+
+  ```go
+  func TestSomething(t *testing.T) {
+      t.Parallel()
+      // body
+  }
+  ```
+
+  In a table-driven loop, opt in inside the subtest:
+
+  ```go
+  for _, tc := range cases {
+      tc := tc // pin loop variable for Go < 1.22
+      t.Run(tc.name, func(t *testing.T) {
+          t.Parallel()
+          // body
+      })
+  }
+  ```
+
+  The `tc := tc` pin was mandatory pre-Go 1.22 because the loop variable was shared. Go 1.22+ scopes `tc` per iteration. If your `go` directive in `go.mod` is `1.22+`, you can drop the pin; if you support older versions, keep it.
+
+  Parallel tests must not share mutable state. If two subtests both write to a package-level cache, parallelism corrupts it; either guard with a mutex or give each subtest its own instance.
+
+  ## `t.Cleanup` and `t.TempDir`
+
+  `t.Cleanup(fn)` registers a function to run when the test finishes (success or failure), in LIFO order. Replaces deferred-in-helper patterns:
+
+  ```go
+  func startServer(t *testing.T) *Server {
+      t.Helper()
+      s := New()
+      s.Start()
+      t.Cleanup(s.Close)
+      return s
+  }
+  ```
+
+  `t.TempDir()` creates a per-test temp directory and cleans it up automatically. Always use it for filesystem tests; never `os.MkdirTemp` directly in tests because cleanup is on you.
+
+  Both work in subtests with their own scopes — a `t.Cleanup` in a subtest runs at subtest end, not parent end.
+
+  ## Benchmarks
+
+  Benchmarks measure a loop count `b.N` chosen by the runner so the benchmark runs ~1 second:
+
+  ```go
+  func BenchmarkParse(b *testing.B) {
+      input := strings.Repeat("42 ", 1000)
+      b.ResetTimer()
+      for i := 0; i < b.N; i++ {
+          _, _ = Parse(input)
+      }
+  }
+  ```
+
+  Patterns:
+
+  - **`b.ResetTimer()`** after expensive setup, so setup time does not skew the per-op average.
+  - **`b.ReportAllocs()`** to include allocations per op in output. Useful when comparing alloc-heavy paths.
+  - **Sub-benchmarks** with `b.Run("size=1k", func(b *testing.B) {...})` for parameterized benchmarks.
+  - **Use the result.** Assign return values to a package-level `var sink` (or use `runtime.KeepAlive`) to prevent the compiler from optimizing the work away.
+
+  Benchmark numbers are *relative*. They tell you "v2 is 30% faster than v1 on my machine." They are not portable absolutes; do not put hardcoded ns/op thresholds in CI without expecting flakes.
+
+  ## Fuzzing
+
+  Fuzz tests (Go 1.18+) generate random inputs to find crashes and assertion failures:
+
+  ```go
+  func FuzzParse(f *testing.F) {
+      f.Add("42")
+      f.Add("")
+      f.Add("999999999999999999999")
+      f.Fuzz(func(t *testing.T, s string) {
+          _, _ = Parse(s)  // we just want to find inputs that panic
+      })
+  }
+  ```
+
+  `f.Add(...)` seeds the corpus. `f.Fuzz` is called repeatedly with mutated inputs from the seed corpus + previously discovered interesting inputs. When the fuzzer finds an input that causes a failure (panic, `t.Fail`), it writes the input to `testdata/fuzz/FuzzParse/...` so the case becomes a regression test next time.
+
+  Run with `go test -fuzz=FuzzParse -fuzztime=30s`. CI typically runs unit tests in `go test ./...` (which runs the seed corpus only) and runs `-fuzz` separately on a schedule.
+
+  Fuzzing is most valuable for parsers, deserializers, and any function with a complex input domain. The bar to writing a fuzz test is low; the payoff when it finds something is real.
+
+  ## Anti-patterns
+
+  - **Repeating the same `t.Errorf` block five times** instead of table-driving.
+  - **Forgetting `t.Helper` in assertion functions.** Failure points at the helper, not the test.
+  - **Sharing a global with `t.Parallel`.** Subtests interleave; the global is corrupted.
+  - **Running cleanup with `defer` in a setup helper.** The defer runs when the helper returns, not when the test ends. Use `t.Cleanup`.
+  - **Treating `b.N` as a magic constant.** It is chosen by the runner; do not hardcode it.
+  - **Asserting on benchmark ns/op in CI.** Hardware varies; tests flake. Use benchmarks for comparison runs, not pass/fail gates.
+  - **Discarding benchmark results.** The compiler may optimize the work away. Assign to `var sink any` or use `runtime.KeepAlive`.
+  - **Long fuzz-time in `go test ./...`.** `-fuzz` only fuzzes one target at a time; runs need their own command and time budget.
+
+  ## Verification
+
+  - [ ] Tests for one function are table-driven; each row uses `t.Run(tc.name, ...)`.
+  - [ ] Every assertion helper that calls `t.Errorf`/`t.Fatalf` calls `t.Helper()` first.
+  - [ ] Parallel tests use `t.Parallel()` at the top; loop-variable pinning (`tc := tc`) is present if `go.mod` declares < 1.22.
+  - [ ] Filesystem tests use `t.TempDir()`; teardown uses `t.Cleanup`.
+  - [ ] No subtest mutates package-level state without a mutex.
+  - [ ] Benchmarks call `b.ResetTimer()` after setup; results are sunk to a `var` to prevent dead-code elimination.
+  - [ ] CI runs `go test ./...` (seed corpus only); `-fuzz` runs are scheduled, not gating.
+  - [ ] Tests are split between `package foo` (internal) and `package foo_test` (external) deliberately, not by accident.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Go Testing Idioms
+
+      Go's `testing` package is deliberately minimal: it gives you `t.Errorf` / `t.Fatalf` and a way to discover and run `TestXxx` functions, and trusts you to compose the rest. The idiomatic shape — table-driven cases, `t.Run` subtests, `t.Helper`, parallel-where-safe — emerged from the Go standard library and is now the convention. The rule is one sentence: write each test as a table of inputs and expected outputs, drive each row through a `t.Run` subtest so failures point at the specific case, mark helpers with `t.Helper` so failures report the caller's line, and reach for `testing/quick` or fuzzing when the input space is too large to enumerate by hand. Most production Go test bugs come from shared mutable state across subtests, missing `t.Helper` in assertion functions, or treating benchmarks as performance tests rather than relative measurements.
+
+  - sequence: 2
+    fragment_type: execution
+    content: |
+      ## File and function naming
+
+      Test files live next to the code they test, named `xxx_test.go`. Files in `xxx_test.go` are compiled into the test binary and not into the package's normal output. Functions:
+
+      - **`TestXxx(t *testing.T)`** — a unit test. Capital `T` after `Test` is required by the toolchain.
+      - **`BenchmarkXxx(b *testing.B)`** — a benchmark.
+      - **`FuzzXxx(f *testing.F)`** — a fuzz test.
+      - **`ExampleXxx()`** — runs as a test (compared against the trailing `// Output:` comment) and rendered in godoc.
+
+      Two package modes for tests:
+
+      - **Same package** — `package foo` in `foo_test.go`. Test sees unexported identifiers. Use for tightly coupled internal tests.
+      - **External test package** — `package foo_test` in `foo_test.go`. Test only sees the exported API. Use to verify the public contract (and to avoid import cycles when the test wants to use packages that import `foo`).
+
+      Mix freely. A single package can have both `foo_internal_test.go` (`package foo`) and `foo_test.go` (`package foo_test`).
+
+  - sequence: 3
+    fragment_type: example
+    content: |
+      ## Table-driven tests
+
+      The dominant pattern. A test enumerates cases as a slice of structs, then loops:
+
+      ```go
+      import "testing"
+
+      func TestParse(t *testing.T) {
+          cases := []struct {
+              name    string
+              input   string
+              want    int
+              wantErr bool
+          }{
+              {"empty", "", 0, true},
+              {"single", "42", 42, false},
+              {"trailing space", "42 ", 42, false},
+              {"non-numeric", "abc", 0, true},
+          }
+          for _, tc := range cases {
+              t.Run(tc.name, func(t *testing.T) {
+                  got, err := Parse(tc.input)
+                  if (err != nil) != tc.wantErr {
+                      t.Fatalf("Parse(%q) err = %v, wantErr %v", tc.input, err, tc.wantErr)
+                  }
+                  if got != tc.want {
+                      t.Errorf("Parse(%q) = %d, want %d", tc.input, got, tc.want)
+                  }
+              })
+          }
+      }
+      ```
+
+      Why it works: adding a case is a one-line addition; `t.Run(tc.name, ...)` makes failures report `TestParse/trailing_space`, pointing at the exact row; the body is one path, so a bug fix cleans up all cases at once. Use `t.Run` per row even when there is only one case.
+
+  - sequence: 4
+    fragment_type: example
+    content: |
+      ## `t.Helper` for assertion helpers
+
+      When you factor out a helper that calls `t.Errorf`, mark it with `t.Helper()`:
+
+      ```go
+      import "testing"
+
+      func assertEqual(t *testing.T, got, want any) {
+          t.Helper()
+          if got != want {
+              t.Errorf("got %v, want %v", got, want)
+          }
+      }
+      ```
+
+      Without `t.Helper`, failure messages report the line *inside* the helper, which is useless. With it, the test runner walks up to the caller's line.
+
+      The same rule applies to setup helpers that call `t.Fatalf` ("failed to seed test DB") — mark them. If a helper calls another helper, both should declare `t.Helper()` so the runner skips through both frames to the test body.
+
+  - sequence: 5
+    fragment_type: example
+    content: |
+      ## Parallel tests
+
+      `t.Parallel()` at the top of a test (or subtest) tells the runner this test is safe to run concurrently with other parallel tests. Tests run in parallel only if they all opt in.
+
+      ```go
+      func TestSomething(t *testing.T) {
+          t.Parallel()
+          // body
+      }
+      ```
+
+      In a table-driven loop, opt in inside the subtest:
+
+      ```go
+      for _, tc := range cases {
+          tc := tc // pin loop variable for Go < 1.22
+          t.Run(tc.name, func(t *testing.T) {
+              t.Parallel()
+              // body
+          })
+      }
+      ```
+
+      The `tc := tc` pin was mandatory pre-Go 1.22 because the loop variable was shared. Go 1.22+ scopes `tc` per iteration; if your `go` directive in `go.mod` is `1.22+`, you can drop the pin. Parallel tests must not share mutable state — if two subtests both write to a package-level cache, parallelism corrupts it.
+
+  - sequence: 6
+    fragment_type: example
+    content: |
+      ## `t.Cleanup` and `t.TempDir`
+
+      `t.Cleanup(fn)` registers a function to run when the test finishes (success or failure), in LIFO order. Replaces deferred-in-helper patterns:
+
+      ```go
+      import "testing"
+
+      func startServer(t *testing.T) *Server {
+          t.Helper()
+          s := New()
+          s.Start()
+          t.Cleanup(s.Close)
+          return s
+      }
+      ```
+
+      `t.TempDir()` creates a per-test temp directory and cleans it up automatically. Always use it for filesystem tests; never `os.MkdirTemp` directly in tests because cleanup is on you.
+
+      Both work in subtests with their own scopes — a `t.Cleanup` registered in a subtest runs at subtest end, not parent end. This makes per-row resources (open files, started services, scratch dirs) genuinely scoped to the subtest that created them.
+
+  - sequence: 7
+    fragment_type: example
+    content: |
+      ## Benchmarks
+
+      Benchmarks measure a loop count `b.N` chosen by the runner so the benchmark runs ~1 second:
+
+      ```go
+      import (
+          "strings"
+          "testing"
+      )
+
+      func BenchmarkParse(b *testing.B) {
+          input := strings.Repeat("42 ", 1000)
+          b.ResetTimer()
+          for i := 0; i < b.N; i++ {
+              _, _ = Parse(input)
+          }
+      }
+      ```
+
+      Patterns:
+
+      - **`b.ResetTimer()`** after expensive setup, so setup time does not skew the per-op average.
+      - **`b.ReportAllocs()`** to include allocations per op in output. Useful when comparing alloc-heavy paths.
+      - **Sub-benchmarks** with `b.Run("size=1k", func(b *testing.B) {...})` for parameterized benchmarks.
+      - **Use the result.** Assign return values to a package-level `var sink` (or use `runtime.KeepAlive`) to prevent the compiler from optimizing the work away.
+
+      Benchmark numbers are *relative*. They tell you "v2 is 30% faster than v1 on my machine." They are not portable absolutes; do not put hardcoded ns/op thresholds in CI without expecting flakes.
+
+  - sequence: 8
+    fragment_type: example
+    content: |
+      ## Fuzzing
+
+      Fuzz tests (Go 1.18+) generate random inputs to find crashes and assertion failures:
+
+      ```go
+      import "testing"
+
+      func FuzzParse(f *testing.F) {
+          f.Add("42")
+          f.Add("")
+          f.Add("999999999999999999999")
+          f.Fuzz(func(t *testing.T, s string) {
+              _, _ = Parse(s)  // we just want to find inputs that panic
+          })
+      }
+      ```
+
+      `f.Add(...)` seeds the corpus. `f.Fuzz` is called repeatedly with mutated inputs from the seed corpus plus previously discovered interesting inputs. When the fuzzer finds an input that causes a failure (panic, `t.Fail`), it writes the input to `testdata/fuzz/FuzzParse/...` so the case becomes a regression test next time.
+
+      Run with `go test -fuzz=FuzzParse -fuzztime=30s`. CI typically runs unit tests in `go test ./...` (which runs the seed corpus only) and runs `-fuzz` separately on a schedule. Fuzzing is most valuable for parsers, deserializers, and any function with a complex input domain.
+
+  - sequence: 9
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      - **Repeating the same `t.Errorf` block five times** instead of table-driving.
+      - **Forgetting `t.Helper` in assertion functions.** Failure points at the helper, not the test.
+      - **Sharing a global with `t.Parallel`.** Subtests interleave; the global is corrupted.
+      - **Running cleanup with `defer` in a setup helper.** The defer runs when the helper returns, not when the test ends. Use `t.Cleanup`.
+      - **Treating `b.N` as a magic constant.** It is chosen by the runner; do not hardcode it.
+      - **Asserting on benchmark ns/op in CI.** Hardware varies; tests flake. Use benchmarks for comparison runs, not pass/fail gates.
+      - **Discarding benchmark results.** The compiler may optimize the work away. Assign to `var sink any` or use `runtime.KeepAlive`.
+      - **Long fuzz-time in `go test ./...`.** `-fuzz` only fuzzes one target at a time; runs need their own command and time budget.
+
+  - sequence: 10
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] Tests for one function are table-driven; each row uses `t.Run(tc.name, ...)`.
+      - [ ] Every assertion helper that calls `t.Errorf`/`t.Fatalf` calls `t.Helper()` first.
+      - [ ] Parallel tests use `t.Parallel()` at the top; loop-variable pinning (`tc := tc`) is present if `go.mod` declares < 1.22.
+      - [ ] Filesystem tests use `t.TempDir()`; teardown uses `t.Cleanup`.
+      - [ ] No subtest mutates package-level state without a mutex.
+      - [ ] Benchmarks call `b.ResetTimer()` after setup; results are sunk to a `var` to prevent dead-code elimination.
+      - [ ] CI runs `go test ./...` (seed corpus only); `-fuzz` runs are scheduled, not gating.
+      - [ ] Tests are split between `package foo` (internal) and `package foo_test` (external) deliberately, not by accident.

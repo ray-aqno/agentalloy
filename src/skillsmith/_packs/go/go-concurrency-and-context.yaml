@@ -1,0 +1,330 @@
+skill_type: domain
+skill_id: go-concurrency-and-context
+canonical_name: Go Concurrency and Context (Goroutines, Channels, Select, sync, context)
+category: engineering
+skill_class: domain
+domain_tags: [goroutine-leaks, channel-direction, select-default, sync-primitives, request-cancellation]
+always_apply: false
+phase_scope: null
+category_scope: language
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-05. Sources — Go language spec https://go.dev/ref/spec#Go_statements (verified 2026-05-05 against fixtures/upstream/curated/go.yaml topic `concurrency_and_async`); sync package https://pkg.go.dev/sync; context package https://pkg.go.dev/context; Effective Go concurrency https://go.dev/doc/effective_go#concurrency; Go pipelines blog https://go.dev/blog/pipelines. Skill scope: how to spawn and synchronize goroutines, use channels and select correctly, prevent goroutine leaks, and propagate cancellation/deadlines via context.Context; not generic async patterns at the language-comparison level (covered in python/nodejs packs), not HTTP-server context plumbing specifics.
+
+raw_prose: |
+  # Go Concurrency and Context
+
+  Go's concurrency model is built on goroutines (cheap user-space threads) and channels (typed, synchronous-by-default queues), with `context.Context` as the universal cancellation and deadline carrier. The rule is one sentence: every goroutine you start needs a clearly defined exit, every channel needs a clear owner who closes it, and every blocking call that crosses a request boundary takes a `context.Context` as its first argument. Most production Go bugs in concurrent code come from goroutines that leak because nobody told them to stop, channels that block because the receiver went away, or context values that get smuggled where parameters belonged.
+
+  ## Goroutines: cheap, but not free
+
+  `go f()` schedules `f` on the Go runtime scheduler. Goroutines start at ~2 KB stacks and grow on demand; you can have hundreds of thousands without trouble. The catch: the runtime cannot reclaim a goroutine that is blocked on a channel send/receive or a syscall. If nobody ever wakes it, it leaks — its stack, its captured variables, and any resources it holds stay alive forever.
+
+  Two rules prevent most goroutine leaks:
+
+  1. **Every spawn has a stop signal.** Either a `context.Context` whose `Done()` channel is selected on, a closed channel that signals shutdown, or a finite amount of work after which the goroutine returns naturally.
+  2. **The owner of a channel closes it; receivers do not.** Closing a channel from the receive side panics if the sender writes again. Convention: whoever sends, owns; whoever owns, closes.
+
+  ```go
+  // Bad — goroutine leaks if nobody reads from results
+  func process(items []Item) <-chan Result {
+      results := make(chan Result)
+      go func() {
+          for _, item := range items {
+              results <- compute(item) // blocks forever if no receiver
+          }
+          close(results)
+      }()
+      return results
+  }
+
+  // Good — caller passes ctx, goroutine exits on cancellation
+  func process(ctx context.Context, items []Item) <-chan Result {
+      results := make(chan Result)
+      go func() {
+          defer close(results)
+          for _, item := range items {
+              select {
+              case results <- compute(item):
+              case <-ctx.Done():
+                  return
+              }
+          }
+      }()
+      return results
+  }
+  ```
+
+  ## Channels: direction, buffering, ownership
+
+  Channels are typed (`chan int`, `chan Result`) and direction-qualified at function boundaries (`<-chan T` receive-only, `chan<- T` send-only). Always type your function parameters with the narrowest direction the function needs — it documents intent and the compiler enforces it.
+
+  Buffering changes blocking semantics:
+
+  - **Unbuffered (`make(chan T)`):** sender blocks until a receiver is ready. Send and receive are a synchronization point — useful for handoff and rendezvous.
+  - **Buffered (`make(chan T, N)`):** sender blocks only when buffer is full. Decouples producer and consumer rates. The buffer size is *not* a tuning knob to "fix" missing backpressure — pick a size that reflects an actual semantic batch (e.g., one slot per worker), not a guess.
+
+  Closing a channel with `close(ch)` is a one-time signal. Receivers can detect close with the comma-ok form (`v, ok := <-ch`) or by ranging until the channel drains and closes. Never close a channel you do not own; never send on a closed channel (it panics).
+
+  ## `select` is the concurrency primitive
+
+  `select` chooses among multiple channel operations. Combined with `ctx.Done()`, it is how every blocking goroutine respects cancellation:
+
+  ```go
+  select {
+  case msg := <-input:
+      handle(msg)
+  case <-ctx.Done():
+      return ctx.Err()
+  case <-time.After(5 * time.Second):
+      return errors.New("timeout")
+  }
+  ```
+
+  A `default` clause makes `select` non-blocking — it runs if no other case is immediately ready. Useful for "try send, drop if full" patterns; rarely useful in normal request flow because it usually masks a missing backpressure decision.
+
+  When two cases are ready simultaneously, `select` picks one *at random*. This is intentional — no fairness assumption, no priority. If you need priority, write nested selects.
+
+  ## `sync` package: when channels are wrong
+
+  Channels are not always the right tool. The `sync` package provides primitives that are usually clearer:
+
+  - **`sync.Mutex` / `sync.RWMutex`** — protect a piece of shared state. If a struct has a few fields read and written by multiple goroutines, embed a `sync.Mutex` and lock around the access. Do not pass mutexes by value — embed in the struct that owns them.
+  - **`sync.WaitGroup`** — wait for a known set of goroutines to finish. `wg.Add(N)` before spawning, `defer wg.Done()` inside each goroutine, `wg.Wait()` to block until all done. `Add` must happen before the goroutine starts to avoid a race.
+  - **`sync.Once`** — run an initializer exactly once across all goroutines. Lazy singletons.
+  - **`errgroup.Group`** (from `golang.org/x/sync/errgroup`) — like `WaitGroup` but each goroutine returns an error, and the group cancels on first error. The standard pattern for fanning out and collecting errors.
+
+  Channels for communication and ownership transfer; mutexes for protecting in-place state; WaitGroup/errgroup for "wait for N things to finish." Do not channel-pipe a counter when an atomic or mutex would do.
+
+  ## `context.Context`: cancellation, deadline, values
+
+  `context.Context` is the standard way to propagate cancellation, deadlines, and request-scoped values across API boundaries. The conventions are firm:
+
+  - **`ctx` is the first parameter** of any function that does IO, blocks, or might run long. Always named `ctx`. Never store it in a struct.
+  - **Pass it down, never up.** Each layer derives a new context if it needs to add a deadline (`context.WithTimeout`) or cancellation (`context.WithCancel`).
+  - **Always call `cancel()`.** `WithCancel`, `WithTimeout`, and `WithDeadline` return a `cancel` function. `defer cancel()` immediately after, even if the context completes naturally — this releases resources and signals child contexts.
+
+  ```go
+  func fetchUser(ctx context.Context, id string) (*User, error) {
+      ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+      defer cancel()
+      req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+      resp, err := http.DefaultClient.Do(req)
+      if err != nil {
+          return nil, err
+      }
+      defer resp.Body.Close()
+      // ...
+  }
+  ```
+
+  `context.Value` exists for request-scoped values (request IDs, auth tokens, trace spans) that genuinely cross many API layers. It is *not* a substitute for explicit parameters. The community guidance: only put values in context if they would have to thread through every function in the call stack anyway. Anything else goes as a parameter.
+
+  ## Pipelines and fan-out/fan-in
+
+  The canonical pattern for concurrent data processing is a pipeline of stages connected by channels. Each stage spawns goroutines, reads from an input channel, and writes to an output channel. Cancellation propagates through `ctx`. Fan-out is multiple goroutines sharing one input channel; fan-in merges multiple output channels into one.
+
+  Use `errgroup` to coordinate stages; cancel on first error; close output channels in the goroutine that owns them. The Go blog's pipelines post is the reference implementation for these patterns; read it once and the structure sticks. Common shape: a generator stage produces work, a fixed-size pool of workers consumes it concurrently, and a collector reduces results — all under a single `errgroup` so any failure cancels the rest.
+
+  ## Anti-patterns
+
+  - **Spawning a goroutine without a stop signal.** "It just runs forever" is a leak.
+  - **Sharing a `chan` whose owner is unclear.** When two functions might both close, you get a `panic: close of closed channel`.
+  - **Storing `context.Context` in a struct.** Contexts are per-call; struct storage hides their lifetime and breaks cancellation.
+  - **Ignoring the `cancel` from `WithTimeout`/`WithCancel`.** Resources leak; child contexts stay alive. Always `defer cancel()`.
+  - **Using `context.Value` for normal parameters.** Type-unsafe; hides data flow; future-you hates past-you.
+  - **`go func() { ... }()` with shared loop variable capture.** In Go 1.21 and earlier, the variable was shared across iterations. Go 1.22+ scoped per-iteration; if you support older modules, rebind explicitly: `i := i; go func() { use(i) }()`.
+  - **Mutex copied by value.** `func f(m sync.Mutex)` makes a copy; locking it does not protect the original. Use pointer receiver and pass `*Mutex` or embed by value in a struct passed by pointer.
+
+  ## Verification
+
+  - [ ] Every `go func` either selects on `ctx.Done()` / a stop channel, or runs over a finite input and returns.
+  - [ ] Channel ownership is documented: exactly one goroutine sends, exactly one closes.
+  - [ ] All functions doing IO or blocking work take `ctx context.Context` as their first parameter.
+  - [ ] Every `WithCancel` / `WithTimeout` / `WithDeadline` is paired with `defer cancel()`.
+  - [ ] No `context.Context` is stored in a struct field.
+  - [ ] `context.Value` is used only for cross-cutting request-scoped data (request ID, auth, trace), not as a regular parameter substitute.
+  - [ ] Mutexes are passed by pointer or embedded in a struct passed by pointer; never copied.
+  - [ ] Fan-out worker pools use `errgroup` (or equivalent) so the first error cancels siblings.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Go Concurrency and Context
+
+      Go's concurrency model is built on goroutines (cheap user-space threads) and channels (typed, synchronous-by-default queues), with `context.Context` as the universal cancellation and deadline carrier. The rule is one sentence: every goroutine you start needs a clearly defined exit, every channel needs a clear owner who closes it, and every blocking call that crosses a request boundary takes a `context.Context` as its first argument. Most production Go bugs in concurrent code come from goroutines that leak because nobody told them to stop, channels that block because the receiver went away, or context values that get smuggled where parameters belonged.
+
+  - sequence: 2
+    fragment_type: execution
+    content: |
+      ## Goroutines: cheap, but not free
+
+      `go f()` schedules `f` on the Go runtime scheduler. Goroutines start at ~2 KB stacks and grow on demand; you can have hundreds of thousands without trouble. The catch: the runtime cannot reclaim a goroutine that is blocked on a channel send/receive or a syscall. If nobody ever wakes it, it leaks — its stack, its captured variables, and any resources it holds stay alive forever.
+
+      Two rules prevent most goroutine leaks:
+
+      1. **Every spawn has a stop signal.** Either a `context.Context` whose `Done()` channel is selected on, a closed channel that signals shutdown, or a finite amount of work after which the goroutine returns naturally.
+      2. **The owner of a channel closes it; receivers do not.** Closing a channel from the receive side panics if the sender writes again. Convention: whoever sends, owns; whoever owns, closes.
+
+  - sequence: 3
+    fragment_type: example
+    content: |
+      ## Goroutine leak vs. cancellation-aware spawn
+
+      ```go
+      // Bad — goroutine leaks if nobody reads from results
+      func process(items []Item) <-chan Result {
+          results := make(chan Result)
+          go func() {
+              for _, item := range items {
+                  results <- compute(item) // blocks forever if no receiver
+              }
+              close(results)
+          }()
+          return results
+      }
+
+      // Good — caller passes ctx, goroutine exits on cancellation
+      func process(ctx context.Context, items []Item) <-chan Result {
+          results := make(chan Result)
+          go func() {
+              defer close(results)
+              for _, item := range items {
+                  select {
+                  case results <- compute(item):
+                  case <-ctx.Done():
+                      return
+                  }
+              }
+          }()
+          return results
+      }
+      ```
+
+      The good version derives its lifetime from the caller's context. When the caller cancels (request abort, deadline, parent error), the goroutine wakes from the blocked send, hits the `ctx.Done()` case, and returns — closing the channel via `defer`.
+
+  - sequence: 4
+    fragment_type: rationale
+    content: |
+      ## Channels: direction, buffering, ownership
+
+      Channels are typed (`chan int`, `chan Result`) and direction-qualified at function boundaries (`<-chan T` receive-only, `chan<- T` send-only). Always type your function parameters with the narrowest direction the function needs — it documents intent and the compiler enforces it.
+
+      Buffering changes blocking semantics:
+
+      - **Unbuffered (`make(chan T)`):** sender blocks until a receiver is ready. Send and receive are a synchronization point — useful for handoff and rendezvous.
+      - **Buffered (`make(chan T, N)`):** sender blocks only when buffer is full. Decouples producer and consumer rates. The buffer size is *not* a tuning knob to "fix" missing backpressure — pick a size that reflects an actual semantic batch (e.g., one slot per worker), not a guess.
+
+      Closing a channel with `close(ch)` is a one-time signal. Receivers can detect close with the comma-ok form (`v, ok := <-ch`) or by ranging until the channel drains and closes. Never close a channel you do not own; never send on a closed channel (it panics).
+
+  - sequence: 5
+    fragment_type: example
+    content: |
+      ## `select` with cancellation and timeout
+
+      `select` chooses among multiple channel operations. Combined with `ctx.Done()`, it is how every blocking goroutine respects cancellation:
+
+      ```go
+      import (
+          "context"
+          "errors"
+          "time"
+      )
+
+      select {
+      case msg := <-input:
+          handle(msg)
+      case <-ctx.Done():
+          return ctx.Err()
+      case <-time.After(5 * time.Second):
+          return errors.New("timeout")
+      }
+      ```
+
+      A `default` clause makes `select` non-blocking — it runs if no other case is immediately ready. Useful for "try send, drop if full" patterns; rarely useful in normal request flow because it usually masks a missing backpressure decision.
+
+      When two cases are ready simultaneously, `select` picks one *at random*. This is intentional — no fairness assumption, no priority. If you need priority, write nested selects.
+
+  - sequence: 6
+    fragment_type: rationale
+    content: |
+      ## `sync` package: when channels are wrong
+
+      Channels are not always the right tool. The `sync` package provides primitives that are usually clearer:
+
+      - **`sync.Mutex` / `sync.RWMutex`** — protect a piece of shared state. If a struct has a few fields read and written by multiple goroutines, embed a `sync.Mutex` and lock around the access. Do not pass mutexes by value — embed in the struct that owns them.
+      - **`sync.WaitGroup`** — wait for a known set of goroutines to finish. `wg.Add(N)` before spawning, `defer wg.Done()` inside each goroutine, `wg.Wait()` to block until all done. `Add` must happen before the goroutine starts to avoid a race.
+      - **`sync.Once`** — run an initializer exactly once across all goroutines. Lazy singletons.
+      - **`errgroup.Group`** (from `golang.org/x/sync/errgroup`) — like `WaitGroup` but each goroutine returns an error, and the group cancels on first error. The standard pattern for fanning out and collecting errors.
+
+      Channels for communication and ownership transfer; mutexes for protecting in-place state; WaitGroup/errgroup for "wait for N things to finish." Do not channel-pipe a counter when an atomic or mutex would do.
+
+  - sequence: 7
+    fragment_type: example
+    content: |
+      ## `context.Context` propagation pattern
+
+      `context.Context` is the standard way to propagate cancellation, deadlines, and request-scoped values across API boundaries. The conventions are firm:
+
+      - **`ctx` is the first parameter** of any function that does IO, blocks, or might run long. Always named `ctx`. Never store it in a struct.
+      - **Pass it down, never up.** Each layer derives a new context if it needs to add a deadline (`context.WithTimeout`) or cancellation (`context.WithCancel`).
+      - **Always call `cancel()`.** `WithCancel`, `WithTimeout`, and `WithDeadline` return a `cancel` function. `defer cancel()` immediately after, even if the context completes naturally — this releases resources and signals child contexts.
+
+      ```go
+      import (
+          "context"
+          "net/http"
+          "time"
+      )
+
+      func fetchUser(ctx context.Context, id string) (*User, error) {
+          ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+          defer cancel()
+          req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+          resp, err := http.DefaultClient.Do(req)
+          if err != nil {
+              return nil, err
+          }
+          defer resp.Body.Close()
+          // ...
+      }
+      ```
+
+      `context.Value` exists for request-scoped values (request IDs, auth tokens, trace spans) that genuinely cross many API layers. It is *not* a substitute for explicit parameters. The community guidance: only put values in context if they would have to thread through every function in the call stack anyway. Anything else goes as a parameter.
+
+  - sequence: 8
+    fragment_type: rationale
+    content: |
+      ## Pipelines and fan-out/fan-in
+
+      The canonical pattern for concurrent data processing in Go is a pipeline of stages connected by channels. Each stage spawns goroutines, reads from an input channel, and writes to an output channel. Cancellation propagates through `ctx`. Fan-out is multiple goroutines sharing one input channel; fan-in merges multiple output channels into one.
+
+      Use `errgroup` to coordinate stages; cancel on first error; close output channels in the goroutine that owns them. The Go blog's pipelines post is the reference implementation for these patterns; read it once and the structure sticks. Common shape: a generator stage produces work, a fixed-size pool of workers consumes it concurrently, and a collector reduces results — all under a single `errgroup` so any failure cancels the rest.
+
+  - sequence: 9
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      - **Spawning a goroutine without a stop signal.** "It just runs forever" is a leak.
+      - **Sharing a `chan` whose owner is unclear.** When two functions might both close, you get a `panic: close of closed channel`.
+      - **Storing `context.Context` in a struct.** Contexts are per-call; struct storage hides their lifetime and breaks cancellation.
+      - **Ignoring the `cancel` from `WithTimeout`/`WithCancel`.** Resources leak; child contexts stay alive. Always `defer cancel()`.
+      - **Using `context.Value` for normal parameters.** Type-unsafe; hides data flow; future-you hates past-you.
+      - **`go func() { ... }()` with shared loop variable capture.** In Go 1.21 and earlier, the variable was shared across iterations. Go 1.22+ scoped per-iteration; if you support older modules, rebind explicitly: `i := i; go func() { use(i) }()`.
+      - **Mutex copied by value.** `func f(m sync.Mutex)` makes a copy; locking it does not protect the original. Use pointer receiver and pass `*Mutex` or embed by value in a struct passed by pointer.
+
+  - sequence: 10
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] Every `go func` either selects on `ctx.Done()` / a stop channel, or runs over a finite input and returns.
+      - [ ] Channel ownership is documented: exactly one goroutine sends, exactly one closes.
+      - [ ] All functions doing IO or blocking work take `ctx context.Context` as their first parameter.
+      - [ ] Every `WithCancel` / `WithTimeout` / `WithDeadline` is paired with `defer cancel()`.
+      - [ ] No `context.Context` is stored in a struct field.
+      - [ ] `context.Value` is used only for cross-cutting request-scoped data (request ID, auth, trace), not as a regular parameter substitute.
+      - [ ] Mutexes are passed by pointer or embedded in a struct passed by pointer; never copied.
+      - [ ] Fan-out worker pools use `errgroup` (or equivalent) so the first error cancels siblings.

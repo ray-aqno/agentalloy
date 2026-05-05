@@ -1,0 +1,329 @@
+skill_type: domain
+skill_id: go-generics-and-types
+canonical_name: Go Generics and Types (Type Parameters, Constraints, Inference, comparable)
+category: engineering
+skill_class: domain
+domain_tags: [type-parameters, constraint-interface, type-inference, comparable-types, parametric-polymorphism]
+always_apply: false
+phase_scope: null
+category_scope: language
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-05. Sources — Go spec on type parameter declarations https://go.dev/ref/spec#Type_parameter_declarations (verified 2026-05-05 against fixtures/upstream/curated/go.yaml topic `typing_and_generics`); golang.org/x/exp/constraints https://pkg.go.dev/golang.org/x/exp/constraints; Intro to Generics blog https://go.dev/blog/intro-generics; Go FAQ on generics https://go.dev/doc/faq#generics. Skill scope: when to add type parameters, how to write constraint interfaces, the limits of type inference, and the meaning of `comparable`; not the details of type sets in interface definitions beyond constraints, not generic algorithm design at the language-comparison level.
+
+raw_prose: |
+  # Go Generics and Types
+
+  Go added type parameters in 1.18. They let you write a function or type once and have it work for any type that satisfies a constraint, without the runtime cost of `interface{}` boxing or the boilerplate of code generation. The rule is one sentence: reach for generics when you would otherwise duplicate the same code across two or more concrete types, or use `interface{}`/`any` and lose static type information; otherwise, do not. Most production Go generics misuse is over-engineering — adding `[T any]` everywhere as a flex move when a concrete type was both clearer and faster.
+
+  ## Syntax in one paragraph
+
+  A type parameter list goes in square brackets after the function or type name:
+
+  ```go
+  func Map[T any, U any](in []T, f func(T) U) []U {
+      out := make([]U, len(in))
+      for i, v := range in {
+          out[i] = f(v)
+      }
+      return out
+  }
+
+  type Stack[T any] struct {
+      items []T
+  }
+
+  func (s *Stack[T]) Push(v T) { s.items = append(s.items, v) }
+  func (s *Stack[T]) Pop() (T, bool) {
+      var zero T
+      if len(s.items) == 0 {
+          return zero, false
+      }
+      n := len(s.items) - 1
+      v := s.items[n]
+      s.items = s.items[:n]
+      return v, true
+  }
+  ```
+
+  Inside the body, `T` is just a type — you can declare variables of it, return it, take pointers, etc. — but you can only use operations the constraint guarantees. With `any`, that is essentially "assignment, comparison via reflect, no operators." Numerics, ordering, and key-comparison need stronger constraints.
+
+  ## Constraints are interfaces
+
+  A constraint is just an interface — an interface where the type set defines what concrete types are allowed:
+
+  ```go
+  type Number interface {
+      ~int | ~int32 | ~int64 | ~float32 | ~float64
+  }
+
+  func Sum[T Number](xs []T) T {
+      var total T
+      for _, x := range xs {
+          total += x
+      }
+      return total
+  }
+  ```
+
+  The `~int` syntax means "any type whose underlying type is `int`," which lets `Sum` work for both `int` and a `type MyID int`. Without the tilde, only the named type itself qualifies.
+
+  Common constraint shapes:
+
+  - **`any`** — the empty interface; equivalent to `interface{}`. Operations limited to assignment and comparison-via-reflect.
+  - **`comparable`** — types that support `==` and `!=`. Required for `map` keys and `==` comparisons inside generic code. Includes all primitives, pointers, channels, structs of comparable fields, but *not* slices, maps, or functions.
+  - **`golang.org/x/exp/constraints`** — provides `Ordered`, `Integer`, `Float`, `Signed`, `Unsigned`, `Complex`. These are the constraints stdlib generics tend to use; pull from this package rather than redefining.
+
+  ## Type inference
+
+  In most calls you do not write the type arguments — the compiler infers them from the function arguments:
+
+  ```go
+  doubled := Map([]int{1, 2, 3}, func(x int) int { return x * 2 })
+  // T inferred as int, U inferred as int
+  ```
+
+  Inference works from arguments to type parameters, not the other way. If a type parameter is used only in the return type (`func New[T any]() T`), the caller must supply it explicitly: `New[Config]()`. The same applies when a parameter type does not uniquely pin `T` (e.g., a `nil` argument to `func F[T any](x *T)`).
+
+  Explicit type arguments go in the same brackets at the call site: `Map[int, string](nums, intToString)`.
+
+  ## `comparable` and what it does not include
+
+  `comparable` is the constraint for any type that supports `==`. This is more nuanced than it looks:
+
+  - Primitives, pointers, channels, interfaces, arrays of comparable elements: all comparable.
+  - Slices, maps, functions: never comparable. (`==` on these only works against `nil`, and only as a special case.)
+  - Structs are comparable iff all fields are comparable.
+  - Type parameters constrained by `comparable` work in `==` comparisons and as map keys.
+
+  Use `comparable` whenever you need to use the type as a map key or compare with `==`:
+
+  ```go
+  func Unique[T comparable](xs []T) []T {
+      seen := make(map[T]struct{})
+      out := xs[:0]
+      for _, x := range xs {
+          if _, ok := seen[x]; !ok {
+              seen[x] = struct{}{}
+              out = append(out, x)
+          }
+      }
+      return out
+  }
+  ```
+
+  Note that interfaces with non-comparable dynamic types (`any` holding a slice) will *runtime-panic* on `==`. The static `comparable` constraint catches most cases at compile time, but pure-`any` interface comparisons are still a footgun.
+
+  ## When NOT to use generics
+
+  Generics have real costs. The compiler emits a single function with dictionary-style dispatch (or, for some shapes, monomorphizes); calls go through a layer of indirection that a concrete function does not have. More importantly, generic code is harder to read and harder to refactor than concrete code. Reach for generics only when:
+
+  - **You would duplicate the same code for 2+ types.** A `Sum[int]` and `SumFloat64` is the classic case — generics consolidate them.
+  - **You would otherwise use `interface{}` and lose type information at the boundary.** A `Stack` of `interface{}` forces every caller to type-assert; `Stack[T]` does not.
+  - **The shared logic genuinely is the same across types.** If `SumInt` and `SumFloat` differ in any non-trivial way, the abstraction will leak.
+
+  Do *not* use generics for:
+
+  - **A function that only ever takes one type.** `func F[T int](x T)` is just `func F(x int)`.
+  - **Methods that vary per type.** Method dispatch is the right tool; interfaces over generics for runtime polymorphism.
+  - **"Future-proofing".** Adding `[T any]` to a function that has one caller and one type is over-engineering. Add it when the second caller appears.
+
+  ## Generic types vs interfaces
+
+  Generics and interfaces solve adjacent but distinct problems:
+
+  - **Interfaces** dispatch at runtime based on the dynamic type. Use when callers may pass *different* concrete types in *one* call.
+  - **Generics** specialize at compile time for a single chosen type. Use when each call has *one* type but you want to write the function once.
+
+  A `func Process(rs []io.Reader)` is the right shape; a `func Process[T io.Reader](rs []T)` is overkill. A `Stack[T]` is the right shape; a `Stack` holding `interface{}` would force callers to type-assert every read.
+
+  When in doubt: if the function's body never calls a method on `T`, you probably want generics over a constraint that defines the operation. If it does call methods that should dispatch dynamically, interfaces are the answer. If you find yourself wanting both — a constraint that lists method signatures and a body that calls them — that is also valid and is the original pre-generics motivation for interfaces; the generic version differs only in monomorphizing at compile time.
+
+  ## Anti-patterns
+
+  - **`func F[T any](x T) T { return x }`** when the body never uses `T`-specific operations. Just take a concrete type or `any`.
+  - **Method type parameters.** Go does *not* allow type parameters on methods (only on the receiver type). If you want a generic method, lift it to a function or parameterize the receiver.
+  - **Over-constraining.** Adding `[T comparable]` to a function that does not compare `T` rules out useful types for no reason.
+  - **Reinventing `constraints.Ordered`.** If you need `<`, `<=`, etc., use `golang.org/x/exp/constraints.Ordered` rather than rolling your own union.
+  - **Type-asserting inside a generic function.** `if v, ok := any(x).(int); ok` defeats the point — use a constrained type parameter or accept `any` explicitly.
+  - **Generic singletons.** `var Cache[T any] = ...` does not work; package-level type parameters are not allowed. Use a typed factory.
+
+  ## Verification
+
+  - [ ] Each generic function has at least two existing concrete callers (different types) or a clear interface-replacement reason.
+  - [ ] Constraints are tight: `comparable` for map keys / `==`, `constraints.Ordered` for `<`, custom unions only when stdlib constraints do not fit.
+  - [ ] No type parameter is used only in the return type without callers supplying it explicitly.
+  - [ ] Type parameters in struct types appear in method signatures via the receiver (`func (s *Stack[T]) ...`); methods do not declare new parameters.
+  - [ ] No interface type would have served the same goal more clearly.
+  - [ ] Tilde forms (`~int`) are used when callers may pass named types, plain forms when not.
+  - [ ] No `any(x).(SomeType)` type assertion inside a generic body.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Go Generics and Types
+
+      Go added type parameters in 1.18. They let you write a function or type once and have it work for any type that satisfies a constraint, without the runtime cost of `interface{}` boxing or the boilerplate of code generation. The rule is one sentence: reach for generics when you would otherwise duplicate the same code across two or more concrete types, or use `interface{}`/`any` and lose static type information; otherwise, do not. Most production Go generics misuse is over-engineering — adding `[T any]` everywhere as a flex move when a concrete type was both clearer and faster.
+
+  - sequence: 2
+    fragment_type: example
+    content: |
+      ## Syntax in one paragraph
+
+      A type parameter list goes in square brackets after the function or type name:
+
+      ```go
+      func Map[T any, U any](in []T, f func(T) U) []U {
+          out := make([]U, len(in))
+          for i, v := range in {
+              out[i] = f(v)
+          }
+          return out
+      }
+
+      type Stack[T any] struct {
+          items []T
+      }
+
+      func (s *Stack[T]) Push(v T) { s.items = append(s.items, v) }
+      func (s *Stack[T]) Pop() (T, bool) {
+          var zero T
+          if len(s.items) == 0 {
+              return zero, false
+          }
+          n := len(s.items) - 1
+          v := s.items[n]
+          s.items = s.items[:n]
+          return v, true
+      }
+      ```
+
+      Inside the body, `T` is just a type — you can declare variables of it, return it, take pointers, etc. — but you can only use operations the constraint guarantees. With `any`, that is essentially "assignment, comparison via reflect, no operators." Numerics, ordering, and key-comparison need stronger constraints.
+
+  - sequence: 3
+    fragment_type: example
+    content: |
+      ## Constraints are interfaces
+
+      A constraint is just an interface — an interface where the type set defines what concrete types are allowed:
+
+      ```go
+      type Number interface {
+          ~int | ~int32 | ~int64 | ~float32 | ~float64
+      }
+
+      func Sum[T Number](xs []T) T {
+          var total T
+          for _, x := range xs {
+              total += x
+          }
+          return total
+      }
+      ```
+
+      The `~int` syntax means "any type whose underlying type is `int`," which lets `Sum` work for both `int` and a `type MyID int`. Without the tilde, only the named type itself qualifies.
+
+      Common constraint shapes:
+
+      - **`any`** — the empty interface; equivalent to `interface{}`. Operations limited to assignment and comparison-via-reflect.
+      - **`comparable`** — types that support `==` and `!=`. Required for `map` keys and `==` comparisons inside generic code. Includes all primitives, pointers, channels, structs of comparable fields, but *not* slices, maps, or functions.
+      - **`golang.org/x/exp/constraints`** — provides `Ordered`, `Integer`, `Float`, `Signed`, `Unsigned`, `Complex`. Pull from this package rather than redefining.
+
+  - sequence: 4
+    fragment_type: execution
+    content: |
+      ## Type inference
+
+      In most calls you do not write the type arguments — the compiler infers them from the function arguments:
+
+      ```go
+      doubled := Map([]int{1, 2, 3}, func(x int) int { return x * 2 })
+      // T inferred as int, U inferred as int
+      ```
+
+      Inference works from arguments to type parameters, not the other way. If a type parameter is used only in the return type (`func New[T any]() T`), the caller must supply it explicitly: `New[Config]()`. The same applies when a parameter type does not uniquely pin `T` (e.g., a `nil` argument to `func F[T any](x *T)`).
+
+      Explicit type arguments go in the same brackets at the call site: `Map[int, string](nums, intToString)`. Use explicit arguments when inference fails or when readability at the call site benefits — a complex generic call that the reader cannot trace by eye is a candidate for explicit annotation.
+
+  - sequence: 5
+    fragment_type: example
+    content: |
+      ## `comparable` and what it does not include
+
+      `comparable` is the constraint for any type that supports `==`. This is more nuanced than it looks:
+
+      - Primitives, pointers, channels, interfaces, arrays of comparable elements: all comparable.
+      - Slices, maps, functions: never comparable. (`==` on these only works against `nil`, and only as a special case.)
+      - Structs are comparable iff all fields are comparable.
+      - Type parameters constrained by `comparable` work in `==` comparisons and as map keys.
+
+      Use `comparable` whenever you need to use the type as a map key or compare with `==`:
+
+      ```go
+      func Unique[T comparable](xs []T) []T {
+          seen := make(map[T]struct{})
+          out := xs[:0]
+          for _, x := range xs {
+              if _, ok := seen[x]; !ok {
+                  seen[x] = struct{}{}
+                  out = append(out, x)
+              }
+          }
+          return out
+      }
+      ```
+
+      Note that interfaces with non-comparable dynamic types (`any` holding a slice) will *runtime-panic* on `==`. The static `comparable` constraint catches most cases at compile time, but pure-`any` interface comparisons are still a footgun.
+
+  - sequence: 6
+    fragment_type: rationale
+    content: |
+      ## When NOT to use generics
+
+      Generics have real costs. The compiler emits a single function with dictionary-style dispatch (or, for some shapes, monomorphizes); calls go through a layer of indirection that a concrete function does not have. More importantly, generic code is harder to read and harder to refactor than concrete code. Reach for generics only when:
+
+      - **You would duplicate the same code for 2+ types.** A `Sum[int]` and `SumFloat64` is the classic case — generics consolidate them.
+      - **You would otherwise use `interface{}` and lose type information at the boundary.** A `Stack` of `interface{}` forces every caller to type-assert; `Stack[T]` does not.
+      - **The shared logic genuinely is the same across types.** If `SumInt` and `SumFloat` differ in any non-trivial way, the abstraction will leak.
+
+      Do *not* use generics for: a function that only ever takes one type; methods that vary per type (use interfaces); or "future-proofing" — add the type parameter when the second caller appears, not before.
+
+  - sequence: 7
+    fragment_type: rationale
+    content: |
+      ## Generic types vs interfaces
+
+      Generics and interfaces solve adjacent but distinct problems:
+
+      - **Interfaces** dispatch at runtime based on the dynamic type. Use when callers may pass *different* concrete types in *one* call.
+      - **Generics** specialize at compile time for a single chosen type. Use when each call has *one* type but you want to write the function once.
+
+      A `func Process(rs []io.Reader)` is the right shape; a `func Process[T io.Reader](rs []T)` is overkill. A `Stack[T]` is the right shape; a `Stack` holding `interface{}` would force callers to type-assert every read.
+
+      When in doubt: if the function's body never calls a method on `T`, you probably want generics over a constraint that defines the operation. If it does call methods that should dispatch dynamically, interfaces are the answer. If you find yourself wanting both — a constraint that lists method signatures and a body that calls them — that is also valid and is the original pre-generics motivation for interfaces; the generic version differs only in monomorphizing at compile time.
+
+  - sequence: 8
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      - **`func F[T any](x T) T { return x }`** when the body never uses `T`-specific operations. Just take a concrete type or `any`.
+      - **Method type parameters.** Go does *not* allow type parameters on methods (only on the receiver type). If you want a generic method, lift it to a function or parameterize the receiver.
+      - **Over-constraining.** Adding `[T comparable]` to a function that does not compare `T` rules out useful types for no reason.
+      - **Reinventing `constraints.Ordered`.** If you need `<`, `<=`, etc., use `golang.org/x/exp/constraints.Ordered` rather than rolling your own union.
+      - **Type-asserting inside a generic function.** `if v, ok := any(x).(int); ok` defeats the point — use a constrained type parameter or accept `any` explicitly.
+      - **Generic singletons.** `var Cache[T any] = ...` does not work; package-level type parameters are not allowed. Use a typed factory.
+
+  - sequence: 9
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] Each generic function has at least two existing concrete callers (different types) or a clear interface-replacement reason.
+      - [ ] Constraints are tight: `comparable` for map keys / `==`, `constraints.Ordered` for `<`, custom unions only when stdlib constraints do not fit.
+      - [ ] No type parameter is used only in the return type without callers supplying it explicitly.
+      - [ ] Type parameters in struct types appear in method signatures via the receiver (`func (s *Stack[T]) ...`); methods do not declare new parameters.
+      - [ ] No interface type would have served the same goal more clearly.
+      - [ ] Tilde forms (`~int`) are used when callers may pass named types, plain forms when not.
+      - [ ] No `any(x).(SomeType)` type assertion inside a generic body.

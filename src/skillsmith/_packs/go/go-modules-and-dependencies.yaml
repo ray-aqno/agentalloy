@@ -1,0 +1,320 @@
+skill_type: domain
+skill_id: go-modules-and-dependencies
+canonical_name: Go Modules and Dependencies (go.mod, go.sum, Versioning, Module Proxy)
+category: tooling
+skill_class: domain
+domain_tags: [module-path, semantic-import-versioning, replace-directive, vendor-mode, module-proxy]
+always_apply: false
+phase_scope: null
+category_scope: language
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-05. Sources — Go modules reference https://go.dev/ref/mod (verified 2026-05-05 against fixtures/upstream/curated/go.yaml topic `packaging_and_dependency_management`); go.mod file reference https://go.dev/doc/modules/gomod-ref; managing dependencies https://go.dev/doc/modules/managing-dependencies; publishing modules https://go.dev/doc/modules/publishing. Skill scope: the structure of `go.mod` and `go.sum`, how Go resolves module versions, semantic import versioning for v2+, when to use `replace`/`exclude`/vendor, and the role of GOPROXY/GOSUMDB; not project layout conventions, not workspace mode (`go.work`) beyond a brief mention.
+
+raw_prose: |
+  # Go Modules and Dependencies
+
+  A Go module is a tree of packages with a single `go.mod` file at its root that declares the module path, the Go version it builds against, and the exact versions of every direct and indirect dependency. The rule is one sentence: the module path you choose is a permanent identifier — it tells Go where to fetch the code, encodes the major version, and must change when you publish v2+. Most production Go dependency bugs come from misunderstanding semantic import versioning, abusing `replace` directives that quietly diverge from upstream, or forgetting that `go.sum` is a security artifact, not a build cache.
+
+  ## `go.mod` structure
+
+  A typical `go.mod` looks like:
+
+  ```
+  module github.com/example/billing
+
+  go 1.23
+
+  require (
+      github.com/google/uuid v1.6.0
+      golang.org/x/sync v0.7.0
+  )
+
+  require (
+      github.com/davecgh/go-spew v1.1.1 // indirect
+  )
+  ```
+
+  Key directives:
+
+  - **`module <path>`** — the module's import path. Must match the URL where the module is hosted (or be importable via a vanity URL that redirects there). Determines the prefix for every package inside the module.
+  - **`go <version>`** — the minimum Go toolchain language version this module relies on. Affects which language features compile and which standard-library APIs exist. As of 1.21+, this is also a *minimum* enforced by the toolchain.
+  - **`require`** — direct and indirect dependencies. Indirect ones (marked `// indirect`) are dependencies of dependencies that need to be pinned because they would otherwise be ambiguous; the toolchain manages these for you.
+  - **`replace`** — substitute one module path/version with another (a fork, a local path, or a different version). Powerful and dangerous; see below.
+  - **`exclude`** — tell the resolver never to consider a specific version. Rarely needed.
+  - **`retract`** — published-by-author marker that says "this version was buggy, do not use." Goes in the module being retracted.
+
+  ## Semantic import versioning
+
+  Go uses *semantic import versioning*: for any major version v2 or higher, the major version is part of the import path:
+
+  - `github.com/example/foo` — v0 or v1.
+  - `github.com/example/foo/v2` — v2.x.x.
+  - `github.com/example/foo/v3` — v3.x.x.
+
+  This is not optional. If you publish a breaking change as v2.0.0, you must rename the module path to end in `/v2`, and importers must update every import to use the new path. The reason: it lets v1 and v2 of the same module coexist in one build, which is essential for incremental upgrades.
+
+  Practical implication: think hard before publishing v1.0.0. Once you do, every breaking change costs you a path migration. v0.x.x has no compatibility commitment — use it while the API is moving. Many libraries deliberately stay on v0 for years.
+
+  ## `go.sum` is a security artifact
+
+  `go.sum` records cryptographic hashes of every module version your build depends on, including transitively. On every `go build`, the toolchain re-verifies that what it downloaded matches the hashes. If they differ, the build fails.
+
+  Two consequences:
+
+  1. **Commit `go.sum`.** Always. It is not generated; it is the integrity check that protects against compromised proxies, MITM, and module reuploads.
+  2. **`go.sum` does not pin versions.** `go.mod` does that. `go.sum` records the hash of each version that has ever been used, and grows over time even as `go.mod` versions change.
+
+  When upgrading dependencies, `go mod tidy` (run after `go get`) cleans up unused entries. Run it before committing.
+
+  ## Adding, upgrading, removing dependencies
+
+  Use the `go` toolchain commands; do not edit `go.mod` `require` blocks by hand.
+
+  ```bash
+  go get github.com/foo/bar@v1.5.0    # add or move to a specific version
+  go get github.com/foo/bar@latest    # upgrade to latest stable
+  go get github.com/foo/bar@none      # remove
+  go mod tidy                          # add missing, remove unused, update go.sum
+  ```
+
+  `go mod tidy` is the cleanup pass after any structural change. Run it before committing; it should be a no-op in CI.
+
+  For major-version upgrades (v1 → v2), you cannot just `go get foo@latest` — the import path itself changes. Update the imports across the codebase, then `go get foo/v2@latest`. The toolchain will refuse to fetch a v2.x.x for a path without `/v2` because semantic import versioning encodes the major version into the path itself.
+
+  ## `replace` directive: when and how
+
+  `replace` substitutes a module:
+
+  ```
+  replace github.com/foo/bar => github.com/myfork/bar v0.0.0-20260301-abcdef123456
+  replace github.com/foo/bar => ../local/bar
+  ```
+
+  Three legitimate uses:
+
+  1. **Local development across modules.** When you are editing two modules in tandem and want changes to one to be picked up by the other immediately, `replace ... => ../path`. Workspace mode (`go.work`) is the modern alternative for this case and is usually better.
+  2. **Temporary fork while waiting for a fix.** A pinned commit on your fork while a PR is in review upstream.
+  3. **Security pin.** Forcing a specific patched version of a transitive dependency.
+
+  `replace` is a *consumer*-side directive — it has no effect on people who import your module. If your module B has `replace ... => fork`, then a consumer C that imports B does not automatically use the fork. The consumer must add the same `replace` themselves. This catches people out: a `replace` is not a way to ship a fix to the world, it is a way to satisfy your own build.
+
+  Avoid leaving `replace ... => ../local` directives in committed `go.mod` files; that breaks builds for anyone whose filesystem layout differs.
+
+  ## Module proxy and checksum DB
+
+  By default, `go get` fetches via `proxy.golang.org` (a Google-run cache) and verifies hashes against `sum.golang.org`. The proxy speeds up downloads and survives if the original repo disappears. The sum DB makes "I downloaded what I expected" cryptographically verifiable.
+
+  Configuration:
+
+  - **`GOPROXY=https://proxy.golang.org,direct`** — try the proxy, fall back to fetching from the source repo. The default.
+  - **`GOPROXY=off`** — disables network module fetching. Builds use only local cache + vendor.
+  - **`GOPRIVATE=github.com/myorg/*`** — bypass the proxy and sumdb for matching paths. Use for private modules.
+  - **`GONOSUMCHECK`** / **`GOSUMDB=off`** — disables checksum DB. Almost never the right answer; use `GOPRIVATE` instead.
+
+  In CI, `GOFLAGS=-mod=readonly` is a useful belt: builds fail if `go.mod` would need to change, catching cases where a developer forgot to commit a tidy.
+
+  ## Vendor mode
+
+  `go mod vendor` copies all dependencies into a `vendor/` directory at the repo root. With `-mod=vendor` (or by default if `vendor/` exists), the toolchain builds from `vendor/` instead of the module cache.
+
+  Reasons to vendor:
+
+  - **Hermetic builds without network access.** CI without proxy reachability, air-gapped environments.
+  - **Auditing.** Every dependency byte is in your repo, reviewable in PRs.
+  - **Reproducibility insurance.** Even if `proxy.golang.org` and the source repo both vanish, you can build.
+
+  Reasons not to:
+
+  - **Repo size.** Big.
+  - **PR noise.** Dependency upgrades produce huge diffs.
+
+  Most projects do not vendor. Some do for the reasons above; both are defensible. If you vendor, run `go mod vendor` after every dependency change and commit the result.
+
+  ## Anti-patterns
+
+  - **Editing `go.mod` by hand for `require`.** Use `go get`. Hand edits drift from `go.sum`.
+  - **Committing `go.sum` without running `go mod tidy`.** Stale entries accumulate.
+  - **Releasing v2.0.0 without changing the module path.** Breaks every importer in subtle ways.
+  - **Long-lived `replace ... => ../local`.** Works on your machine, fails for everyone else.
+  - **Setting `GOSUMDB=off` to "make CI work".** Disables integrity verification project-wide. Use `GOPRIVATE` for the specific paths that need it.
+  - **Pinning to a commit hash when a tagged release exists.** `v0.0.0-20260301-abcdef` is a pseudo-version for unreleased commits; use semantic tags whenever possible.
+  - **Forgetting `go mod tidy` in pre-commit.** Half the "why does CI fail" cases come from this.
+
+  ## Verification
+
+  - [ ] `go.mod` and `go.sum` are both committed; `go mod tidy` is a no-op on a fresh checkout.
+  - [ ] Module path matches the canonical hosting URL (or the published vanity path).
+  - [ ] Major version v2+ has `/vN` in the module path and in every import.
+  - [ ] No `replace ... => ../local-path` directives in committed `go.mod` (except in monorepo workspaces where it is intentional).
+  - [ ] Private modules listed in `GOPRIVATE`; `GOSUMDB` not disabled globally.
+  - [ ] CI runs with `-mod=readonly` (or equivalent) so builds fail on dirty `go.mod`.
+  - [ ] If `vendor/` exists, it is regenerated on every dependency change and committed.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Go Modules and Dependencies
+
+      A Go module is a tree of packages with a single `go.mod` file at its root that declares the module path, the Go version it builds against, and the exact versions of every direct and indirect dependency. The rule is one sentence: the module path you choose is a permanent identifier — it tells Go where to fetch the code, encodes the major version, and must change when you publish v2+. Most production Go dependency bugs come from misunderstanding semantic import versioning, abusing `replace` directives that quietly diverge from upstream, or forgetting that `go.sum` is a security artifact, not a build cache.
+
+  - sequence: 2
+    fragment_type: example
+    content: |
+      ## `go.mod` structure
+
+      A typical `go.mod` looks like:
+
+      ```
+      module github.com/example/billing
+
+      go 1.23
+
+      require (
+          github.com/google/uuid v1.6.0
+          golang.org/x/sync v0.7.0
+      )
+
+      require (
+          github.com/davecgh/go-spew v1.1.1 // indirect
+      )
+      ```
+
+      Key directives:
+
+      - **`module <path>`** — the module's import path. Must match the URL where the module is hosted (or be importable via a vanity URL that redirects there). Determines the prefix for every package inside the module.
+      - **`go <version>`** — the minimum Go toolchain language version this module relies on. As of 1.21+, this is enforced by the toolchain.
+      - **`require`** — direct and indirect dependencies. Indirect ones (marked `// indirect`) are managed by the toolchain.
+      - **`replace`** — substitute one module path/version with another (a fork, a local path, or a different version). Powerful and dangerous.
+      - **`exclude`** — tell the resolver never to consider a specific version. Rarely needed.
+      - **`retract`** — published-by-author marker that says "this version was buggy, do not use." Goes in the module being retracted.
+
+  - sequence: 3
+    fragment_type: rationale
+    content: |
+      ## Semantic import versioning
+
+      Go uses *semantic import versioning*: for any major version v2 or higher, the major version is part of the import path:
+
+      - `github.com/example/foo` — v0 or v1.
+      - `github.com/example/foo/v2` — v2.x.x.
+      - `github.com/example/foo/v3` — v3.x.x.
+
+      This is not optional. If you publish a breaking change as v2.0.0, you must rename the module path to end in `/v2`, and importers must update every import to use the new path. The reason: it lets v1 and v2 of the same module coexist in one build, which is essential for incremental upgrades.
+
+      Practical implication: think hard before publishing v1.0.0. Once you do, every breaking change costs you a path migration. v0.x.x has no compatibility commitment — use it while the API is moving. Many libraries deliberately stay on v0 for years.
+
+  - sequence: 4
+    fragment_type: rationale
+    content: |
+      ## `go.sum` is a security artifact
+
+      `go.sum` records cryptographic hashes of every module version your build depends on, including transitively. On every `go build`, the toolchain re-verifies that what it downloaded matches the hashes. If they differ, the build fails.
+
+      Two consequences:
+
+      1. **Commit `go.sum`.** Always. It is not generated; it is the integrity check that protects against compromised proxies, MITM attacks, and module re-uploads.
+      2. **`go.sum` does not pin versions.** `go.mod` does that. `go.sum` records the hash of each version that has ever been used, and grows over time even as `go.mod` versions change.
+
+      When upgrading dependencies, `go mod tidy` (run after `go get`) cleans up unused entries. Run it before committing.
+
+  - sequence: 5
+    fragment_type: execution
+    content: |
+      ## Adding, upgrading, removing dependencies
+
+      Use the `go` toolchain commands; do not edit `go.mod` `require` blocks by hand.
+
+      ```bash
+      go get github.com/foo/bar@v1.5.0    # add or move to a specific version
+      go get github.com/foo/bar@latest    # upgrade to latest stable
+      go get github.com/foo/bar@none      # remove
+      go mod tidy                          # add missing, remove unused, update go.sum
+      ```
+
+      `go mod tidy` is the cleanup pass after any structural change. Run it before committing; it should be a no-op in CI.
+
+      For major-version upgrades (v1 → v2), you cannot just `go get foo@latest` — the import path itself changes. Update the imports across the codebase, then `go get foo/v2@latest`. The toolchain will refuse to fetch a v2.x.x for a path without `/v2` because semantic import versioning encodes the major version into the path itself.
+
+  - sequence: 6
+    fragment_type: example
+    content: |
+      ## `replace` directive: when and how
+
+      `replace` substitutes a module:
+
+      ```
+      replace github.com/foo/bar => github.com/myfork/bar v0.0.0-20260301-abcdef123456
+      replace github.com/foo/bar => ../local/bar
+      ```
+
+      Three legitimate uses:
+
+      1. **Local development across modules.** When you are editing two modules in tandem and want changes to one to be picked up by the other immediately, `replace ... => ../path`. Workspace mode (`go.work`) is the modern alternative for this case and is usually better.
+      2. **Temporary fork while waiting for a fix.** A pinned commit on your fork while a PR is in review upstream.
+      3. **Security pin.** Forcing a specific patched version of a transitive dependency.
+
+      `replace` is a *consumer*-side directive — it has no effect on people who import your module. If your module B has `replace ... => fork`, then a consumer C that imports B does not automatically use the fork. The consumer must add the same `replace` themselves. This catches people out: a `replace` is not a way to ship a fix to the world, it is a way to satisfy your own build. Avoid leaving `replace ... => ../local` in committed `go.mod` files; that breaks builds for anyone whose filesystem layout differs.
+
+  - sequence: 7
+    fragment_type: rationale
+    content: |
+      ## Module proxy and checksum DB
+
+      By default, `go get` fetches via `proxy.golang.org` (a Google-run cache) and verifies hashes against `sum.golang.org`. The proxy speeds up downloads and survives if the original repo disappears. The sum DB makes "I downloaded what I expected" cryptographically verifiable.
+
+      Configuration:
+
+      - **`GOPROXY=https://proxy.golang.org,direct`** — try the proxy, fall back to fetching from the source repo. The default.
+      - **`GOPROXY=off`** — disables network module fetching. Builds use only local cache + vendor.
+      - **`GOPRIVATE=github.com/myorg/*`** — bypass the proxy and sumdb for matching paths. Use for private modules.
+      - **`GONOSUMCHECK`** / **`GOSUMDB=off`** — disables checksum DB. Almost never the right answer; use `GOPRIVATE` instead.
+
+      In CI, `GOFLAGS=-mod=readonly` is a useful belt: builds fail if `go.mod` would need to change, catching cases where a developer forgot to commit a tidy.
+
+  - sequence: 8
+    fragment_type: rationale
+    content: |
+      ## Vendor mode
+
+      `go mod vendor` copies all dependencies into a `vendor/` directory at the repo root. With `-mod=vendor` (or by default if `vendor/` exists), the toolchain builds from `vendor/` instead of the module cache.
+
+      Reasons to vendor:
+
+      - **Hermetic builds without network access.** CI without proxy reachability, air-gapped environments.
+      - **Auditing.** Every dependency byte is in your repo, reviewable in PRs.
+      - **Reproducibility insurance.** Even if `proxy.golang.org` and the source repo both vanish, you can build.
+
+      Reasons not to:
+
+      - **Repo size.** Big.
+      - **PR noise.** Dependency upgrades produce huge diffs.
+
+      Most projects do not vendor. Some do for the reasons above; both are defensible. If you vendor, run `go mod vendor` after every dependency change and commit the result.
+
+  - sequence: 9
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      - **Editing `go.mod` by hand for `require`.** Use `go get`. Hand edits drift from `go.sum`.
+      - **Committing `go.sum` without running `go mod tidy`.** Stale entries accumulate.
+      - **Releasing v2.0.0 without changing the module path.** Breaks every importer in subtle ways.
+      - **Long-lived `replace ... => ../local`.** Works on your machine, fails for everyone else.
+      - **Setting `GOSUMDB=off` to "make CI work".** Disables integrity verification project-wide. Use `GOPRIVATE` for the specific paths that need it.
+      - **Pinning to a commit hash when a tagged release exists.** `v0.0.0-20260301-abcdef` is a pseudo-version for unreleased commits; use semantic tags whenever possible.
+      - **Forgetting `go mod tidy` in pre-commit.** Half the "why does CI fail" cases come from this.
+
+  - sequence: 10
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] `go.mod` and `go.sum` are both committed; `go mod tidy` is a no-op on a fresh checkout.
+      - [ ] Module path matches the canonical hosting URL (or the published vanity path).
+      - [ ] Major version v2+ has `/vN` in the module path and in every import.
+      - [ ] No `replace ... => ../local-path` directives in committed `go.mod` (except in monorepo workspaces where it is intentional).
+      - [ ] Private modules listed in `GOPRIVATE`; `GOSUMDB` not disabled globally.
+      - [ ] CI runs with `-mod=readonly` (or equivalent) so builds fail on dirty `go.mod`.
+      - [ ] If `vendor/` exists, it is regenerated on every dependency change and committed.

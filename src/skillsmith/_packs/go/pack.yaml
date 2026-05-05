@@ -1,0 +1,27 @@
+name: go
+version: 1.0.0
+tier: language
+description: Go language patterns — goroutines+channels+context, error wrapping with errors.Is/As, generics with type parameters, modules and semantic import versioning, table-driven tests and fuzzing. Precision-favored language tier; sourced from go.dev Go 1.23 docs per R1 tiered sourcing (fixtures/upstream/curated/go.yaml).
+author: navistone
+embed_model: qwen3-embedding:0.6b
+embedding_dim: 1024
+license: MIT
+homepage: https://github.com/nrmeyers/skillsmith
+always_install: false
+depends_on: [core, engineering]
+skills:
+  - skill_id: go-concurrency-and-context
+    file: go-concurrency-and-context.yaml
+    fragment_count: 10
+  - skill_id: go-error-handling
+    file: go-error-handling.yaml
+    fragment_count: 10
+  - skill_id: go-generics-and-types
+    file: go-generics-and-types.yaml
+    fragment_count: 9
+  - skill_id: go-modules-and-dependencies
+    file: go-modules-and-dependencies.yaml
+    fragment_count: 10
+  - skill_id: go-testing-idioms
+    file: go-testing-idioms.yaml
+    fragment_count: 10
