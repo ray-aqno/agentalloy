@@ -1,0 +1,490 @@
+skill_type: domain
+skill_id: rust-testing-idioms
+canonical_name: Rust Testing Idioms (#[test], #[cfg(test)], Integration Tests, Doc Tests, Property Tests)
+category: quality
+skill_class: domain
+domain_tags: [unit-test-attribute, integration-test-tree, doc-test-runnable, cfg-test-conditional, should-panic-attribute]
+always_apply: false
+phase_scope: null
+category_scope: language
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-05. Sources — The Rust Programming Language ch11 https://doc.rust-lang.org/book/ch11-00-testing.html (verified 2026-05-05 against fixtures/upstream/curated/rust.yaml topic `testing_idioms`); Rust Reference, Testing attributes https://doc.rust-lang.org/reference/attributes/testing.html (verified 2026-05-05); Cargo Book, Tests https://doc.rust-lang.org/cargo/guide/tests.html (verified 2026-05-05). Skill scope: how Rust's built-in test runner shapes test code — `#[test]`, `#[cfg(test)]`, integration tests in `tests/`, doc tests, `#[should_panic]`, `Result`-returning tests, `#[ignore]`, plus the community-canonical crates `proptest`, `quickcheck`, `criterion`, and `tempfile` (community status called out per honest authorship). Not test-driven development methodology, not mocking patterns (covered in foundation tier).
+
+raw_prose: |
+  # Rust Testing Idioms
+
+  Rust ships its test runner with the toolchain: `cargo test` discovers every `#[test]` function, every `tests/*.rs` integration crate, and every code block in `///` doc comments, then compiles and runs them. There is no separate framework to install for unit, integration, or doc tests — the `test` attribute and the `tests/` directory are the convention, and the rest of the ecosystem (`proptest`, `criterion`, `tempfile`) layers on top. The rule is one sentence: keep unit tests in a `#[cfg(test)] mod tests` block beside the code they test, put public-API tests in `tests/`, write a `///` doc-test for any non-trivial public function so the docs cannot drift from behavior, and reach for `proptest` or `quickcheck` when the input space is too large to enumerate. Most production Rust test bugs come from tests that exercise private behavior the public API does not need (so the test passes after a refactor that broke users), `unwrap` chains that hide which step failed, integration tests accidentally placed in `src/` where the runner does not see them, or float comparisons with `==`.
+
+  ## Unit tests: `#[test]` inside `#[cfg(test)] mod tests`
+
+  Unit tests live in the same file as the code under test, inside a module gated by `#[cfg(test)]`. The gate keeps the test code (and any test-only helpers it pulls in) out of release builds — `cargo build --release` compiles as if the module did not exist:
+
+  ```rust
+  pub fn add(a: i32, b: i32) -> i32 {
+      a + b
+  }
+
+  #[cfg(test)]
+  mod tests {
+      use super::*;
+
+      #[test]
+      fn add_combines_two_positives() {
+          assert_eq!(add(2, 3), 5);
+      }
+
+      #[test]
+      fn add_handles_negatives() {
+          assert_eq!(add(-1, -2), -3);
+      }
+  }
+  ```
+
+  `use super::*;` brings the parent module's items (including private ones) into scope; this is why same-file unit tests can exercise private helpers. `assert_eq!`, `assert_ne!`, and `assert!` come from the prelude and produce diff-style failure messages.
+
+  Run with `cargo test`. Filter to one test with `cargo test add_combines`. Run a specific module with `cargo test tests::`.
+
+  ## Integration tests: `tests/` directory, public API only
+
+  Files placed directly under `tests/` are compiled as separate crates that depend on your library. Each `tests/foo.rs` is its own binary; they share nothing with each other and can only `use` items that your `lib.rs` re-exports as `pub`. This is the surface-contract test:
+
+  ```rust
+  // tests/parser.rs
+  use mycrate::parse_config;
+
+  #[test]
+  fn parses_minimal_input() {
+      let cfg = parse_config("name = 'x'").expect("valid input");
+      assert_eq!(cfg.name, "x");
+  }
+  ```
+
+  The edge case to walk: if `parse_config` is `pub(crate)` rather than `pub`, the integration test fails to compile with `error[E0603]: function parse_config is private`. That is the test runner enforcing the contract — an integration test that needs `pub(crate)` items is really a unit test in the wrong place. Either widen visibility (and accept the public commitment) or move the test back to `#[cfg(test)] mod tests` in the source file.
+
+  Shared helpers for integration tests go in `tests/common/mod.rs` (the `mod.rs` form is required so Cargo treats it as a module rather than a top-level test crate). Do not put helpers in `tests/common.rs` — that file would itself be compiled as a test crate and run with no `#[test]` functions.
+
+  Integration tests in `src/` do not work as integration tests. A `#[test]` inside `src/foo.rs` runs as a unit test (with access to private items), regardless of intent. The `tests/` location is what makes a test an integration test.
+
+  ## Panic tests and `Result`-returning tests
+
+  Two attributes that change the test contract:
+
+  ```rust
+  #[test]
+  #[should_panic(expected = "index out of bounds")]
+  fn index_panics_past_end() {
+      let v: Vec<i32> = vec![1, 2, 3];
+      let _ = v[99];
+  }
+  ```
+
+  `#[should_panic]` passes the test if the body panics; `expected = "..."` requires the panic message to contain the substring. Without `expected`, any panic passes — including unrelated bugs. Always include `expected` so a refactor that changes which line panics is caught.
+
+  For tests that use `?` to short-circuit on errors, the test function returns `Result`:
+
+  ```rust
+  use std::num::ParseIntError;
+
+  #[test]
+  fn parses_number() -> Result<(), ParseIntError> {
+      let n: i32 = "42".parse()?;
+      assert_eq!(n, 42);
+      Ok(())
+  }
+  ```
+
+  A test returning `Result` fails if it returns `Err(_)` — the runner prints the error via `Debug`. This replaces `unwrap` chains; when something fails, the error type tells you which step.
+
+  ## `#[ignore]` for slow tests
+
+  Mark tests that hit the network, spin up containers, or run for tens of seconds with `#[ignore]`. They are skipped by default and run with `cargo test -- --ignored`:
+
+  ```rust
+  #[test]
+  #[ignore = "requires running database"]
+  fn writes_to_real_db() { /* ... */ }
+  ```
+
+  CI runs `cargo test` on every PR (fast path) and `cargo test -- --ignored` on a scheduled job (slow path). The reason string after `#[ignore = ...]` shows up in the runner output, so when a contributor sees a skipped test they know why.
+
+  ## Doc tests: code blocks in `///` are tests
+
+  Every fenced ` ```rust ` block (or unmarked block) inside a `///` doc comment is compiled and run by `cargo test --doc`. This makes documentation executable: an example that drifts from the API fails CI.
+
+  ```rust
+  /// Doubles the input.
+  ///
+  /// # Examples
+  ///
+  /// ```
+  /// use mycrate::double;
+  /// assert_eq!(double(3), 6);
+  /// ```
+  pub fn double(x: i32) -> i32 {
+      x * 2
+  }
+  ```
+
+  Modifiers on the opening fence change behavior (verified 2026-05-05):
+
+  - ` ```ignore ` — skip; do not compile or run. Use sparingly; an ignored example can rot.
+  - ` ```no_run ` — compile but do not execute. Useful for examples that open sockets, write files, or call external services.
+  - ` ```compile_fail ` — the test passes if compilation fails. Used to demonstrate a borrow-checker error or a type error.
+  - ` ```should_panic ` — the test passes if the example panics at runtime.
+
+  Each doc test is wrapped in an implicit `fn main()` and run as a separate process. That is slower than unit tests; large crates often configure CI to run `cargo test --doc` on a separate job.
+
+  ## Fixtures and shared setup
+
+  For temporary files and directories, use the community-canonical `tempfile` crate:
+
+  ```rust
+  use tempfile::tempdir;
+
+  #[test]
+  fn writes_to_scratch_dir() -> std::io::Result<()> {
+      let dir = tempdir()?;
+      let path = dir.path().join("out.txt");
+      std::fs::write(&path, "hello")?;
+      assert_eq!(std::fs::read_to_string(&path)?, "hello");
+      Ok(())
+  }
+  ```
+
+  `tempdir()` returns a handle that deletes the directory on drop, so cleanup is automatic at test exit (success or panic).
+
+  For shared one-time setup across tests in a module, use a `static` paired with `OnceLock` (stable since Rust 1.70, verified 2026-05-05):
+
+  ```rust
+  use std::sync::OnceLock;
+
+  fn shared_fixture() -> &'static Vec<u8> {
+      static FIXTURE: OnceLock<Vec<u8>> = OnceLock::new();
+      FIXTURE.get_or_init(|| {
+          // expensive load, runs at most once
+          std::fs::read("testdata/large.bin").expect("fixture present")
+      })
+  }
+  ```
+
+  Tests run in parallel by default; if shared state is mutable, either guard it with a `Mutex` or pass per-test instances. Force serial execution with `cargo test -- --test-threads=1` when isolating ordering issues; do not put that flag in CI as a permanent fix — it hides real concurrency bugs.
+
+  ## Property-based testing with `proptest`
+
+  When the input space is large (parsers, codecs, anything with invariants like "decode of encode is identity"), `proptest` (community-canonical, not stdlib) generates inputs and shrinks failures to minimal cases:
+
+  ```rust
+  use proptest::prelude::*;
+
+  proptest! {
+      #[test]
+      fn round_trip_any_string(s in ".*") {
+          let encoded = encode(&s);
+          let decoded = decode(&encoded).unwrap();
+          prop_assert_eq!(s, decoded);
+      }
+  }
+  ```
+
+  The `proptest!` macro expands to a `#[test]` function that loops over generated inputs (default 256 cases) and shrinks any failing input to a minimal counterexample. `prop_assert_eq!` (not `assert_eq!`) lets the framework record the failure and continue shrinking. `quickcheck` is the older alternative with a similar model.
+
+  Write a property test for any function whose contract is universal ("for all inputs ..."), and a table of concrete `#[test]`s for the specific cases you want to anchor (boundaries, regression cases, known tricky inputs). They cover different threats.
+
+  ## Benchmarks: `criterion` on stable, `#[bench]` on nightly
+
+  `cargo bench` with `#[bench]` attributes requires a nightly toolchain; on stable, `criterion` (community-canonical) is the standard:
+
+  ```rust
+  use criterion::{black_box, criterion_group, criterion_main, Criterion};
+
+  fn bench_double(c: &mut Criterion) {
+      c.bench_function("double 21", |b| {
+          b.iter(|| double(black_box(21)))
+      });
+  }
+
+  criterion_group!(benches, bench_double);
+  criterion_main!(benches);
+  ```
+
+  `black_box` (now in `std::hint::black_box` on stable) prevents the optimizer from constant-folding the input. `criterion` writes timing distributions, plots, and regression detection to `target/criterion/`. Benchmark numbers are relative; do not pin ns/op thresholds in CI.
+
+  ## Anti-patterns
+
+  - **Tests in same-file `mod tests` that exercise private behavior the public API does not need.** When the implementation is refactored, the tests break and the public surface is untested. Move surface tests to `tests/`.
+  - **`unwrap()` chains in tests.** A failure prints `panicked at 'called Result::unwrap() on an Err value'` with no context. Use `?` with a `Result`-returning test, or `expect("specific message")`.
+  - **`println!` debugging without `--nocapture`.** Cargo captures test output unless the test fails or you pass `cargo test -- --nocapture`. Tests that "print nothing" usually do print, just suppressed.
+  - **Integration tests placed in `src/`.** They run as unit tests with private-item access; the public-API contract is not tested. Move to `tests/`.
+  - **`#[should_panic]` without `expected = "..."`.** Any panic, including a `nullptr` deref in a refactor, passes the test. Always pin the message.
+  - **Stateful global between tests without isolation.** Default parallel execution interleaves writes; results are nondeterministic. Per-test instances or a `Mutex` fixes it; `--test-threads=1` hides it.
+  - **Float comparison with `==`.** Floating-point arithmetic is not associative; `0.1 + 0.2 != 0.3`. Use `(a - b).abs() < EPS` with a documented `EPS`, or the `approx` crate's `assert_relative_eq!`.
+  - **`tests/common.rs` for shared helpers.** Cargo compiles it as its own test crate. Use `tests/common/mod.rs` instead.
+
+  ## Verification
+
+  - [ ] `cargo test` exits 0; output reports unit tests, integration tests under `tests/`, and doc tests as separate sections.
+  - [ ] `cargo test --doc` exits 0 — every `///` example compiles and runs (or is explicitly tagged `ignore` / `no_run` / `compile_fail`).
+  - [ ] `grep -RIn '#\[should_panic\]' src/ tests/` shows no bare `#[should_panic]`; every match has `expected = "..."`.
+  - [ ] `grep -RIn '\.unwrap()' tests/` flags `unwrap` calls in test bodies; replace with `?` on a `Result`-returning test, or `expect("...")` with a message.
+  - [ ] `grep -RIn '#\[ignore' src/ tests/` results all have a reason (`#[ignore = "..."]`); CI has a job running `cargo test -- --ignored`.
+  - [ ] No file `tests/common.rs` exists; shared helpers live at `tests/common/mod.rs`.
+  - [ ] No `#[test]` function in `src/` claims to be an integration test (search: `find src -name '*.rs' | xargs grep -l '// integration'`).
+  - [ ] `grep -RIn '== .*\.0\|\.0 ==' src/ tests/` shows no float `==` comparisons in tests; use `(a - b).abs() < EPS` or `approx::assert_relative_eq!`.
+  - [ ] `cargo test -- --test-threads=1` is not in any CI script as a permanent setting; it only appears in local debugging notes.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Rust Testing Idioms
+
+      Rust ships its test runner with the toolchain: `cargo test` discovers every `#[test]` function, every `tests/*.rs` integration crate, and every code block in `///` doc comments, then compiles and runs them. There is no separate framework to install for unit, integration, or doc tests — the `test` attribute and the `tests/` directory are the convention, and the rest of the ecosystem (`proptest`, `criterion`, `tempfile`) layers on top. The rule is one sentence: keep unit tests in a `#[cfg(test)] mod tests` block beside the code they test, put public-API tests in `tests/`, write a `///` doc-test for any non-trivial public function so the docs cannot drift from behavior, and reach for `proptest` or `quickcheck` when the input space is too large to enumerate. Most production Rust test bugs come from tests that exercise private behavior the public API does not need (so the test passes after a refactor that broke users), `unwrap` chains that hide which step failed, integration tests accidentally placed in `src/` where the runner does not see them, or float comparisons with `==`.
+
+  - sequence: 2
+    fragment_type: example
+    content: |
+      ## Unit tests: `#[test]` inside `#[cfg(test)] mod tests`
+
+      Unit tests live in the same file as the code under test, inside a module gated by `#[cfg(test)]`. The gate keeps the test code (and any test-only helpers it pulls in) out of release builds — `cargo build --release` compiles as if the module did not exist:
+
+      ```rust
+      pub fn add(a: i32, b: i32) -> i32 {
+          a + b
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          #[test]
+          fn add_combines_two_positives() {
+              assert_eq!(add(2, 3), 5);
+          }
+
+          #[test]
+          fn add_handles_negatives() {
+              assert_eq!(add(-1, -2), -3);
+          }
+      }
+      ```
+
+      `use super::*;` brings the parent module's items (including private ones) into scope; this is why same-file unit tests can exercise private helpers. `assert_eq!`, `assert_ne!`, and `assert!` come from the prelude and produce diff-style failure messages.
+
+      Run with `cargo test`. Filter to one test with `cargo test add_combines`. Run a specific module with `cargo test tests::`.
+
+  - sequence: 3
+    fragment_type: execution
+    content: |
+      ## Integration tests: `tests/` directory, public API only
+
+      Files placed directly under `tests/` are compiled as separate crates that depend on your library. Each `tests/foo.rs` is its own binary; they share nothing with each other and can only `use` items that your `lib.rs` re-exports as `pub`. This is the surface-contract test:
+
+      ```rust
+      // tests/parser.rs
+      use mycrate::parse_config;
+
+      #[test]
+      fn parses_minimal_input() {
+          let cfg = parse_config("name = 'x'").expect("valid input");
+          assert_eq!(cfg.name, "x");
+      }
+      ```
+
+      The edge case to walk: if `parse_config` is `pub(crate)` rather than `pub`, the integration test fails to compile with `error[E0603]: function parse_config is private`. That is the test runner enforcing the contract — an integration test that needs `pub(crate)` items is really a unit test in the wrong place. Either widen visibility (and accept the public commitment) or move the test back to `#[cfg(test)] mod tests` in the source file.
+
+      Shared helpers for integration tests go in `tests/common/mod.rs` (the `mod.rs` form is required so Cargo treats it as a module rather than a top-level test crate). Do not put helpers in `tests/common.rs` — that file would itself be compiled as a test crate and run with no `#[test]` functions.
+
+      Integration tests in `src/` do not work as integration tests. A `#[test]` inside `src/foo.rs` runs as a unit test (with access to private items), regardless of intent. The `tests/` location is what makes a test an integration test.
+
+  - sequence: 4
+    fragment_type: example
+    content: |
+      ## Panic tests and `Result`-returning tests
+
+      Two attributes that change the test contract:
+
+      ```rust
+      #[test]
+      #[should_panic(expected = "index out of bounds")]
+      fn index_panics_past_end() {
+          let v: Vec<i32> = vec![1, 2, 3];
+          let _ = v[99];
+      }
+      ```
+
+      `#[should_panic]` passes the test if the body panics; `expected = "..."` requires the panic message to contain the substring. Without `expected`, any panic passes — including unrelated bugs. Always include `expected` so a refactor that changes which line panics is caught.
+
+      For tests that use `?` to short-circuit on errors, the test function returns `Result`:
+
+      ```rust
+      use std::num::ParseIntError;
+
+      #[test]
+      fn parses_number() -> Result<(), ParseIntError> {
+          let n: i32 = "42".parse()?;
+          assert_eq!(n, 42);
+          Ok(())
+      }
+      ```
+
+      A test returning `Result` fails if it returns `Err(_)` — the runner prints the error via `Debug`. This replaces `unwrap` chains; when something fails, the error type tells you which step.
+
+  - sequence: 5
+    fragment_type: execution
+    content: |
+      ## `#[ignore]` for slow tests
+
+      Mark tests that hit the network, spin up containers, or run for tens of seconds with `#[ignore]`. They are skipped by default and run with `cargo test -- --ignored`:
+
+      ```rust
+      #[test]
+      #[ignore = "requires running database"]
+      fn writes_to_real_db() { /* ... */ }
+      ```
+
+      CI runs `cargo test` on every PR (fast path) and `cargo test -- --ignored` on a scheduled job (slow path). The reason string after `#[ignore = ...]` shows up in the runner output, so when a contributor sees a skipped test they know why.
+
+      Other useful `cargo test` flags: `--test name` runs a single integration test crate (`cargo test --test parser`); `-- --nocapture` lets `println!` and `dbg!` reach the terminal; `-- --test-threads=1` forces serial execution; `--release` runs tests with optimizations (slower compile, faster run, useful for benches and timing-sensitive checks).
+
+  - sequence: 6
+    fragment_type: example
+    content: |
+      ## Doc tests: code blocks in `///` are tests
+
+      Every fenced ` ```rust ` block (or unmarked block) inside a `///` doc comment is compiled and run by `cargo test --doc`. This makes documentation executable: an example that drifts from the API fails CI.
+
+      ```rust
+      /// Doubles the input.
+      ///
+      /// # Examples
+      ///
+      /// ```
+      /// use mycrate::double;
+      /// assert_eq!(double(3), 6);
+      /// ```
+      pub fn double(x: i32) -> i32 {
+          x * 2
+      }
+      ```
+
+      Modifiers on the opening fence change behavior (verified 2026-05-05):
+
+      - ` ```ignore ` — skip; do not compile or run. Use sparingly; an ignored example can rot.
+      - ` ```no_run ` — compile but do not execute. Useful for examples that open sockets, write files, or call external services.
+      - ` ```compile_fail ` — the test passes if compilation fails. Used to demonstrate a borrow-checker error or a type error.
+      - ` ```should_panic ` — the test passes if the example panics at runtime.
+
+      Each doc test is wrapped in an implicit `fn main()` and run as a separate process. That is slower than unit tests; large crates often configure CI to run `cargo test --doc` on a separate job.
+
+  - sequence: 7
+    fragment_type: example
+    content: |
+      ## Fixtures and shared setup
+
+      For temporary files and directories, use the community-canonical `tempfile` crate:
+
+      ```rust
+      use tempfile::tempdir;
+
+      #[test]
+      fn writes_to_scratch_dir() -> std::io::Result<()> {
+          let dir = tempdir()?;
+          let path = dir.path().join("out.txt");
+          std::fs::write(&path, "hello")?;
+          assert_eq!(std::fs::read_to_string(&path)?, "hello");
+          Ok(())
+      }
+      ```
+
+      `tempdir()` returns a handle that deletes the directory on drop, so cleanup is automatic at test exit (success or panic).
+
+      For shared one-time setup across tests in a module, use a `static` paired with `OnceLock` (stable since Rust 1.70, verified 2026-05-05):
+
+      ```rust
+      use std::sync::OnceLock;
+
+      fn shared_fixture() -> &'static Vec<u8> {
+          static FIXTURE: OnceLock<Vec<u8>> = OnceLock::new();
+          FIXTURE.get_or_init(|| {
+              std::fs::read("testdata/large.bin").expect("fixture present")
+          })
+      }
+      ```
+
+      Tests run in parallel by default; if shared state is mutable, either guard it with a `Mutex` or pass per-test instances. Force serial execution with `cargo test -- --test-threads=1` when isolating ordering issues; do not put that flag in CI as a permanent fix — it hides real concurrency bugs.
+
+  - sequence: 8
+    fragment_type: example
+    content: |
+      ## Property-based testing with `proptest`
+
+      When the input space is large (parsers, codecs, anything with invariants like "decode of encode is identity"), `proptest` (community-canonical, not stdlib) generates inputs and shrinks failures to minimal cases:
+
+      ```rust
+      use proptest::prelude::*;
+
+      proptest! {
+          #[test]
+          fn round_trip_any_string(s in ".*") {
+              let encoded = encode(&s);
+              let decoded = decode(&encoded).unwrap();
+              prop_assert_eq!(s, decoded);
+          }
+      }
+      ```
+
+      The `proptest!` macro expands to a `#[test]` function that loops over generated inputs (default 256 cases) and shrinks any failing input to a minimal counterexample. `prop_assert_eq!` (not `assert_eq!`) lets the framework record the failure and continue shrinking. `quickcheck` is the older alternative with a similar model.
+
+      Write a property test for any function whose contract is universal ("for all inputs ..."), and a table of concrete `#[test]`s for the specific cases you want to anchor (boundaries, regression cases, known tricky inputs). They cover different threats.
+
+  - sequence: 9
+    fragment_type: example
+    content: |
+      ## Benchmarks: `criterion` on stable, `#[bench]` on nightly
+
+      `cargo bench` with `#[bench]` attributes requires a nightly toolchain; on stable, `criterion` (community-canonical) is the standard:
+
+      ```rust
+      use criterion::{black_box, criterion_group, criterion_main, Criterion};
+
+      fn bench_double(c: &mut Criterion) {
+          c.bench_function("double 21", |b| {
+              b.iter(|| double(black_box(21)))
+          });
+      }
+
+      criterion_group!(benches, bench_double);
+      criterion_main!(benches);
+      ```
+
+      `black_box` (now in `std::hint::black_box` on stable) prevents the optimizer from constant-folding the input. `criterion` writes timing distributions, plots, and regression detection to `target/criterion/`. Benchmark numbers are relative; do not pin ns/op thresholds in CI.
+
+  - sequence: 10
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      - **Tests in same-file `mod tests` that exercise private behavior the public API does not need.** When the implementation is refactored, the tests break and the public surface is untested. Move surface tests to `tests/`.
+      - **`unwrap()` chains in tests.** A failure prints `panicked at 'called Result::unwrap() on an Err value'` with no context. Use `?` with a `Result`-returning test, or `expect("specific message")`.
+      - **`println!` debugging without `--nocapture`.** Cargo captures test output unless the test fails or you pass `cargo test -- --nocapture`. Tests that "print nothing" usually do print, just suppressed.
+      - **Integration tests placed in `src/`.** They run as unit tests with private-item access; the public-API contract is not tested. Move to `tests/`.
+      - **`#[should_panic]` without `expected = "..."`.** Any panic, including a `nullptr` deref in a refactor, passes the test. Always pin the message.
+      - **Stateful global between tests without isolation.** Default parallel execution interleaves writes; results are nondeterministic. Per-test instances or a `Mutex` fixes it; `--test-threads=1` hides it.
+      - **Float comparison with `==`.** Floating-point arithmetic is not associative; `0.1 + 0.2 != 0.3`. Use `(a - b).abs() < EPS` with a documented `EPS`, or the `approx` crate's `assert_relative_eq!`.
+      - **`tests/common.rs` for shared helpers.** Cargo compiles it as its own test crate. Use `tests/common/mod.rs` instead.
+
+  - sequence: 11
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] `cargo test` exits 0; output reports unit tests, integration tests under `tests/`, and doc tests as separate sections.
+      - [ ] `cargo test --doc` exits 0 — every `///` example compiles and runs (or is explicitly tagged `ignore` / `no_run` / `compile_fail`).
+      - [ ] `grep -RIn '#\[should_panic\]' src/ tests/` shows no bare `#[should_panic]`; every match has `expected = "..."`.
+      - [ ] `grep -RIn '\.unwrap()' tests/` flags `unwrap` calls in test bodies; replace with `?` on a `Result`-returning test, or `expect("...")` with a message.
+      - [ ] `grep -RIn '#\[ignore' src/ tests/` results all have a reason (`#[ignore = "..."]`); CI has a job running `cargo test -- --ignored`.
+      - [ ] No file `tests/common.rs` exists; shared helpers live at `tests/common/mod.rs`.
+      - [ ] No `#[test]` function appears in any file under `src/` whose path or comment marks it as integration scope (search: `find src -name '*.rs' | xargs grep -l '// integration'`).
+      - [ ] `grep -RIn '== .*\.0\|\.0 ==' src/ tests/` shows no float `==` comparisons in tests; use `(a - b).abs() < EPS` or `approx::assert_relative_eq!`.
+      - [ ] `cargo test -- --test-threads=1` is not in any CI script as a permanent setting; it only appears in local debugging notes.

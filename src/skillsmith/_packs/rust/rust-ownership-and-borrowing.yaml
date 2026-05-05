@@ -1,0 +1,246 @@
+skill_type: domain
+skill_id: rust-ownership-and-borrowing
+canonical_name: Rust Ownership and Borrowing (Move Semantics, References, Lifetimes)
+category: engineering
+skill_class: domain
+domain_tags: [move-semantics, borrow-checker, lifetime-elision, interior-mutability, rc-arc]
+always_apply: false
+phase_scope: null
+category_scope: language
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-05. Sources — The Rust Programming Language ch04 https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html (verified 2026-05-05 against fixtures/upstream/curated/rust.yaml topic `memory_and_performance`); Rust Reference on lifetime elision https://doc.rust-lang.org/reference/lifetime-elision.html; std::cell https://doc.rust-lang.org/std/cell/index.html; std::rc and std::sync::Arc. Skill scope: how Rust's ownership model works, when to take a reference vs a value, what the borrow checker enforces, lifetime annotations and elision rules, and the escape hatches (Rc/Arc, Cell/RefCell); not unsafe Rust beyond a brief mention, not async lifetimes (covered in async pack).
+
+raw_prose: |
+  # Rust Ownership and Borrowing
+
+  Rust's ownership model is the language's defining feature: every value has exactly one owner, the owner controls when the value is dropped, and references to the value must follow rules the compiler enforces statically. The rule is one sentence: prefer to lend a `&T` reference, fall back to `&mut T` only when you must mutate, transfer ownership with a move only when the receiver genuinely needs it, and reach for `Rc`/`Arc`/`RefCell` only when a single-owner tree is the wrong shape for the data. Most production Rust friction comes from fighting the borrow checker because the data model has multiple owners that should be one, mutating through `&mut` when a refactor to `&` would have worked, or sprinkling lifetimes that lifetime elision would have inferred.
+
+  ## Move semantics by default
+
+  Assignment, function arguments, and return values *move* by default for any non-`Copy` type:
+
+  ```rust
+  let s = String::from("hello");
+  let t = s;             // ownership of the heap buffer moves to t
+  // println!("{s}");    // compile error: borrow of moved value `s`
+  ```
+
+  Primitive types (`i32`, `bool`, `char`, fixed-size arrays of `Copy` types, etc.) implement the `Copy` trait, so the assignment copies the bits and the source is still usable. Most heap-owning types (`String`, `Vec<T>`, `Box<T>`) are not `Copy` — copying their bits would create two owners of the same allocation, which Rust forbids.
+
+  When you want to keep using a value after passing it, take a reference (`&s`) or clone it (`s.clone()`). `clone` is explicit on purpose — heap allocation is visible at the call site.
+
+  ## References: shared `&T` and exclusive `&mut T`
+
+  References are non-owning pointers. Two rules at all times:
+
+  1. Either many `&T` (shared, immutable) references, OR exactly one `&mut T` (exclusive, mutable). Never both.
+  2. References must not outlive the value they point to.
+
+  These are enforced statically. The first rule rules out data races at compile time — you cannot have a writer and a reader of the same data simultaneously without a synchronization primitive. The second rules out dangling references.
+
+  ```rust
+  let mut v = vec![1, 2, 3];
+  let r1 = &v;
+  let r2 = &v;        // OK, multiple shared
+  println!("{r1:?} {r2:?}");
+  let r3 = &mut v;    // OK only because r1 and r2 are no longer used (NLL)
+  r3.push(4);
+  ```
+
+  Non-lexical lifetimes (NLL, stable since Rust 1.36, verified 2026-05-05) end a borrow at its last use, not at the end of the block. This is what makes the borrow checker tolerable in practice.
+
+  ## Lifetime elision
+
+  Lifetimes are usually inferred. The three elision rules for function signatures (in order):
+
+  1. Each input reference gets its own lifetime parameter.
+  2. If there is exactly one input lifetime, it is assigned to all outputs.
+  3. If there is a `&self` or `&mut self`, that lifetime is assigned to all outputs.
+
+  Most function signatures fit one of these rules and need no annotations:
+
+  ```rust
+  fn first_word(s: &str) -> &str { /* ... */ }       // rule 2
+  fn longest<'a>(x: &'a str, y: &'a str) -> &'a str { /* ... */ }   // explicit; rules don't apply
+  ```
+
+  Write explicit lifetimes only when elision fails. Sprinkling `'a` everywhere makes signatures harder to read without adding correctness.
+
+  Struct fields holding references *always* need explicit lifetimes:
+
+  ```rust
+  struct Parser<'src> {
+      input: &'src str,
+      pos: usize,
+  }
+  ```
+
+  This says "a `Parser` cannot outlive the `&str` it borrows from."
+
+  ## When you actually need ownership escape hatches
+
+  - **`Rc<T>`** — reference-counted shared ownership, single-threaded. Use when a tree-shaped owner model is wrong (e.g., a graph node referenced by multiple parents). Read-only by default; pair with `RefCell` for interior mutability.
+  - **`Arc<T>`** — atomic reference count, thread-safe. Same as `Rc` but the count is updated atomically. Use across threads.
+  - **`Cell<T>`** — interior mutability for `Copy` types only. `cell.get()` and `cell.set(v)` operate without taking a `&mut`. No runtime cost.
+  - **`RefCell<T>`** — interior mutability for any type, with *runtime* borrow checking. `cell.borrow()` and `cell.borrow_mut()` panic if the rules are violated at runtime. Use sparingly — moves a compile-time guarantee to a runtime panic.
+  - **`Mutex<T>` / `RwLock<T>`** — interior mutability with thread-safe locking. The async equivalents live in `tokio::sync` (see async skill).
+
+  Heuristic: start with `&T` / `&mut T` and a single-owner tree. Reach for `Rc`/`Arc` only when you have a real shared-ownership case. Reach for `RefCell`/`Mutex` only when interior mutability is genuinely needed (callbacks, observer patterns, shared state). The borrow checker is trying to push you toward the simpler design.
+
+  ## Common borrow-checker patterns
+
+  - **Re-borrowing.** `&mut *r` produces a fresh `&mut` from an existing `&mut`, scoped to the current expression. Useful when calling a method on `r` would consume the borrow but you want to keep using it.
+  - **Splitting borrows.** You can borrow disjoint fields of a struct mutably at the same time: `let (a, b) = (&mut s.field_a, &mut s.field_b);`. The compiler tracks fields, not just the parent.
+  - **Iterator invalidation.** `for x in &v { v.push(...); }` does not compile — the iterator holds a `&v`, and `push` needs `&mut v`. Collect indices, mutate after, or use `Vec::retain` / `drain`.
+  - **`Cow<'a, T>`** — clone-on-write. Holds either `Borrowed(&'a T)` or `Owned(T)`. Useful for APIs that *might* need to allocate but usually don't.
+
+  ## Anti-patterns
+
+  - **`Rc<RefCell<T>>` everywhere.** Reaching for shared interior mutability to avoid a borrow-checker fight usually means the data model is wrong. Re-shape the data first; if it actually is shared mutable state, then `Rc<RefCell<T>>` (or `Arc<Mutex<T>>` across threads) is correct.
+  - **`Clone`-spamming.** `s.clone()` to "make the error go away" hides allocation. If a function only reads, it should take `&T`; if it stores, it should take `T` and let the caller decide whether to clone.
+  - **Lifetime parameters where elision applies.** `fn f<'a>(x: &'a str) -> &'a str` for a single-input single-output function. Drop the annotations; they obscure the signature.
+  - **Returning a reference to a local.** `fn make() -> &str { let s = String::from(""); &s }` — the local drops at the end of `make`. Return an owned `String`.
+  - **`unsafe { ... }` to bypass the borrow checker.** Almost always a bug. `unsafe` is for FFI, raw pointers, and low-level data structures; it does not turn off aliasing rules — UB will bite you later.
+  - **Storing `&self` in a struct field.** Self-referential structs require pinning (`Pin`) or a tree shape that owns its parts. The compiler will refuse straightforwardly.
+  - **`Box<dyn Trait>` when `impl Trait` would do.** `Box` allocates; `impl Trait` in return position does not. Reach for `Box<dyn>` only when you need heterogeneous return types (e.g., a `Vec<Box<dyn Animal>>`).
+
+  ## Verification
+
+  - [ ] `cargo clippy -- -D warnings` exits 0; in particular no `clippy::needless_lifetimes`, `clippy::redundant_clone`, or `clippy::needless_borrow` lints.
+  - [ ] `grep -n 'Rc<RefCell<' src/` results are intentional shared-mutable cases, each with a short comment explaining why.
+  - [ ] No function signature carries an explicit lifetime that elision would have inferred (verifiable by removing the lifetime and running `cargo check`).
+  - [ ] No `.clone()` call exists where a `&T` borrow would have compiled — check by replacing the clone with `&` and running `cargo check`.
+  - [ ] `unsafe` blocks (if any) are documented with a `// SAFETY:` comment per the rustc lint `clippy::undocumented_unsafe_blocks`.
+  - [ ] No function returns a reference to a local — `cargo check` would fail; verified by build passing.
+  - [ ] `Box<dyn Trait>` appears only where heterogeneous types are stored or returned; single-type returns use `impl Trait`.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Rust Ownership and Borrowing
+
+      Rust's ownership model is the language's defining feature: every value has exactly one owner, the owner controls when the value is dropped, and references to the value must follow rules the compiler enforces statically. The rule is one sentence: prefer to lend a `&T` reference, fall back to `&mut T` only when you must mutate, transfer ownership with a move only when the receiver genuinely needs it, and reach for `Rc`/`Arc`/`RefCell` only when a single-owner tree is the wrong shape for the data. Most production Rust friction comes from fighting the borrow checker because the data model has multiple owners that should be one, mutating through `&mut` when a refactor to `&` would have worked, or sprinkling lifetimes that lifetime elision would have inferred.
+
+  - sequence: 2
+    fragment_type: example
+    content: |
+      ## Move semantics by default
+
+      Assignment, function arguments, and return values *move* by default for any non-`Copy` type:
+
+      ```rust
+      let s = String::from("hello");
+      let t = s;             // ownership of the heap buffer moves to t
+      // println!("{s}");    // compile error: borrow of moved value `s`
+      ```
+
+      Primitive types (`i32`, `bool`, `char`, fixed-size arrays of `Copy` types, etc.) implement the `Copy` trait, so the assignment copies the bits and the source is still usable. Most heap-owning types (`String`, `Vec<T>`, `Box<T>`) are not `Copy` — copying their bits would create two owners of the same allocation, which Rust forbids.
+
+      When you want to keep using a value after passing it, take a reference (`&s`) or clone it (`s.clone()`). `clone` is explicit on purpose — heap allocation is visible at the call site.
+
+  - sequence: 3
+    fragment_type: example
+    content: |
+      ## References: shared `&T` and exclusive `&mut T`
+
+      References are non-owning pointers. Two rules at all times:
+
+      1. Either many `&T` (shared, immutable) references, OR exactly one `&mut T` (exclusive, mutable). Never both.
+      2. References must not outlive the value they point to.
+
+      These are enforced statically. The first rule rules out data races at compile time — you cannot have a writer and a reader of the same data simultaneously without a synchronization primitive. The second rules out dangling references.
+
+      ```rust
+      let mut v = vec![1, 2, 3];
+      let r1 = &v;
+      let r2 = &v;        // OK, multiple shared
+      println!("{r1:?} {r2:?}");
+      let r3 = &mut v;    // OK only because r1 and r2 are no longer used (NLL)
+      r3.push(4);
+      ```
+
+      Non-lexical lifetimes (NLL, stable since Rust 1.36, verified 2026-05-05) end a borrow at its last use, not at the end of the block. This is what makes the borrow checker tolerable in practice.
+
+  - sequence: 4
+    fragment_type: example
+    content: |
+      ## Lifetime elision
+
+      Lifetimes are usually inferred. The three elision rules for function signatures (in order):
+
+      1. Each input reference gets its own lifetime parameter.
+      2. If there is exactly one input lifetime, it is assigned to all outputs.
+      3. If there is a `&self` or `&mut self`, that lifetime is assigned to all outputs.
+
+      Most function signatures fit one of these rules and need no annotations:
+
+      ```rust
+      fn first_word(s: &str) -> &str { /* ... */ }       // rule 2
+      fn longest<'a>(x: &'a str, y: &'a str) -> &'a str { /* ... */ }   // explicit; rules don't apply
+      ```
+
+      Write explicit lifetimes only when elision fails. Sprinkling `'a` everywhere makes signatures harder to read without adding correctness.
+
+      Struct fields holding references *always* need explicit lifetimes:
+
+      ```rust
+      struct Parser<'src> {
+          input: &'src str,
+          pos: usize,
+      }
+      ```
+
+      This says "a `Parser` cannot outlive the `&str` it borrows from."
+
+  - sequence: 5
+    fragment_type: rationale
+    content: |
+      ## When you actually need ownership escape hatches
+
+      - **`Rc<T>`** — reference-counted shared ownership, single-threaded. Use when a tree-shaped owner model is wrong (e.g., a graph node referenced by multiple parents). Read-only by default; pair with `RefCell` for interior mutability.
+      - **`Arc<T>`** — atomic reference count, thread-safe. Same as `Rc` but the count is updated atomically. Use across threads.
+      - **`Cell<T>`** — interior mutability for `Copy` types only. `cell.get()` and `cell.set(v)` operate without taking a `&mut`. No runtime cost.
+      - **`RefCell<T>`** — interior mutability for any type, with *runtime* borrow checking. `cell.borrow()` and `cell.borrow_mut()` panic if the rules are violated at runtime. Use sparingly — moves a compile-time guarantee to a runtime panic.
+      - **`Mutex<T>` / `RwLock<T>`** — interior mutability with thread-safe locking. The async equivalents live in `tokio::sync` (see async skill).
+
+      Heuristic: start with `&T` / `&mut T` and a single-owner tree. Reach for `Rc`/`Arc` only when you have a real shared-ownership case. Reach for `RefCell`/`Mutex` only when interior mutability is genuinely needed (callbacks, observer patterns, shared state). The borrow checker is trying to push you toward the simpler design.
+
+  - sequence: 6
+    fragment_type: execution
+    content: |
+      ## Common borrow-checker patterns
+
+      - **Re-borrowing.** `&mut *r` produces a fresh `&mut` from an existing `&mut`, scoped to the current expression. Useful when calling a method on `r` would consume the borrow but you want to keep using it.
+      - **Splitting borrows.** You can borrow disjoint fields of a struct mutably at the same time: `let (a, b) = (&mut s.field_a, &mut s.field_b);`. The compiler tracks fields, not just the parent.
+      - **Iterator invalidation.** `for x in &v { v.push(...); }` does not compile — the iterator holds a `&v`, and `push` needs `&mut v`. Collect indices, mutate after, or use `Vec::retain` / `drain`.
+      - **`Cow<'a, T>`** — clone-on-write. Holds either `Borrowed(&'a T)` or `Owned(T)`. Useful for APIs that *might* need to allocate but usually don't.
+
+      Apply these in order when fighting the checker: first try re-shaping the borrow scope (NLL helps), then split borrows by field, then introduce `Cow` if the API really is "sometimes borrowed, sometimes owned." Reaching for `Rc<RefCell<T>>` is the last resort, not the first.
+
+  - sequence: 7
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      - **`Rc<RefCell<T>>` everywhere.** Reaching for shared interior mutability to avoid a borrow-checker fight usually means the data model is wrong. Re-shape the data first; if it actually is shared mutable state, then `Rc<RefCell<T>>` (or `Arc<Mutex<T>>` across threads) is correct.
+      - **`Clone`-spamming.** `s.clone()` to "make the error go away" hides allocation. If a function only reads, it should take `&T`; if it stores, it should take `T` and let the caller decide whether to clone.
+      - **Lifetime parameters where elision applies.** `fn f<'a>(x: &'a str) -> &'a str` for a single-input single-output function. Drop the annotations; they obscure the signature.
+      - **Returning a reference to a local.** `fn make() -> &str { let s = String::from(""); &s }` — the local drops at the end of `make`. Return an owned `String`.
+      - **`unsafe { ... }` to bypass the borrow checker.** Almost always a bug. `unsafe` is for FFI, raw pointers, and low-level data structures; it does not turn off aliasing rules — UB will bite you later.
+      - **Storing `&self` in a struct field.** Self-referential structs require pinning (`Pin`) or a tree shape that owns its parts. The compiler will refuse straightforwardly.
+      - **`Box<dyn Trait>` when `impl Trait` would do.** `Box` allocates; `impl Trait` in return position does not. Reach for `Box<dyn>` only when you need heterogeneous return types (e.g., a `Vec<Box<dyn Animal>>`).
+
+  - sequence: 8
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] `cargo clippy -- -D warnings` exits 0; in particular no `clippy::needless_lifetimes`, `clippy::redundant_clone`, or `clippy::needless_borrow` lints.
+      - [ ] `grep -n 'Rc<RefCell<' src/` results are intentional shared-mutable cases, each with a short comment explaining why.
+      - [ ] No function signature carries an explicit lifetime that elision would have inferred (verifiable by removing the lifetime and running `cargo check`).
+      - [ ] No `.clone()` call exists where a `&T` borrow would have compiled — check by replacing the clone with `&` and running `cargo check`.
+      - [ ] `unsafe` blocks (if any) are documented with a `// SAFETY:` comment per the rustc lint `clippy::undocumented_unsafe_blocks`.
+      - [ ] No function returns a reference to a local — `cargo check` would fail; verified by build passing.
+      - [ ] `Box<dyn Trait>` appears only where heterogeneous types are stored or returned; single-type returns use `impl Trait`.
