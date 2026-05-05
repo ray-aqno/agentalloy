@@ -11,7 +11,7 @@ from typing import Any, cast
 
 import httpx
 
-DEFAULT_TIMEOUT = httpx.Timeout(connect=5.0, read=900.0, write=30.0, pool=5.0)
+DEFAULT_TIMEOUT = httpx.Timeout(connect=5.0, read=1800.0, write=30.0, pool=5.0)
 
 
 class LMClientError(Exception):
