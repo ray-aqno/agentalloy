@@ -1,0 +1,49 @@
+# Skill Writing Voice
+
+**skill_id:** sys-skill-writing-voice
+**category:** tooling
+**always_apply:** false
+**phase_scope:**
+**category_scope:** tooling
+**author:** navistone
+**change_summary:** initial authoring 2026-05-04 — conventions pack, codifies the second-person directive voice and concision rules used across the skillsmith corpus.
+
+Skill prose is read by agents under retrieval pressure — the agent surfaces a fragment, parses it, and acts. The voice must match that consumption pattern: declarative, second-person, no hedging, no narrative throat-clearing. Every sentence either gives the reader a directive, a fact, or a reason. Sentences that do none of those are dropped.
+
+## Second-person directive
+
+Address the reader directly. Use "you" sparingly, but use the imperative everywhere: "Fetch the docs first." "Verify the signature against the raw body." "Drop the item if you cannot write the check." Avoid third-person constructions ("the developer should fetch the docs") — they add a layer of distance that wastes tokens and softens the directive.
+
+## No hedging
+
+Drop "you might want to consider", "it would be a good idea to", "in general it is preferable to". Replace with the assertion: "Use exponential backoff with full jitter." If the rule has exceptions, name them inline: "Use exponential backoff with full jitter — full jitter, not bounded jitter, because bounded jitter underutilizes the retry budget."
+
+Hedge words specifically banned: `might`, `could`, `perhaps`, `arguably`, `generally`, `usually` (when used to soften), `tends to`, `often`. Acceptable when they carry empirical content: "Stripe usually retries for up to three days" is fine because "usually" is reporting Stripe's documented behavior, not softening a recommendation.
+
+## No throat-clearing
+
+Cut openings like "It is important to note that", "Before we proceed, let us first consider", "One thing to keep in mind is that". Open with the assertion. The reader is an agent under tool-call pressure — preamble is pure cost.
+
+## No second-person plural
+
+Avoid "we" and "let us". The skill speaks to one reader (the agent or the developer). "We will now configure the middleware" is wrong; "Configure the middleware" is right.
+
+## Active voice over passive
+
+Passive voice obscures the actor and is harder to verify. "The signature must be verified" leaves "by what" implicit; "Verify the signature in the route handler before parsing the body" names the actor and the location.
+
+## Cite primary sources inline
+
+When a fact comes from a vendor doc, cite it inline with a date stamp: "Stripe webhook retries continue for up to three days in live mode (verified 2026-05-04, https://stripe.com/docs/webhooks#retries)". Inline citation is queryable; a footnote at the end of `raw_prose` is not, because retrieval may surface a fragment without the footnote.
+
+## Voice anti-patterns
+
+- **Apology voice.** "Sorry, this section is brief — the docs are sparse." Drop the apology; either find better docs (per `sys-r1-tiered-sourcing`) or trim the section.
+- **Conversational filler.** "Now, let us look at the verification step." Cut to "Verification —".
+- **Over-qualified claims.** "It is generally considered a best practice to use HMAC-SHA256." Replace with "Use HMAC-SHA256 — it is the field-consensus signing primitive (verified 2026-05-04)."
+- **Editorial commentary.** "Surprisingly, some teams still use HMAC-SHA1." Drop "surprisingly" — the reader does not need the author's reaction; they need the directive.
+
+## Verified
+
+- Voice rules informed by adversarial review of batch 2 and the mattpocock import (verified 2026-04-28). Throat-clearing and apology voice were the two most common cuts in those reviews.
+- Active-voice preference informed by retrieval testing — passive constructions reduced surface match on direct verb queries (verified 2026-04-29).
