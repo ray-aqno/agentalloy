@@ -1,0 +1,449 @@
+skill_type: domain
+skill_id: node-built-in-test-runner
+canonical_name: Node.js Built-in Test Runner (node:test, assert, mocking)
+category: engineering
+skill_class: domain
+domain_tags: [node-test, node-assert, mock-fn, subtest, lifecycle-hooks]
+always_apply: false
+phase_scope: null
+category_scope: language
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-04. Sources — Node.js 22 test docs https://nodejs.org/docs/latest-v22.x/api/test.html (verified 2026-05-04 against fixtures/upstream/curated/nodejs.yaml topic `testing_idioms`); assert docs https://nodejs.org/docs/latest-v22.x/api/assert.html. Skill scope: Node's built-in test runner (`node --test`) and assert module; not third-party runners (Jest, Vitest, Mocha — covered in tooling packs), not test philosophy (covered in core/test-driven-development).
+
+raw_prose: |
+  # Node.js Built-in Test Runner
+
+  Node.js ships with a test runner (`node:test`) and assertion library (`node:assert`) that need no external dependencies. The rule is one sentence: prefer the built-in runner for new Node-only projects, organize tests with nested `describe`/`test` (or just `test`), use `node:assert/strict` for assertions, and rely on `t.mock` and `import.meta.dirname` instead of pulling in Jest/Sinon. Most "I want to test Node code" decisions today should default to the built-in runner; reach for Vitest or Jest only when you specifically need their ecosystem (Vue/React component testing, snapshot testing, watch UIs).
+
+  ## Why use the built-in runner
+
+  Three reasons:
+
+  - **Zero dependencies.** `npm install` adds nothing for testing. CI is faster; `package.json` is shorter; vulnerability surface is smaller.
+  - **Native ESM and TypeScript-friendly.** Works with `node --test --experimental-strip-types` (24+) or `tsx`/`tsm` for TypeScript. No transformer config.
+  - **Standard, future-proof.** It is part of Node; it will be there in five years. Third-party runners come and go (Mocha → Jest → Vitest); the built-in runner stays.
+
+  Trade-offs vs. third-party runners:
+
+  - **Less ecosystem.** No `jest.fn()` plugin galaxy, no Vitest UI, no out-of-the-box browser-component testing.
+  - **Sparser snapshot testing.** Built-in support is basic; for rich snapshots, Vitest is better.
+  - **Less mature watch mode.** Improving each release; Vitest's watch UX is currently nicer.
+
+  For backend Node code, libraries, and CLIs, the built-in runner is the right default in 2026. For frontend or component-heavy work, the framework-specific runner usually wins.
+
+  ## Basic test shape
+
+  ```js
+  // math.test.js
+  import { test, describe } from "node:test";
+  import assert from "node:assert/strict";
+  import { add } from "./math.js";
+
+  describe("add", () => {
+    test("adds two numbers", () => {
+      assert.equal(add(1, 2), 3);
+    });
+
+    test("adds negative numbers", () => {
+      assert.equal(add(-1, -2), -3);
+    });
+  });
+  ```
+
+  Run with `node --test`. Node discovers files matching `**/*.test.{js,mjs,cjs,ts,mts,cts}` by default; pass file paths to `node --test path/to/test.js` to be specific.
+
+  Two rules:
+
+  - **Always import from `node:assert/strict`, not `node:assert`.** The strict version uses `===` comparisons and avoids type-coercion bugs (`assert.equal("1", 1)` passes in non-strict, fails in strict).
+  - **`describe` is optional.** A flat list of `test(...)` calls works fine. Use `describe` for grouping when nesting helps readability.
+
+  ## Subtests and async
+
+  Tests can have subtests via `t.test`:
+
+  ```js
+  test("user lifecycle", async (t) => {
+    await t.test("creates a user", async () => {
+      const u = await createUser({ name: "alice" });
+      assert.equal(u.name, "alice");
+    });
+
+    await t.test("deletes a user", async () => {
+      await deleteUser(userId);
+      assert.equal(await getUser(userId), null);
+    });
+  });
+  ```
+
+  Subtests run sequentially within their parent. They're useful for shared setup/teardown across a small group of related tests. For larger groups, `describe` is cleaner.
+
+  All test functions can be `async`. The runner awaits the returned promise. No need for explicit `done` callbacks.
+
+  ## `before`, `after`, `beforeEach`, `afterEach`
+
+  Lifecycle hooks live in scope:
+
+  ```js
+  describe("UserService", () => {
+    let db;
+
+    before(async () => {
+      db = await openTestDb();
+    });
+
+    after(async () => {
+      await db.close();
+    });
+
+    beforeEach(async () => {
+      await db.truncate("users");
+    });
+
+    test("creates a user", async () => {
+      const u = await createUser(db, { name: "alice" });
+      assert.equal(u.name, "alice");
+    });
+  });
+  ```
+
+  All four hooks accept async functions. The runner awaits them in order.
+
+  Use `before`/`after` for expensive one-time setup (DB connection, server boot). Use `beforeEach`/`afterEach` for per-test isolation (clearing state, resetting fixtures). Without `beforeEach`, tests can become order-dependent — a regression that bites every team eventually.
+
+  ## Assertions with `node:assert/strict`
+
+  The strict assert namespace covers most needs:
+
+  ```js
+  import assert from "node:assert/strict";
+
+  assert.equal(actual, expected);          // ===
+  assert.deepEqual(actual, expected);      // structural
+  assert.notEqual(actual, expected);
+  assert.match(string, /regex/);
+  assert.ok(value);                        // truthy
+  assert.throws(fn, /ExpectedErrorMessage/);
+  await assert.rejects(asyncFn, ErrorClass);
+  ```
+
+  Two patterns worth knowing:
+
+  - **`assert.deepEqual` for structural comparison.** Compares objects recursively. Works for arrays, plain objects, Maps, Sets, and Date. Does not compare class instances structurally — instances of different classes are unequal even with identical fields.
+  - **`assert.rejects` for async errors.** `await assert.rejects(asyncFn, /pattern/)` validates that `asyncFn` rejects with an error matching `pattern`. Sync equivalent is `assert.throws`.
+
+  Avoid `assert.fail()` as a substitute for "this should not happen" — it loses context. Use `assert.equal(false, true, "explanation")` if you need a custom failure message.
+
+  ## Mocking with `t.mock`
+
+  The built-in runner has a mocking API on the test context:
+
+  ```js
+  test("calls fetch", async (t) => {
+    const fetchMock = t.mock.method(globalThis, "fetch", async () => {
+      return new Response('{"ok":true}', { status: 200 });
+    });
+
+    const result = await loadConfig();
+    assert.equal(fetchMock.mock.callCount(), 1);
+    assert.deepEqual(fetchMock.mock.calls[0].arguments, ["/config"]);
+  });
+  ```
+
+  `t.mock.method(obj, name, replacement)` replaces a method, restores it on test end. `t.mock.fn(replacement)` creates a standalone mock. `t.mock.timers` lets you advance fake timers without `sinon`.
+
+  The built-in mocks cover the common cases: function spies, method replacement, fake timers. For module-level mocks (replacing an entire imported module), the runner's support is more limited; for that, libraries like `esmock` or Vitest's mocks remain ahead.
+
+  ## Running tests
+
+  ```bash
+  # Run all .test.* files in the project
+  node --test
+
+  # Specific file
+  node --test test/math.test.js
+
+  # Watch mode
+  node --test --watch
+
+  # Concurrency (default is os.cpus().length)
+  node --test --test-concurrency=4
+
+  # TypeScript (Node 22.6+)
+  node --test --experimental-strip-types test/foo.test.ts
+
+  # Filter by test name
+  node --test --test-name-pattern="creates a user"
+
+  # Reporter
+  node --test --test-reporter=spec  # human-readable
+  node --test --test-reporter=tap   # CI-friendly
+  ```
+
+  For CI, `--test-reporter=tap` is interoperable with most CI dashboards. For local dev, `--test-reporter=spec` is more readable.
+
+  ## Anti-patterns
+
+  - **Importing from `node:assert` instead of `node:assert/strict`.** Loose equality bugs (`"1" == 1` passes, surprising the reader).
+  - **Test order dependence.** A test that only works after another test ran. Use `beforeEach` to reset state.
+  - **Real network/database calls in unit tests.** Slow, flaky, hard to parallelize. Use mocks for unit tests; use real services only in integration tests, gated separately.
+  - **Tests with no assertions.** `test("does the thing", () => { doTheThing() })` passes whether or not the function works. Always assert.
+  - **`it.only` / `test.only` left in code.** Skips every other test. Lint for it; CI should fail when it ships.
+  - **Mixing the built-in runner with Jest/Mocha in the same project.** Pick one. Each has its own discovery, runner, reporters.
+  - **Using `node --test` without `--test-reporter`.** Default reporter is fine locally; for CI, set tap or spec explicitly.
+
+  ## When the built-in runner is not enough
+
+  The cases where I would still reach for Vitest or Jest:
+
+  - **Component testing for React/Vue/Svelte.** Vitest integrates with the framework's test utilities and handles JSX/TSX seamlessly.
+  - **Snapshot testing at scale.** Both Vitest and Jest have richer snapshot tooling.
+  - **Browser-mode testing.** Vitest can run tests in a real browser via Playwright; the built-in runner cannot.
+  - **A monorepo where one package already uses Vitest.** Consistency matters more than runner micro-features.
+
+  For everything else — backend libraries, CLIs, plain TS/JS modules — the built-in runner is now the right default.
+
+  ## Verification
+
+  - [ ] Tests import from `node:assert/strict`, not `node:assert`.
+  - [ ] Test files match the discovery pattern (`*.test.{js,mjs,cjs,ts,mts,cts}`); the project runs `node --test` in CI.
+  - [ ] Per-test isolation uses `beforeEach`/`afterEach`; tests do not depend on execution order.
+  - [ ] Async tests are `async` functions or return Promises; no `done` callbacks.
+  - [ ] Mocks are scoped to the test (`t.mock.method`, `t.mock.fn`); restored automatically on test end.
+  - [ ] No `test.only` or `it.only` in committed code.
+  - [ ] CI uses `--test-reporter=tap` (or another structured reporter) so test results integrate with the dashboard.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Node.js Built-in Test Runner
+
+      Node.js ships with a test runner (`node:test`) and assertion library (`node:assert`) that need no external dependencies. The rule is one sentence: prefer the built-in runner for new Node-only projects, organize tests with nested `describe`/`test` (or just `test`), use `node:assert/strict` for assertions, and rely on `t.mock` and `import.meta.dirname` instead of pulling in Jest/Sinon. Most "I want to test Node code" decisions today should default to the built-in runner; reach for Vitest or Jest only when you specifically need their ecosystem (Vue/React component testing, snapshot testing, watch UIs).
+
+  - sequence: 2
+    fragment_type: rationale
+    content: |
+      ## Why use the built-in runner
+
+      Three reasons:
+
+      - **Zero dependencies.** `npm install` adds nothing for testing. CI is faster; `package.json` is shorter; vulnerability surface is smaller.
+      - **Native ESM and TypeScript-friendly.** Works with `node --test --experimental-strip-types` (24+) or `tsx`/`tsm` for TypeScript. No transformer config.
+      - **Standard, future-proof.** It is part of Node; it will be there in five years. Third-party runners come and go (Mocha → Jest → Vitest); the built-in runner stays.
+
+      Trade-offs vs. third-party runners:
+
+      - **Less ecosystem.** No `jest.fn()` plugin galaxy, no Vitest UI, no out-of-the-box browser-component testing.
+      - **Sparser snapshot testing.** Built-in support is basic; for rich snapshots, Vitest is better.
+      - **Less mature watch mode.** Improving each release; Vitest's watch UX is currently nicer.
+
+      For backend Node code, libraries, and CLIs, the built-in runner is the right default in 2026. For frontend or component-heavy work, the framework-specific runner usually wins.
+
+  - sequence: 3
+    fragment_type: example
+    content: |
+      ## Basic test shape
+
+      ```js
+      // math.test.js
+      import { test, describe } from "node:test";
+      import assert from "node:assert/strict";
+      import { add } from "./math.js";
+
+      describe("add", () => {
+        test("adds two numbers", () => {
+          assert.equal(add(1, 2), 3);
+        });
+
+        test("adds negative numbers", () => {
+          assert.equal(add(-1, -2), -3);
+        });
+      });
+      ```
+
+      Run with `node --test`. Node discovers files matching `**/*.test.{js,mjs,cjs,ts,mts,cts}` by default; pass file paths to `node --test path/to/test.js` to be specific.
+
+      Two rules:
+
+      - **Always import from `node:assert/strict`, not `node:assert`.** The strict version uses `===` comparisons and avoids type-coercion bugs (`assert.equal("1", 1)` passes in non-strict, fails in strict).
+      - **`describe` is optional.** A flat list of `test(...)` calls works fine. Use `describe` for grouping when nesting helps readability.
+
+  - sequence: 4
+    fragment_type: example
+    content: |
+      ## Subtests and async
+
+      Tests can have subtests via `t.test`:
+
+      ```js
+      test("user lifecycle", async (t) => {
+        await t.test("creates a user", async () => {
+          const u = await createUser({ name: "alice" });
+          assert.equal(u.name, "alice");
+        });
+
+        await t.test("deletes a user", async () => {
+          await deleteUser(userId);
+          assert.equal(await getUser(userId), null);
+        });
+      });
+      ```
+
+      Subtests run sequentially within their parent. They're useful for shared setup/teardown across a small group of related tests. For larger groups, `describe` is cleaner.
+
+      All test functions can be `async`. The runner awaits the returned promise. No need for explicit `done` callbacks.
+
+  - sequence: 5
+    fragment_type: example
+    content: |
+      ## `before`, `after`, `beforeEach`, `afterEach`
+
+      Lifecycle hooks live in scope:
+
+      ```js
+      describe("UserService", () => {
+        let db;
+
+        before(async () => {
+          db = await openTestDb();
+        });
+
+        after(async () => {
+          await db.close();
+        });
+
+        beforeEach(async () => {
+          await db.truncate("users");
+        });
+
+        test("creates a user", async () => {
+          const u = await createUser(db, { name: "alice" });
+          assert.equal(u.name, "alice");
+        });
+      });
+      ```
+
+      All four hooks accept async functions. The runner awaits them in order.
+
+      Use `before`/`after` for expensive one-time setup (DB connection, server boot). Use `beforeEach`/`afterEach` for per-test isolation (clearing state, resetting fixtures). Without `beforeEach`, tests can become order-dependent — a regression that bites every team eventually.
+
+  - sequence: 6
+    fragment_type: example
+    content: |
+      ## Assertions with `node:assert/strict`
+
+      The strict assert namespace covers most needs:
+
+      ```js
+      import assert from "node:assert/strict";
+
+      assert.equal(actual, expected);          // ===
+      assert.deepEqual(actual, expected);      // structural
+      assert.notEqual(actual, expected);
+      assert.match(string, /regex/);
+      assert.ok(value);                        // truthy
+      assert.throws(fn, /ExpectedErrorMessage/);
+      await assert.rejects(asyncFn, ErrorClass);
+      ```
+
+      Two patterns worth knowing:
+
+      - **`assert.deepEqual` for structural comparison.** Compares objects recursively. Works for arrays, plain objects, Maps, Sets, and Date. Does not compare class instances structurally — instances of different classes are unequal even with identical fields.
+      - **`assert.rejects` for async errors.** `await assert.rejects(asyncFn, /pattern/)` validates that `asyncFn` rejects with an error matching `pattern`. Sync equivalent is `assert.throws`.
+
+      Avoid `assert.fail()` as a substitute for "this should not happen" — it loses context. Use `assert.equal(false, true, "explanation")` if you need a custom failure message.
+
+  - sequence: 7
+    fragment_type: example
+    content: |
+      ## Mocking with `t.mock`
+
+      The built-in runner has a mocking API on the test context:
+
+      ```js
+      test("calls fetch", async (t) => {
+        const fetchMock = t.mock.method(globalThis, "fetch", async () => {
+          return new Response('{"ok":true}', { status: 200 });
+        });
+
+        const result = await loadConfig();
+        assert.equal(fetchMock.mock.callCount(), 1);
+        assert.deepEqual(fetchMock.mock.calls[0].arguments, ["/config"]);
+      });
+      ```
+
+      `t.mock.method(obj, name, replacement)` replaces a method, restores it on test end. `t.mock.fn(replacement)` creates a standalone mock. `t.mock.timers` lets you advance fake timers without `sinon`.
+
+      The built-in mocks cover the common cases: function spies, method replacement, fake timers. For module-level mocks (replacing an entire imported module), the runner's support is more limited; for that, libraries like `esmock` or Vitest's mocks remain ahead.
+
+  - sequence: 8
+    fragment_type: execution
+    content: |
+      ## Running tests
+
+      ```bash
+      # Run all .test.* files in the project
+      node --test
+
+      # Specific file
+      node --test test/math.test.js
+
+      # Watch mode
+      node --test --watch
+
+      # Concurrency (default is os.cpus().length)
+      node --test --test-concurrency=4
+
+      # TypeScript (Node 22.6+)
+      node --test --experimental-strip-types test/foo.test.ts
+
+      # Filter by test name
+      node --test --test-name-pattern="creates a user"
+
+      # Reporter
+      node --test --test-reporter=spec  # human-readable
+      node --test --test-reporter=tap   # CI-friendly
+      ```
+
+      For CI, `--test-reporter=tap` is interoperable with most CI dashboards. For local dev, `--test-reporter=spec` is more readable.
+
+  - sequence: 9
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      - **Importing from `node:assert` instead of `node:assert/strict`.** Loose equality bugs (`"1" == 1` passes, surprising the reader).
+      - **Test order dependence.** A test that only works after another test ran. Use `beforeEach` to reset state.
+      - **Real network/database calls in unit tests.** Slow, flaky, hard to parallelize. Use mocks for unit tests; use real services only in integration tests, gated separately.
+      - **Tests with no assertions.** `test("does the thing", () => { doTheThing() })` passes whether or not the function works. Always assert.
+      - **`it.only` / `test.only` left in code.** Skips every other test. Lint for it; CI should fail when it ships.
+      - **Mixing the built-in runner with Jest/Mocha in the same project.** Pick one. Each has its own discovery, runner, reporters.
+      - **Using `node --test` without `--test-reporter`.** Default reporter is fine locally; for CI, set tap or spec explicitly.
+
+  - sequence: 10
+    fragment_type: rationale
+    content: |
+      ## When the built-in runner is not enough
+
+      The cases where I would still reach for Vitest or Jest:
+
+      - **Component testing for React/Vue/Svelte.** Vitest integrates with the framework's test utilities and handles JSX/TSX seamlessly.
+      - **Snapshot testing at scale.** Both Vitest and Jest have richer snapshot tooling.
+      - **Browser-mode testing.** Vitest can run tests in a real browser via Playwright; the built-in runner cannot.
+      - **A monorepo where one package already uses Vitest.** Consistency matters more than runner micro-features.
+
+      For everything else — backend libraries, CLIs, plain TS/JS modules — the built-in runner is now the right default.
+
+  - sequence: 11
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] Tests import from `node:assert/strict`, not `node:assert`.
+      - [ ] Test files match the discovery pattern (`*.test.{js,mjs,cjs,ts,mts,cts}`); the project runs `node --test` in CI.
+      - [ ] Per-test isolation uses `beforeEach`/`afterEach`; tests do not depend on execution order.
+      - [ ] Async tests are `async` functions or return Promises; no `done` callbacks.
+      - [ ] Mocks are scoped to the test (`t.mock.method`, `t.mock.fn`); restored automatically on test end.
+      - [ ] No `test.only` or `it.only` in committed code.
+      - [ ] CI uses `--test-reporter=tap` (or another structured reporter) so test results integrate with the dashboard.

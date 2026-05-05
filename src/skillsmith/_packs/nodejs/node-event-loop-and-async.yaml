@@ -1,0 +1,321 @@
+skill_type: domain
+skill_id: node-event-loop-and-async
+canonical_name: Node.js Event Loop and Async (Phases, Microtasks, AsyncLocalStorage)
+category: engineering
+skill_class: domain
+domain_tags: [event-loop-phases, microtask-queue, async-local-storage, worker-threads, single-threaded-runtime]
+always_apply: false
+phase_scope: null
+category_scope: language
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-04. Sources — Node.js 22 async_context docs https://nodejs.org/docs/latest-v22.x/api/async_context.html (verified 2026-05-04 against fixtures/upstream/curated/nodejs.yaml topic `concurrency_and_async`); worker_threads docs https://nodejs.org/docs/latest-v22.x/api/worker_threads.html; events docs https://nodejs.org/docs/latest-v22.x/api/events.html; libuv documentation for event-loop phase ordering. Skill scope: how Node's event loop works, where async work runs, AsyncLocalStorage for context propagation, worker_threads for CPU offload; not framework-level concurrency, not async patterns at the language level (covered in TS/python packs).
+
+raw_prose: |
+  # Node.js Event Loop and Async
+
+  Node.js runs JavaScript on a single thread driven by an event loop, with C++ libuv handling IO and threadpool tasks underneath. The rule is one sentence: do not block the loop, hand long-running CPU work to `worker_threads`, propagate request-scoped context with `AsyncLocalStorage`, and remember that microtasks (Promises) run before the next loop tick — not on the next tick. Most production Node performance issues are blocking the event loop with sync IO or CPU work, leaking context across async boundaries, or misunderstanding the order in which queued callbacks fire.
+
+  ## The event loop has phases, in order
+
+  Each tick of the event loop walks through phases:
+
+  1. **Timers.** `setTimeout` and `setInterval` callbacks whose deadline has passed.
+  2. **Pending callbacks.** Some system-level errors and TCP callbacks.
+  3. **Idle, prepare.** Internal Node bookkeeping.
+  4. **Poll.** Wait for IO events; execute IO callbacks. Most IO work runs here.
+  5. **Check.** `setImmediate` callbacks.
+  6. **Close callbacks.** `'close'` events on closed handles.
+
+  Between *every* callback (in any phase), the microtask queue drains: Promise `.then` callbacks and `queueMicrotask` callbacks all run before returning to the loop. This is the most common surprise — `Promise.resolve().then(fn)` runs sooner than `setImmediate(fn)` even though both are "next thing on the queue."
+
+  Practical implications:
+
+  - **`setImmediate` vs `setTimeout(fn, 0)`.** Both schedule work for "soon." `setImmediate` runs in the check phase; `setTimeout(fn, 0)` runs in the timers phase next tick. From inside an IO callback, `setImmediate` runs first; from the top level, the order is non-deterministic.
+  - **Microtasks starve the loop.** A long chain of `.then(.then(.then(...)))` runs all microtasks before the loop advances. If any of those handlers does CPU work, IO callbacks back up.
+
+  ## Do not block the loop
+
+  Anything that blocks blocks every concurrent operation. Common offenders:
+
+  - **Sync filesystem calls.** `fs.readFileSync`, `fs.writeFileSync`. Use `fs.promises` or callbacks.
+  - **`JSON.parse` on huge payloads.** Parsing a 100MB JSON blocks. Stream with a parser like `stream-json`, or move parsing off the main thread.
+  - **Heavy regex.** Catastrophic backtracking on adversarial input freezes Node. Validate regex patterns; use `RegExp` timeouts where available.
+  - **Synchronous loops over large arrays.** A million-element `.map` blocks. Break work with `setImmediate` or process in chunks.
+  - **Native crypto hashing of large blobs.** `crypto.createHash().update(big_buffer).digest()` is sync. Use streaming hash for large inputs.
+
+  When the work is unavoidably CPU-heavy, offload to a worker thread (below) or to a child process.
+
+  ## `worker_threads` for CPU-bound work
+
+  `worker_threads` runs JavaScript on a separate thread with its own event loop. Use it when you need to do real CPU work without blocking the main loop:
+
+  ```js
+  // main.js
+  import { Worker } from "node:worker_threads";
+
+  const worker = new Worker("./compute.js", { workerData: { input } });
+  worker.on("message", (result) => console.log(result));
+  worker.on("error", (err) => console.error(err));
+
+  // compute.js
+  import { parentPort, workerData } from "node:worker_threads";
+  const result = expensiveComputation(workerData.input);
+  parentPort.postMessage(result);
+  ```
+
+  Workers communicate via message passing (`postMessage` / `'message'` events). `SharedArrayBuffer` allows zero-copy sharing for numeric data; for everything else, messages are structured-cloned (a copy).
+
+  Workers are not free — startup cost is real (tens of milliseconds), and message passing has overhead. Pool workers (`piscina`, `node:worker_threads.Worker` with a job queue) for repeated CPU tasks rather than spinning up a worker per request.
+
+  Reach for child processes (`child_process.spawn`) when the work needs a separate Node process or a different runtime; reach for workers when you want shared parent context with separate execution.
+
+  ## `AsyncLocalStorage` for context propagation
+
+  Request-scoped context (the current user, request ID, tenant, OpenTelemetry trace ID) is hard to thread through async chains explicitly. `AsyncLocalStorage` solves this:
+
+  ```js
+  import { AsyncLocalStorage } from "node:async_hooks";
+
+  const requestContext = new AsyncLocalStorage();
+
+  app.use((req, res, next) => {
+    requestContext.run({ requestId: req.headers["x-request-id"] }, () => next());
+  });
+
+  function logSomething(message) {
+    const ctx = requestContext.getStore();
+    console.log(`[${ctx?.requestId ?? "no-req"}] ${message}`);
+  }
+  ```
+
+  `requestContext.run(value, fn)` sets the store for the duration of `fn` and any async work `fn` initiates. Inside that work, `getStore()` returns the value — even after multiple `await`s, deep stack frames, callbacks.
+
+  This works because Node tracks "the async context" through every callback and Promise resolution. The cost is a small per-async-op overhead.
+
+  Use `AsyncLocalStorage` for:
+
+  - Request IDs / correlation IDs.
+  - Database transaction handles (per-request).
+  - Authentication context.
+  - OpenTelemetry trace context (auto-injected by some libraries).
+
+  Do not use it for application state that should be explicit. The "magic" of context propagation makes code harder to read; reserve for cross-cutting concerns where threading the value would touch every function.
+
+  ## Promise patterns specific to Node
+
+  Most async APIs in Node have a `fs.promises` / `node:dns/promises` style — promise variants exist alongside callback variants. Always prefer the promise variant in new code:
+
+  ```js
+  // Old style
+  fs.readFile(path, (err, data) => { ... });
+
+  // New style
+  const data = await fs.promises.readFile(path);
+  // or
+  import { readFile } from "node:fs/promises";
+  ```
+
+  Two patterns worth knowing:
+
+  - **`util.promisify`** wraps a callback-style function into a promise. Useful for legacy APIs that have not been promised yet.
+  - **`stream/promises.pipeline`** runs a stream pipeline and returns a promise that resolves when complete. Replaces older `pipeline(streams, cb)`.
+
+  ## Anti-patterns
+
+  - **`fs.readFileSync` in a request handler.** Blocks every other request. Use `fs.promises.readFile`.
+  - **Spinning up a worker per request without a pool.** Worker startup is ~10–50ms; per-request workers tank performance.
+  - **Catching `unhandledRejection` without logging.** The handler runs, but if you do not log, the bug is invisible. Always at least log.
+  - **Using `process.nextTick` recursively.** `process.nextTick` runs before any IO event; recursive next-tick can starve the loop. Use `setImmediate` for "next iteration."
+  - **Mixing callback APIs and promise APIs in the same flow.** Reads inconsistently; debugger steps weirdly. Convert one direction.
+  - **Forgetting to `await` an async function.** Returns a Promise that nobody handles; if it rejects, you get an unhandledRejection. Always handle the return.
+  - **Catching errors with bare `try`/`catch` around `setTimeout` callbacks.** The callback runs in a different async frame; the try/catch does not catch its errors. Use `process.on("uncaughtException")` or wrap the callback body in its own try/catch.
+
+  ## Production tuning knobs
+
+  A handful of CLI flags matter for real Node deployments:
+
+  - **`--max-old-space-size=N`** — sets V8 heap size in MB. Default ~1.5GB on 64-bit. Bump for memory-heavy workloads.
+  - **`--enable-source-maps`** — improves stack traces from transpiled code.
+  - **`--inspect=host:port`** or `--inspect-brk` — enable DevTools/IDE debugger. Do not enable in production unless behind firewall.
+  - **`--unhandled-rejections=strict`** — the default in v15+, makes unhandled rejections crash the process. Do not change unless you have a reason; a crashing process restarted by the orchestrator is healthier than a wedged process with silent rejections.
+
+  Tuning these per-deployment is one place where reading `node --help` actually pays off.
+
+  ## Verification
+
+  - [ ] No sync filesystem or sync crypto calls in request paths; `fs.promises` (or `node:fs/promises`) is used throughout.
+  - [ ] CPU-bound work that blocks > a few ms is offloaded to `worker_threads` (with a pool) or a child process.
+  - [ ] Request-scoped context (request ID, user, tenant) is propagated via `AsyncLocalStorage`, not threaded through every function call manually.
+  - [ ] Microtask chains are bounded; no infinite `.then` chains starving the IO phase.
+  - [ ] All async function calls are either `await`-ed or have explicit `.catch` handlers; no orphan Promises.
+  - [ ] `process.on("uncaughtException")` and `process.on("unhandledRejection")` handlers log and (optionally) crash; they do not silently swallow.
+  - [ ] Production deployments set `--max-old-space-size` appropriately; `--inspect` is not exposed publicly.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Node.js Event Loop and Async
+
+      Node.js runs JavaScript on a single thread driven by an event loop, with C++ libuv handling IO and threadpool tasks underneath. The rule is one sentence: do not block the loop, hand long-running CPU work to `worker_threads`, propagate request-scoped context with `AsyncLocalStorage`, and remember that microtasks (Promises) run before the next loop tick — not on the next tick. Most production Node performance issues are blocking the event loop with sync IO or CPU work, leaking context across async boundaries, or misunderstanding the order in which queued callbacks fire.
+
+  - sequence: 2
+    fragment_type: rationale
+    content: |
+      ## The event loop has phases, in order
+
+      Each tick of the event loop walks through phases:
+
+      1. **Timers.** `setTimeout` and `setInterval` callbacks whose deadline has passed.
+      2. **Pending callbacks.** Some system-level errors and TCP callbacks.
+      3. **Idle, prepare.** Internal Node bookkeeping.
+      4. **Poll.** Wait for IO events; execute IO callbacks. Most IO work runs here.
+      5. **Check.** `setImmediate` callbacks.
+      6. **Close callbacks.** `'close'` events on closed handles.
+
+      Between *every* callback (in any phase), the microtask queue drains: Promise `.then` callbacks and `queueMicrotask` callbacks all run before returning to the loop. This is the most common surprise — `Promise.resolve().then(fn)` runs sooner than `setImmediate(fn)` even though both are "next thing on the queue."
+
+      Practical implications:
+
+      - **`setImmediate` vs `setTimeout(fn, 0)`.** Both schedule work for "soon." `setImmediate` runs in the check phase; `setTimeout(fn, 0)` runs in the timers phase next tick. From inside an IO callback, `setImmediate` runs first; from the top level, the order is non-deterministic.
+      - **Microtasks starve the loop.** A long chain of `.then(.then(.then(...)))` runs all microtasks before the loop advances. If any of those handlers does CPU work, IO callbacks back up.
+
+  - sequence: 3
+    fragment_type: execution
+    content: |
+      ## Do not block the loop
+
+      Anything that blocks blocks every concurrent operation. Common offenders:
+
+      - **Sync filesystem calls.** `fs.readFileSync`, `fs.writeFileSync`. Use `fs.promises` or callbacks.
+      - **`JSON.parse` on huge payloads.** Parsing a 100MB JSON blocks. Stream with a parser like `stream-json`, or move parsing off the main thread.
+      - **Heavy regex.** Catastrophic backtracking on adversarial input freezes Node. Validate regex patterns; use `RegExp` timeouts where available.
+      - **Synchronous loops over large arrays.** A million-element `.map` blocks. Break work with `setImmediate` or process in chunks.
+      - **Native crypto hashing of large blobs.** `crypto.createHash().update(big_buffer).digest()` is sync. Use streaming hash for large inputs.
+
+      When the work is unavoidably CPU-heavy, offload to a worker thread (below) or to a child process.
+
+  - sequence: 4
+    fragment_type: example
+    content: |
+      ## `worker_threads` for CPU-bound work
+
+      `worker_threads` runs JavaScript on a separate thread with its own event loop. Use it when you need to do real CPU work without blocking the main loop:
+
+      ```js
+      // main.js
+      import { Worker } from "node:worker_threads";
+
+      const worker = new Worker("./compute.js", { workerData: { input } });
+      worker.on("message", (result) => console.log(result));
+      worker.on("error", (err) => console.error(err));
+
+      // compute.js
+      import { parentPort, workerData } from "node:worker_threads";
+      const result = expensiveComputation(workerData.input);
+      parentPort.postMessage(result);
+      ```
+
+      Workers communicate via message passing (`postMessage` / `'message'` events). `SharedArrayBuffer` allows zero-copy sharing for numeric data; for everything else, messages are structured-cloned (a copy).
+
+      Workers are not free — startup cost is real (tens of milliseconds), and message passing has overhead. Pool workers (`piscina`, `node:worker_threads.Worker` with a job queue) for repeated CPU tasks rather than spinning up a worker per request.
+
+      Reach for child processes (`child_process.spawn`) when the work needs a separate Node process or a different runtime; reach for workers when you want shared parent context with separate execution.
+
+  - sequence: 5
+    fragment_type: example
+    content: |
+      ## `AsyncLocalStorage` for context propagation
+
+      Request-scoped context (the current user, request ID, tenant, OpenTelemetry trace ID) is hard to thread through async chains explicitly. `AsyncLocalStorage` solves this:
+
+      ```js
+      import { AsyncLocalStorage } from "node:async_hooks";
+
+      const requestContext = new AsyncLocalStorage();
+
+      app.use((req, res, next) => {
+        requestContext.run({ requestId: req.headers["x-request-id"] }, () => next());
+      });
+
+      function logSomething(message) {
+        const ctx = requestContext.getStore();
+        console.log(`[${ctx?.requestId ?? "no-req"}] ${message}`);
+      }
+      ```
+
+      `requestContext.run(value, fn)` sets the store for the duration of `fn` and any async work `fn` initiates. Inside that work, `getStore()` returns the value — even after multiple `await`s, deep stack frames, callbacks.
+
+      This works because Node tracks "the async context" through every callback and Promise resolution. The cost is a small per-async-op overhead.
+
+      Use `AsyncLocalStorage` for:
+
+      - Request IDs / correlation IDs.
+      - Database transaction handles (per-request).
+      - Authentication context.
+      - OpenTelemetry trace context (auto-injected by some libraries).
+
+      Do not use it for application state that should be explicit. The "magic" of context propagation makes code harder to read; reserve for cross-cutting concerns where threading the value would touch every function.
+
+  - sequence: 6
+    fragment_type: example
+    content: |
+      ## Promise patterns specific to Node
+
+      Most async APIs in Node have a `fs.promises` / `node:dns/promises` style — promise variants exist alongside callback variants. Always prefer the promise variant in new code:
+
+      ```js
+      // Old style
+      fs.readFile(path, (err, data) => { ... });
+
+      // New style
+      const data = await fs.promises.readFile(path);
+      // or
+      import { readFile } from "node:fs/promises";
+      ```
+
+      Two patterns worth knowing:
+
+      - **`util.promisify`** wraps a callback-style function into a promise. Useful for legacy APIs that have not been promised yet.
+      - **`stream/promises.pipeline`** runs a stream pipeline and returns a promise that resolves when complete. Replaces older `pipeline(streams, cb)`.
+
+  - sequence: 7
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      - **`fs.readFileSync` in a request handler.** Blocks every other request. Use `fs.promises.readFile`.
+      - **Spinning up a worker per request without a pool.** Worker startup is ~10–50ms; per-request workers tank performance.
+      - **Catching `unhandledRejection` without logging.** The handler runs, but if you do not log, the bug is invisible. Always at least log.
+      - **Using `process.nextTick` recursively.** `process.nextTick` runs before any IO event; recursive next-tick can starve the loop. Use `setImmediate` for "next iteration."
+      - **Mixing callback APIs and promise APIs in the same flow.** Reads inconsistently; debugger steps weirdly. Convert one direction.
+      - **Forgetting to `await` an async function.** Returns a Promise that nobody handles; if it rejects, you get an unhandledRejection. Always handle the return.
+      - **Catching errors with bare `try`/`catch` around `setTimeout` callbacks.** The callback runs in a different async frame; the try/catch does not catch its errors. Use `process.on("uncaughtException")` or wrap the callback body in its own try/catch.
+
+  - sequence: 8
+    fragment_type: rationale
+    content: |
+      ## Production tuning knobs
+
+      A handful of CLI flags matter for real Node deployments:
+
+      - **`--max-old-space-size=N`** — sets V8 heap size in MB. Default ~1.5GB on 64-bit. Bump for memory-heavy workloads.
+      - **`--enable-source-maps`** — improves stack traces from transpiled code.
+      - **`--inspect=host:port`** or `--inspect-brk` — enable DevTools/IDE debugger. Do not enable in production unless behind firewall.
+      - **`--unhandled-rejections=strict`** — the default in v15+, makes unhandled rejections crash the process. Do not change unless you have a reason; a crashing process restarted by the orchestrator is healthier than a wedged process with silent rejections.
+
+      Tuning these per-deployment is one place where reading `node --help` actually pays off.
+
+  - sequence: 9
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] No sync filesystem or sync crypto calls in request paths; `fs.promises` (or `node:fs/promises`) is used throughout.
+      - [ ] CPU-bound work that blocks > a few ms is offloaded to `worker_threads` (with a pool) or a child process.
+      - [ ] Request-scoped context (request ID, user, tenant) is propagated via `AsyncLocalStorage`, not threaded through every function call manually.
+      - [ ] Microtask chains are bounded; no infinite `.then` chains starving the IO phase.
+      - [ ] All async function calls are either `await`-ed or have explicit `.catch` handlers; no orphan Promises.
+      - [ ] `process.on("uncaughtException")` and `process.on("unhandledRejection")` handlers log and (optionally) crash; they do not silently swallow.
+      - [ ] Production deployments set `--max-old-space-size` appropriately; `--inspect` is not exposed publicly.

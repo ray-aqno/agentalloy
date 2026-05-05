@@ -1,0 +1,469 @@
+skill_type: domain
+skill_id: node-error-handling-and-process
+canonical_name: Node.js Error Handling and Process (codes, uncaughtException, exit)
+category: engineering
+skill_class: domain
+domain_tags: [error-codes, uncaught-exception, unhandled-rejection, abort-controller, signal-handling]
+always_apply: false
+phase_scope: null
+category_scope: language
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-04. Sources — Node.js 22 errors docs https://nodejs.org/docs/latest-v22.x/api/errors.html (verified 2026-05-04 against fixtures/upstream/curated/nodejs.yaml topic `error_handling_and_exceptions`); process docs https://nodejs.org/docs/latest-v22.x/api/process.html for uncaughtException, unhandledRejection, exit codes, and signal handling. Skill scope: Node-specific error handling — error codes, process-level events, signals, exit; not language-level error handling (covered in TS/python error-handling skills), not framework error middleware.
+
+raw_prose: |
+  # Node.js Error Handling and Process
+
+  Node has its own error conventions on top of JavaScript's built-in `Error`: numeric error codes, system-error wrappers, and process-level events for the errors that escape your code. The rule is one sentence: throw `Error` (or a subclass), check `err.code` for system errors, install `uncaughtException` and `unhandledRejection` handlers that log and exit, and handle SIGTERM gracefully so the orchestrator can shut you down cleanly. Most production Node crashes that are not user bugs are uncaught rejections, missing signal handlers, or ignored system error codes — all of which Node provides explicit machinery for if you use it.
+
+  ## `err.code` is the structured error identifier
+
+  Every system error in Node has a `code` field — a stable string identifier that does not change across releases. Use it for branching:
+
+  ```js
+  import { readFile } from "node:fs/promises";
+
+  try {
+    const data = await readFile("config.json");
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      // file does not exist — fall back to default config
+    } else if (err.code === "EACCES") {
+      // permissions issue — fail loudly
+      throw err;
+    } else {
+      throw err;
+    }
+  }
+  ```
+
+  Common codes you will see:
+
+  - **`ENOENT`** — file or directory does not exist.
+  - **`EACCES`** — permission denied.
+  - **`EEXIST`** — file already exists (e.g., on `mkdir`).
+  - **`EADDRINUSE`** — port already bound.
+  - **`ECONNREFUSED`** — TCP connection refused.
+  - **`ETIMEDOUT`** — operation timed out.
+  - **`ABORT_ERR`** — operation cancelled via `AbortController`.
+
+  Branch on `err.code`, not `err.message`. Messages are human-readable and may change; codes are stable.
+
+  ## Custom errors with codes
+
+  When you define a custom error, give it a `code` so callers can branch:
+
+  ```js
+  class AuthRequiredError extends Error {
+    constructor(message = "authentication required") {
+      super(message);
+      this.name = "AuthRequiredError";
+      this.code = "ERR_AUTH_REQUIRED";
+    }
+  }
+
+  // Caller
+  try {
+    await doProtected();
+  } catch (err) {
+    if (err.code === "ERR_AUTH_REQUIRED") {
+      redirectToLogin();
+    } else {
+      throw err;
+    }
+  }
+  ```
+
+  Conventions:
+
+  - **`code` is a string starting with `ERR_`** (matches Node's own error codes).
+  - **`name` matches the class name.** Useful for `instanceof`-free branching.
+  - **`cause`** can hold the underlying error (`new Error("...", { cause: originalErr })`). Preserves the chain in the stack trace.
+
+  ## `process.on("uncaughtException")`
+
+  When an exception escapes all `try`/`catch` and reaches the event loop, Node fires `uncaughtException`:
+
+  ```js
+  process.on("uncaughtException", (err, origin) => {
+    console.error("uncaught exception:", err, "origin:", origin);
+    // Log to monitoring; flush logs synchronously if possible
+    process.exit(1);
+  });
+  ```
+
+  Two non-negotiable rules:
+
+  - **Always log.** Without logging, you have a process that crashed for unknown reasons.
+  - **Always exit.** The process state may be corrupt after an uncaught exception. Trying to "recover" usually leaks resources or re-fails. Let the orchestrator (systemd, Kubernetes, PM2) restart you.
+
+  Do not use `uncaughtException` as a substitute for `try`/`catch`. It is a last-resort safety net. The right place to handle expected errors is at the throw site or at a route handler.
+
+  ## `process.on("unhandledRejection")`
+
+  Promises that reject without a `.catch` (or `try`/`catch` around `await`) trigger `unhandledRejection`:
+
+  ```js
+  process.on("unhandledRejection", (reason, promise) => {
+    console.error("unhandled rejection:", reason);
+    // Default behavior in v15+: process exits non-zero.
+    // If you do nothing, Node exits the process.
+  });
+  ```
+
+  Node 15+ defaults to `--unhandled-rejections=strict`, meaning unhandled rejections crash the process. This is the right default — leaking promise rejections in long-running services creates ghosts (state mutations that started but never finished, partial side effects).
+
+  Do not change this default to `"warn"` unless you have a specific reason and have audited every promise-returning function in your code for missing `.catch`.
+
+  ## Exit codes
+
+  `process.exit(code)` exits immediately with the given code:
+
+  - **`0`** — success.
+  - **`1`** — generic error.
+  - **`130`** — exited via SIGINT (Ctrl+C). Use this if you handle SIGINT and want orchestrators to recognize a clean ctrl-C.
+  - **`137`** — killed by SIGKILL (often OOM kill from the orchestrator).
+  - **`143`** — killed by SIGTERM.
+
+  Convention:
+
+  - **CLIs return 0 on success, non-zero on failure.** Use specific codes (2 for usage, 64+ for app-specific) so users can script around them.
+  - **Servers should not call `process.exit()` directly under normal conditions.** Let the event loop drain. Exit codes only matter when the process actually exits.
+
+  Do not call `process.exit()` from inside a request handler. Throw instead; the framework or top-level handler decides.
+
+  ## Signal handling — graceful shutdown
+
+  When an orchestrator wants to restart your process, it sends SIGTERM. Handle it:
+
+  ```js
+  let shuttingDown = false;
+
+  async function gracefulShutdown() {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log("shutting down");
+
+    server.close();              // stop accepting new connections
+    await db.disconnect();       // close DB connections
+    await flushLogsAndMetrics(); // ensure observability stays
+    process.exit(0);
+  }
+
+  process.on("SIGTERM", gracefulShutdown);
+  process.on("SIGINT", gracefulShutdown);
+  ```
+
+  The discipline:
+
+  - **Stop accepting new work.** Close the HTTP server (which waits for in-flight requests to finish).
+  - **Drain in-flight work.** Wait for active requests/jobs to complete (with a timeout).
+  - **Close downstream connections.** DB pools, message brokers, log shippers.
+  - **Exit cleanly.** `process.exit(0)`.
+
+  Without graceful shutdown, the orchestrator's SIGTERM is ignored and you eventually get SIGKILL — connections drop mid-request, in-flight work is lost.
+
+  ## `AbortController` for cancellation
+
+  Modern Node APIs accept `AbortSignal` for cancellation:
+
+  ```js
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const data = await fetch(url, { signal: controller.signal });
+  } catch (err) {
+    if (err.name === "AbortError" || err.code === "ABORT_ERR") {
+      // request was cancelled
+    } else {
+      throw err;
+    }
+  }
+  ```
+
+  Use AbortController for:
+
+  - **Request timeouts.** Cancel a fetch/db query that has run too long.
+  - **Cleanup in shutdown handlers.** Pass a shared signal that aborts on SIGTERM, propagating cancellation through async chains.
+  - **User-cancelled operations.** A long-running export that the user navigates away from.
+
+  Most modern Node APIs (`fetch`, `fs/promises`, `setTimeout` with options, `EventEmitter.once`) accept `signal`. Look for it in the API docs.
+
+  ## Anti-patterns
+
+  - **Branching on `err.message`.** Messages are not stable. Branch on `err.code`.
+  - **`process.exit()` without flushing logs.** Async log writes do not complete; you lose the last few seconds of context. Use a synchronous flush before exit.
+  - **Catching `uncaughtException` and continuing.** Process state may be corrupt. Log and exit.
+  - **Disabling strict unhandled-rejection mode.** Hides bugs; promises silently swallow errors.
+  - **No SIGTERM handler.** Orchestrator sends SIGTERM, your process ignores it, eventually SIGKILL kills it mid-request. Always handle SIGTERM.
+  - **Re-throwing without `cause`.** Loses the chain. Use `new Error("wrap", { cause: err })`.
+  - **`if (err)` truthy checks before `err.code` checks.** Useless; `err` is always truthy in a catch block. Just check `err.code`.
+
+  ## Production-error checklist
+
+  When wiring up error handling for a new Node service, verify:
+
+  - **`uncaughtException` handler logs to monitoring and exits.**
+  - **`unhandledRejection` is left at default (strict) — process exits.**
+  - **`SIGTERM`/`SIGINT` handler runs graceful shutdown.**
+  - **Log flushing is synchronous on the exit path** (most logging libraries support a `flush()` method or have a sync mode).
+  - **Health check endpoint returns failing status during shutdown** (so the orchestrator stops sending traffic).
+  - **All async operations propagate `AbortSignal` from the request to the operation,** so cancellation works end-to-end.
+
+  Without these, you ship a process that fails opaquely, drops requests on deploy, and loses the last few log lines when crashing.
+
+  ## Verification
+
+  - [ ] All caught errors branch on `err.code`, not `err.message`.
+  - [ ] Custom errors have a `code` field starting with `ERR_` and a meaningful `name`.
+  - [ ] `process.on("uncaughtException")` handler logs and calls `process.exit(1)`.
+  - [ ] `unhandled-rejections` mode is left at strict default; no `--unhandled-rejections=warn` in production.
+  - [ ] SIGTERM / SIGINT handler closes the server, drains in-flight work, closes DB connections, and exits cleanly.
+  - [ ] Long-running async operations accept `AbortSignal` and propagate cancellation through the call chain.
+  - [ ] Logging library is configured to flush synchronously on the exit path so the last log lines are not lost.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Node.js Error Handling and Process
+
+      Node has its own error conventions on top of JavaScript's built-in `Error`: numeric error codes, system-error wrappers, and process-level events for the errors that escape your code. The rule is one sentence: throw `Error` (or a subclass), check `err.code` for system errors, install `uncaughtException` and `unhandledRejection` handlers that log and exit, and handle SIGTERM gracefully so the orchestrator can shut you down cleanly. Most production Node crashes that are not user bugs are uncaught rejections, missing signal handlers, or ignored system error codes — all of which Node provides explicit machinery for if you use it.
+
+  - sequence: 2
+    fragment_type: example
+    content: |
+      ## `err.code` is the structured error identifier
+
+      Every system error in Node has a `code` field — a stable string identifier that does not change across releases. Use it for branching:
+
+      ```js
+      import { readFile } from "node:fs/promises";
+
+      try {
+        const data = await readFile("config.json");
+      } catch (err) {
+        if (err.code === "ENOENT") {
+          // file does not exist — fall back to default config
+        } else if (err.code === "EACCES") {
+          // permissions issue — fail loudly
+          throw err;
+        } else {
+          throw err;
+        }
+      }
+      ```
+
+      Common codes you will see:
+
+      - **`ENOENT`** — file or directory does not exist.
+      - **`EACCES`** — permission denied.
+      - **`EEXIST`** — file already exists (e.g., on `mkdir`).
+      - **`EADDRINUSE`** — port already bound.
+      - **`ECONNREFUSED`** — TCP connection refused.
+      - **`ETIMEDOUT`** — operation timed out.
+      - **`ABORT_ERR`** — operation cancelled via `AbortController`.
+
+      Branch on `err.code`, not `err.message`. Messages are human-readable and may change; codes are stable.
+
+  - sequence: 3
+    fragment_type: example
+    content: |
+      ## Custom errors with codes
+
+      When you define a custom error, give it a `code` so callers can branch:
+
+      ```js
+      class AuthRequiredError extends Error {
+        constructor(message = "authentication required") {
+          super(message);
+          this.name = "AuthRequiredError";
+          this.code = "ERR_AUTH_REQUIRED";
+        }
+      }
+
+      // Caller
+      try {
+        await doProtected();
+      } catch (err) {
+        if (err.code === "ERR_AUTH_REQUIRED") {
+          redirectToLogin();
+        } else {
+          throw err;
+        }
+      }
+      ```
+
+      Conventions:
+
+      - **`code` is a string starting with `ERR_`** (matches Node's own error codes).
+      - **`name` matches the class name.** Useful for `instanceof`-free branching.
+      - **`cause`** can hold the underlying error (`new Error("...", { cause: originalErr })`). Preserves the chain in the stack trace.
+
+  - sequence: 4
+    fragment_type: execution
+    content: |
+      ## `process.on("uncaughtException")`
+
+      When an exception escapes all `try`/`catch` and reaches the event loop, Node fires `uncaughtException`:
+
+      ```js
+      process.on("uncaughtException", (err, origin) => {
+        console.error("uncaught exception:", err, "origin:", origin);
+        // Log to monitoring; flush logs synchronously if possible
+        process.exit(1);
+      });
+      ```
+
+      Two non-negotiable rules:
+
+      - **Always log.** Without logging, you have a process that crashed for unknown reasons.
+      - **Always exit.** The process state may be corrupt after an uncaught exception. Trying to "recover" usually leaks resources or re-fails. Let the orchestrator (systemd, Kubernetes, PM2) restart you.
+
+      Do not use `uncaughtException` as a substitute for `try`/`catch`. It is a last-resort safety net. The right place to handle expected errors is at the throw site or at a route handler.
+
+  - sequence: 5
+    fragment_type: execution
+    content: |
+      ## `process.on("unhandledRejection")`
+
+      Promises that reject without a `.catch` (or `try`/`catch` around `await`) trigger `unhandledRejection`:
+
+      ```js
+      process.on("unhandledRejection", (reason, promise) => {
+        console.error("unhandled rejection:", reason);
+        // Default behavior in v15+: process exits non-zero.
+        // If you do nothing, Node exits the process.
+      });
+      ```
+
+      Node 15+ defaults to `--unhandled-rejections=strict`, meaning unhandled rejections crash the process. This is the right default — leaking promise rejections in long-running services creates ghosts (state mutations that started but never finished, partial side effects).
+
+      Do not change this default to `"warn"` unless you have a specific reason and have audited every promise-returning function in your code for missing `.catch`.
+
+  - sequence: 6
+    fragment_type: rationale
+    content: |
+      ## Exit codes
+
+      `process.exit(code)` exits immediately with the given code:
+
+      - **`0`** — success.
+      - **`1`** — generic error.
+      - **`130`** — exited via SIGINT (Ctrl+C). Use this if you handle SIGINT and want orchestrators to recognize a clean ctrl-C.
+      - **`137`** — killed by SIGKILL (often OOM kill from the orchestrator).
+      - **`143`** — killed by SIGTERM.
+
+      Convention:
+
+      - **CLIs return 0 on success, non-zero on failure.** Use specific codes (2 for usage, 64+ for app-specific) so users can script around them.
+      - **Servers should not call `process.exit()` directly under normal conditions.** Let the event loop drain. Exit codes only matter when the process actually exits.
+
+      Do not call `process.exit()` from inside a request handler. Throw instead; the framework or top-level handler decides.
+
+  - sequence: 7
+    fragment_type: example
+    content: |
+      ## Signal handling — graceful shutdown
+
+      When an orchestrator wants to restart your process, it sends SIGTERM. Handle it:
+
+      ```js
+      let shuttingDown = false;
+
+      async function gracefulShutdown() {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        console.log("shutting down");
+
+        server.close();              // stop accepting new connections
+        await db.disconnect();       // close DB connections
+        await flushLogsAndMetrics(); // ensure observability stays
+        process.exit(0);
+      }
+
+      process.on("SIGTERM", gracefulShutdown);
+      process.on("SIGINT", gracefulShutdown);
+      ```
+
+      The discipline:
+
+      - **Stop accepting new work.** Close the HTTP server (which waits for in-flight requests to finish).
+      - **Drain in-flight work.** Wait for active requests/jobs to complete (with a timeout).
+      - **Close downstream connections.** DB pools, message brokers, log shippers.
+      - **Exit cleanly.** `process.exit(0)`.
+
+      Without graceful shutdown, the orchestrator's SIGTERM is ignored and you eventually get SIGKILL — connections drop mid-request, in-flight work is lost.
+
+  - sequence: 8
+    fragment_type: example
+    content: |
+      ## `AbortController` for cancellation
+
+      Modern Node APIs accept `AbortSignal` for cancellation:
+
+      ```js
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), 5000);
+
+      try {
+        const data = await fetch(url, { signal: controller.signal });
+      } catch (err) {
+        if (err.name === "AbortError" || err.code === "ABORT_ERR") {
+          // request was cancelled
+        } else {
+          throw err;
+        }
+      }
+      ```
+
+      Use AbortController for:
+
+      - **Request timeouts.** Cancel a fetch/db query that has run too long.
+      - **Cleanup in shutdown handlers.** Pass a shared signal that aborts on SIGTERM, propagating cancellation through async chains.
+      - **User-cancelled operations.** A long-running export that the user navigates away from.
+
+      Most modern Node APIs (`fetch`, `fs/promises`, `setTimeout` with options, `EventEmitter.once`) accept `signal`. Look for it in the API docs.
+
+  - sequence: 9
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      - **Branching on `err.message`.** Messages are not stable. Branch on `err.code`.
+      - **`process.exit()` without flushing logs.** Async log writes do not complete; you lose the last few seconds of context. Use a synchronous flush before exit.
+      - **Catching `uncaughtException` and continuing.** Process state may be corrupt. Log and exit.
+      - **Disabling strict unhandled-rejection mode.** Hides bugs; promises silently swallow errors.
+      - **No SIGTERM handler.** Orchestrator sends SIGTERM, your process ignores it, eventually SIGKILL kills it mid-request. Always handle SIGTERM.
+      - **Re-throwing without `cause`.** Loses the chain. Use `new Error("wrap", { cause: err })`.
+      - **`if (err)` truthy checks before `err.code` checks.** Useless; `err` is always truthy in a catch block. Just check `err.code`.
+
+  - sequence: 10
+    fragment_type: rationale
+    content: |
+      ## Production-error checklist
+
+      When wiring up error handling for a new Node service, verify:
+
+      - **`uncaughtException` handler logs to monitoring and exits.**
+      - **`unhandledRejection` is left at default (strict) — process exits.**
+      - **`SIGTERM`/`SIGINT` handler runs graceful shutdown.**
+      - **Log flushing is synchronous on the exit path** (most logging libraries support a `flush()` method or have a sync mode).
+      - **Health check endpoint returns failing status during shutdown** (so the orchestrator stops sending traffic).
+      - **All async operations propagate `AbortSignal` from the request to the operation,** so cancellation works end-to-end.
+
+      Without these, you ship a process that fails opaquely, drops requests on deploy, and loses the last few log lines when crashing.
+
+  - sequence: 11
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] All caught errors branch on `err.code`, not `err.message`.
+      - [ ] Custom errors have a `code` field starting with `ERR_` and a meaningful `name`.
+      - [ ] `process.on("uncaughtException")` handler logs and calls `process.exit(1)`.
+      - [ ] `unhandled-rejections` mode is left at strict default; no `--unhandled-rejections=warn` in production.
+      - [ ] SIGTERM / SIGINT handler closes the server, drains in-flight work, closes DB connections, and exits cleanly.
+      - [ ] Long-running async operations accept `AbortSignal` and propagate cancellation through the call chain.
+      - [ ] Logging library is configured to flush synchronously on the exit path so the last log lines are not lost.

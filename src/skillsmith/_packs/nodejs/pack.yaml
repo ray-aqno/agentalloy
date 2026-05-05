@@ -1,0 +1,27 @@
+name: nodejs
+version: 1.0.0
+tier: language
+description: Node.js runtime patterns — event loop, streams, fs/promises, ESM/CJS interop, node:test runner, error handling. Precision-favored language tier; sourced from nodejs.org Node 22 LTS docs per R1 tiered sourcing (fixtures/upstream/curated/nodejs.yaml).
+author: navistone
+embed_model: qwen3-embedding:0.6b
+embedding_dim: 1024
+license: MIT
+homepage: https://github.com/nrmeyers/skillsmith
+always_install: false
+depends_on: [core, engineering]
+skills:
+  - skill_id: node-event-loop-and-async
+    file: node-event-loop-and-async.yaml
+    fragment_count: 9
+  - skill_id: node-streams-and-fs
+    file: node-streams-and-fs.yaml
+    fragment_count: 11
+  - skill_id: node-esm-and-cjs-interop
+    file: node-esm-and-cjs-interop.yaml
+    fragment_count: 10
+  - skill_id: node-built-in-test-runner
+    file: node-built-in-test-runner.yaml
+    fragment_count: 11
+  - skill_id: node-error-handling-and-process
+    file: node-error-handling-and-process.yaml
+    fragment_count: 11

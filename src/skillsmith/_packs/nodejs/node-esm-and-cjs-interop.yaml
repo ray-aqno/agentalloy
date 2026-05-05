@@ -1,0 +1,366 @@
+skill_type: domain
+skill_id: node-esm-and-cjs-interop
+canonical_name: Node.js ESM and CJS Interop (package.json type, exports, dual publishing)
+category: engineering
+skill_class: domain
+domain_tags: [esm-modules, cjs-modules, package-exports-field, dual-publish, node-module-resolution]
+always_apply: false
+phase_scope: null
+category_scope: language
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-04. Sources — Node.js 22 packages docs https://nodejs.org/docs/latest-v22.x/api/packages.html (verified 2026-05-04 against fixtures/upstream/curated/nodejs.yaml topic `packaging_and_dependency_management`); ESM docs https://nodejs.org/docs/latest-v22.x/api/esm.html; modules docs https://nodejs.org/docs/latest-v22.x/api/modules.html. Skill scope: Node's module systems and how they interoperate; not TypeScript module config (covered in ts-modules-and-declaration-files), not bundler-specific resolution.
+
+raw_prose: |
+  # Node.js ESM and CJS Interop
+
+  Node supports two module systems: CommonJS (CJS, the original) and ECMAScript Modules (ESM, the standard). The rule is one sentence: write ESM in new code, set `"type": "module"` in package.json, use the `exports` field to define entry points, and avoid the dual-package hazard by publishing ESM-only when feasible. Most module-resolution issues — `require() of ES module not supported`, `cannot find module`, `Module did not self-register` — come from a mismatch between the package's declared `type`, the file extensions, and the way consumers import.
+
+  ## `type` field decides the default
+
+  `package.json` has a `type` field that controls how `.js` files are parsed:
+
+  - **`"type": "module"`** — `.js` files are ESM. `import`/`export` work; `require` does not.
+  - **`"type": "commonjs"` (default if absent)** — `.js` files are CJS. `require` works; top-level `import` does not.
+
+  The extension can override on a per-file basis:
+
+  - **`.mjs`** — always ESM, regardless of `type`.
+  - **`.cjs`** — always CJS, regardless of `type`.
+  - **`.js`** — follows `type`.
+
+  Pick a default and stick with it. New libraries should default to `"type": "module"`. Mixing modules within one package is supported but adds friction.
+
+  ## Importing in ESM
+
+  ESM uses static `import` / `export`:
+
+  ```js
+  // Local imports — extension required in Node ESM
+  import { add } from "./math.js";
+  import config from "./config.json" with { type: "json" };
+
+  // Package imports — bare specifier
+  import express from "express";
+  import { readFile } from "node:fs/promises";
+
+  // Dynamic import — returns a Promise
+  const { foo } = await import("./optional.js");
+  ```
+
+  Notable rules:
+
+  - **File extensions are required for relative imports.** `./math.js`, not `./math`. Node will not guess.
+  - **JSON imports use the import-attribute syntax.** `with { type: "json" }` (newer) or `assert { type: "json" }` (older). The bare `import x from "./file.json"` form does not work in ESM without the attribute.
+  - **`node:` prefix for built-ins.** `import { readFile } from "node:fs/promises"` is the modern, unambiguous form. Bare `"fs/promises"` also works but `node:` is preferred for clarity.
+
+  ## `require()` from ESM and `import` from CJS
+
+  Node 22 supports cross-module loading in both directions, with caveats:
+
+  - **`require(esmPath)`** works for ESM modules that have no top-level `await`, as of v22 (with `--experimental-require-module` on earlier versions, default on 22+). The exports are the module namespace.
+  - **`import` from CJS** works in ESM. The default export becomes `module.exports`; named exports come from `module.exports.foo` if it is a static-analyzable shape.
+
+  Practical implication: **most CJS modules can be imported from ESM**, but the reverse is not always true. If your library is ESM-only and uses top-level await, it cannot be required from CJS code.
+
+  ## The `exports` field is the modern entry-point declaration
+
+  Modern packages declare entry points via the `exports` field, which supersedes `main` for resolution-aware tools:
+
+  ```json
+  {
+    "name": "mylib",
+    "type": "module",
+    "main": "./dist/index.js",
+    "exports": {
+      ".": "./dist/index.js",
+      "./utils": "./dist/utils.js",
+      "./package.json": "./package.json"
+    }
+  }
+  ```
+
+  Two consequences:
+
+  - **Subpath imports are explicit.** Consumers cannot import `mylib/dist/internal.js` unless `exports` lists it. This is a *feature*: you control your public API.
+  - **Tools that respect `exports`** (Node 12+, modern bundlers) use it. Tools that do not fall back to `main`.
+
+  Conditional exports support shipping different files based on environment:
+
+  ```json
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  }
+  ```
+
+  - `import` resolves when imported via ESM.
+  - `require` resolves when required via CJS.
+  - `types` is for TypeScript type lookup (must come first within each conditional, see ts-modules-and-declaration-files).
+
+  Other useful conditions: `node`, `browser`, `default`, `worker`.
+
+  ## Dual publishing — the hazard
+
+  A package that publishes both ESM and CJS is "dual-published." The hazard: if a consumer's dependency tree pulls the package via `import` in some places and `require` in others, the runtime ends up with *two copies*. Module-level state (singletons, caches, registered hooks) does not synchronize between copies.
+
+  Symptoms:
+
+  - **`instanceof` checks fail unexpectedly.** Class identity differs between the ESM and CJS copies.
+  - **Singleton state diverges.** A registry populated through one copy is empty in the other.
+  - **`Symbol.for` works (process-wide), `Symbol()` does not.**
+
+  Mitigations:
+
+  - **Publish ESM-only when consumer ecosystem allows.** Modern Node, Vite, Bun all handle this. Avoids the hazard entirely.
+  - **Use `peerDependencies` for shared-state packages** (React, Pinia, OpenTelemetry SDK). Consumers install one copy.
+  - **Make state external.** A package that uses an explicit registry passed by the consumer instead of module-level state cannot be confused by dual loads.
+
+  Most application packages do not hit this; libraries with module-scope state need awareness.
+
+  ## CJS escape hatches in ESM (and vice versa)
+
+  Sometimes you need CJS-only features from ESM:
+
+  ```js
+  import { createRequire } from "node:module";
+  const require = createRequire(import.meta.url);
+  const cjsOnly = require("./legacy-cjs-thing.js");
+  ```
+
+  `createRequire` gives you a `require` function scoped to the current ESM module. Use sparingly; usually you can rewrite to use the package's ESM entry point or dynamic `import()`.
+
+  Going the other way (ESM features from CJS): use dynamic `import()`. CJS files can `await import("esm-only-package")` even though they cannot use top-level `import`.
+
+  ## Anti-patterns
+
+  - **Mixing `require` and `import` in the same file.** Either fails to parse (CJS file with `import`) or hits interop weirdness. Pick one per file.
+  - **Omitting file extensions in relative ESM imports.** `import x from "./foo"` does not work in Node ESM. Add `.js`.
+  - **Bare `import x from "./file.json"` in ESM.** Without import attributes, fails to load. Use `with { type: "json" }`.
+  - **`exports` field with a bug that breaks resolution.** Test with both `import` and `require` if dual-published; one breaks easily.
+  - **Top-level `await` in a library that needs CJS support.** CJS cannot consume ESM with top-level await. Refactor to lazy-init, or commit to ESM-only.
+  - **Module state in a dual-published package without `peerDependencies`.** Risk of dual-load; use external state or peerDeps.
+  - **Importing internal paths from a package without `exports`.** `import x from "lib/dist/internal"` is not officially public; the library can break it any version.
+
+  ## Testing module shape
+
+  Before publishing, test that your package's entry points actually resolve:
+
+  ```bash
+  # ESM consumer test
+  node -e "import('./node_modules/mylib/index.js').then(m => console.log(m))"
+
+  # CJS consumer test
+  node -e "const m = require('./node_modules/mylib/index.js'); console.log(m)"
+
+  # Tools
+  npx @arethetypeswrong/cli --pack
+  npx publint
+  ```
+
+  `@arethetypeswrong/cli` and `publint` catch most exports-field bugs (wrong types order, missing CJS file, broken default export). Run them in CI before publishing.
+
+  ## Verification
+
+  - [ ] `package.json` declares `"type": "module"` for new ESM packages; CJS packages omit the field or set `"type": "commonjs"`.
+  - [ ] Relative ESM imports include the file extension (`./foo.js`, not `./foo`).
+  - [ ] JSON imports in ESM use `with { type: "json" }` (or `assert { type: "json" }` on older Node).
+  - [ ] Built-in modules use the `node:` prefix (`node:fs/promises`).
+  - [ ] Public API is declared via the `exports` field; subpath access is explicit.
+  - [ ] Dual-published libraries either avoid module-level state or use `peerDependencies` for shared-state cases.
+  - [ ] CI runs `@arethetypeswrong/cli` or `publint` before publishing to catch exports-field bugs.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Node.js ESM and CJS Interop
+
+      Node supports two module systems: CommonJS (CJS, the original) and ECMAScript Modules (ESM, the standard). The rule is one sentence: write ESM in new code, set `"type": "module"` in package.json, use the `exports` field to define entry points, and avoid the dual-package hazard by publishing ESM-only when feasible. Most module-resolution issues — `require() of ES module not supported`, `cannot find module`, `Module did not self-register` — come from a mismatch between the package's declared `type`, the file extensions, and the way consumers import.
+
+  - sequence: 2
+    fragment_type: execution
+    content: |
+      ## `type` field decides the default
+
+      `package.json` has a `type` field that controls how `.js` files are parsed:
+
+      - **`"type": "module"`** — `.js` files are ESM. `import`/`export` work; `require` does not.
+      - **`"type": "commonjs"` (default if absent)** — `.js` files are CJS. `require` works; top-level `import` does not.
+
+      The extension can override on a per-file basis:
+
+      - **`.mjs`** — always ESM, regardless of `type`.
+      - **`.cjs`** — always CJS, regardless of `type`.
+      - **`.js`** — follows `type`.
+
+      Pick a default and stick with it. New libraries should default to `"type": "module"`. Mixing modules within one package is supported but adds friction.
+
+  - sequence: 3
+    fragment_type: example
+    content: |
+      ## Importing in ESM
+
+      ESM uses static `import` / `export`:
+
+      ```js
+      // Local imports — extension required in Node ESM
+      import { add } from "./math.js";
+      import config from "./config.json" with { type: "json" };
+
+      // Package imports — bare specifier
+      import express from "express";
+      import { readFile } from "node:fs/promises";
+
+      // Dynamic import — returns a Promise
+      const { foo } = await import("./optional.js");
+      ```
+
+      Notable rules:
+
+      - **File extensions are required for relative imports.** `./math.js`, not `./math`. Node will not guess.
+      - **JSON imports use the import-attribute syntax.** `with { type: "json" }` (newer) or `assert { type: "json" }` (older). The bare `import x from "./file.json"` form does not work in ESM without the attribute.
+      - **`node:` prefix for built-ins.** `import { readFile } from "node:fs/promises"` is the modern, unambiguous form. Bare `"fs/promises"` also works but `node:` is preferred for clarity.
+
+  - sequence: 4
+    fragment_type: rationale
+    content: |
+      ## `require()` from ESM and `import` from CJS
+
+      Node 22 supports cross-module loading in both directions, with caveats:
+
+      - **`require(esmPath)`** works for ESM modules that have no top-level `await`, as of v22 (with `--experimental-require-module` on earlier versions, default on 22+). The exports are the module namespace.
+      - **`import` from CJS** works in ESM. The default export becomes `module.exports`; named exports come from `module.exports.foo` if it is a static-analyzable shape.
+
+      Practical implication: **most CJS modules can be imported from ESM**, but the reverse is not always true. If your library is ESM-only and uses top-level await, it cannot be required from CJS code.
+
+  - sequence: 5
+    fragment_type: example
+    content: |
+      ## The `exports` field is the modern entry-point declaration
+
+      Modern packages declare entry points via the `exports` field, which supersedes `main` for resolution-aware tools:
+
+      ```json
+      {
+        "name": "mylib",
+        "type": "module",
+        "main": "./dist/index.js",
+        "exports": {
+          ".": "./dist/index.js",
+          "./utils": "./dist/utils.js",
+          "./package.json": "./package.json"
+        }
+      }
+      ```
+
+      Two consequences:
+
+      - **Subpath imports are explicit.** Consumers cannot import `mylib/dist/internal.js` unless `exports` lists it. This is a *feature*: you control your public API.
+      - **Tools that respect `exports`** (Node 12+, modern bundlers) use it. Tools that do not fall back to `main`.
+
+      Conditional exports support shipping different files based on environment:
+
+      ```json
+      "exports": {
+        ".": {
+          "types": "./dist/index.d.ts",
+          "import": "./dist/index.js",
+          "require": "./dist/index.cjs"
+        }
+      }
+      ```
+
+      - `import` resolves when imported via ESM.
+      - `require` resolves when required via CJS.
+      - `types` is for TypeScript type lookup (must come first within each conditional, see ts-modules-and-declaration-files).
+
+      Other useful conditions: `node`, `browser`, `default`, `worker`.
+
+  - sequence: 6
+    fragment_type: rationale
+    content: |
+      ## Dual publishing — the hazard
+
+      A package that publishes both ESM and CJS is "dual-published." The hazard: if a consumer's dependency tree pulls the package via `import` in some places and `require` in others, the runtime ends up with *two copies*. Module-level state (singletons, caches, registered hooks) does not synchronize between copies.
+
+      Symptoms:
+
+      - **`instanceof` checks fail unexpectedly.** Class identity differs between the ESM and CJS copies.
+      - **Singleton state diverges.** A registry populated through one copy is empty in the other.
+      - **`Symbol.for` works (process-wide), `Symbol()` does not.**
+
+      Mitigations:
+
+      - **Publish ESM-only when consumer ecosystem allows.** Modern Node, Vite, Bun all handle this. Avoids the hazard entirely.
+      - **Use `peerDependencies` for shared-state packages** (React, Pinia, OpenTelemetry SDK). Consumers install one copy.
+      - **Make state external.** A package that uses an explicit registry passed by the consumer instead of module-level state cannot be confused by dual loads.
+
+      Most application packages do not hit this; libraries with module-scope state need awareness.
+
+  - sequence: 7
+    fragment_type: example
+    content: |
+      ## CJS escape hatches in ESM (and vice versa)
+
+      Sometimes you need CJS-only features from ESM:
+
+      ```js
+      import { createRequire } from "node:module";
+      const require = createRequire(import.meta.url);
+      const cjsOnly = require("./legacy-cjs-thing.js");
+      ```
+
+      `createRequire` gives you a `require` function scoped to the current ESM module. Use sparingly; usually you can rewrite to use the package's ESM entry point or dynamic `import()`.
+
+      Going the other way (ESM features from CJS): use dynamic `import()`. CJS files can `await import("esm-only-package")` even though they cannot use top-level `import`.
+
+  - sequence: 8
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      - **Mixing `require` and `import` in the same file.** Either fails to parse (CJS file with `import`) or hits interop weirdness. Pick one per file.
+      - **Omitting file extensions in relative ESM imports.** `import x from "./foo"` does not work in Node ESM. Add `.js`.
+      - **Bare `import x from "./file.json"` in ESM.** Without import attributes, fails to load. Use `with { type: "json" }`.
+      - **`exports` field with a bug that breaks resolution.** Test with both `import` and `require` if dual-published; one breaks easily.
+      - **Top-level `await` in a library that needs CJS support.** CJS cannot consume ESM with top-level await. Refactor to lazy-init, or commit to ESM-only.
+      - **Module state in a dual-published package without `peerDependencies`.** Risk of dual-load; use external state or peerDeps.
+      - **Importing internal paths from a package without `exports`.** `import x from "lib/dist/internal"` is not officially public; the library can break it any version.
+
+  - sequence: 9
+    fragment_type: example
+    content: |
+      ## Testing module shape
+
+      Before publishing, test that your package's entry points actually resolve:
+
+      ```bash
+      # ESM consumer test
+      node -e "import('./node_modules/mylib/index.js').then(m => console.log(m))"
+
+      # CJS consumer test
+      node -e "const m = require('./node_modules/mylib/index.js'); console.log(m)"
+
+      # Tools
+      npx @arethetypeswrong/cli --pack
+      npx publint
+      ```
+
+      `@arethetypeswrong/cli` and `publint` catch most exports-field bugs (wrong types order, missing CJS file, broken default export). Run them in CI before publishing. The cost of catching a broken `exports` field before publish is reading two tool outputs; the cost of catching it after publish is yanking a release and dealing with consumers who already updated. Add both checks to your release workflow once and never think about them again — they pay for themselves the first time they catch a typo.
+
+  - sequence: 10
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] `package.json` declares `"type": "module"` for new ESM packages; CJS packages omit the field or set `"type": "commonjs"`.
+      - [ ] Relative ESM imports include the file extension (`./foo.js`, not `./foo`).
+      - [ ] JSON imports in ESM use `with { type: "json" }` (or `assert { type: "json" }` on older Node).
+      - [ ] Built-in modules use the `node:` prefix (`node:fs/promises`).
+      - [ ] Public API is declared via the `exports` field; subpath access is explicit.
+      - [ ] Dual-published libraries either avoid module-level state or use `peerDependencies` for shared-state cases.
+      - [ ] CI runs `@arethetypeswrong/cli` or `publint` before publishing to catch exports-field bugs.
