@@ -25,6 +25,32 @@ routinely is. Batch 2 shipped wrong Prisma generator name, Mongo `Decimal128`
 shell-vs-driver syntax, mocha `loader:` field, and OTel
 `resourceFromAttributes` because of stale recall.
 
+### R1 Tiered Sourcing (updated 2026-05-04)
+
+Before fetching anything, check `fixtures/upstream/registry.yaml` to determine
+the source tier for the skill's vendor or language. Do not do ad-hoc web
+research when a curated source exists.
+
+**Tier-1** (`llms_url` + `llms_full_url` both present):
+Fetch `llms_full_url` via `ctx_fetch_and_index`. Slice the section relevant to
+the skill topic by heading. Use the sliced content as the R1 source. The
+`llms_url` index can help identify which heading to slice to.
+
+**Tier-2** (`llms_url` only):
+Fetch `llms_url` to get the curated URL index. Identify the 2–5 pages most
+relevant to the skill topic. Fetch those pages individually via
+`ctx_fetch_and_index`. Use the fetched pages as the R1 source.
+
+**Tier-3** (neither — language stdlibs, spec orgs, older frameworks):
+Open `fixtures/upstream/curated/<language>.yaml` (e.g. `python.yaml`,
+`java.yaml`). Find the relevant topic section. Fetch the listed URLs via
+`ctx_fetch_and_index`. If no curated file exists for the language yet, fall
+back to `fallback_root` in registry.yaml and fetch the relevant subtree.
+
+**Rule:** If a vendor or language is not in `registry.yaml`, add it before
+authoring — do not skip the registry step. The registry is the single source
+of truth for R1 sourcing decisions.
+
 ## R2 — Every non-stdlib name in a code block must show its `import` once
 
 If a block references `Prisma.Decimal`, `Decimal128`, `Anthropic.Tool`,
@@ -112,7 +138,8 @@ small inputs.
 
 ## Process for a new batch
 
-1. Fetch authoritative docs for each skill (R1, R5).
+1. Check `fixtures/upstream/registry.yaml` for each skill's vendor/language.
+   Fetch docs per the tier (see R1 tiered sourcing above).
 2. Author the source. Apply R2, R3, R4 as you write; if importing, R6–R7.
 3. Self-review verification fragments against R3 and rationale fragments
    against R8.
