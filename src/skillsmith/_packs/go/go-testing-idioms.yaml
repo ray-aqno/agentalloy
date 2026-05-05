@@ -197,7 +197,7 @@ raw_prose: |
   - [ ] No subtest mutates package-level state without a mutex.
   - [ ] Benchmarks call `b.ResetTimer()` after setup; results are sunk to a `var` to prevent dead-code elimination.
   - [ ] CI runs `go test ./...` (seed corpus only); `-fuzz` runs are scheduled, not gating.
-  - [ ] Tests are split between `package foo` (internal) and `package foo_test` (external) deliberately, not by accident.
+  - [ ] Files declaring `package foo_test` import the package under test only via its public API (no references to unexported identifiers).
 
 fragments:
   - sequence: 1
@@ -418,4 +418,4 @@ fragments:
       - [ ] No subtest mutates package-level state without a mutex.
       - [ ] Benchmarks call `b.ResetTimer()` after setup; results are sunk to a `var` to prevent dead-code elimination.
       - [ ] CI runs `go test ./...` (seed corpus only); `-fuzz` runs are scheduled, not gating.
-      - [ ] Tests are split between `package foo` (internal) and `package foo_test` (external) deliberately, not by accident.
+      - [ ] Files declaring `package foo_test` import the package under test only via its public API (no references to unexported identifiers).

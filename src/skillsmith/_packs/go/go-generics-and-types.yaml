@@ -14,7 +14,7 @@ change_summary: |
 raw_prose: |
   # Go Generics and Types
 
-  Go added type parameters in 1.18. They let you write a function or type once and have it work for any type that satisfies a constraint, without the runtime cost of `interface{}` boxing or the boilerplate of code generation. The rule is one sentence: reach for generics when you would otherwise duplicate the same code across two or more concrete types, or use `interface{}`/`any` and lose static type information; otherwise, do not. Most production Go generics misuse is over-engineering — adding `[T any]` everywhere as a flex move when a concrete type was both clearer and faster.
+  Go added type parameters in 1.18 (March 2022; verified 2026-05-05). They let you write a function or type once and have it work for any type that satisfies a constraint, without the runtime cost of `interface{}` boxing or the boilerplate of code generation. The rule is one sentence: reach for generics when you would otherwise duplicate the same code across two or more concrete types, or use `interface{}`/`any` and lose static type information; otherwise, do not. Most production Go generics misuse is over-engineering — adding `[T any]` everywhere as a flex move when a concrete type was both clearer and faster.
 
   ## Syntax in one paragraph
 
@@ -73,6 +73,17 @@ raw_prose: |
   - **`any`** — the empty interface; equivalent to `interface{}`. Operations limited to assignment and comparison-via-reflect.
   - **`comparable`** — types that support `==` and `!=`. Required for `map` keys and `==` comparisons inside generic code. Includes all primitives, pointers, channels, structs of comparable fields, but *not* slices, maps, or functions.
   - **`golang.org/x/exp/constraints`** — provides `Ordered`, `Integer`, `Float`, `Signed`, `Unsigned`, `Complex`. These are the constraints stdlib generics tend to use; pull from this package rather than redefining.
+
+  ```go
+  import "golang.org/x/exp/constraints"
+
+  func Min[T constraints.Ordered](a, b T) T {
+      if a < b {
+          return a
+      }
+      return b
+  }
+  ```
 
   ## Type inference
 
@@ -164,7 +175,7 @@ fragments:
     content: |
       # Go Generics and Types
 
-      Go added type parameters in 1.18. They let you write a function or type once and have it work for any type that satisfies a constraint, without the runtime cost of `interface{}` boxing or the boilerplate of code generation. The rule is one sentence: reach for generics when you would otherwise duplicate the same code across two or more concrete types, or use `interface{}`/`any` and lose static type information; otherwise, do not. Most production Go generics misuse is over-engineering — adding `[T any]` everywhere as a flex move when a concrete type was both clearer and faster.
+      Go added type parameters in 1.18 (March 2022; verified 2026-05-05). They let you write a function or type once and have it work for any type that satisfies a constraint, without the runtime cost of `interface{}` boxing or the boilerplate of code generation. The rule is one sentence: reach for generics when you would otherwise duplicate the same code across two or more concrete types, or use `interface{}`/`any` and lose static type information; otherwise, do not. Most production Go generics misuse is over-engineering — adding `[T any]` everywhere as a flex move when a concrete type was both clearer and faster.
 
   - sequence: 2
     fragment_type: example
@@ -229,6 +240,17 @@ fragments:
       - **`any`** — the empty interface; equivalent to `interface{}`. Operations limited to assignment and comparison-via-reflect.
       - **`comparable`** — types that support `==` and `!=`. Required for `map` keys and `==` comparisons inside generic code. Includes all primitives, pointers, channels, structs of comparable fields, but *not* slices, maps, or functions.
       - **`golang.org/x/exp/constraints`** — provides `Ordered`, `Integer`, `Float`, `Signed`, `Unsigned`, `Complex`. Pull from this package rather than redefining.
+
+      ```go
+      import "golang.org/x/exp/constraints"
+
+      func Min[T constraints.Ordered](a, b T) T {
+          if a < b {
+              return a
+          }
+          return b
+      }
+      ```
 
   - sequence: 4
     fragment_type: execution

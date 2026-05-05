@@ -38,7 +38,7 @@ raw_prose: |
   Key directives:
 
   - **`module <path>`** — the module's import path. Must match the URL where the module is hosted (or be importable via a vanity URL that redirects there). Determines the prefix for every package inside the module.
-  - **`go <version>`** — the minimum Go toolchain language version this module relies on. Affects which language features compile and which standard-library APIs exist. As of 1.21+, this is also a *minimum* enforced by the toolchain.
+  - **`go <version>`** — the minimum Go toolchain language version this module relies on. Affects which language features compile and which standard-library APIs exist. As of 1.21+, this is also a *minimum* enforced by the toolchain (verified 2026-05-05).
   - **`require`** — direct and indirect dependencies. Indirect ones (marked `// indirect`) are dependencies of dependencies that need to be pinned because they would otherwise be ambiguous; the toolchain manages these for you.
   - **`replace`** — substitute one module path/version with another (a fork, a local path, or a different version). Powerful and dangerous; see below.
   - **`exclude`** — tell the resolver never to consider a specific version. Rarely needed.
@@ -87,7 +87,7 @@ raw_prose: |
   `replace` substitutes a module:
 
   ```
-  replace github.com/foo/bar => github.com/myfork/bar v0.0.0-20260301-abcdef123456
+  replace github.com/foo/bar => github.com/myfork/bar v0.0.0-20260301120000-abcdef123456
   replace github.com/foo/bar => ../local/bar
   ```
 
@@ -110,7 +110,7 @@ raw_prose: |
   - **`GOPROXY=https://proxy.golang.org,direct`** — try the proxy, fall back to fetching from the source repo. The default.
   - **`GOPROXY=off`** — disables network module fetching. Builds use only local cache + vendor.
   - **`GOPRIVATE=github.com/myorg/*`** — bypass the proxy and sumdb for matching paths. Use for private modules.
-  - **`GONOSUMCHECK`** / **`GOSUMDB=off`** — disables checksum DB. Almost never the right answer; use `GOPRIVATE` instead.
+  - **`GOSUMDB=off`** — disables checksum DB. Almost never the right answer; use `GOPRIVATE` instead.
 
   In CI, `GOFLAGS=-mod=readonly` is a useful belt: builds fail if `go.mod` would need to change, catching cases where a developer forgot to commit a tidy.
 
@@ -184,7 +184,7 @@ fragments:
       Key directives:
 
       - **`module <path>`** — the module's import path. Must match the URL where the module is hosted (or be importable via a vanity URL that redirects there). Determines the prefix for every package inside the module.
-      - **`go <version>`** — the minimum Go toolchain language version this module relies on. As of 1.21+, this is enforced by the toolchain.
+      - **`go <version>`** — the minimum Go toolchain language version this module relies on. As of 1.21+, this is enforced by the toolchain (verified 2026-05-05).
       - **`require`** — direct and indirect dependencies. Indirect ones (marked `// indirect`) are managed by the toolchain.
       - **`replace`** — substitute one module path/version with another (a fork, a local path, or a different version). Powerful and dangerous.
       - **`exclude`** — tell the resolver never to consider a specific version. Rarely needed.
@@ -245,7 +245,7 @@ fragments:
       `replace` substitutes a module:
 
       ```
-      replace github.com/foo/bar => github.com/myfork/bar v0.0.0-20260301-abcdef123456
+      replace github.com/foo/bar => github.com/myfork/bar v0.0.0-20260301120000-abcdef123456
       replace github.com/foo/bar => ../local/bar
       ```
 
@@ -269,7 +269,7 @@ fragments:
       - **`GOPROXY=https://proxy.golang.org,direct`** — try the proxy, fall back to fetching from the source repo. The default.
       - **`GOPROXY=off`** — disables network module fetching. Builds use only local cache + vendor.
       - **`GOPRIVATE=github.com/myorg/*`** — bypass the proxy and sumdb for matching paths. Use for private modules.
-      - **`GONOSUMCHECK`** / **`GOSUMDB=off`** — disables checksum DB. Almost never the right answer; use `GOPRIVATE` instead.
+      - **`GOSUMDB=off`** — disables checksum DB. Almost never the right answer; use `GOPRIVATE` instead.
 
       In CI, `GOFLAGS=-mod=readonly` is a useful belt: builds fail if `go.mod` would need to change, catching cases where a developer forgot to commit a tidy.
 

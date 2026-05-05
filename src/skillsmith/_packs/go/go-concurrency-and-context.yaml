@@ -92,7 +92,20 @@ raw_prose: |
   - **`sync.Mutex` / `sync.RWMutex`** — protect a piece of shared state. If a struct has a few fields read and written by multiple goroutines, embed a `sync.Mutex` and lock around the access. Do not pass mutexes by value — embed in the struct that owns them.
   - **`sync.WaitGroup`** — wait for a known set of goroutines to finish. `wg.Add(N)` before spawning, `defer wg.Done()` inside each goroutine, `wg.Wait()` to block until all done. `Add` must happen before the goroutine starts to avoid a race.
   - **`sync.Once`** — run an initializer exactly once across all goroutines. Lazy singletons.
-  - **`errgroup.Group`** (from `golang.org/x/sync/errgroup`) — like `WaitGroup` but each goroutine returns an error, and the group cancels on first error. The standard pattern for fanning out and collecting errors.
+  - **`errgroup.Group`** (from `golang.org/x/sync/errgroup`) — like `WaitGroup` but each goroutine returns an error, and — when constructed via `errgroup.WithContext(parent)` — the derived context is cancelled on the first non-nil error. The plain zero-value `errgroup.Group` does *not* cancel siblings; use `WithContext` whenever you want fail-fast semantics.
+
+  ```go
+  import "golang.org/x/sync/errgroup"
+
+  g, ctx := errgroup.WithContext(ctx)
+  for _, item := range items {
+      item := item
+      g.Go(func() error { return process(ctx, item) })
+  }
+  if err := g.Wait(); err != nil {
+      return err
+  }
+  ```
 
   Channels for communication and ownership transfer; mutexes for protecting in-place state; WaitGroup/errgroup for "wait for N things to finish." Do not channel-pipe a counter when an atomic or mutex would do.
 
@@ -105,16 +118,30 @@ raw_prose: |
   - **Always call `cancel()`.** `WithCancel`, `WithTimeout`, and `WithDeadline` return a `cancel` function. `defer cancel()` immediately after, even if the context completes naturally — this releases resources and signals child contexts.
 
   ```go
+  import (
+      "context"
+      "encoding/json"
+      "net/http"
+      "time"
+  )
+
   func fetchUser(ctx context.Context, id string) (*User, error) {
       ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
       defer cancel()
-      req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+      req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+      if err != nil {
+          return nil, err
+      }
       resp, err := http.DefaultClient.Do(req)
       if err != nil {
           return nil, err
       }
       defer resp.Body.Close()
-      // ...
+      var u User
+      if err := json.NewDecoder(resp.Body).Decode(&u); err != nil {
+          return nil, err
+      }
+      return &u, nil
   }
   ```
 
@@ -133,19 +160,19 @@ raw_prose: |
   - **Storing `context.Context` in a struct.** Contexts are per-call; struct storage hides their lifetime and breaks cancellation.
   - **Ignoring the `cancel` from `WithTimeout`/`WithCancel`.** Resources leak; child contexts stay alive. Always `defer cancel()`.
   - **Using `context.Value` for normal parameters.** Type-unsafe; hides data flow; future-you hates past-you.
-  - **`go func() { ... }()` with shared loop variable capture.** In Go 1.21 and earlier, the variable was shared across iterations. Go 1.22+ scoped per-iteration; if you support older modules, rebind explicitly: `i := i; go func() { use(i) }()`.
+  - **`go func() { ... }()` with shared loop variable capture.** In Go 1.21 and earlier, the variable was shared across iterations. Go 1.22+ scoped per-iteration (Go 1.22 release notes, verified 2026-05-05: https://go.dev/doc/go1.22#language); if you support older modules, rebind explicitly: `i := i; go func() { use(i) }()`.
   - **Mutex copied by value.** `func f(m sync.Mutex)` makes a copy; locking it does not protect the original. Use pointer receiver and pass `*Mutex` or embed by value in a struct passed by pointer.
 
   ## Verification
 
-  - [ ] Every `go func` either selects on `ctx.Done()` / a stop channel, or runs over a finite input and returns.
-  - [ ] Channel ownership is documented: exactly one goroutine sends, exactly one closes.
+  - [ ] Every `go func` body contains either `<-ctx.Done()` / `<-stop` inside a `select`, or a bounded `for`/`range` over a closed input channel; verified by grep + manual scan.
+  - [ ] For every `make(chan ...)` in this package, `grep -n 'close(<chanName>)'` returns exactly one site, and that site is in the goroutine that owns the sends.
   - [ ] All functions doing IO or blocking work take `ctx context.Context` as their first parameter.
   - [ ] Every `WithCancel` / `WithTimeout` / `WithDeadline` is paired with `defer cancel()`.
   - [ ] No `context.Context` is stored in a struct field.
   - [ ] `context.Value` is used only for cross-cutting request-scoped data (request ID, auth, trace), not as a regular parameter substitute.
-  - [ ] Mutexes are passed by pointer or embedded in a struct passed by pointer; never copied.
-  - [ ] Fan-out worker pools use `errgroup` (or equivalent) so the first error cancels siblings.
+  - [ ] `go vet ./...` reports zero `copylocks` findings (catches mutex-by-value copies).
+  - [ ] Fan-out worker pools use `errgroup.WithContext` (or equivalent) so the first error cancels siblings.
 
 fragments:
   - sequence: 1
@@ -274,6 +301,7 @@ fragments:
       ```go
       import (
           "context"
+          "encoding/json"
           "net/http"
           "time"
       )
@@ -312,7 +340,7 @@ fragments:
       - **Storing `context.Context` in a struct.** Contexts are per-call; struct storage hides their lifetime and breaks cancellation.
       - **Ignoring the `cancel` from `WithTimeout`/`WithCancel`.** Resources leak; child contexts stay alive. Always `defer cancel()`.
       - **Using `context.Value` for normal parameters.** Type-unsafe; hides data flow; future-you hates past-you.
-      - **`go func() { ... }()` with shared loop variable capture.** In Go 1.21 and earlier, the variable was shared across iterations. Go 1.22+ scoped per-iteration; if you support older modules, rebind explicitly: `i := i; go func() { use(i) }()`.
+      - **`go func() { ... }()` with shared loop variable capture.** In Go 1.21 and earlier, the variable was shared across iterations. Go 1.22+ scoped per-iteration (Go 1.22 release notes, verified 2026-05-05: https://go.dev/doc/go1.22#language); if you support older modules, rebind explicitly: `i := i; go func() { use(i) }()`.
       - **Mutex copied by value.** `func f(m sync.Mutex)` makes a copy; locking it does not protect the original. Use pointer receiver and pass `*Mutex` or embed by value in a struct passed by pointer.
 
   - sequence: 10
