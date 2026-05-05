@@ -72,6 +72,42 @@ skillsmith setup
 skillsmith serve
 ```
 
+`skillsmith setup` walks an interactive composer (`write-env` → `seed-corpus` → `install-packs` → `install-mcp` → `install-rules`). The `install-packs` step prompts you to pick which in-tree packs to install.
+
+**Headless one-liner** — clone, install every in-tree pack non-interactively, no prompts:
+
+```bash
+uv sync
+uv run python -m skillsmith.install install-packs --packs all --non-interactive
+```
+
+This walks `src/skillsmith/_packs/*/pack.yaml`, ingests every pack into the local LadybugDB + DuckDB corpus, and runs one bulk reembed at the end. Use when scripting CI environments, container builds, or fresh dev machines.
+
+---
+
+## Packs shipping in-tree
+
+The corpus is split into **packs** — opt-in groups of related skills. As of 2026-05-05, `main` ships:
+
+| Pack | Tier | Skills | Status |
+|---|---|---:|---|
+| `meta` | system | – | always-on |
+| `conventions` | system | – | always-on |
+| `core` | foundation | 12 | always-on |
+| `engineering` | foundation | 5 | default-on |
+| `documentation` | foundation | 4 | opt-in |
+| `refactoring` | foundation | 4 | opt-in |
+| `performance` | foundation | 4 | opt-in |
+| `python` | language | 5 | opt-in |
+| `typescript` | language | 5 | opt-in |
+| `nodejs` | language | 5 | opt-in |
+| `go` | language | 5 | opt-in |
+| `rust` | language | 5 | opt-in |
+
+Authored against authoritative upstream docs per the R1–R8 quality contract in `src/skillsmith/_packs/meta/sys-skill-authoring-rules.md`. Each pack ships with `.qa.md` reports under `docs/skill-review-history/` documenting the independent Critic review verdicts.
+
+To author a new pack, see `docs/PACK-AUTHORING.md` and the latest session handoff under `docs/session-handoff-*.md`.
+
 ---
 
 ## Run via container (no Python required)
