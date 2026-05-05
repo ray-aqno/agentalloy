@@ -1,0 +1,424 @@
+skill_type: domain
+skill_id: python-context-managers-and-with
+canonical_name: Python Context Managers and the with Statement
+category: engineering
+skill_class: domain
+domain_tags: [with-statement, contextmanager-decorator, exitstack, async-with, resource-cleanup]
+always_apply: false
+phase_scope: null
+category_scope: language
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-04. Sources — Python 3.13 contextlib docs https://docs.python.org/3.13/library/contextlib.html (verified 2026-05-04 against fixtures/upstream/curated/python.yaml topic `io_and_filesystem` and `concurrency_and_async`); language reference for `with` statement https://docs.python.org/3.13/reference/compound_stmts.html#the-with-statement; PEP 343 https://peps.python.org/pep-0343/ for the original `with`-statement design. Skill scope: writing and using context managers idiomatically; not specific resource types (file IO, locks — covered in their respective skills).
+
+raw_prose: |
+  # Python Context Managers and the `with` Statement
+
+  A context manager is an object that defines `__enter__` and `__exit__` methods, used with the `with` statement to scope resource acquisition and release. The rule is one sentence: use `with` for any resource that needs cleanup, write your own context managers with `@contextmanager` for one-off setup/teardown patterns, and reach for `ExitStack` when the cleanup chain is conditional. Most resource-leak bugs in Python come from manual `try`/`finally` patterns that miss an edge case the `with` statement would have handled correctly.
+
+  ## `with` is the resource-cleanup primitive
+
+  Any object that supports the context manager protocol works with `with`:
+
+  ```python
+  with open("data.json") as f:
+      data = json.load(f)
+  # f is closed here, even if json.load raises.
+  ```
+
+  The flow:
+
+  1. `with` calls `f.__enter__()`, binds the result to the `as` variable.
+  2. The body runs.
+  3. Whether the body completes, returns, or raises, `f.__exit__(type, value, traceback)` is called.
+
+  The cleanup runs unconditionally. Compared to `try`/`finally`, `with` is shorter, harder to forget, and impossible to skip on early `return`.
+
+  Common context managers in the standard library:
+
+  - **`open(...)`** — files. Closes on exit.
+  - **`threading.Lock()`** — locks. Acquires on enter, releases on exit.
+  - **`subprocess.Popen(...)`** as a context manager — waits for child on exit.
+  - **`asyncio.timeout(...)`** — sets a timeout on the enclosed block.
+  - **`contextlib.suppress(...)`** — swallows specified exceptions inside the block.
+  - **`contextlib.redirect_stdout(...)` / `redirect_stderr(...)`** — redirects standard streams.
+  - **`tempfile.TemporaryDirectory()`** — creates a temp dir, deletes on exit.
+
+  Reach for `with` first whenever a resource has cleanup; reach for `try`/`finally` only when the cleanup is conditional or custom.
+
+  ## Multiple resources in one `with`
+
+  Multiple context managers in one `with` statement are equivalent to nested `with` blocks:
+
+  ```python
+  with open("input.txt") as fin, open("output.txt", "w") as fout:
+      fout.write(fin.read())
+  ```
+
+  This is equivalent to:
+
+  ```python
+  with open("input.txt") as fin:
+      with open("output.txt", "w") as fout:
+          fout.write(fin.read())
+  ```
+
+  The `,`-separated form is cleaner for two or three managers. Beyond that, switch to `ExitStack` (below) — long `with`-and lines become unreadable.
+
+  Python 3.10+ supports parenthesized multi-line context managers:
+
+  ```python
+  with (
+      open("input.txt") as fin,
+      open("output.txt", "w") as fout,
+      tempfile.TemporaryDirectory() as tmp,
+  ):
+      ...
+  ```
+
+  Useful when you want one manager per line for readability.
+
+  ## Write your own with `@contextmanager`
+
+  When a function has a clear setup-and-teardown shape, the `@contextmanager` decorator from `contextlib` turns a generator into a context manager:
+
+  ```python
+  from contextlib import contextmanager
+
+  @contextmanager
+  def database_transaction(conn):
+      cursor = conn.cursor()
+      try:
+          yield cursor
+          conn.commit()
+      except Exception:
+          conn.rollback()
+          raise
+      finally:
+          cursor.close()
+  ```
+
+  Use:
+
+  ```python
+  with database_transaction(conn) as cursor:
+      cursor.execute(...)
+  ```
+
+  The single `yield` divides setup (before) from teardown (after). The `finally` block runs unconditionally; the `except` clause handles failure. This is dramatically cleaner than writing a class with `__enter__` and `__exit__` for the common case.
+
+  When you need richer behavior — instance state, multiple methods, reusable cleanup logic — write a class with `__enter__` and `__exit__`. The decorator is for the simple shape.
+
+  ## `ExitStack` for dynamic cleanup chains
+
+  `contextlib.ExitStack` lets you push context managers onto a stack at runtime; all are unwound on exit:
+
+  ```python
+  from contextlib import ExitStack
+
+  with ExitStack() as stack:
+      files = [stack.enter_context(open(name)) for name in filenames]
+      # All files are closed when the outer with exits.
+  ```
+
+  Use cases:
+
+  - **Variable number of resources.** Open N files, lock M mutexes — unknown until runtime.
+  - **Conditional cleanup.** Sometimes you need cleanup, sometimes you do not. `stack.callback(cleanup_func, ...)` registers cleanup only when needed.
+  - **Resource hand-off.** `stack.pop_all()` transfers ownership of all registered cleanups to a new `ExitStack`, deferring cleanup. Useful when constructing an object that owns the resources.
+
+  `ExitStack` is the right tool when the resource set is dynamic. For a fixed set known at write time, the multi-`with` syntax is simpler.
+
+  ## `async with` for async context managers
+
+  Async context managers define `__aenter__` and `__aexit__` (both coroutines). Use `async with`:
+
+  ```python
+  async with httpx.AsyncClient() as client:
+      response = await client.get(url)
+  ```
+
+  Common async context managers: `httpx.AsyncClient`, `aiofiles.open`, `asyncpg.connect`, `asyncio.TaskGroup`, `asyncio.timeout`.
+
+  Write your own with `@contextlib.asynccontextmanager`:
+
+  ```python
+  from contextlib import asynccontextmanager
+
+  @asynccontextmanager
+  async def db_pool(url):
+      pool = await asyncpg.create_pool(url)
+      try:
+          yield pool
+      finally:
+          await pool.close()
+  ```
+
+  Use:
+
+  ```python
+  async with db_pool(url) as pool:
+      async with pool.acquire() as conn:
+          await conn.fetch(...)
+  ```
+
+  The same idiom as sync `@contextmanager` — single `yield`, setup before, teardown after. The async version awaits both setup and teardown.
+
+  ## Exception handling in `__exit__`
+
+  `__exit__(exc_type, exc_val, exc_tb)` receives the exception that occurred (if any) inside the block. The return value matters:
+
+  - **Return falsy (or None).** The exception (if any) propagates. Default for most context managers.
+  - **Return truthy.** The exception is *suppressed*. Use only when the manager's purpose is to handle a specific error class (`contextlib.suppress` is the prebuilt example).
+
+  Most custom context managers should not suppress exceptions. If your `__exit__` returns `True`, you are silencing every exception inside the `with` block — usually a bug, occasionally what you want. Document the intent loudly.
+
+  ## Anti-patterns
+
+  - **Manual `try`/`finally` for cleanup that `with` would handle.** More code, more chance to skip on a refactor.
+  - **`with` and not using the bound variable.** `with open(path) as _:` then ignoring `_`. If you do not need the variable, the manager is just doing cleanup; that is fine.
+  - **Nested `with` blocks instead of comma-separated form.** Unnecessary indentation; harder to read.
+  - **Writing a class for what `@contextmanager` would do in five lines.** Use the decorator for simple setup/teardown.
+  - **`@contextmanager` generator with multiple `yield` statements.** Only one `yield` per generator; the decorator does not handle multiple correctly.
+  - **`__exit__` returning `True` accidentally.** Silences all exceptions in the block. Only return truthy when suppression is the documented purpose.
+  - **`with` on an awaitable.** `with httpx.AsyncClient()` does not work; use `async with`. Type checkers catch this if the manager is annotated as async-only.
+
+  ## When NOT to use `with`
+
+  Sometimes a "resource" does not benefit from the `with` shape:
+
+  - **Long-lived resources at module scope.** A logger, a config singleton, an HTTP client reused across many requests — these live for the program's lifetime; cleanup at exit is the OS's job. A `with` would scope them too tightly.
+  - **Resources passed across function boundaries.** If a function creates a resource and returns it for the caller to use, the caller is responsible for cleanup. The function cannot use `with` because that would close the resource before returning.
+
+  In both cases, document the lifetime expectation explicitly. The reader needs to know whether they own the cleanup.
+
+  ## Verification
+
+  - [ ] Resources with cleanup (files, locks, connections, transactions, temp dirs) use `with` rather than manual `try`/`finally` where possible.
+  - [ ] Async resources use `async with`; the type matches the awaitability of the underlying object.
+  - [ ] Custom context managers use `@contextmanager` (sync) or `@asynccontextmanager` (async) for simple setup/teardown shapes; classes only when richer behavior is needed.
+  - [ ] Multiple managers in one block use the comma-separated form (or parenthesized multi-line form on 3.10+); not nested `with` blocks.
+  - [ ] Dynamic resource sets use `ExitStack` (or `AsyncExitStack`); not hand-rolled cleanup loops.
+  - [ ] `__exit__` does not return truthy unless exception suppression is the documented purpose.
+  - [ ] Long-lived resources (program-wide singletons, returned-from-function values) document their lifetime expectation and cleanup ownership.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Python Context Managers and the `with` Statement
+
+      A context manager is an object that defines `__enter__` and `__exit__` methods, used with the `with` statement to scope resource acquisition and release. The rule is one sentence: use `with` for any resource that needs cleanup, write your own context managers with `@contextmanager` for one-off setup/teardown patterns, and reach for `ExitStack` when the cleanup chain is conditional. Most resource-leak bugs in Python come from manual `try`/`finally` patterns that miss an edge case the `with` statement would have handled correctly.
+
+  - sequence: 2
+    fragment_type: example
+    content: |
+      ## `with` is the resource-cleanup primitive
+
+      Any object that supports the context manager protocol works with `with`:
+
+      ```python
+      with open("data.json") as f:
+          data = json.load(f)
+      # f is closed here, even if json.load raises.
+      ```
+
+      The flow:
+
+      1. `with` calls `f.__enter__()`, binds the result to the `as` variable.
+      2. The body runs.
+      3. Whether the body completes, returns, or raises, `f.__exit__(type, value, traceback)` is called.
+
+      The cleanup runs unconditionally. Compared to `try`/`finally`, `with` is shorter, harder to forget, and impossible to skip on early `return`.
+
+      Common context managers in the standard library:
+
+      - **`open(...)`** — files. Closes on exit.
+      - **`threading.Lock()`** — locks. Acquires on enter, releases on exit.
+      - **`subprocess.Popen(...)`** as a context manager — waits for child on exit.
+      - **`asyncio.timeout(...)`** — sets a timeout on the enclosed block.
+      - **`contextlib.suppress(...)`** — swallows specified exceptions inside the block.
+      - **`contextlib.redirect_stdout(...)` / `redirect_stderr(...)`** — redirects standard streams.
+      - **`tempfile.TemporaryDirectory()`** — creates a temp dir, deletes on exit.
+
+      Reach for `with` first whenever a resource has cleanup; reach for `try`/`finally` only when the cleanup is conditional or custom.
+
+  - sequence: 3
+    fragment_type: example
+    content: |
+      ## Multiple resources in one `with`
+
+      Multiple context managers in one `with` statement are equivalent to nested `with` blocks:
+
+      ```python
+      with open("input.txt") as fin, open("output.txt", "w") as fout:
+          fout.write(fin.read())
+      ```
+
+      This is equivalent to:
+
+      ```python
+      with open("input.txt") as fin:
+          with open("output.txt", "w") as fout:
+              fout.write(fin.read())
+      ```
+
+      The `,`-separated form is cleaner for two or three managers. Beyond that, switch to `ExitStack` (below) — long `with`-and lines become unreadable.
+
+      Python 3.10+ supports parenthesized multi-line context managers:
+
+      ```python
+      with (
+          open("input.txt") as fin,
+          open("output.txt", "w") as fout,
+          tempfile.TemporaryDirectory() as tmp,
+      ):
+          ...
+      ```
+
+      Useful when you want one manager per line for readability.
+
+  - sequence: 4
+    fragment_type: example
+    content: |
+      ## Write your own with `@contextmanager`
+
+      When a function has a clear setup-and-teardown shape, the `@contextmanager` decorator from `contextlib` turns a generator into a context manager:
+
+      ```python
+      from contextlib import contextmanager
+
+      @contextmanager
+      def database_transaction(conn):
+          cursor = conn.cursor()
+          try:
+              yield cursor
+              conn.commit()
+          except Exception:
+              conn.rollback()
+              raise
+          finally:
+              cursor.close()
+      ```
+
+      Use:
+
+      ```python
+      with database_transaction(conn) as cursor:
+          cursor.execute(...)
+      ```
+
+      The single `yield` divides setup (before) from teardown (after). The `finally` block runs unconditionally; the `except` clause handles failure. This is dramatically cleaner than writing a class with `__enter__` and `__exit__` for the common case.
+
+      When you need richer behavior — instance state, multiple methods, reusable cleanup logic — write a class with `__enter__` and `__exit__`. The decorator is for the simple shape.
+
+  - sequence: 5
+    fragment_type: example
+    content: |
+      ## `ExitStack` for dynamic cleanup chains
+
+      `contextlib.ExitStack` lets you push context managers onto a stack at runtime; all are unwound on exit:
+
+      ```python
+      from contextlib import ExitStack
+
+      with ExitStack() as stack:
+          files = [stack.enter_context(open(name)) for name in filenames]
+          # All files are closed when the outer with exits.
+      ```
+
+      Use cases:
+
+      - **Variable number of resources.** Open N files, lock M mutexes — unknown until runtime.
+      - **Conditional cleanup.** Sometimes you need cleanup, sometimes you do not. `stack.callback(cleanup_func, ...)` registers cleanup only when needed.
+      - **Resource hand-off.** `stack.pop_all()` transfers ownership of all registered cleanups to a new `ExitStack`, deferring cleanup. Useful when constructing an object that owns the resources.
+
+      `ExitStack` is the right tool when the resource set is dynamic. For a fixed set known at write time, the multi-`with` syntax is simpler.
+
+  - sequence: 6
+    fragment_type: example
+    content: |
+      ## `async with` for async context managers
+
+      Async context managers define `__aenter__` and `__aexit__` (both coroutines). Use `async with`:
+
+      ```python
+      async with httpx.AsyncClient() as client:
+          response = await client.get(url)
+      ```
+
+      Common async context managers: `httpx.AsyncClient`, `aiofiles.open`, `asyncpg.connect`, `asyncio.TaskGroup`, `asyncio.timeout`.
+
+      Write your own with `@contextlib.asynccontextmanager`:
+
+      ```python
+      from contextlib import asynccontextmanager
+
+      @asynccontextmanager
+      async def db_pool(url):
+          pool = await asyncpg.create_pool(url)
+          try:
+              yield pool
+          finally:
+              await pool.close()
+      ```
+
+      Use:
+
+      ```python
+      async with db_pool(url) as pool:
+          async with pool.acquire() as conn:
+              await conn.fetch(...)
+      ```
+
+      The same idiom as sync `@contextmanager` — single `yield`, setup before, teardown after. The async version awaits both setup and teardown.
+
+  - sequence: 7
+    fragment_type: execution
+    content: |
+      ## Exception handling in `__exit__`
+
+      `__exit__(exc_type, exc_val, exc_tb)` receives the exception that occurred (if any) inside the block. The return value matters:
+
+      - **Return falsy (or None).** The exception (if any) propagates. Default for most context managers.
+      - **Return truthy.** The exception is *suppressed*. Use only when the manager's purpose is to handle a specific error class (`contextlib.suppress` is the prebuilt example).
+
+      Most custom context managers should not suppress exceptions. If your `__exit__` returns `True`, you are silencing every exception inside the `with` block — usually a bug, occasionally what you want. Document the intent loudly.
+
+  - sequence: 8
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      - **Manual `try`/`finally` for cleanup that `with` would handle.** More code, more chance to skip on a refactor.
+      - **`with` and not using the bound variable.** `with open(path) as _:` then ignoring `_`. If you do not need the variable, the manager is just doing cleanup; that is fine.
+      - **Nested `with` blocks instead of comma-separated form.** Unnecessary indentation; harder to read.
+      - **Writing a class for what `@contextmanager` would do in five lines.** Use the decorator for simple setup/teardown.
+      - **`@contextmanager` generator with multiple `yield` statements.** Only one `yield` per generator; the decorator does not handle multiple correctly.
+      - **`__exit__` returning `True` accidentally.** Silences all exceptions in the block. Only return truthy when suppression is the documented purpose.
+      - **`with` on an awaitable.** `with httpx.AsyncClient()` does not work; use `async with`. Type checkers catch this if the manager is annotated as async-only.
+
+  - sequence: 9
+    fragment_type: rationale
+    content: |
+      ## When NOT to use `with`
+
+      Sometimes a "resource" does not benefit from the `with` shape:
+
+      - **Long-lived resources at module scope.** A logger, a config singleton, an HTTP client reused across many requests — these live for the program's lifetime; cleanup at exit is the OS's job. A `with` would scope them too tightly.
+      - **Resources passed across function boundaries.** If a function creates a resource and returns it for the caller to use, the caller is responsible for cleanup. The function cannot use `with` because that would close the resource before returning.
+
+      In both cases, document the lifetime expectation explicitly. The reader needs to know whether they own the cleanup.
+
+  - sequence: 10
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] Resources with cleanup (files, locks, connections, transactions, temp dirs) use `with` rather than manual `try`/`finally` where possible.
+      - [ ] Async resources use `async with`; the type matches the awaitability of the underlying object.
+      - [ ] Custom context managers use `@contextmanager` (sync) or `@asynccontextmanager` (async) for simple setup/teardown shapes; classes only when richer behavior is needed.
+      - [ ] Multiple managers in one block use the comma-separated form (or parenthesized multi-line form on 3.10+); not nested `with` blocks.
+      - [ ] Dynamic resource sets use `ExitStack` (or `AsyncExitStack`); not hand-rolled cleanup loops.
+      - [ ] `__exit__` does not return truthy unless exception suppression is the documented purpose.
+      - [ ] Long-lived resources (program-wide singletons, returned-from-function values) document their lifetime expectation and cleanup ownership.

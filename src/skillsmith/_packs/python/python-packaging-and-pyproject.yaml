@@ -1,0 +1,391 @@
+skill_type: domain
+skill_id: python-packaging-and-pyproject
+canonical_name: Python Packaging and pyproject.toml (Modern Build, Deps, Distribution)
+category: engineering
+skill_class: domain
+domain_tags: [pyproject-toml, build-backend, src-layout, lockfile, editable-install]
+always_apply: false
+phase_scope: null
+category_scope: language
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-04. Sources — packaging.python.org tutorial https://packaging.python.org/en/latest/tutorials/packaging-projects/ (verified 2026-05-04 against fixtures/upstream/curated/python.yaml topic `packaging_and_dependency_management`); PEP 517 https://peps.python.org/pep-0517/ (build backends); PEP 518 https://peps.python.org/pep-0518/ (pyproject.toml); PEP 621 https://peps.python.org/pep-0621/ (project metadata); uv documentation https://docs.astral.sh/uv/ for the modern dep-management toolchain. Skill scope: structuring a Python project with pyproject.toml, picking a build backend, dependency management, src layout; not specific framework deployment, not CI publishing pipelines.
+
+raw_prose: |
+  # Python Packaging and pyproject.toml
+
+  Modern Python packaging revolves around `pyproject.toml` — the single declarative file that describes a project's metadata, dependencies, and build configuration. The rule is one sentence: use `pyproject.toml` with PEP 621 metadata, pick one build backend (hatchling, setuptools, uv-build, pdm-backend, poetry-core), use the src layout, and pin a lockfile for applications. Most packaging friction comes from mixing `setup.py`, `setup.cfg`, and `pyproject.toml` in the same project (confusion about what is authoritative), forgetting the lockfile (deps drift across environments), or using a flat layout that lets editor imports succeed before installation.
+
+  ## `pyproject.toml` is the single source of truth
+
+  Pre-PEP-518, Python projects used `setup.py` (imperative) and `setup.cfg` (declarative). Modern projects use `pyproject.toml` for everything: metadata, dependencies, build configuration, tool configuration. The format is TOML; the schema is standardized via PEP 621.
+
+  Minimum viable `pyproject.toml`:
+
+  ```toml
+  [build-system]
+  requires = ["hatchling"]
+  build-backend = "hatchling.build"
+
+  [project]
+  name = "mypackage"
+  version = "0.1.0"
+  description = "Short description"
+  readme = "README.md"
+  requires-python = ">=3.10"
+  license = "MIT"
+  authors = [{ name = "Your Name", email = "you@example.com" }]
+  dependencies = [
+      "httpx>=0.27",
+      "pydantic>=2.0",
+  ]
+
+  [project.optional-dependencies]
+  dev = ["pytest>=8.0", "mypy>=1.10"]
+  ```
+
+  The `[build-system]` table tells installers what to use for building; `[project]` is the standard metadata block; `[project.optional-dependencies]` defines extras (`pip install mypackage[dev]`).
+
+  Avoid `setup.py` in new projects. It still works, but mixing it with `pyproject.toml` creates ambiguity about which file is authoritative.
+
+  ## Pick a build backend
+
+  Several build backends implement PEP 517. They differ in features, conventions, and ecosystem:
+
+  - **`hatchling`** (default for `hatch`). Fast, modern, minimal. Good default for new projects.
+  - **`setuptools`**. The legacy default. Still maintained; works fine. Pick this if your project has `setup.py` history or specific setuptools features.
+  - **`uv_build`**. Astral's backend, pairs with `uv` for unified dep management. Very fast; growing ecosystem.
+  - **`pdm-backend`** (with `pdm`). Lockfile-first workflow.
+  - **`poetry-core`** (with Poetry). Note: Poetry uses a non-standard `[tool.poetry]` block instead of `[project]`. Poetry 1.8+ added PEP 621 support; on older versions you must use the Poetry-specific shape.
+
+  Pick one and document the choice. Switching backends mid-project is annoying because each has its own conventions for source layout, version bumping, and entry points.
+
+  For most new applications and libraries, `hatchling` is the safest default. For build performance and integrated tooling, `uv_build` is increasingly compelling on Python 3.12+.
+
+  ## Use the src layout
+
+  Two project layouts exist:
+
+  ```
+  # Flat layout
+  mypackage/
+    __init__.py
+  pyproject.toml
+
+  # Src layout
+  src/
+    mypackage/
+      __init__.py
+  pyproject.toml
+  ```
+
+  Use the src layout. Why:
+
+  - **Forces installation before import.** With flat layout, running tests from the repo root imports the source directly even if the package is not installed; this hides packaging bugs (missing files in the wheel, incorrect entry points) until release.
+  - **Cleaner separation.** Test files, docs, and tooling live alongside `src/` without polluting the package's import namespace.
+  - **Standard.** Most modern templates (cookiecutter, hatch new, uv init) default to src layout.
+
+  The flat layout still works and may be simpler for tiny single-file packages. For anything else, src layout is the safer default.
+
+  ## Editable install for local development
+
+  When developing a package locally, install it in editable mode so changes are picked up without reinstalling:
+
+  ```bash
+  pip install -e .
+  # or with uv:
+  uv pip install -e .
+  ```
+
+  The editable install creates a link from your environment to the source tree. Edits to `src/mypackage/` are visible immediately. PEP 660 (2021) standardized editable installs across build backends, so this works with any modern backend.
+
+  Avoid editable installs in production environments — they couple the running code to the source tree, which may not be present after deploy.
+
+  ## Dependencies and lockfiles
+
+  Two declarations matter:
+
+  - **`dependencies` in `pyproject.toml`.** The *abstract* requirements — version ranges your code is compatible with. This is what gets published to PyPI.
+  - **Lockfile (e.g., `uv.lock`, `poetry.lock`, `pdm.lock`, `requirements.lock`).** The *concrete* resolved versions used in development and deployment. Pinned exactly, including transitive deps.
+
+  For applications, both matter. The `pyproject.toml` declares compatibility; the lockfile pins reproducibility. Commit the lockfile to version control. CI installs from the lockfile; local development uses the lockfile by default.
+
+  For libraries (published to PyPI), the lockfile is for development only and is not part of the published artifact. Library users get the abstract `dependencies`; their lockfile pins versions for their use.
+
+  Tools that manage lockfiles natively: `uv`, `poetry`, `pdm`, `pip-tools` (with `pip-compile`). Plain `pip install -r requirements.txt` works but the requirements file is hand-maintained, not generated from the lockfile resolver — drift is harder to control.
+
+  ## Virtual environments
+
+  Every Python project lives in a virtual environment — never install dependencies into the system Python. Two equivalent patterns:
+
+  ```bash
+  # Standard library tooling
+  python -m venv .venv
+  source .venv/bin/activate
+  pip install -e .
+
+  # uv (faster, integrated)
+  uv venv
+  source .venv/bin/activate
+  uv pip install -e .
+
+  # uv with sync-from-lockfile
+  uv sync
+  ```
+
+  `uv sync` is the modern shortcut: creates the venv if missing, installs from `pyproject.toml` and `uv.lock` in one step, and removes packages not in the lock. Equivalent commands exist in Poetry (`poetry install`) and pdm (`pdm install`).
+
+  For multi-version testing, use `tox` or `nox` — they create per-Python-version venvs and run the test matrix.
+
+  ## Entry points
+
+  Console scripts and plugin entry points live in `pyproject.toml`:
+
+  ```toml
+  [project.scripts]
+  mypackage = "mypackage.cli:main"
+
+  [project.entry-points."mypackage.plugins"]
+  default = "mypackage.plugins.default:Plugin"
+  ```
+
+  After install, `mypackage` is on the PATH and runs `mypackage.cli:main`. Plugin entry points let third parties register plugins your package discovers via `importlib.metadata.entry_points()`.
+
+  Do not declare entry points in `setup.py` if you also have them in `pyproject.toml` — duplication causes resolver confusion.
+
+  ## Anti-patterns
+
+  - **`setup.py` and `pyproject.toml` both present.** Ambiguity about which is authoritative; some tools read one, some read the other.
+  - **Hand-maintained `requirements.txt` without a lockfile.** Version drift across environments; "works on my machine" bugs.
+  - **Flat layout with no installation.** Hides packaging bugs until release.
+  - **Pinning every version in `pyproject.toml`.** Makes the package un-installable alongside compatible-but-different versions of the same deps. Pin in the lockfile, range in the pyproject.
+  - **`pip install` into system Python.** Pollutes the system; permissions issues; conflicting projects fight. Use a venv.
+  - **No `requires-python` constraint.** The package may install on Python versions that lack required syntax (PEP 695, `match`, `tomllib`, etc.) and break at import time.
+  - **Mixing `[project]` (PEP 621) and `[tool.poetry]` (Poetry-specific) tables in the same file.** Poetry pre-1.8 uses its own shape; do not blend them.
+
+  ## Versioning
+
+  Use semantic versioning (`MAJOR.MINOR.PATCH`). For applications, simple integer versions or date-based versions are also fine; the rule is to be explicit and consistent.
+
+  Two patterns for keeping `version` in sync with the source:
+
+  - **Static version in pyproject.toml.** Simple; the version lives in one place.
+  - **Dynamic version from a source file or git tag.** Hatchling supports `version = { source = "vcs" }`; setuptools supports `version = { attr = "mypackage.__version__" }`. Useful when CI tags drive releases.
+
+  Pick one; do not write the version in three places that then drift apart.
+
+  ## Verification
+
+  - [ ] Project has a `pyproject.toml` with `[build-system]` and `[project]` tables (PEP 621); no `setup.py` unless required for a specific edge case.
+  - [ ] One build backend is declared and used consistently; documented in the README or CONTRIBUTING.
+  - [ ] Source code lives under `src/<package>/` (src layout), not at the repo root.
+  - [ ] `requires-python` is set to a meaningful minimum (e.g., `">=3.10"`).
+  - [ ] Dependencies are declared as ranges in `pyproject.toml`; a lockfile (`uv.lock`, `poetry.lock`, `pdm.lock`, etc.) pins concrete versions and is committed to the repo.
+  - [ ] Local development uses an editable install (`pip install -e .` or `uv sync`), not direct imports from the repo root.
+  - [ ] CI installs from the lockfile, not the abstract pyproject ranges, so builds are reproducible.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Python Packaging and pyproject.toml
+
+      Modern Python packaging revolves around `pyproject.toml` — the single declarative file that describes a project's metadata, dependencies, and build configuration. The rule is one sentence: use `pyproject.toml` with PEP 621 metadata, pick one build backend (hatchling, setuptools, uv-build, pdm-backend, poetry-core), use the src layout, and pin a lockfile for applications. Most packaging friction comes from mixing `setup.py`, `setup.cfg`, and `pyproject.toml` in the same project (confusion about what is authoritative), forgetting the lockfile (deps drift across environments), or using a flat layout that lets editor imports succeed before installation.
+
+  - sequence: 2
+    fragment_type: example
+    content: |
+      ## `pyproject.toml` is the single source of truth
+
+      Pre-PEP-518, Python projects used `setup.py` (imperative) and `setup.cfg` (declarative). Modern projects use `pyproject.toml` for everything: metadata, dependencies, build configuration, tool configuration. The format is TOML; the schema is standardized via PEP 621.
+
+      Minimum viable `pyproject.toml`:
+
+      ```toml
+      [build-system]
+      requires = ["hatchling"]
+      build-backend = "hatchling.build"
+
+      [project]
+      name = "mypackage"
+      version = "0.1.0"
+      description = "Short description"
+      readme = "README.md"
+      requires-python = ">=3.10"
+      license = "MIT"
+      authors = [{ name = "Your Name", email = "you@example.com" }]
+      dependencies = [
+          "httpx>=0.27",
+          "pydantic>=2.0",
+      ]
+
+      [project.optional-dependencies]
+      dev = ["pytest>=8.0", "mypy>=1.10"]
+      ```
+
+      The `[build-system]` table tells installers what to use for building; `[project]` is the standard metadata block; `[project.optional-dependencies]` defines extras (`pip install mypackage[dev]`).
+
+      Avoid `setup.py` in new projects. It still works, but mixing it with `pyproject.toml` creates ambiguity about which file is authoritative.
+
+  - sequence: 3
+    fragment_type: rationale
+    content: |
+      ## Pick a build backend
+
+      Several build backends implement PEP 517. They differ in features, conventions, and ecosystem:
+
+      - **`hatchling`** (default for `hatch`). Fast, modern, minimal. Good default for new projects.
+      - **`setuptools`**. The legacy default. Still maintained; works fine. Pick this if your project has `setup.py` history or specific setuptools features.
+      - **`uv_build`**. Astral's backend, pairs with `uv` for unified dep management. Very fast; growing ecosystem.
+      - **`pdm-backend`** (with `pdm`). Lockfile-first workflow.
+      - **`poetry-core`** (with Poetry). Note: Poetry uses a non-standard `[tool.poetry]` block instead of `[project]`. Poetry 1.8+ added PEP 621 support; on older versions you must use the Poetry-specific shape.
+
+      Pick one and document the choice. Switching backends mid-project is annoying because each has its own conventions for source layout, version bumping, and entry points.
+
+      For most new applications and libraries, `hatchling` is the safest default. For build performance and integrated tooling, `uv_build` is increasingly compelling on Python 3.12+.
+
+  - sequence: 4
+    fragment_type: execution
+    content: |
+      ## Use the src layout
+
+      Two project layouts exist:
+
+      ```
+      # Flat layout
+      mypackage/
+        __init__.py
+      pyproject.toml
+
+      # Src layout
+      src/
+        mypackage/
+          __init__.py
+      pyproject.toml
+      ```
+
+      Use the src layout. Why:
+
+      - **Forces installation before import.** With flat layout, running tests from the repo root imports the source directly even if the package is not installed; this hides packaging bugs (missing files in the wheel, incorrect entry points) until release.
+      - **Cleaner separation.** Test files, docs, and tooling live alongside `src/` without polluting the package's import namespace.
+      - **Standard.** Most modern templates (cookiecutter, hatch new, uv init) default to src layout.
+
+      The flat layout still works and may be simpler for tiny single-file packages. For anything else, src layout is the safer default.
+
+  - sequence: 5
+    fragment_type: example
+    content: |
+      ## Editable install for local development
+
+      When developing a package locally, install it in editable mode so changes are picked up without reinstalling:
+
+      ```bash
+      pip install -e .
+      # or with uv:
+      uv pip install -e .
+      ```
+
+      The editable install creates a link from your environment to the source tree. Edits to `src/mypackage/` are visible immediately. PEP 660 (2021) standardized editable installs across build backends, so this works with any modern backend.
+
+      Avoid editable installs in production environments — they couple the running code to the source tree, which may not be present after deploy.
+
+  - sequence: 6
+    fragment_type: execution
+    content: |
+      ## Dependencies and lockfiles
+
+      Two declarations matter:
+
+      - **`dependencies` in `pyproject.toml`.** The *abstract* requirements — version ranges your code is compatible with. This is what gets published to PyPI.
+      - **Lockfile (e.g., `uv.lock`, `poetry.lock`, `pdm.lock`, `requirements.lock`).** The *concrete* resolved versions used in development and deployment. Pinned exactly, including transitive deps.
+
+      For applications, both matter. The `pyproject.toml` declares compatibility; the lockfile pins reproducibility. Commit the lockfile to version control. CI installs from the lockfile; local development uses the lockfile by default.
+
+      For libraries (published to PyPI), the lockfile is for development only and is not part of the published artifact. Library users get the abstract `dependencies`; their lockfile pins versions for their use.
+
+      Tools that manage lockfiles natively: `uv`, `poetry`, `pdm`, `pip-tools` (with `pip-compile`). Plain `pip install -r requirements.txt` works but the requirements file is hand-maintained, not generated from the lockfile resolver — drift is harder to control.
+
+  - sequence: 7
+    fragment_type: example
+    content: |
+      ## Virtual environments
+
+      Every Python project lives in a virtual environment — never install dependencies into the system Python. Two equivalent patterns:
+
+      ```bash
+      # Standard library tooling
+      python -m venv .venv
+      source .venv/bin/activate
+      pip install -e .
+
+      # uv (faster, integrated)
+      uv venv
+      source .venv/bin/activate
+      uv pip install -e .
+
+      # uv with sync-from-lockfile
+      uv sync
+      ```
+
+      `uv sync` is the modern shortcut: creates the venv if missing, installs from `pyproject.toml` and `uv.lock` in one step, and removes packages not in the lock. Equivalent commands exist in Poetry (`poetry install`) and pdm (`pdm install`).
+
+      For multi-version testing, use `tox` or `nox` — they create per-Python-version venvs and run the test matrix.
+
+  - sequence: 8
+    fragment_type: example
+    content: |
+      ## Entry points
+
+      Console scripts and plugin entry points live in `pyproject.toml`:
+
+      ```toml
+      [project.scripts]
+      mypackage = "mypackage.cli:main"
+
+      [project.entry-points."mypackage.plugins"]
+      default = "mypackage.plugins.default:Plugin"
+      ```
+
+      After install, `mypackage` is on the PATH and runs `mypackage.cli:main`. Plugin entry points let third parties register plugins your package discovers via `importlib.metadata.entry_points()`.
+
+      Do not declare entry points in `setup.py` if you also have them in `pyproject.toml` — duplication causes resolver confusion. Entry points are how Python's plugin ecosystem composes: rather than importing every plugin explicitly, your package discovers them at runtime via `importlib.metadata.entry_points(group="mypackage.plugins")`. This is the same mechanism pytest uses for plugins, the same hatch uses for build hooks, and the same Black uses for formatter integrations. Use it whenever your package wants to be extensible without hardcoding plugin names; reach for explicit imports when the integration set is closed and small.
+
+  - sequence: 9
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      - **`setup.py` and `pyproject.toml` both present.** Ambiguity about which is authoritative; some tools read one, some read the other.
+      - **Hand-maintained `requirements.txt` without a lockfile.** Version drift across environments; "works on my machine" bugs.
+      - **Flat layout with no installation.** Hides packaging bugs until release.
+      - **Pinning every version in `pyproject.toml`.** Makes the package un-installable alongside compatible-but-different versions of the same deps. Pin in the lockfile, range in the pyproject.
+      - **`pip install` into system Python.** Pollutes the system; permissions issues; conflicting projects fight. Use a venv.
+      - **No `requires-python` constraint.** The package may install on Python versions that lack required syntax (PEP 695, `match`, `tomllib`, etc.) and break at import time.
+      - **Mixing `[project]` (PEP 621) and `[tool.poetry]` (Poetry-specific) tables in the same file.** Poetry pre-1.8 uses its own shape; do not blend them.
+
+  - sequence: 10
+    fragment_type: rationale
+    content: |
+      ## Versioning
+
+      Use semantic versioning (`MAJOR.MINOR.PATCH`). For applications, simple integer versions or date-based versions are also fine; the rule is to be explicit and consistent.
+
+      Two patterns for keeping `version` in sync with the source:
+
+      - **Static version in pyproject.toml.** Simple; the version lives in one place.
+      - **Dynamic version from a source file or git tag.** Hatchling supports `version = { source = "vcs" }`; setuptools supports `version = { attr = "mypackage.__version__" }`. Useful when CI tags drive releases.
+
+      Pick one; do not write the version in three places that then drift apart.
+
+  - sequence: 11
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] Project has a `pyproject.toml` with `[build-system]` and `[project]` tables (PEP 621); no `setup.py` unless required for a specific edge case.
+      - [ ] One build backend is declared and used consistently; documented in the README or CONTRIBUTING.
+      - [ ] Source code lives under `src/<package>/` (src layout), not at the repo root.
+      - [ ] `requires-python` is set to a meaningful minimum (e.g., `">=3.10"`).
+      - [ ] Dependencies are declared as ranges in `pyproject.toml`; a lockfile (`uv.lock`, `poetry.lock`, `pdm.lock`, etc.) pins concrete versions and is committed to the repo.
+      - [ ] Local development uses an editable install (`pip install -e .` or `uv sync`), not direct imports from the repo root.
+      - [ ] CI installs from the lockfile, not the abstract pyproject ranges, so builds are reproducible.

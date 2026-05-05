@@ -1,0 +1,290 @@
+skill_type: domain
+skill_id: python-async-and-asyncio
+canonical_name: Python Async and asyncio (Coroutines, Tasks, the Event Loop)
+category: engineering
+skill_class: domain
+domain_tags: [asyncio-event-loop, coroutines, async-await, taskgroup, gil-vs-async]
+always_apply: false
+phase_scope: null
+category_scope: language
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-04. Sources — Python 3.13 asyncio docs https://docs.python.org/3.13/library/asyncio.html (verified 2026-05-04 against fixtures/upstream/curated/python.yaml topic `concurrency_and_async`); asyncio task docs https://docs.python.org/3.13/library/asyncio-task.html for `TaskGroup` (3.11+); concurrent.futures docs for the executor pattern. Skill scope: writing correct async Python — when to use it, common pitfalls, modern patterns; not framework-level concurrency (FastAPI workers, Django async views — covered in framework packs), not multiprocessing.
+
+raw_prose: |
+  # Python Async and asyncio
+
+  Async Python is a concurrency model based on cooperative coroutines and a single-threaded event loop. The rule is one sentence: use async when the work is IO-bound and you have many concurrent operations, prefer `asyncio.TaskGroup` (3.11+) over manual `gather`, and remember that `async` does not make CPU-bound code faster. Most async-related bugs come from blocking the event loop with sync IO, mixing sync and async incorrectly, or assuming `asyncio.gather` cancels siblings on error (it does not, by default).
+
+  ## Async is for IO concurrency, not CPU parallelism
+
+  Python's GIL prevents true thread-level CPU parallelism. Async does not change that — `asyncio` runs all coroutines on a single thread, switching between them at `await` points. The benefit is concurrent IO: while one coroutine waits for a network response, another can run.
+
+  Implications:
+
+  - **Async helps when you have many slow IO operations.** Hundreds of HTTP requests, many database queries, lots of file reads — async runs these concurrently within one thread.
+  - **Async does not help CPU-bound work.** A tight numeric loop is just as slow async as sync (often slower because of overhead). For CPU-bound work, use `multiprocessing` or a process pool.
+  - **Mixed CPU-and-IO workloads** can use `loop.run_in_executor()` to offload CPU work to a thread or process pool while the event loop handles IO.
+
+  Reach for async when the bottleneck is "waiting." Reach for processes when the bottleneck is "computing."
+
+  ## Coroutines, awaitables, and the event loop
+
+  An `async def` function returns a *coroutine* — an object that has not started running. Calling `await` on it (inside another coroutine) schedules it on the event loop and pauses the caller until it returns.
+
+  ```python
+  async def fetch_user(user_id: int) -> dict:
+      ...
+
+  async def main():
+      user = await fetch_user(42)  # runs, returns when fetch_user completes
+      print(user)
+
+  import asyncio
+  asyncio.run(main())  # creates and runs an event loop until main() returns
+  ```
+
+  `asyncio.run()` is the standard entry point. It creates an event loop, runs the coroutine, and closes the loop. Do not call it from inside a coroutine — that creates a nested loop and errors out.
+
+  ## `TaskGroup` is the modern primitive (Python 3.11+)
+
+  Python 3.11 introduced `asyncio.TaskGroup` — a structured concurrency primitive that replaces most uses of `asyncio.gather`. The key behavior: if any task fails, the group cancels the others.
+
+  ```python
+  async with asyncio.TaskGroup() as tg:
+      tg.create_task(fetch_user(1))
+      tg.create_task(fetch_user(2))
+      tg.create_task(fetch_user(3))
+  # All tasks complete, or one fails and the rest are cancelled.
+  ```
+
+  Compare to `asyncio.gather`:
+
+  - **`gather` with `return_exceptions=False` (default).** First exception propagates, but the other tasks keep running in the background — orphaned and untracked. A common source of resource leaks.
+  - **`gather` with `return_exceptions=True`.** Exceptions become return values. The caller has to inspect each result.
+  - **`TaskGroup`.** First exception cancels siblings, awaits cleanup, raises. Cleaner shape.
+
+  Use `TaskGroup` for new code on 3.11+. Reserve `gather` for the specific case where you want all results regardless of individual failures.
+
+  ## Cancellation is a first-class concern
+
+  Cancelling a task raises `asyncio.CancelledError` at the next `await` point inside it. Two implications:
+
+  - **Coroutines should let `CancelledError` propagate.** Catching it and continuing breaks cancellation semantics. If you must do cleanup, catch it, do the cleanup, and re-raise.
+  - **Long synchronous sections are uncancellable.** A coroutine that runs `time.sleep(60)` cannot be cancelled until the sleep returns — sync calls do not yield to the loop. Use `await asyncio.sleep(60)` instead.
+
+  Timeouts use cancellation under the hood. `asyncio.timeout()` (3.11+) is the modern shape:
+
+  ```python
+  async with asyncio.timeout(5.0):
+      result = await slow_operation()
+  # If slow_operation takes >5s, it is cancelled and TimeoutError is raised.
+  ```
+
+  Pre-3.11, `asyncio.wait_for(coro, timeout=5.0)` is the equivalent.
+
+  ## Do not block the event loop
+
+  The event loop is single-threaded. Anything that blocks blocks every coroutine. Common blocking offenders:
+
+  - **`time.sleep(x)`.** Use `await asyncio.sleep(x)`.
+  - **Synchronous IO** — `open()`, `requests.get()`, `psycopg2` cursor execute. All block the event loop. Use async equivalents: `aiofiles`, `httpx.AsyncClient`, `asyncpg`, `aiomysql`.
+  - **CPU-heavy work** — a tight loop, a parse of a large blob, a regex on a huge string. Offload to a thread or process pool with `loop.run_in_executor()`.
+
+  When you cannot avoid a blocking call, wrap it:
+
+  ```python
+  result = await asyncio.to_thread(blocking_function, arg)
+  # Equivalent to loop.run_in_executor(None, blocking_function, arg)
+  ```
+
+  This runs the blocking call on a thread, leaving the event loop free.
+
+  ## Common asyncio bugs
+
+  - **Forgotten `await`.** `result = fetch_user(42)` (no await) returns a coroutine object, not a result. Type checkers catch this if return types are annotated; otherwise, the bug manifests as `RuntimeWarning: coroutine 'fetch_user' was never awaited`.
+  - **Mixing sync and async carelessly.** Calling an async function from sync code without `asyncio.run()` does nothing useful. Calling a sync function from async code blocks the loop.
+  - **Swallowed exceptions in fire-and-forget tasks.** `asyncio.create_task(coro)` without holding a reference loses any exceptions the task raises. Either `await` the task or use `TaskGroup`.
+  - **Iterating async generators with `for` instead of `async for`.** `for x in agen()` does not work; `async for x in agen()` does.
+  - **Using `asyncio.run()` inside an existing event loop.** Common in Jupyter notebooks (which already run a loop). Use `await coro` directly in notebook cells, or `nest_asyncio` if you must nest.
+  - **Race conditions on shared state.** Async does not eliminate races; coroutines yield at `await` points, and other coroutines run between yields. Use `asyncio.Lock` for critical sections that span awaits.
+
+  ## Anti-patterns
+
+  - **Using async for CPU-bound work.** No speedup; just complexity. Use processes.
+  - **Synchronous IO inside an async function.** Blocks the loop, defeats async. Use the async client library.
+  - **`asyncio.gather` without `return_exceptions=True` when you want partial success.** First exception orphans other tasks.
+  - **`create_task` without holding the reference.** Tasks may be garbage-collected before completion; exceptions are lost.
+  - **Manual `loop = asyncio.get_event_loop()` patterns.** Pre-3.10 style. On 3.10+, `asyncio.run()` and `asyncio.get_running_loop()` are the modern surface.
+  - **Catching `CancelledError` and not re-raising.** Breaks cancellation; the parent thinks the task was cancelled but it kept running.
+  - **`async def` for a function that has no `await`.** It is just a function with extra ceremony. Drop the `async`.
+
+  ## When sync is the right answer
+
+  Async has a cost — every IO library needs an async variant, debugging is harder, stack traces are noisier. If your program is not concurrency-bound (a CLI tool, a script, a service handling few requests at a time), sync is simpler and as fast or faster.
+
+  Reach for async when you can name a concrete concurrency need: "I need to fetch 1000 URLs as fast as possible," "I need to handle 5000 simultaneous WebSocket connections." Without that need, async is over-engineering.
+
+  ## Verification
+
+  - [ ] Async is used only when the workload is IO-bound and concurrent; CPU-bound work uses processes or thread pool offload.
+  - [ ] All IO inside `async def` functions uses async libraries (`httpx.AsyncClient`, `aiofiles`, `asyncpg`); no sync `requests`, `open()`, or sync DB drivers.
+  - [ ] Concurrent tasks use `asyncio.TaskGroup` (Python 3.11+) rather than bare `asyncio.gather`, except where partial-success semantics are explicitly desired.
+  - [ ] `asyncio.timeout()` (3.11+) or `asyncio.wait_for()` is used for timeout-bounded operations; no infinite waits.
+  - [ ] Long-running tasks created with `create_task` are stored in a reference (TaskGroup, list) so exceptions are not silently dropped.
+  - [ ] `CancelledError` is allowed to propagate (after cleanup if needed), not swallowed.
+  - [ ] Blocking calls that cannot be made async are wrapped with `asyncio.to_thread` or `loop.run_in_executor`.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Python Async and asyncio
+
+      Async Python is a concurrency model based on cooperative coroutines and a single-threaded event loop. The rule is one sentence: use async when the work is IO-bound and you have many concurrent operations, prefer `asyncio.TaskGroup` (3.11+) over manual `gather`, and remember that `async` does not make CPU-bound code faster. Most async-related bugs come from blocking the event loop with sync IO, mixing sync and async incorrectly, or assuming `asyncio.gather` cancels siblings on error (it does not, by default).
+
+  - sequence: 2
+    fragment_type: rationale
+    content: |
+      ## Async is for IO concurrency, not CPU parallelism
+
+      Python's GIL prevents true thread-level CPU parallelism. Async does not change that — `asyncio` runs all coroutines on a single thread, switching between them at `await` points. The benefit is concurrent IO: while one coroutine waits for a network response, another can run.
+
+      Implications:
+
+      - **Async helps when you have many slow IO operations.** Hundreds of HTTP requests, many database queries, lots of file reads — async runs these concurrently within one thread.
+      - **Async does not help CPU-bound work.** A tight numeric loop is just as slow async as sync (often slower because of overhead). For CPU-bound work, use `multiprocessing` or a process pool.
+      - **Mixed CPU-and-IO workloads** can use `loop.run_in_executor()` to offload CPU work to a thread or process pool while the event loop handles IO.
+
+      Reach for async when the bottleneck is "waiting." Reach for processes when the bottleneck is "computing."
+
+  - sequence: 3
+    fragment_type: example
+    content: |
+      ## Coroutines, awaitables, and the event loop
+
+      An `async def` function returns a *coroutine* — an object that has not started running. Calling `await` on it (inside another coroutine) schedules it on the event loop and pauses the caller until it returns.
+
+      ```python
+      async def fetch_user(user_id: int) -> dict:
+          ...
+
+      async def main():
+          user = await fetch_user(42)  # runs, returns when fetch_user completes
+          print(user)
+
+      import asyncio
+      asyncio.run(main())  # creates and runs an event loop until main() returns
+      ```
+
+      `asyncio.run()` is the standard entry point. It creates an event loop, runs the coroutine, and closes the loop. Do not call it from inside a coroutine — that creates a nested loop and errors out.
+
+  - sequence: 4
+    fragment_type: example
+    content: |
+      ## `TaskGroup` is the modern primitive (Python 3.11+)
+
+      Python 3.11 introduced `asyncio.TaskGroup` — a structured concurrency primitive that replaces most uses of `asyncio.gather`. The key behavior: if any task fails, the group cancels the others.
+
+      ```python
+      async with asyncio.TaskGroup() as tg:
+          tg.create_task(fetch_user(1))
+          tg.create_task(fetch_user(2))
+          tg.create_task(fetch_user(3))
+      # All tasks complete, or one fails and the rest are cancelled.
+      ```
+
+      Compare to `asyncio.gather`:
+
+      - **`gather` with `return_exceptions=False` (default).** First exception propagates, but the other tasks keep running in the background — orphaned and untracked. A common source of resource leaks.
+      - **`gather` with `return_exceptions=True`.** Exceptions become return values. The caller has to inspect each result.
+      - **`TaskGroup`.** First exception cancels siblings, awaits cleanup, raises. Cleaner shape.
+
+      Use `TaskGroup` for new code on 3.11+. Reserve `gather` for the specific case where you want all results regardless of individual failures.
+
+  - sequence: 5
+    fragment_type: execution
+    content: |
+      ## Cancellation is a first-class concern
+
+      Cancelling a task raises `asyncio.CancelledError` at the next `await` point inside it. Two implications:
+
+      - **Coroutines should let `CancelledError` propagate.** Catching it and continuing breaks cancellation semantics. If you must do cleanup, catch it, do the cleanup, and re-raise.
+      - **Long synchronous sections are uncancellable.** A coroutine that runs `time.sleep(60)` cannot be cancelled until the sleep returns — sync calls do not yield to the loop. Use `await asyncio.sleep(60)` instead.
+
+      Timeouts use cancellation under the hood. `asyncio.timeout()` (3.11+) is the modern shape:
+
+      ```python
+      async with asyncio.timeout(5.0):
+          result = await slow_operation()
+      # If slow_operation takes >5s, it is cancelled and TimeoutError is raised.
+      ```
+
+      Pre-3.11, `asyncio.wait_for(coro, timeout=5.0)` is the equivalent.
+
+  - sequence: 6
+    fragment_type: execution
+    content: |
+      ## Do not block the event loop
+
+      The event loop is single-threaded. Anything that blocks blocks every coroutine. Common blocking offenders:
+
+      - **`time.sleep(x)`.** Use `await asyncio.sleep(x)`.
+      - **Synchronous IO** — `open()`, `requests.get()`, `psycopg2` cursor execute. All block the event loop. Use async equivalents: `aiofiles`, `httpx.AsyncClient`, `asyncpg`, `aiomysql`.
+      - **CPU-heavy work** — a tight loop, a parse of a large blob, a regex on a huge string. Offload to a thread or process pool with `loop.run_in_executor()`.
+
+      When you cannot avoid a blocking call, wrap it:
+
+      ```python
+      result = await asyncio.to_thread(blocking_function, arg)
+      # Equivalent to loop.run_in_executor(None, blocking_function, arg)
+      ```
+
+      This runs the blocking call on a thread, leaving the event loop free.
+
+  - sequence: 7
+    fragment_type: rationale
+    content: |
+      ## Common asyncio bugs
+
+      - **Forgotten `await`.** `result = fetch_user(42)` (no await) returns a coroutine object, not a result. Type checkers catch this if return types are annotated; otherwise, the bug manifests as `RuntimeWarning: coroutine 'fetch_user' was never awaited`.
+      - **Mixing sync and async carelessly.** Calling an async function from sync code without `asyncio.run()` does nothing useful. Calling a sync function from async code blocks the loop.
+      - **Swallowed exceptions in fire-and-forget tasks.** `asyncio.create_task(coro)` without holding a reference loses any exceptions the task raises. Either `await` the task or use `TaskGroup`.
+      - **Iterating async generators with `for` instead of `async for`.** `for x in agen()` does not work; `async for x in agen()` does.
+      - **Using `asyncio.run()` inside an existing event loop.** Common in Jupyter notebooks (which already run a loop). Use `await coro` directly in notebook cells, or `nest_asyncio` if you must nest.
+      - **Race conditions on shared state.** Async does not eliminate races; coroutines yield at `await` points, and other coroutines run between yields. Use `asyncio.Lock` for critical sections that span awaits.
+
+  - sequence: 8
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      - **Using async for CPU-bound work.** No speedup; just complexity. Use processes.
+      - **Synchronous IO inside an async function.** Blocks the loop, defeats async. Use the async client library.
+      - **`asyncio.gather` without `return_exceptions=True` when you want partial success.** First exception orphans other tasks.
+      - **`create_task` without holding the reference.** Tasks may be garbage-collected before completion; exceptions are lost.
+      - **Manual `loop = asyncio.get_event_loop()` patterns.** Pre-3.10 style. On 3.10+, `asyncio.run()` and `asyncio.get_running_loop()` are the modern surface.
+      - **Catching `CancelledError` and not re-raising.** Breaks cancellation; the parent thinks the task was cancelled but it kept running.
+      - **`async def` for a function that has no `await`.** It is just a function with extra ceremony. Drop the `async`.
+
+  - sequence: 9
+    fragment_type: rationale
+    content: |
+      ## When sync is the right answer
+
+      Async has a cost — every IO library needs an async variant, debugging is harder, stack traces are noisier. If your program is not concurrency-bound (a CLI tool, a script, a service handling few requests at a time), sync is simpler and as fast or faster.
+
+      Reach for async when you can name a concrete concurrency need: "I need to fetch 1000 URLs as fast as possible," "I need to handle 5000 simultaneous WebSocket connections." Without that need, async is over-engineering.
+
+  - sequence: 10
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] Async is used only when the workload is IO-bound and concurrent; CPU-bound work uses processes or thread pool offload.
+      - [ ] All IO inside `async def` functions uses async libraries (`httpx.AsyncClient`, `aiofiles`, `asyncpg`); no sync `requests`, `open()`, or sync DB drivers.
+      - [ ] Concurrent tasks use `asyncio.TaskGroup` (Python 3.11+) rather than bare `asyncio.gather`, except where partial-success semantics are explicitly desired.
+      - [ ] `asyncio.timeout()` (3.11+) or `asyncio.wait_for()` is used for timeout-bounded operations; no infinite waits.
+      - [ ] Long-running tasks created with `create_task` are stored in a reference (TaskGroup, list) so exceptions are not silently dropped.
+      - [ ] `CancelledError` is allowed to propagate (after cleanup if needed), not swallowed.
+      - [ ] Blocking calls that cannot be made async are wrapped with `asyncio.to_thread` or `loop.run_in_executor`.

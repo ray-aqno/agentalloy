@@ -1,0 +1,322 @@
+skill_type: domain
+skill_id: python-typing-and-generics
+canonical_name: Python Typing and Generics (Type Hints, Protocols, PEP 695)
+category: engineering
+skill_class: domain
+domain_tags: [type-hints, protocol-class, typevar, pep-695-syntax, gradual-typing]
+always_apply: false
+phase_scope: null
+category_scope: language
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-04. Sources — Python 3.13 typing docs https://docs.python.org/3.13/library/typing.html (verified 2026-05-04 against fixtures/upstream/curated/python.yaml topic `typing_and_generics`); PEP 484 https://peps.python.org/pep-0484/ (gradual typing); PEP 544 https://peps.python.org/pep-0544/ (Protocols); PEP 695 https://peps.python.org/pep-0695/ (new generic syntax, Python 3.12+). Skill scope: Python's gradual typing system — annotations, generics, Protocols, common pitfalls; not external type checkers' configuration (mypy.ini, pyright config — out of scope), not runtime type validation (covered in framework-tier skills like Pydantic).
+
+raw_prose: |
+  # Python Typing and Generics
+
+  Python's typing system is gradual — annotations are optional and not enforced at runtime, but checked statically by tools like mypy or pyright. The rule is one sentence: annotate at boundaries, lean on inference within, use Protocol for duck-typed interfaces, and prefer the PEP 695 syntax on Python 3.12+. Most type-related friction in real codebases comes from over-annotating internals (noise without value), under-annotating boundaries (type errors leak into runtime), or mixing pre-695 generics syntax with 695 in confusing ways.
+
+  ## Annotations are gradual and runtime-inert
+
+  Type annotations in Python are documentation that tools can check. Python itself does not enforce them — `def f(x: int) -> int: return x + "!"` runs until the `+` blows up at runtime. The static checker catches the mismatch; the interpreter does not.
+
+  Implications:
+
+  - **Type errors are caught at lint time, not runtime.** Run `mypy` or `pyright` in CI; without that, annotations are decoration.
+  - **Annotations can be wrong.** Nothing forces them to match the code. A reviewer must read both.
+  - **Runtime libraries that consume annotations** (Pydantic, FastAPI, typer) inspect them via `typing.get_type_hints` or `inspect.signature`. Those are the exception, not the rule.
+
+  Treat the type checker as a lint tool with high signal — it catches a class of bugs cheaply, but it is not a guarantee.
+
+  ## Annotate boundaries, infer internals
+
+  The leverage of typing is concentrated at boundaries — public APIs, function signatures, dataclass fields, return types of exported helpers. Internal local variables usually do not need annotations; the inference engine handles them.
+
+  Specifically:
+
+  - **Annotate every public function.** Parameters and return type. Without annotations, callers cannot rely on the contract.
+  - **Annotate dataclass fields and attribute types.** These are the schema of your data.
+  - **Annotate when inference fails.** A `dict` literal with mixed value types may infer to `dict[str, object]`; if you intend `dict[str, int | str]`, annotate.
+  - **Skip annotations on obvious locals.** `count = 0` does not need `count: int = 0`; the inference is correct and the annotation is noise.
+
+  Over-annotating internals adds visual weight without catching more bugs. Under-annotating boundaries leaks errors that the type checker cannot track across module edges.
+
+  ## PEP 695 generic syntax (Python 3.12+)
+
+  Python 3.12 introduced a new generic syntax via PEP 695 that is dramatically cleaner than the pre-695 `TypeVar` dance.
+
+  Pre-695:
+
+  ```python
+  from typing import TypeVar, Generic
+
+  T = TypeVar("T")
+
+  class Stack(Generic[T]):
+      def push(self, item: T) -> None: ...
+      def pop(self) -> T: ...
+  ```
+
+  Post-695 (Python 3.12+):
+
+  ```python
+  class Stack[T]:
+      def push(self, item: T) -> None: ...
+      def pop(self) -> T: ...
+  ```
+
+  Same with generic functions:
+
+  ```python
+  # Pre-695
+  T = TypeVar("T")
+  def first(items: list[T]) -> T: ...
+
+  # Post-695
+  def first[T](items: list[T]) -> T: ...
+  ```
+
+  Use the new syntax on 3.12+. Mixing both styles in one module is confusing; pick one per project. If you must support older Python, keep `TypeVar`. If your minimum is 3.12, switch.
+
+  ## `Protocol` for duck-typed interfaces
+
+  Python's traditional duck typing — "if it walks like a duck and quacks like a duck" — has no static expression in the pre-Protocol world. PEP 544 added `Protocol`: a structural type that says "anything with these methods qualifies."
+
+  ```python
+  from typing import Protocol
+
+  class HasName(Protocol):
+      name: str
+
+  def greet(thing: HasName) -> str:
+      return f"hi {thing.name}"
+  ```
+
+  Any class with a `name: str` attribute satisfies `HasName` — no inheritance needed. This is the right tool when you have a function that takes "anything with method X" and you do not control all the call-site types.
+
+  Compare to ABC inheritance: ABCs require explicit subclassing, Protocols do not. Use Protocol for cross-cutting interfaces (loggers, file-like objects, anything pluggable). Use ABC inheritance when you want enforcement and a controlled hierarchy.
+
+  ## `Optional`, `None`, and the `|` union syntax
+
+  Python 3.10+ supports `X | None` as the canonical way to write "X or None":
+
+  ```python
+  # 3.10+
+  def find_user(id: int) -> User | None: ...
+
+  # Pre-3.10
+  from typing import Optional
+  def find_user(id: int) -> Optional[User]: ...
+  ```
+
+  Both mean the same thing on a type checker. The `|` form is shorter and matches the runtime `isinstance(x, str | int)` syntax (which works on 3.10+). Prefer `|` on 3.10+; the `typing.Optional` form is fine on older Python.
+
+  Anti-pattern: `Optional[X]` does *not* mean "this argument is optional" — it means "the value can be `None`." A function with `def f(x: Optional[int] = None)` says the argument defaults to None and has type `int | None`. A function with `def f(x: int = 5)` does not need `Optional` — `x` is always `int`.
+
+  ## `TypedDict` for structured dicts; `dataclass` for simple records
+
+  When your data has a fixed shape, do not type it as `dict[str, Any]`. Two cleaner options:
+
+  - **`@dataclass` (or `@dataclass(slots=True)`).** A class with typed attributes. Use when you control the construction; the dataclass gets `__init__`, `__repr__`, `__eq__` for free.
+  - **`TypedDict`.** When you receive dicts from outside (JSON parsing, third-party APIs) and want to type them. `class UserPayload(TypedDict): id: int; name: str`. The runtime value is still a dict; the type checker treats it like a record.
+
+  Pick based on construction site: dataclass when you create the value, TypedDict when you receive it as a dict you cannot change to a class.
+
+  Pydantic models (in the framework tier) sit between these two — they validate and convert at runtime. Use them when validation is needed; for pure typing of internal data, dataclass and TypedDict are lighter.
+
+  ## Common typing pitfalls
+
+  - **Forgetting `from __future__ import annotations`.** On Python 3.10 and earlier, annotations are evaluated at definition time; forward references break. The future import defers all annotations to lazy evaluation. On 3.12+, deferred annotations are increasingly the default but still worth requesting explicitly for portability.
+  - **Using `Any` as escape hatch.** `Any` disables checking. Useful for deliberate gradual typing during migration; harmful as a permanent shape. If you reach for `Any`, ask whether `object`, a Protocol, or a TypeVar would say more.
+  - **`list` vs `list[X]` in annotations.** Python 3.9+ allows `list[int]` (PEP 585); pre-3.9 needs `List[int]` from `typing`. On modern Python, prefer the built-in form.
+  - **Variance confusion.** `list[Cat]` is *not* a subtype of `list[Animal]` (lists are invariant). Use `Sequence[Animal]` (covariant) when read-only access is enough.
+  - **Type narrowing failure.** `if x is not None:` narrows `X | None` to `X`. `if x:` does *not* — `0`, `""`, `[]` are falsy and the type checker knows. Use `is None` checks for clarity.
+
+  ## Anti-patterns
+
+  - **Annotating every local variable.** Visual noise without bug-catching benefit. Trust inference.
+  - **Skipping annotations on public APIs.** The boundary is where types pay off most; skipping them is the worst trade.
+  - **Using `Any` where a real type exists.** Disables the checker permanently in that surface.
+  - **Mixing pre-695 and post-695 generic syntax in one module.** Confusing for readers; pick one per project.
+  - **Type-annotating without running a type checker.** The annotations age into lies because nothing verifies them. Run mypy or pyright in CI.
+  - **`Optional[X]` to mean "argument has a default."** It means "value can be None." Different concepts.
+
+  ## Verification
+
+  - [ ] Every public function (exported from a module, not prefixed `_`) has parameter and return annotations.
+  - [ ] Dataclass fields and TypedDict fields have type annotations.
+  - [ ] Internal local variables are not over-annotated; inference handles obvious cases.
+  - [ ] Generics use PEP 695 syntax on Python 3.12+; pre-695 `TypeVar(...)` only for older targets.
+  - [ ] Optional values use `X | None` on Python 3.10+ (`Optional[X]` only for older targets).
+  - [ ] `Any` is used only as a deliberate escape hatch with a comment, not as a default.
+  - [ ] Type checker (mypy or pyright) runs in CI and fails the build on errors; annotations are not decoration.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Python Typing and Generics
+
+      Python's typing system is gradual — annotations are optional and not enforced at runtime, but checked statically by tools like mypy or pyright. The rule is one sentence: annotate at boundaries, lean on inference within, use Protocol for duck-typed interfaces, and prefer the PEP 695 syntax on Python 3.12+. Most type-related friction in real codebases comes from over-annotating internals (noise without value), under-annotating boundaries (type errors leak into runtime), or mixing pre-695 generics syntax with 695 in confusing ways.
+
+  - sequence: 2
+    fragment_type: rationale
+    content: |
+      ## Annotations are gradual and runtime-inert
+
+      Type annotations in Python are documentation that tools can check. Python itself does not enforce them — `def f(x: int) -> int: return x + "!"` runs until the `+` blows up at runtime. The static checker catches the mismatch; the interpreter does not.
+
+      Implications:
+
+      - **Type errors are caught at lint time, not runtime.** Run `mypy` or `pyright` in CI; without that, annotations are decoration.
+      - **Annotations can be wrong.** Nothing forces them to match the code. A reviewer must read both.
+      - **Runtime libraries that consume annotations** (Pydantic, FastAPI, typer) inspect them via `typing.get_type_hints` or `inspect.signature`. Those are the exception, not the rule.
+
+      Treat the type checker as a lint tool with high signal — it catches a class of bugs cheaply, but it is not a guarantee.
+
+  - sequence: 3
+    fragment_type: execution
+    content: |
+      ## Annotate boundaries, infer internals
+
+      The leverage of typing is concentrated at boundaries — public APIs, function signatures, dataclass fields, return types of exported helpers. Internal local variables usually do not need annotations; the inference engine handles them.
+
+      Specifically:
+
+      - **Annotate every public function.** Parameters and return type. Without annotations, callers cannot rely on the contract.
+      - **Annotate dataclass fields and attribute types.** These are the schema of your data.
+      - **Annotate when inference fails.** A `dict` literal with mixed value types may infer to `dict[str, object]`; if you intend `dict[str, int | str]`, annotate.
+      - **Skip annotations on obvious locals.** `count = 0` does not need `count: int = 0`; the inference is correct and the annotation is noise.
+
+      Over-annotating internals adds visual weight without catching more bugs. Under-annotating boundaries leaks errors that the type checker cannot track across module edges.
+
+  - sequence: 4
+    fragment_type: example
+    content: |
+      ## PEP 695 generic syntax (Python 3.12+)
+
+      Python 3.12 introduced a new generic syntax via PEP 695 that is dramatically cleaner than the pre-695 `TypeVar` dance.
+
+      Pre-695:
+
+      ```python
+      from typing import TypeVar, Generic
+
+      T = TypeVar("T")
+
+      class Stack(Generic[T]):
+          def push(self, item: T) -> None: ...
+          def pop(self) -> T: ...
+      ```
+
+      Post-695 (Python 3.12+):
+
+      ```python
+      class Stack[T]:
+          def push(self, item: T) -> None: ...
+          def pop(self) -> T: ...
+      ```
+
+      Same with generic functions:
+
+      ```python
+      # Pre-695
+      T = TypeVar("T")
+      def first(items: list[T]) -> T: ...
+
+      # Post-695
+      def first[T](items: list[T]) -> T: ...
+      ```
+
+      Use the new syntax on 3.12+. Mixing both styles in one module is confusing; pick one per project. If you must support older Python, keep `TypeVar`. If your minimum is 3.12, switch.
+
+  - sequence: 5
+    fragment_type: example
+    content: |
+      ## `Protocol` for duck-typed interfaces
+
+      Python's traditional duck typing — "if it walks like a duck and quacks like a duck" — has no static expression in the pre-Protocol world. PEP 544 added `Protocol`: a structural type that says "anything with these methods qualifies."
+
+      ```python
+      from typing import Protocol
+
+      class HasName(Protocol):
+          name: str
+
+      def greet(thing: HasName) -> str:
+          return f"hi {thing.name}"
+      ```
+
+      Any class with a `name: str` attribute satisfies `HasName` — no inheritance needed. This is the right tool when you have a function that takes "anything with method X" and you do not control all the call-site types.
+
+      Compare to ABC inheritance: ABCs require explicit subclassing, Protocols do not. Use Protocol for cross-cutting interfaces (loggers, file-like objects, anything pluggable). Use ABC inheritance when you want enforcement and a controlled hierarchy.
+
+  - sequence: 6
+    fragment_type: example
+    content: |
+      ## `Optional`, `None`, and the `|` union syntax
+
+      Python 3.10+ supports `X | None` as the canonical way to write "X or None":
+
+      ```python
+      # 3.10+
+      def find_user(id: int) -> User | None: ...
+
+      # Pre-3.10
+      from typing import Optional
+      def find_user(id: int) -> Optional[User]: ...
+      ```
+
+      Both mean the same thing on a type checker. The `|` form is shorter and matches the runtime `isinstance(x, str | int)` syntax (which works on 3.10+). Prefer `|` on 3.10+; the `typing.Optional` form is fine on older Python.
+
+      Anti-pattern: `Optional[X]` does *not* mean "this argument is optional" — it means "the value can be `None`." A function with `def f(x: Optional[int] = None)` says the argument defaults to None and has type `int | None`. A function with `def f(x: int = 5)` does not need `Optional` — `x` is always `int`.
+
+  - sequence: 7
+    fragment_type: execution
+    content: |
+      ## `TypedDict` for structured dicts; `dataclass` for simple records
+
+      When your data has a fixed shape, do not type it as `dict[str, Any]`. Two cleaner options:
+
+      - **`@dataclass` (or `@dataclass(slots=True)`).** A class with typed attributes. Use when you control the construction; the dataclass gets `__init__`, `__repr__`, `__eq__` for free.
+      - **`TypedDict`.** When you receive dicts from outside (JSON parsing, third-party APIs) and want to type them. `class UserPayload(TypedDict): id: int; name: str`. The runtime value is still a dict; the type checker treats it like a record.
+
+      Pick based on construction site: dataclass when you create the value, TypedDict when you receive it as a dict you cannot change to a class.
+
+      Pydantic models (in the framework tier) sit between these two — they validate and convert at runtime. Use them when validation is needed; for pure typing of internal data, dataclass and TypedDict are lighter.
+
+  - sequence: 8
+    fragment_type: rationale
+    content: |
+      ## Common typing pitfalls
+
+      - **Forgetting `from __future__ import annotations`.** On Python 3.10 and earlier, annotations are evaluated at definition time; forward references break. The future import defers all annotations to lazy evaluation. On 3.12+, deferred annotations are increasingly the default but still worth requesting explicitly for portability.
+      - **Using `Any` as escape hatch.** `Any` disables checking. Useful for deliberate gradual typing during migration; harmful as a permanent shape. If you reach for `Any`, ask whether `object`, a Protocol, or a TypeVar would say more.
+      - **`list` vs `list[X]` in annotations.** Python 3.9+ allows `list[int]` (PEP 585); pre-3.9 needs `List[int]` from `typing`. On modern Python, prefer the built-in form.
+      - **Variance confusion.** `list[Cat]` is *not* a subtype of `list[Animal]` (lists are invariant). Use `Sequence[Animal]` (covariant) when read-only access is enough.
+      - **Type narrowing failure.** `if x is not None:` narrows `X | None` to `X`. `if x:` does *not* — `0`, `""`, `[]` are falsy and the type checker knows. Use `is None` checks for clarity.
+
+  - sequence: 9
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      - **Annotating every local variable.** Visual noise without bug-catching benefit. Trust inference.
+      - **Skipping annotations on public APIs.** The boundary is where types pay off most; skipping them is the worst trade.
+      - **Using `Any` where a real type exists.** Disables the checker permanently in that surface.
+      - **Mixing pre-695 and post-695 generic syntax in one module.** Confusing for readers; pick one per project.
+      - **Type-annotating without running a type checker.** The annotations age into lies because nothing verifies them. Run mypy or pyright in CI.
+      - **`Optional[X]` to mean "argument has a default."** It means "value can be None." Different concepts.
+
+  - sequence: 10
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] Every public function (exported from a module, not prefixed `_`) has parameter and return annotations.
+      - [ ] Dataclass fields and TypedDict fields have type annotations.
+      - [ ] Internal local variables are not over-annotated; inference handles obvious cases.
+      - [ ] Generics use PEP 695 syntax on Python 3.12+; pre-695 `TypeVar(...)` only for older targets.
+      - [ ] Optional values use `X | None` on Python 3.10+ (`Optional[X]` only for older targets).
+      - [ ] `Any` is used only as a deliberate escape hatch with a comment, not as a default.
+      - [ ] Type checker (mypy or pyright) runs in CI and fails the build on errors; annotations are not decoration.

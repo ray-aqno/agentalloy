@@ -1,0 +1,27 @@
+name: python
+version: 1.0.0
+tier: language
+description: Python language patterns — typing, async, error handling, packaging, idioms. Precision-favored language tier; sourced from python.org docs and PEPs per R1 tiered sourcing (fixtures/upstream/curated/python.yaml, version_anchor 3.13).
+author: navistone
+embed_model: qwen3-embedding:0.6b
+embedding_dim: 1024
+license: MIT
+homepage: https://github.com/nrmeyers/skillsmith
+always_install: false
+depends_on: [core, engineering]
+skills:
+  - skill_id: python-typing-and-generics
+    file: python-typing-and-generics.yaml
+    fragment_count: 10
+  - skill_id: python-async-and-asyncio
+    file: python-async-and-asyncio.yaml
+    fragment_count: 10
+  - skill_id: python-error-handling
+    file: python-error-handling.yaml
+    fragment_count: 10
+  - skill_id: python-packaging-and-pyproject
+    file: python-packaging-and-pyproject.yaml
+    fragment_count: 11
+  - skill_id: python-context-managers-and-with
+    file: python-context-managers-and-with.yaml
+    fragment_count: 10
