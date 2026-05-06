@@ -1,0 +1,30 @@
+name: redshift
+version: 1.0.0
+tier: store
+description: |
+  Amazon Redshift data warehouse patterns — table design (DISTKEY/SORTKEY/encoding), data loading via COPY, query tuning (EXPLAIN/VACUUM/ANALYZE), Spectrum + Iceberg integration for S3 lakehouse queries, and Workload Management (WLM) for concurrent query isolation. Precision-favored store tier; sourced from docs.aws.amazon.com/redshift sub-pages via the .md-suffix convention per R1 tier-3 procedure (Redshift dev guide ships its own llms.txt index at /redshift/latest/dg/llms.txt).
+author: navistone
+embed_model: qwen3-embedding:0.6b
+embedding_dim: 1024
+license: MIT
+homepage: https://github.com/nrmeyers/skillsmith
+always_install: false
+depends_on:
+- core
+- engineering
+skills:
+- skill_id: redshift-loading-data
+  file: redshift-loading-data.yaml
+  fragment_count: 7
+- skill_id: redshift-query-tuning
+  file: redshift-query-tuning.yaml
+  fragment_count: 14
+- skill_id: redshift-spectrum-and-iceberg
+  file: redshift-spectrum-and-iceberg.yaml
+  fragment_count: 8
+- skill_id: redshift-table-design
+  file: redshift-table-design.yaml
+  fragment_count: 6
+- skill_id: redshift-workload-management
+  file: redshift-workload-management.yaml
+  fragment_count: 13
