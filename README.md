@@ -1,146 +1,183 @@
 # skillsmith
 
-Runtime skill composition service. Gives your coding agent access to a curated corpus of engineering skills — testing patterns, error handling, deployment recipes, observability, security, and more — composed dynamically per task.
+> **Skills your coding agent doesn't have to memorize.**
 
-The runtime holds **no generative LLM** — only an embedding service. Your agent calls the API and does its own assembly inside its own prompt context.
+A runtime corpus of engineering skills — testing, error handling, deployment, observability, security, framework patterns — composed dynamically per task and served to your agent over HTTP. The runtime holds **no generative LLM**. Just embeddings + a graph + your agent.
 
-> **60% smaller prompts. 25% faster runs. Same model — and answers improve, not degrade.**
-> — see `docs/experiments/poc-composed-vs-flat.md` §13
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+
+---
+
+## What it actually does
+
+**60% smaller prompts. 25% faster runs. Same model — and answers improve, not degrade.**
+— `docs/experiments/poc-composed-vs-flat.md` §13
+
+```
+$ curl -s -X POST http://localhost:47950/compose \
+    -H 'Content-Type: application/json' \
+    -d '{"task": "write a failing pytest", "phase": "build"}' | jq .
+
+{
+  "output": "## TDD: write the failing test first\n\nIn pytest, ...",
+  "source_skills": ["test-driven-development", "pytest-fixtures"],
+  "tokens_returned": 1840,
+  "compose_ms": 47
+}
+```
+
+Your agent calls `/compose`, gets back the relevant raw skill prose, and assembles it inside its own prompt. No LLM-in-the-loop, no token tax, no API key roulette. Sub-50ms p95 on a warm cache.
 
 ---
 
 ## Quickstart
 
-**1. Clone into your tools directory**
+**1. Clone**
 
 ```bash
-cd ~/dev          # or wherever you keep tools
 git clone https://github.com/nrmeyers/skillsmith.git
 cd skillsmith
 ```
 
-**2. Open your coding harness of choice** (Claude Code, Cursor, Gemini CLI, Continue.dev, etc.)
+**2. Open your coding harness** — Claude Code, Cursor, Gemini CLI, Continue.dev, OpenCode, Aider, Cline.
 
-**3. Tell your agent to install**
+**3. Tell the agent to install**
 
 ```
 Install this tool by following INSTALL.md
 ```
 
-That's it. The agent reads `INSTALL.md`, detects your hardware, pulls the embedding model, seeds the corpus, and wires itself up. Total time: 3–5 minutes on a warm machine.
+The agent reads `INSTALL.md`, detects your hardware, pulls the embedding model, seeds the corpus, and wires itself up. **3–5 minutes** on a warm machine.
 
----
-
-## Requirements
-
-- Python 3.12+ with [`uv`](https://github.com/astral-sh/uv)
-- An embedding service matching your hardware (see [Platform Setup](#platform-setup))
-- A supported coding harness (Claude Code, Cursor, Gemini CLI, Continue.dev, OpenCode, Aider, Cline)
-
----
-
-## Platform Setup
-
-The runtime requires only an embedding service. The install agent handles configuration automatically, but here's the reference:
-
-| Preset | Hardware | Embedding backend | RAM / VRAM minimum |
-|--------|----------|-------------------|--------------------|
-| `cpu` | Any x86_64 / ARM64 | Ollama on CPU | 8 GB RAM |
-| `apple-silicon` | Apple M1/M2/M3/M4 | Ollama (Metal) | 8 GB unified |
-| `nvidia` | NVIDIA GPU (CUDA) | Ollama (CUDA) | 4 GB VRAM |
-| `radeon` | AMD Radeon dGPU or iGPU | LM Studio (Vulkan) | 4 GB VRAM |
-
-All presets use `qwen3-embedding:0.6b` (1024-dim). `cpu`, `apple-silicon`, and `nvidia` use Ollama at `localhost:11434`; `radeon` uses LM Studio's Vulkan backend at `localhost:1234`.
-
-**Ollama presets** — pull the embedding model once:
-```bash
-ollama pull qwen3-embedding:0.6b
-```
-
-**Radeon preset** — open LM Studio, search for `qwen3-embedding:0.6b`, download the Q8 variant, and start the local server.
-
-For authoring (generating new skills via the LLM pipeline), you also need a chat model. Authoring is optional — the service runs fine with the pre-seeded corpus and no generation model.
-
----
-
-## Manual setup (without the agent)
-
-```bash
-uv sync
-uv tool install --editable .   # puts `skillsmith` in PATH system-wide
-skillsmith setup
-skillsmith serve
-```
-
-`skillsmith setup` walks an interactive composer (`write-env` → `seed-corpus` → `install-packs` → `install-mcp` → `install-rules`). The `install-packs` step prompts you to pick which in-tree packs to install.
-
-**Headless one-liner** — clone, install every in-tree pack non-interactively, no prompts:
+**Headless one-liner** (CI / containers / scripts):
 
 ```bash
 uv sync
 uv run python -m skillsmith.install install-packs --packs all --non-interactive
 ```
 
-This walks `src/skillsmith/_packs/*/pack.yaml`, ingests every pack into the local LadybugDB + DuckDB corpus, and runs one bulk reembed at the end. Use when scripting CI environments, container builds, or fresh dev machines.
+`--packs` accepts `all` or a comma-separated list. Unknown names fail fast in non-interactive mode; pass `--ignore-unknown` to skip them.
 
-`--packs` accepts a comma-separated list (`--packs core,nodejs,react`) or `all`. Unknown pack names fail fast in non-interactive mode; pass `--ignore-unknown` to skip unrecognized names and continue with the known subset.
+---
+
+## Hardware presets
+
+The runtime needs only an embedding service. The install agent picks one for you, but here's the matrix:
+
+| Preset | Hardware | Backend | VRAM / RAM |
+|---|---|---|---|
+| `cpu` | x86_64 / ARM64 | Ollama (CPU) | 8 GB RAM |
+| `apple-silicon` | M1 / M2 / M3 / M4 | Ollama (Metal) | 8 GB unified |
+| `nvidia` | NVIDIA + CUDA | Ollama (CUDA) | 4 GB VRAM |
+| `radeon` | AMD Radeon dGPU/iGPU | LM Studio (Vulkan) | 4 GB VRAM |
+
+All presets use **`qwen3-embedding:0.6b`** at 1024 dimensions. Ollama presets bind `localhost:11434`; radeon binds `localhost:1234`.
+
+```bash
+# Ollama presets
+ollama pull qwen3-embedding:0.6b
+
+# Radeon: open LM Studio → search qwen3-embedding:0.6b → Q8 → start server
+```
 
 ---
 
 ## Packs shipping in-tree
 
-The corpus is split into **packs** — opt-in groups of related skills. As of 2026-05-06, `main` ships:
+The corpus is **packs** — opt-in groups of related skills. As of 2026-05-06, `main` ships **22 packs / ~110 skills**:
 
-| Pack | Tier | Skills | Status |
-|---|---|---:|---|
-| `meta` | system | – | always-on |
-| `conventions` | system | – | always-on |
-| `core` | foundation | 12 | always-on |
-| `engineering` | foundation | 5 | default-on |
-| `documentation` | foundation | 4 | opt-in |
-| `refactoring` | foundation | 4 | opt-in |
-| `performance` | foundation | 4 | opt-in |
-| `python` | language | 5 | opt-in |
-| `typescript` | language | 5 | opt-in |
-| `nodejs` | language | 5 | opt-in |
-| `go` | language | 5 | opt-in |
-| `rust` | language | 5 | opt-in |
-| `csharp-dotnet` | language | 5 | opt-in |
-| `java` | language | 5 | opt-in |
-| `react` | framework | 5 | opt-in |
-| `nextjs` | framework | 5 | opt-in |
-| `fastapi` | framework | 5 | opt-in |
-| `vue` | framework | 5 | opt-in |
-| `nestjs` | framework | 5 | opt-in |
-| `fastify` | framework | 4 | opt-in |
+<table>
+<tr><th>Tier</th><th>Packs</th></tr>
+<tr><td><b>system</b></td><td><code>meta</code> · <code>conventions</code></td></tr>
+<tr><td><b>foundation</b></td><td><code>core</code> · <code>engineering</code> · <code>documentation</code> · <code>refactoring</code> · <code>performance</code></td></tr>
+<tr><td><b>language</b></td><td><code>python</code> · <code>typescript</code> · <code>nodejs</code> · <code>go</code> · <code>rust</code> · <code>csharp-dotnet</code> · <code>java</code></td></tr>
+<tr><td><b>framework</b></td><td><code>react</code> · <code>nextjs</code> · <code>fastapi</code> · <code>vue</code> · <code>nestjs</code> · <code>fastify</code></td></tr>
+<tr><td><b>store</b></td><td><code>temporal</code></td></tr>
+<tr><td><b>tooling</b></td><td><code>linting</code> · <code>pytest</code></td></tr>
+</table>
 
-Authored against authoritative upstream docs per the R1–R8 quality contract in `src/skillsmith/_packs/meta/sys-skill-authoring-rules.md`. Each pack ships with `.qa.md` reports under `docs/skill-review-history/` documenting the independent Critic review verdicts.
+Every skill is sourced from authoritative upstream docs and validated against the **R1–R8 quality contract** in `src/skillsmith/_packs/meta/sys-skill-authoring-rules.md`. Each pack ships with `.qa.md` reports under `docs/skill-review-history/` documenting independent Critic verdicts.
 
-To author a new pack, see `docs/PACK-AUTHORING.md` and the latest session handoff under `docs/session-handoff-*.md`.
+To author a new pack, see `docs/PACK-AUTHORING.md`.
 
 ---
 
-## Run via container (no Python required)
+## How packs get authored
 
-For evaluators or CI environments:
+Three-stage local pipeline. Skillsmith doesn't burn paid LLM tokens to grow the corpus.
+
+```
+SKILL.md  →  [14B Author]  →  draft YAML  →  [30B Critic]  →  approve / revise
+                                                  ↓
+                                          [Opus safety gate]
+                                                  ↓
+                                            pending-review/  →  ingest
+```
+
+| Stage | Model | Where it runs |
+|---|---|---|
+| **Author** | `Qwen2.5-Coder-14B-Instruct` (Q4_K_M) | local Ollama / LM Studio |
+| **Critic** | `granite-4.1-30b` (UD-Q4_K_XL) | local Ollama / LM Studio |
+| **Safety gate** | Claude Opus (one-pass review) | only when bounce budget exhausted |
+
+The bounce loop (`python -m skillsmith.authoring run <source-dir>`) bounces drafts between author and critic up to `bounce_budget=3` times. ~80% of skills converge in 1 round; ~15% in 2; the residue routes to `needs-human/` for hand-authoring.
+
+---
+
+## Run via container
+
+For evaluators or CI environments — no Python required:
 
 ```bash
-podman compose up -d         # or: docker compose up -d
+podman compose up -d            # or: docker compose up -d
 curl http://localhost:47950/health
 ```
 
 This brings up:
-- `skillsmith` — FastAPI service on port 47950, with the pre-seeded corpus baked in
-- `ollama` — Ollama on port 11434 with `qwen3-embedding:0.6b` auto-pulled on first start
+- `skillsmith` — FastAPI service on port 47950, pre-seeded corpus baked in
+- `ollama` — Ollama on port 11434 with `qwen3-embedding:0.6b` auto-pulled
 
 Persistent state:
-- `./data` is bind-mounted into the container — runtime ingestions persist on the host
-- Ollama models live in a named volume (`skillsmith-ollama-models`) — not re-pulled on restart
+- `./data` bind-mounted — runtime ingestions persist on the host
+- Ollama models in a named volume (`skillsmith-ollama-models`)
 
 ```bash
 podman compose down              # stop, keep volumes
-podman compose down -v           # stop and remove ollama-models volume
+podman compose down -v           # stop, remove ollama-models volume
 ```
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────┐
+│   POST /compose                                          │
+│      ↓                                                   │
+│   embed task → hybrid retrieve (BM25 + dense, RRF) →    │
+│   hydrate fragments → return raw concatenated text       │
+│      ↓                                                   │
+│   agent assembles in its own prompt context              │
+└──────────────────────────────────────────────────────────┘
+                ↓                              ↓
+   ┌────────────────────────┐    ┌──────────────────────────┐
+   │   DuckDB               │    │   LadybugDB (Kùzu)       │
+   │   ─────────────        │    │   ────────────────       │
+   │   • 1024-dim vectors   │    │   • Skill nodes          │
+   │   • BM25 FTS index     │    │   • SkillVersion nodes   │
+   │   • Composition traces │    │   • Fragment nodes       │
+   │                        │    │   • Pack relationships   │
+   │   "what to retrieve"   │    │   "what it means"        │
+   └────────────────────────┘    └──────────────────────────┘
+```
+
+- **Embedding** — `qwen3-embedding:0.6b` (1024-dim). Backend-agnostic via OpenAI-compatible `/v1/embeddings`.
+- **Retrieval** — hybrid BM25 + dense cosine fused via Reciprocal Rank Fusion. Token-literal queries (`"JWT"`, `"Prisma"`) hit BM25; semantic queries hit dense.
+- **No generative LLM in the runtime path.** The agent owns generation; skillsmith owns retrieval.
+
+For a deeper look at the dual-DB design (and why it's the right shape for code intelligence too), see `docs/code-indexer-architecture-1pager.md`.
 
 ---
 
@@ -161,29 +198,19 @@ uv run pytest -m integration     # requires Ollama with qwen3-embedding:0.6b
 Environment variables (written automatically by `skillsmith install write-env`):
 
 | Variable | Default | Purpose |
-|----------|---------|---------|
-| `RUNTIME_EMBED_BASE_URL` | `http://localhost:11434` | Embedding endpoint (`http://localhost:1234` for radeon preset) |
+|---|---|---|
+| `RUNTIME_EMBED_BASE_URL` | `http://localhost:11434` | Embedding endpoint (`http://localhost:1234` for radeon) |
 | `RUNTIME_EMBEDDING_MODEL` | `qwen3-embedding:0.6b` | Embedding model for retrieve / compose |
 | `LADYBUG_DB_PATH` | `./data/ladybug` | LadybugDB directory |
 | `DUCKDB_PATH` | `./data/skills.duck` | DuckDB vector + telemetry store |
-| `AUTHORING_MODEL` | `qwen/qwen3.6-35b-a3b` | Model for skill generation (authoring only) |
-| `CRITIC_MODEL` | `qwen/qwen3.6-35b-a3b` | Model for authoring critic (authoring only) |
-| `AUTHORING_EMBEDDING_MODEL` | `qwen3-embedding:0.6b` | Authoring-pipeline embedding model (authoring only) |
+| `AUTHORING_MODEL` | `hf.co/unsloth/Qwen2.5-Coder-14B-Instruct-GGUF:Q4_K_M` | Author model (authoring only) |
+| `CRITIC_MODEL` | `hf.co/unsloth/granite-4.1-30b-GGUF:UD-Q4_K_XL` | Critic model (authoring only) |
+| `AUTHORING_LM_BASE_URL` | (falls back to `LM_STUDIO_BASE_URL`) | Author endpoint (lets author + critic run on different ports) |
+| `AUTHORING_EMBEDDING_MODEL` | `qwen3-embedding:0.6b` | Authoring-pipeline embedding model |
 | `DEDUP_HARD_THRESHOLD` | `0.92` | Dedup hard cosine threshold |
 | `DEDUP_SOFT_THRESHOLD` | `0.80` | Dedup soft cosine threshold |
-| `BOUNCE_BUDGET` | `3` | Max retrieval bounces |
+| `BOUNCE_BUDGET` | `3` | Max author↔critic revision rounds |
 | `LOG_LEVEL` | `INFO` | Log verbosity |
-
----
-
-## Architecture
-
-- **Embedding service** — `qwen3-embedding:0.6b` (1024-dim). Backend-agnostic: Ollama, LM Studio, vLLM all work via the OpenAI-compatible `/v1/embeddings` API.
-- **DuckDB** — 1024-dim L2-normalized fragment vectors, BM25 FTS index, and composition traces.
-- **LadybugDB (Kùzu)** — skill graph (Skill → SkillVersion → Fragment).
-- **Retrieval** — hybrid BM25 + dense cosine search fused via Reciprocal Rank Fusion (RRF). Token-literal queries ("JWT", "Prisma") surface via BM25; semantic queries surface via dense.
-- **Compose flow** — agent → `POST /compose` → embed task → hybrid retrieve → hydrate fragments → return raw concatenated text. Agent assembles in its own prompt context.
-- **No generative LLM in the runtime path.**
 
 ---
 
@@ -193,4 +220,10 @@ See `docs/experiments/poc-composed-vs-flat.md` §13. Headline:
 
 > **60% smaller prompts. 25% faster runs. Same model — and answers improve, not degrade.**
 
-Reproduce: `AGENT_MODEL=qwen/qwen3.6-35b-a3b uv run python -m eval.run_poc --n 3` (requires running skillsmith + LM Studio with the agent model loaded).
+Reproduce: `AGENT_MODEL=<your-agent-model> uv run python -m eval.run_poc --n 3` (requires running skillsmith + the agent model loaded locally).
+
+---
+
+## License
+
+MIT. See [LICENSE](LICENSE).

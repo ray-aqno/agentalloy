@@ -182,6 +182,17 @@ vendors:
     packs: []
     notes: Only JVM-ecosystem source with llms.txt. Java SE / OpenJDK / Spring are all tier-3.
 
+  snowflake:
+    tier: 1
+    llms_url: https://docs.snowflake.com/llms.txt
+    llms_full_url: https://docs.snowflake.com/llms-full.txt
+    packs: [snowflake]
+    notes: |
+      Discovered tier-1 on 2026-05-06. llms-full.txt is ~50MB (entire Snowflake
+      docs corpus). Most individual doc pages also have a `.md` suffix variant
+      (e.g., docs.snowflake.com/en/sql-reference/sql/select.md) — prefer those
+      for targeted slicing over loading the full file.
+
   # ────────────── tier-2: index only ──────────────
 
   stripe:
