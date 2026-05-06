@@ -1,0 +1,30 @@
+name: data-engineering
+version: 1.0.0
+tier: domain
+description: |
+  Data-engineering patterns — dbt (models, materializations, tests, snapshots, incremental models) and Apache Airflow (DAGs, tasks, operators, best practices, custom timetables). Precision-favored domain tier; sourced from docs.getdbt.com via .md-suffix sub-pages (R1 tier-1) and apache/airflow GitHub docs (R1 tier-3).
+author: navistone
+embed_model: qwen3-embedding:0.6b
+embedding_dim: 1024
+license: MIT
+homepage: https://github.com/nrmeyers/skillsmith
+always_install: false
+depends_on:
+- core
+- engineering
+skills:
+- skill_id: data-engineering-airflow-best-practices
+  file: data-engineering-airflow-best-practices.yaml
+  fragment_count: 6
+- skill_id: data-engineering-airflow-dags
+  file: data-engineering-airflow-dags.yaml
+  fragment_count: 7
+- skill_id: data-engineering-dbt-incremental
+  file: data-engineering-dbt-incremental.yaml
+  fragment_count: 9
+- skill_id: data-engineering-dbt-models
+  file: data-engineering-dbt-models.yaml
+  fragment_count: 7
+- skill_id: data-engineering-dbt-tests-and-snapshots
+  file: data-engineering-dbt-tests-and-snapshots.yaml
+  fragment_count: 3

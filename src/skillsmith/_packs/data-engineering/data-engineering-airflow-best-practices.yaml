@@ -1,0 +1,271 @@
+skill_type: domain
+skill_id: data-engineering-airflow-best-practices
+canonical_name: Airflow — Best Practices and Timetables
+category: engineering
+skill_class: domain
+domain_tags:
+  - airflow
+  - best-practices
+  - timetables
+  - dag
+  - scheduling
+always_apply: false
+phase_scope: []
+category_scope: []
+author: authoring-agent
+change_summary: initial authoring draft
+raw_prose: |
+  # Airflow — Best Practices and Timetables
+
+  ## Overview
+
+  Production Airflow runs into the same patterns repeatedly: idempotent tasks, parsed-DAGs without side effects, lean XComs, and custom timetables for non-cron schedules. This skill covers the operational craft.
+
+  Sourced from apache/airflow github docs (best-practices, authoring-and-scheduling/timetable).
+
+  .. Licensed to the Apache Software Foundation (ASF) under one
+     or more contributor license agreements.  See the NOTICE file
+     distributed with this work for additional information
+     regarding copyright ownership.  The ASF licenses this file
+     to you under the Apache License, Version 2.0 (the
+     "License"); you may not use this file except in compliance
+     with the License.  You may obtain a copy of the License at
+
+  ..   http://www.apache.org/licenses/LICENSE-2.0
+
+  .. Unless required by applicable law or agreed to in writing,
+     software distributed under the License is distributed on an
+     "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+     KIND, either express or implied.  See the License for the
+     specific language governing permissions and limitations
+     under the License.
+
+  .. _best_practice:
+
+  # Best Practices
+
+
+  Creating a new Dag is a three-step process:
+
+  - writing Python code to create a Dag object,
+  - testing if the code meets your expectations,
+  - configuring environment dependencies to run your Dag
+
+  This tutorial will introduce you to the best practices for these three steps.
+
+  .. _best_practice:writing_a_dag:
+
+  Writing a Dag
+  ^^^^^^^^^^^^
+
+  Creating a new Dag in Airflow is quite simple. However, there are many things that you need to take care of
+  to ensure the Dag run or failure does not produce unexpected results.
+
+  ## Creating a Custom Operator/Hook
+
+
+  Please follow our guide on `custom Operators <custom_operator>`.
+
+  ## Creating a task
+
+
+  You should treat tasks in Airflow equivalent to transactions in a database. This
+  implies that you should never produce incomplete results from your tasks. An
+  example is not to produce incomplete data in ``HDFS`` or ``S3`` at the end of a
+  task.
+
+  Airflow can retry a task if it fails. Thus, the tasks should produce the same
+  outcome on every re-run. Some of the ways you can avoid producing a different
+  result -
+
+  * Do not use INSERT during a task re-run, an INSERT statement might lead to
+    duplicate rows in your database. Replace it with UPSERT.
+  * Read and write in a specific partition. Never read the latest available data
+    in a task. Someone may update the input data between re-runs, which results in
+    different outputs. A better way is to read the input data from a specific
+    partition. You can use ``data_interval_start`` as a partition. You should
+    follow this partitioning method while writing data in S3/HDFS as well.
+  * The Python datetime ``now()`` function gives the current datetime object. This
+    function should never be used inside a task, especially to do the critical
+    computation, as it leads to different outcomes on each run. It's fine to use
+    it, for example, to generate a temporary log.
+
+  .. tip::
+
+      You should define repetitive parameters such as ``connection_id`` or S3 paths in ``default_args`` rather than declaring them for each task.
+      The ``default_args`` help to avoid mistakes such as typographical errors. Also, most connection types have unique parameter names in
+      tasks, so you can declare a connection only once in ``default_args`` (for example ``gcp_conn_id``) and it is automatically
+      used by all operators that use this connection type.
+
+  ## Deleting a task
+
+
+  Be careful when deleting a task from a Dag. You would not be able to see the Task in Graph View, Grid View, etc making
+  it difficult to check the logs of that Task from the Webserver. If that is not desired, please create a new Dag.
+
+
+  ## Communication
+
+
+  Airflow executes tasks of a Dag on different servers in case you are using `Kubernetes executor <apache-airflow-providers-cncf-kubernetes:kubernetes_executor>` or `Celery executor <apache-airflow-providers-celery:celery_executor>`.
+  Therefore, you should not store any file or config in the local filesystem as the next task is likely to run on a different server without access to it — for example, a task that downloads the data file that the next task processes.
+  In the case of `Local executor <airflow.executors.local_executor.LocalExecutor>`,
+  storing a file on disk can make retries harder e.g., your task requires a config file that is deleted by another task in Dag.
+
+  If possible, use ``XCom`` to communicate small messages between tasks and a good way of passing larger data between tasks is to use a remote storage such as S3/HDFS.
+  For example, if we have a task that stores processed data in S3 that task can push the S3 path for the output data in ``Xcom``,
+  and the downstream tasks can pull the path from XCom and use it to read the data.
+
+  The tasks should also not store any authentication parameters such as passwords or token inside them.
+  Where at all possible, use `Connections </authoring-and-scheduling/connections>` to store data securely in Airflow backend and retrieve them using a unique connection id.
+
+  .. _best_practices/top_level_code:
+
+  ---
+
+  .. Licensed to the Apache Software Foundation (ASF) under one
+     or more contributor license agreements.  See the NOTICE file
+     distributed with this work for additional information
+     regarding copyright ownership.  The ASF licenses this file
+     to you under the Apache License, Version 2.0 (the
+     "License"); you may not use this file except in compliance
+     with the License.  You may obtain a copy of the License at
+
+  ..   http://www.apache.org/licenses/LICENSE-2.0
+
+  .. Unless required by applicable law or agreed to in writing,
+     software distributed under the License is distributed on an
+     "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+     KIND, either express or implied.  See the License for the
+     specific language governing permissions and limitations
+     under the License.
+
+
+  # Timetables
+
+
+  For a Dag with a time-based schedule (as opposed to event-driven), the Dag's internal "timetable"
+  drives scheduling.  The timetable also determines the data interval and the logical date of
+  each run created for the Dag.
+
+  Dags scheduled with a cron expression or ``timedelta`` object are
+  internally converted to always use a timetable.
+
+  If a cron expression or ``timedelta`` is sufficient for your use case, you don't need
+  to worry about writing a custom timetable because Airflow has default timetables that handle those cases.
+  But for more complicated scheduling requirements,
+  you can create your own timetable class and pass that to the Dags ``schedule`` argument.
+
+  Some examples of when custom timetable implementations are useful:
+
+  * Task runs that occur at different times each day. For example, an astronomer might find it
+    useful to run a task at dawn to process data collected from the previous
+    night-time period.
+  * Schedules that don't follow the Gregorian calendar. For example, create a run for
+    each month in the `Traditional Chinese Calendar`_. This is conceptually
+    similar to the sunrise case, but for a different time scale.
+  * Rolling windows, or overlapping data intervals. For example, you might want to
+    have a run each day, but make each run cover the period of the previous seven
+    days. It is possible to hack this with a cron expression, but a custom data
+    interval provides a more natural representation.
+  * Data intervals with "holes" between intervals instead of a continuous interval, as both the cron
+    expression and ``timedelta`` schedules represent continuous intervals. See `data-interval`.
+
+  .. _`Traditional Chinese Calendar`: https://en.wikipedia.org/wiki/Chinese_calendar
+
+  Airflow allows you to write custom timetables in plugins and used by
+  Dags. You can find an example demonstrating a custom timetable in the
+  `/howto/timetable` how-to guide.
+
+  .. note::
+
+      As a general rule, always access Variables, Connections, or anything else that needs access to
+      the database as late as possible in your code. See `best_practices/timetables`
+      for more best practices to follow.
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      Creating a new Dag is a three-step process:
+
+      - writing Python code to create a Dag object,
+      - testing if the code meets your expectations,
+      - configuring environment dependencies to run your Dag
+
+      This tutorial will introduce you to the best practices for these three steps.
+  - fragment_type: execution
+    sequence: 2
+    content: |
+      Creating a new Dag in Airflow is quite simple. However, there are many things that you need to take care of
+      to ensure the Dag run or failure does not produce unexpected results.
+
+      ## Creating a Custom Operator/Hook
+
+
+      Please follow our guide on `custom Operators <custom_operator>`.
+
+      ## Creating a task
+
+
+      You should treat tasks in Airflow equivalent to transactions in a database. This
+      implies that you should never produce incomplete results from your tasks. An
+      example is not to produce incomplete data in ``HDFS`` or ``S3`` at the end of a
+      task.
+
+      Airflow can retry a task if it fails. Thus, the tasks should produce the same
+      outcome on every re-run. Some of the ways you can avoid producing a different
+      result -
+
+      * Do not use INSERT during a task re-run, an INSERT statement might lead to
+        duplicate rows in your database. Replace it with UPSERT.
+      * Read and write in a specific partition. Never read the latest available data
+        in a task. Someone may update the input data between re-runs, which results in
+        different outputs. A better way is to read the input data from a specific
+        partition. You can use ``data_interval_start`` as a partition. You should
+        follow this partitioning method while writing data in S3/HDFS as well.
+      * The Python datetime ``now()`` function gives the current datetime object. This
+        function should never be used inside a task, especially to do the critical
+        computation, as it leads to different outcomes on each run. It's fine to use
+        it, for example, to generate a temporary log.
+  - fragment_type: rationale
+    sequence: 3
+    content: |
+      .. tip::
+
+          You should define repetitive parameters such as ``connection_id`` or S3 paths in ``default_args`` rather than declaring them for each task.
+          The ``default_args`` help to avoid mistakes such as typographical errors. Also, most connection types have unique parameter names in
+          tasks, so you can declare a connection only once in ``default_args`` (for example ``gcp_conn_id``) and it is automatically
+          used by all operators that use this connection type.
+  - fragment_type: execution
+    sequence: 4
+    content: |
+      ## Deleting a task
+
+
+      Be careful when deleting a task from a Dag. You would not be able to see the Task in Graph View, Grid View, etc making
+      it difficult to check the logs of that Task from the Webserver. If that is not desired, please create a new Dag.
+  - fragment_type: execution
+    sequence: 5
+    content: |
+      ## Communication
+
+
+      Airflow executes tasks of a Dag on different servers in case you are using `Kubernetes executor <apache-airflow-providers-cncf-kubernetes:kubernetes_executor>` or `Celery executor <apache-airflow-providers-celery:celery_executor>`.
+      Therefore, you should not store any file or config in the local filesystem as the next task is likely to run on a different server without access to it — for example, a task that downloads the data file that the next task processes.
+      In the case of `Local executor <airflow.executors.local_executor.LocalExecutor>`,
+      storing a file on disk can make retries harder e.g., your task requires a config file that is deleted by another task in Dag.
+
+      If possible, use ``XCom`` to communicate small messages between tasks and a good way of passing larger data between tasks is to use a remote storage such as S3/HDFS.
+      For example, if we have a task that stores processed data in S3 that task can push the S3 path for the output data in ``Xcom``,
+      and the downstream tasks can pull the path from XCom and use it to read the data.
+
+      The tasks should also not store any authentication parameters such as passwords or token inside them.
+      Where at all possible, use `Connections </authoring-and-scheduling/connections>` to store data securely in Airflow backend and retrieve them using a unique connection id.
+  - fragment_type: rationale
+    sequence: 6
+    content: |
+      .. note::
+
+          As a general rule, always access Variables, Connections, or anything else that needs access to
+          the database as late as possible in your code. See `best_practices/timetables`
+          for more best practices to follow.
