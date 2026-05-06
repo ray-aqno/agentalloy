@@ -1,0 +1,464 @@
+skill_type: domain
+skill_id: pytest-marks-and-skipping
+canonical_name: Pytest Marks, Skipping, and xfail
+category: tooling
+skill_class: domain
+domain_tags:
+  - pytest
+  - marks
+  - skipping
+  - xfail
+  - conditional-execution
+always_apply: false
+phase_scope: null
+category_scope: null
+author: authoring-agent
+change_summary: initial authoring draft
+raw_prose: |
+  # Pytest Marks, Skipping, and xfail
+
+  ## Overview
+
+  Pytest markers tag tests with metadata for filtering, skipping, or expected-failure handling. Built-in markers (`skip`, `skipif`, `xfail`) and custom markers register in `pytest.ini` and apply via `@pytest.mark.<name>`. The `-m` CLI flag filters by marker expression. This skill covers markers + conditional execution.
+
+  Sourced from https://docs.pytest.org/en/stable/how-to/mark.html and https://docs.pytest.org/en/stable/how-to/skipping.html.
+
+  ## How to mark test functions with attributes
+
+  By using the ``pytest.mark`` helper you can easily set metadata on your test functions. You can find the full list of builtin markers in the `API Reference<marks ref>`. Or you can list all the markers, including builtin and custom, using the CLI - `pytest --markers`.
+
+  Here are some of the builtin markers:
+
+  * `usefixtures <usefixtures>` - use fixtures on a test function or class
+  * `filterwarnings <filterwarnings>` - filter certain warnings of a test function
+  * `skip <skip>` - always skip a test function
+  * `skipif <skipif>` - skip a test function if a certain condition is met
+  * `xfail <xfail>` - produce an "expected failure" outcome if a certain condition is met
+  * `parametrize <parametrizemark>` - perform multiple calls to the same test function.
+
+  It's easy to create custom markers or to apply markers to whole test classes or modules. Those markers can be used by plugins, and also are commonly used to `select tests <mark run>` on the command-line with the `-m` option.
+
+  See `mark examples` for examples which also serve as documentation.
+
+  ```python
+  Marks can only be applied to tests, having no effect on `fixtures <fixtures>`.
+  ```
+
+  ## Registering marks
+
+  You can register custom marks in your configuration file like this:
+
+  .. tab:: toml
+
+      ```toml
+      [pytest]
+      markers = [
+          "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+          "serial",
+      ]
+  ```
+
+  .. tab:: ini
+
+      ```ini
+      [pytest]
+      markers =
+          slow: marks tests as slow (deselect with '-m "not slow"')
+          serial
+      ```
+
+  Note that everything past the ``:`` after the mark name is an optional description.
+
+  Alternatively, you can register new markers programmatically in a `pytest_configure <initialization-hooks>` hook:
+
+  ```python
+  def pytest_configure(config):
+      config.addinivalue_line(
+          "markers", "env(name): mark test to run only on named environment"
+      )
+  ```
+
+  Registered marks appear in pytest's help text and do not emit warnings (see the next section). It is recommended that third-party plugins always `register their markers <registering-markers>`.
+
+  ## Raising errors on unknown marks
+
+  Unregistered marks applied with the ``@pytest.mark.name_of_the_mark`` decorator will always emit a warning in order to avoid silently doing something surprising due to mistyped names. As described in the previous section, you can disable the warning for custom marks by registering them in your configuration file or using a custom ``pytest_configure`` hook.
+
+  When the `strict_markers` configuration option is set, any unknown marks applied with the ``@pytest.mark.name_of_the_mark`` decorator will trigger an error. You can enforce this validation in your project by setting `strict_markers` in your configuration:
+
+  .. tab:: toml
+
+      ```toml
+      [pytest]
+      addopts = ["--strict-markers"]
+      markers = [
+          "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+          "serial",
+      ]
+  ```
+
+  .. tab:: ini
+
+      ```ini
+      [pytest]
+      strict_markers = true
+      markers =
+          slow: marks tests as slow (deselect with '-m "not slow"')
+          serial
+      ```
+
+  ## How to use skip and xfail to deal with tests that cannot succeed
+
+  You can mark test functions that cannot be run on certain platforms or that you expect to fail so pytest can deal with them accordingly and present a summary of the test session, while keeping the test suite *green*.
+
+  A **skip** means that you expect your test to pass only if some conditions are met, otherwise pytest should skip running the test altogether. Common examples are skipping windows-only tests on non-windows platforms, or skipping tests that depend on an external resource which is not available at the moment (for example a database).
+
+  An **xfail** means that you expect a test to fail for some reason. A common example is a test for a feature not yet implemented, or a bug not yet fixed. When a test passes despite being expected to fail (marked with ``pytest.mark.xfail``), it's an **xpass** and will be reported in the test summary.
+
+  ```bash
+  pytest -rxXs  # show extra info on xfailed, xpassed, and skipped tests
+  ```
+
+  More details on the `-r` option can be found by running ``pytest -h``.
+
+  (See `how to change command line options defaults`)
+
+  ## Skipping test functions
+
+  The simplest way to skip a test function is to mark it with the ``skip`` decorator which may be passed an optional ``reason``:
+
+  ```python
+  @pytest.mark.skip(reason="no way of currently testing this")
+  def test_the_unknown(): ...
+  ```
+
+  Alternatively, it is also possible to skip imperatively during test execution or setup by calling the ``pytest.skip(reason)`` function:
+
+  ```python
+  def test_function():
+      if not valid_config():
+          pytest.skip("unsupported configuration")
+  ```
+
+  The imperative method is useful when it is not possible to evaluate the skip condition during import time.
+
+  It is also possible to skip the whole module using ``pytest.skip(reason, allow_module_level=True)`` at the module level:
+
+  ```python
+  import sys
+
+  import pytest
+
+  if not sys.platform.startswith("win"):
+      pytest.skip("skipping windows-only tests", allow_module_level=True)
+  ```
+
+  **Reference**: `pytest.mark.skip ref`
+
+  ### ``skipif``
+
+  If you wish to skip something conditionally then you can use ``skipif`` instead. Here is an example of marking a test function to be skipped when run on an interpreter earlier than Python3.13:
+
+  ```python
+  import sys
+
+  @pytest.mark.skipif(sys.version_info < (3, 13), reason="requires python3.13 or higher")
+  def test_function(): ...
+  ```
+
+  If the condition evaluates to ``True`` during collection, the test function will be skipped, with the specified reason appearing in the summary when using ``-rs``.
+
+  You can share ``skipif`` markers between modules. Consider this test module:
+
+  ```python
+  # content of test_mymodule.py
+  import mymodule
+
+  minversion = pytest.mark.skipif(
+      mymodule.__versioninfo__ < (1, 1), reason="at least mymodule-1.1 required"
+  )
+
+  @minversion
+  def test_function(): ...
+  ```
+
+  You can import the marker and reuse it in another test module:
+
+  ```python
+  # test_myothermodule.py
+  from test_mymodule import minversion
+
+  @minversion
+  def test_anotherfunction(): ...
+  ```
+
+  For larger test suites it's usually a good idea to have one file where you define the markers which you then consistently apply throughout your test suite.
+
+  Alternatively, you can use `condition strings <string conditions>` instead of booleans, but they can't be shared between modules easily so they are supported mainly for backward compatibility reasons.
+
+  **Reference**: `pytest.mark.skipif ref`
+
+  ### Skip all test functions of a class or module
+
+  You can use the ``skipif`` marker (as any other marker) on classes:
+
+  ```python
+  @pytest.mark.skipif(sys.platform == "win32", reason="does not run on windows")
+  class TestPosixCalls:
+      def test_function(self):
+          "will not be setup or run under 'win32' platform"
+  ```
+
+  If the condition is ``True``, this marker will produce a skip result for each of the test methods of that class.
+
+  If you want to skip all test functions of a module, you may use the `pytestmark` global:
+
+  ```python
+  # test_module.py
+  pytestmark = pytest.mark.skipif(...)
+  ```
+
+  If multiple ``skipif`` decorators are applied to a test function, it will be skipped if any of the skip conditions is true.
+
+  ## Skipping files or directories
+
+  Sometimes you may need to skip an entire file or directory, for example if the tests rely on Python version-specific features or contain code that you do not wish pytest to run. In this case, you must exclude the files and directories from collection. Refer to `customizing-test-collection` for more information.
+
+  ## Skipping on a missing import dependency
+
+  You can skip tests on a missing import by using `pytest.importorskip ref` at module level, within a test, or test setup function.
+
+  ```python
+  docutils = pytest.importorskip("docutils")
+  ```
+
+  If ``docutils`` cannot be imported here, this will lead to a skip outcome of the test. You can also skip based on the version number of a library:
+
+  ```python
+  docutils = pytest.importorskip("docutils", minversion="0.3")
+  ```
+
+  The version will be read
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      ## Overview
+
+      Pytest markers tag tests with metadata for filtering, skipping, or expected-failure handling. Built-in markers (`skip`, `skipif`, `xfail`) and custom markers register in `pytest.ini` and apply via `@pytest.mark.<name>`. The `-m` CLI flag filters by marker expression. This skill covers markers + conditional execution.
+
+      Sourced from https://docs.pytest.org/en/stable/how-to/mark.html and https://docs.pytest.org/en/stable/how-to/skipping.html.
+  - fragment_type: setup
+    sequence: 2
+    content: |
+      ## How to mark test functions with attributes
+
+      By using the ``pytest.mark`` helper you can easily set metadata on your test functions. You can find the full list of builtin markers in the `API Reference<marks ref>`. Or you can list all the markers, including builtin and custom, using the CLI - `pytest --markers`.
+
+      Here are some of the builtin markers:
+
+      * `usefixtures <usefixtures>` - use fixtures on a test function or class
+      * `filterwarnings <filterwarnings>` - filter certain warnings of a test function
+      * `skip <skip>` - always skip a test function
+      * `skipif <skipif>` - skip a test function if a certain condition is met
+      * `xfail <xfail>` - produce an "expected failure" outcome if a certain condition is met
+      * `parametrize <parametrizemark>` - perform multiple calls to the same test function.
+
+      It's easy to create custom markers or to apply markers to whole test classes or modules. Those markers can be used by plugins, and also are commonly used to `select tests <mark run>` on the command-line with the `-m` option.
+
+      See `mark examples` for examples which also serve as documentation.
+  - fragment_type: setup
+    sequence: 3
+    content: |
+      ```python
+      Marks can only be applied to tests, having no effect on `fixtures <fixtures>`.
+      ```
+
+      ## Registering marks
+
+      You can register custom marks in your configuration file like this:
+
+      .. tab:: toml
+
+          ```toml
+          [pytest]
+          markers = [
+              "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+              "serial",
+          ]
+      ```
+
+      .. tab:: ini
+
+          ```ini
+          [pytest]
+          markers =
+              slow: marks tests as slow (deselect with '-m "not slow"')
+              serial
+          ```
+
+      Note that everything past the ``:`` after the mark name is an optional description.
+
+      Alternatively, you can register new markers programmatically in a `pytest_configure <initialization-hooks>` hook:
+
+      ```python
+      def pytest_configure(config):
+          config.addinivalue_line(
+              "markers", "env(name): mark test to run only on named environment"
+          )
+      ```
+
+      Registered marks appear in pytest's help text and do not emit warnings (see the next section). It is recommended that third-party plugins always `register their markers <registering-markers>`.
+  - fragment_type: setup
+    sequence: 4
+    content: |
+      ## Raising errors on unknown marks
+
+      Unregistered marks applied with the ``@pytest.mark.name_of_the_mark`` decorator will always emit a warning in order to avoid silently doing something surprising due to mistyped names. As described in the previous section, you can disable the warning for custom marks by registering them in your configuration file or using a custom ``pytest_configure`` hook.
+
+      When the `strict_markers` configuration option is set, any unknown marks applied with the ``@pytest.mark.name_of_the_mark`` decorator will trigger an error. You can enforce this validation in your project by setting `strict_markers` in your configuration:
+  - fragment_type: setup
+    sequence: 5
+    content: |
+      ## How to use skip and xfail to deal with tests that cannot succeed
+
+      You can mark test functions that cannot be run on certain platforms or that you expect to fail so pytest can deal with them accordingly and present a summary of the test session, while keeping the test suite *green*.
+
+      A **skip** means that you expect your test to pass only if some conditions are met, otherwise pytest should skip running the test altogether. Common examples are skipping windows-only tests on non-windows platforms, or skipping tests that depend on an external resource which is not available at the moment (for example a database).
+
+      An **xfail** means that you expect a test to fail for some reason. A common example is a test for a feature not yet implemented, or a bug not yet fixed. When a test passes despite being expected to fail (marked with ``pytest.mark.xfail``), it's an **xpass** and will be reported in the test summary.
+
+      ```bash
+      pytest -rxXs  # show extra info on xfailed, xpassed, and skipped tests
+      ```
+
+      More details on the `-r` option can be found by running ``pytest -h``.
+
+      (See `how to change command line options defaults`)
+  - fragment_type: execution
+    sequence: 6
+    content: |
+      ## Skipping test functions
+
+      The simplest way to skip a test function is to mark it with the ``skip`` decorator which may be passed an optional ``reason``:
+
+      ```python
+      @pytest.mark.skip(reason="no way of currently testing this")
+      def test_the_unknown(): ...
+      ```
+
+      Alternatively, it is also possible to skip imperatively during test execution or setup by calling the ``pytest.skip(reason)`` function:
+
+      ```python
+      def test_function():
+          if not valid_config():
+              pytest.skip("unsupported configuration")
+      ```
+
+      The imperative method is useful when it is not possible to evaluate the skip condition during import time.
+
+      It is also possible to skip the whole module using ``pytest.skip(reason, allow_module_level=True)`` at the module level:
+
+      ```python
+      import sys
+
+      import pytest
+
+      if not sys.platform.startswith("win"):
+          pytest.skip("skipping windows-only tests", allow_module_level=True)
+      ```
+
+      **Reference**: `pytest.mark.skip ref`
+  - fragment_type: execution
+    sequence: 7
+    content: |
+      ### ``skipif``
+
+      If you wish to skip something conditionally then you can use ``skipif`` instead. Here is an example of marking a test function to be skipped when run on an interpreter earlier than Python3.13:
+
+      ```python
+      import sys
+
+      @pytest.mark.skipif(sys.version_info < (3, 13), reason="requires python3.13 or higher")
+      def test_function(): ...
+      ```
+
+      If the condition evaluates to ``True`` during collection, the test function will be skipped, with the specified reason appearing in the summary when using ``-rs``.
+
+      You can share ``skipif`` markers between modules. Consider this test module:
+
+      ```python
+      # content of test_mymodule.py
+      import mymodule
+
+      minversion = pytest.mark.skipif(
+          mymodule.__versioninfo__ < (1, 1), reason="at least mymodule-1.1 required"
+      )
+
+      @minversion
+      def test_function(): ...
+      ```
+
+      You can import the marker and reuse it in another test module:
+
+      ```python
+      # test_myothermodule.py
+      from test_mymodule import minversion
+
+      @minversion
+      def test_anotherfunction(): ...
+      ```
+
+      For larger test suites it's usually a good idea to have one file where you define the markers which you then consistently apply throughout your test suite.
+
+      Alternatively, you can use `condition strings <string conditions>` instead of booleans, but they can't be shared between modules easily so they are supported mainly for backward compatibility reasons.
+
+      **Reference**: `pytest.mark.skipif ref`
+  - fragment_type: execution
+    sequence: 8
+    content: |
+      ### Skip all test functions of a class or module
+
+      You can use the ``skipif`` marker (as any other marker) on classes:
+
+      ```python
+      @pytest.mark.skipif(sys.platform == "win32", reason="does not run on windows")
+      class TestPosixCalls:
+          def test_function(self):
+              "will not be setup or run under 'win32' platform"
+      ```
+
+      If the condition is ``True``, this marker will produce a skip result for each of the test methods of that class.
+
+      If you want to skip all test functions of a module, you may use the `pytestmark` global:
+
+      ```python
+      # test_module.py
+      pytestmark = pytest.mark.skipif(...)
+      ```
+
+      If multiple ``skipif`` decorators are applied to a test function, it will be skipped if any of the skip conditions is true.
+  - fragment_type: execution
+    sequence: 9
+    content: |
+      ## Skipping files or directories
+
+      Sometimes you may need to skip an entire file or directory, for example if the tests rely on Python version-specific features or contain code that you do not wish pytest to run. In this case, you must exclude the files and directories from collection. Refer to `customizing-test-collection` for more information.
+  - fragment_type: execution
+    sequence: 10
+    content: |
+      ## Skipping on a missing import dependency
+
+      You can skip tests on a missing import by using `pytest.importorskip ref` at module level, within a test, or test setup function.
+
+      ```python
+      docutils = pytest.importorskip("docutils")
+      ```
+
+      If ``docutils`` cannot be imported here, this will lead to a skip outcome of the test. You can also skip based on the version number of a library:
+
+      ```python
+      docutils = pytest.importorskip("docutils", minversion="0.3")
+      ```
+
+      The version will be read
