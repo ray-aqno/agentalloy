@@ -1,0 +1,402 @@
+skill_type: domain
+skill_id: testing-snapshots
+canonical_name: Snapshot Testing
+category: quality
+skill_class: domain
+domain_tags:
+  - snapshot-testing
+  - vitest
+  - ui-testing
+  - complex-objects
+  - inline-snapshots
+always_apply: false
+phase_scope: []
+category_scope: []
+author: authoring-agent
+change_summary: initial authoring draft
+raw_prose: |
+  # Snapshot Testing
+
+  ## Overview
+
+  Snapshots capture a serialized form of a value and compare it against a stored copy on subsequent runs. Powerful for rendered UI and complex objects; dangerous when overused (snapshots become 'whatever the code did' rather than 'what the code should do'). This skill covers snapshot patterns + pitfalls.
+
+  Sourced from https://vitest.dev/guide/snapshot.
+
+  ## Snapshot Testing
+
+  Snapshot tests capture the output of a piece of code and save it to a file. On subsequent runs, the output is compared against the saved snapshot. If the output changes, the test fails. Either the change is a bug, or the snapshot needs to be updated.
+
+  This approach is particularly useful when you're testing something that produces structured output: a function that returns a complex object, a component that renders HTML, or an error formatter that produces multi-line messages. Writing manual assertions for every field or line would be tedious and fragile. Instead, you capture the entire output once, and let Vitest tell you if it ever changes.
+
+  ## Your First Snapshot
+
+  To create a snapshot test, pass a value to [`toMatchSnapshot()`](/api/expect#tomatchsnapshot):
+
+  ```js
+  import { expect, test } from 'vitest'
+
+  function generateGreeting(name) {
+    return {
+      message: `Hello, ${name}!`,
+      timestamp: null,
+      version: 2,
+    }
+  }
+
+  test('generates a greeting', () => {
+    expect(generateGreeting('Alice')).toMatchSnapshot()
+  })
+  ```
+
+  The first time you run this test, there's no existing snapshot to compare against, so Vitest creates one. It stores the snapshot in a `__snapshots__` directory next to your test file:
+
+  ```
+  __snapshots__/
+    example.test.js.snap
+  ```
+
+  If you open that file, you'll see a serialized representation of the value:
+
+  ```js
+  exports['generates a greeting 1'] = `
+  {
+    "message": "Hello, Alice!",
+    "timestamp": null,
+    "version": 2,
+  }
+  ```
+
+  From now on, every time you run this test, Vitest serializes the output of `generateGreeting('Alice')` and compares it character-by-character against this stored snapshot. If the output changes (say, someone modifies the message format or bumps the version number), the test fails and shows a clear diff of what changed.
+
+  :::: tip
+  Commit your snapshot files to version control. They serve as a record of the expected output and should be reviewed in code review just like any other test assertion.
+  ::::
+
+  ## Inline Snapshots
+
+  External snapshot files work well, but they mean you have to jump to a different file to see what the expected output actually looks like. For smaller values, it's often more convenient to keep the snapshot right in your test file with [`toMatchInlineSnapshot()`](/api/expect#tomatchinlinesnapshot).
+
+  Start by writing the assertion without any argument:
+
+  ```js
+  test('generates a greeting', () => {
+    expect(generateGreeting('Alice')).toMatchInlineSnapshot()
+  })
+  ```
+
+  When you run the test, Vitest will **automatically fill in** the snapshot as a string argument:
+
+  ```js
+  test('generates a greeting', () => {
+    expect(generateGreeting('Alice')).toMatchInlineSnapshot(`
+      {
+        "message": "Hello, Alice!",
+        "timestamp": null,
+        "version": 2,
+      }
+    `)
+  ```
+
+  Now the expected output lives right next to the code that produces it. You can read the test and immediately understand what `generateGreeting` is expected to return. When the output changes, Vitest updates the string in place, so you don't need to manage separate snapshot files.
+
+  Inline snapshots are great for small, focused values. For large outputs (like a full HTML page), external snapshots or file snapshots are a better fit.
+
+  :::: tip
+  Unlike external snapshots, inline snapshots don't create separate `.snap` files. The expected value is stored directly in your test file as the argument to `toMatchInlineSnapshot()`, so there's nothing extra to commit.
+  ::::
+
+  ## Updating Snapshots
+
+  When you intentionally change the output of your code, existing snapshots will be outdated and the tests will fail. This is by design; it's the whole point of snapshot testing. But once you've verified that the new output is correct, you need to update the snapshots.
+
+  There are several ways to do this:
+
+  * **In watch mode**: press `u` in the terminal to update all failed snapshots
+  * **From the CLI**: run `vitest -u` or `vitest --update` to update snapshots and exit
+  * **In VS Code**: use the "Update Snapshots" command on the test gutter icon from the [Vitest extension](https://vitest.dev/vscode)
+
+  ```bash
+  vitest -u
+  ```
+
+  For inline snapshots, Vitest modifies your test file directly with the new values. For external snapshots, it rewrites the `.snap` file.
+
+  :::: warning
+  Be careful when updating snapshots. Always review the diff to confirm the changes are intentional and not a bug. It's easy to accidentally accept a broken output by blindly pressing `u`.
+  ::::
+
+  ## Snapshot
+
+  :::: tip
+  For a beginner-friendly introduction to snapshot testing, see the [Snapshot Testing](/guide/learn/snapshots) tutorial.
+  :::
+
+  Learn Snapshot by video from Vue School
+
+  Snapshot tests are a very useful tool whenever you want to make sure the output of your functions does not change unexpectedly.
+
+  When using snapshot, Vitest will take a snapshot of the given value, then compare it to a reference snapshot file stored alongside the test. The test will fail if the two snapshots do not match: either the change is unexpected, or the reference snapshot needs to be updated to the new version of the result.
+
+  ## Use Snapshots
+
+  To snapshot a value, you can use the [`toMatchSnapshot()`](/api/expect#tomatchsnapshot) from `expect()` API:
+
+  ```ts
+  import { expect, it } from 'vitest'
+
+  it('toUpperCase', () => {
+    const result = toUpperCase('foobar')
+    expect(result).toMatchSnapshot()
+  })
+  ```
+
+  The first time this test is run, Vitest creates a snapshot file that looks like this:
+
+  ```js
+  // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+  exports['toUpperCase 1'] = '"FOOBAR"'
+  ```
+
+  The snapshot artifact should be committed alongside code changes, and reviewed as part of your code review process. On subsequent test runs, Vitest will compare the rendered output with the previous snapshot. If they match, the test will pass. If they don't match, either the test runner found a bug in your code that should be fixed, or the implementation has changed and the snapshot needs to be updated.
+
+  Vitest stores a serialized representation of the received value. Snapshot rendering is powered by [`@vitest/pretty-format`](https://npmx.dev/package/@vitest/pretty-format). [`snapshotFormat`](/config/snapshotformat) allows configuring general snapshot formatting behavior in Vitest. For further customization, you can implement your own [custom serializers](#custom-serializer) or [custom snapshot matchers](#custom-snapshot-matchers).
+
+  :::: warning
+  When using Snapshots with async concurrent tests, `expect` from the local [Test Context](/guide/test-context) must be used to ensure the right test is detected.
+  :::
+
+  ## Inline Snapshots
+
+  Similarly, you can use the [`toMatchInlineSnapshot()`](/api/expect#tomatchinlinesnapshot) to store the snapshot inline within the test file.
+
+  ```ts
+  import { expect, it } from 'vitest'
+
+  it('toUpperCase', () => {
+    const result = toUpperCase('foobar')
+    expect(result).toMatchInlineSnapshot()
+  })
+  ```
+
+  Instead of creating a snapshot file, Vitest will modify the test file directly to update the snapshot as a string:
+
+  ```ts
+  import { expect, it } from 'vitest'
+
+  it('toUpperCase', () => {
+    expect(result).toMatchInlineSnapshot('"FOOBAR"')
+  ```
+  ```
+
+  This allows you to see the expected output directly without jumping across different files.
+
+  :::: warning
+  When using Snapshots with async concurrent tests, `expect` from the local [Test Context](/guide/test-context) must be used to ensure the right test is detected.
+  :::
+
+  ## Updating Snapshots
+
+  When the received value doesn't match the snapshot, the test fails and shows you the difference between them. When the snapshot change is expected, you may want to update the snapshot from the current state.
+
+  In watch mode, you can press the `u` key in the terminal to update the failed snapshot directly.
+
+  Or you can use the `--update` or `-u` flag in the CLI to make Vitest update snapshots.
+
+  ```bash
+  vitest -u
+  ```
+
+  ### CI behavior
+
+  By default, Vitest does not write snapshots in CI (`process.env.CI` is truthy) and any snapshot mismatches, missing snapshots, and obsolete snapshots fail the run. See [`update`](/config/update) for the details.
+
+  An **obsolete snapshot** is a snapshot entry (or snapshot file) that no longer matches any collected test. This usually happens after removing or renaming tests.
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      Snapshots capture a serialized form of a value and compare it against a stored copy on subsequent runs. Powerful for rendered UI and complex objects; dangerous when overused (snapshots become 'whatever the code did' rather than 'what the code should do'). This skill covers snapshot patterns + pitfalls.
+  - fragment_type: execution
+    sequence: 2
+    content: |
+      Snapshot tests capture the output of a piece of code and save it to a file. On subsequent runs, the output is compared against the saved snapshot. If the output changes, the test fails. Either the change is a bug, or the snapshot needs to be updated.
+  - fragment_type: example
+    sequence: 3
+    content: |
+      To create a snapshot test, pass a value to [`toMatchSnapshot()`](/api/expect#tomatchsnapshot):
+
+      ```js
+      import { expect, test } from 'vitest'
+
+      function generateGreeting(name) {
+        return {
+          message: `Hello, ${name}!`,
+          timestamp: null,
+          version: 2,
+        }
+      }
+
+      test('generates a greeting', () => {
+        expect(generateGreeting('Alice')).toMatchSnapshot()
+      })
+      ```
+  - fragment_type: verification
+    sequence: 4
+    content: |
+      The first time you run this test, there's no existing snapshot to compare against, so Vitest creates one. It stores the snapshot in a `__snapshots__` directory next to your test file:
+
+      ```
+      __snapshots__/
+        example.test.js.snap
+      ```
+
+      If you open that file, you'll see a serialized representation of the value:
+
+      ```js
+      exports['generates a greeting 1'] = `
+      {
+        "message": "Hello, Alice!",
+        "timestamp": null,
+        "version": 2,
+      }
+      ```
+  - fragment_type: example
+    sequence: 5
+    content: |
+      From now on, every time you run this test, Vitest serializes the output of `generateGreeting('Alice')` and compares it character-by-character against this stored snapshot. If the output changes (say, someone modifies the message format or bumps the version number), the test fails and shows a clear diff of what changed.
+  - fragment_type: guardrail
+    sequence: 6
+    content: |
+      Commit your snapshot files to version control. They serve as a record of the expected output and should be reviewed in code review just like any other test assertion.
+  - fragment_type: example
+    sequence: 7
+    content: |
+      External snapshot files work well, but they mean you have to jump to a different file to see what the expected output actually looks like. For smaller values, it's often more convenient to keep the snapshot right in your test file with [`toMatchInlineSnapshot()`](/api/expect#tomatchinlinesnapshot).
+
+      Start by writing the assertion without any argument:
+
+      ```js
+      test('generates a greeting', () => {
+        expect(generateGreeting('Alice')).toMatchInlineSnapshot()
+      })
+      ```
+  - fragment_type: example
+    sequence: 8
+    content: |
+      When you run the test, Vitest will **automatically fill in** the snapshot as a string argument:
+
+      ```js
+      test('generates a greeting', () => {
+        expect(generateGreeting('Alice')).toMatchInlineSnapshot(`
+          {
+            "message": "Hello, Alice!",
+            "timestamp": null,
+            "version": 2,
+          }
+        `)
+      ```
+  - fragment_type: guardrail
+    sequence: 9
+    content: |
+      Unlike external snapshots, inline snapshots don't create separate `.snap` files. The expected value is stored directly in your test file as the argument to `toMatchInlineSnapshot()`, so there's nothing extra to commit.
+  - fragment_type: execution
+    sequence: 10
+    content: |
+      When you intentionally change the output of your code, existing snapshots will be outdated and the tests will fail. This is by design; it's the whole point of snapshot testing. But once you've verified that the new output is correct, you need to update the snapshots.
+  - fragment_type: example
+    sequence: 11
+    content: |
+      There are several ways to do this:
+
+      * **In watch mode**: press `u` in the terminal to update all failed snapshots
+      * **From the CLI**: run `vitest -u` or `vitest --update` to update snapshots and exit
+      * **In VS Code**: use the "Update Snapshots" command on the test gutter icon from the [Vitest extension](https://vitest.dev/vscode)
+  - fragment_type: example
+    sequence: 12
+    content: |
+      For inline snapshots, Vitest modifies your test file directly with the new values. For external snapshots, it rewrites the `.snap` file.
+  - fragment_type: guardrail
+    sequence: 13
+    content: |
+      Be careful when updating snapshots. Always review the diff to confirm the changes are intentional and not a bug. It's easy to accidentally accept a broken output by blindly pressing `u`.
+  - fragment_type: example
+    sequence: 14
+    content: |
+      To snapshot a value, you can use the [`toMatchSnapshot()`](/api/expect#tomatchsnapshot) from `expect()` API:
+
+      ```ts
+      import { expect, it } from 'vitest'
+
+      it('toUpperCase', () => {
+        const result = toUpperCase('foobar')
+        expect(result).toMatchSnapshot()
+      })
+  - fragment_type: example
+    sequence: 15
+    content: |
+      The first time this test is run, Vitest creates a snapshot file that looks like this:
+
+      ```js
+      // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+      exports['toUpperCase 1'] = '"FOOBAR"'
+      ```
+  - fragment_type: verification
+    sequence: 16
+    content: |
+      The snapshot artifact should be committed alongside code changes, and reviewed as part of your code review process. On subsequent test runs, Vitest will compare the rendered output with the previous snapshot. If they match, the test will pass. If they don't match, either the test runner found a bug in your code that should be fixed, or the implementation has changed and the snapshot needs to be updated.
+  - fragment_type: example
+    sequence: 17
+    content: |
+      Vitest stores a serialized representation of the received value. Snapshot rendering is powered by [`@vitest/pretty-format`](https://npmx.dev/package/@vitest/pretty-format). [`snapshotFormat`](/config/snapshotformat) allows configuring general snapshot formatting behavior in Vitest. For further customization, you can implement your own [custom serializers](#custom-serializer) or [custom snapshot matchers](#custom-snapshot-matchers).
+  - fragment_type: guardrail
+    sequence: 18
+    content: |
+      When using Snapshots with async concurrent tests, `expect` from the local [Test Context](/guide/test-context) must be used to ensure the right test is detected.
+  - fragment_type: example
+    sequence: 19
+    content: |
+      Similarly, you can use the [`toMatchInlineSnapshot()`](/api/expect#tomatchinlinesnapshot) to store the snapshot inline within the test file.
+
+      ```ts
+      import { expect, it } from 'vitest'
+
+      it('toUpperCase', () => {
+        const result = toUpperCase('foobar')
+        expect(result).toMatchInlineSnapshot()
+      ```
+  - fragment_type: example
+    sequence: 20
+    content: |
+      Instead of creating a snapshot file, Vitest will modify the test file directly to update the snapshot as a string:
+
+      ```ts
+      import { expect, it } from 'vitest'
+
+      it('toUpperCase', () => {
+        expect(result).toMatchInlineSnapshot('"FOOBAR"')
+      ```
+  - fragment_type: guardrail
+    sequence: 21
+    content: |
+      When using Snapshots with async concurrent tests, `expect` from the local [Test Context](/guide/test-context) must be used to ensure the right test is detected.
+  - fragment_type: verification
+    sequence: 22
+    content: |
+      When the received value doesn't match the snapshot, the test fails and shows you the difference between them. When the snapshot change is expected, you may want to update the snapshot from the current state.
+
+      In watch mode, you can press the `u` key in the terminal to update the failed snapshot directly.
+
+      Or you can use the `--update` or `-u` flag in the CLI to make Vitest update snapshots.
+  - fragment_type: example
+    sequence: 23
+    content: |
+      ```bash
+      vitest -u
+      ```
+
+      By default, Vitest does not write snapshots in CI (`process.env.CI` is truthy) and any snapshot mismatches, missing snapshots, and obsolete snapshots fail the run. See [`update`](/config/update) for the details.
+
+      An **obsolete snapshot** is a snapshot entry (or snapshot file) that no longer matches any collected test. This usually happens after removing or renaming tests.

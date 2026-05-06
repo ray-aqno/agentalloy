@@ -1,0 +1,24 @@
+name: testing
+version: 1.0.0
+tier: tooling
+description: |
+  Generic testing strategy and Vitest reference patterns — runner fundamentals (describe/hooks/filtering), mocks/spies/module mocking (deferred to needs-human), snapshot testing, and browser/E2E testing with DevTools. Precision-favored tooling tier; cross-cutting strategy skills sit alongside language-specific testing packs (pytest already shipped). Sourced from vitest.dev/llms-full.txt (R1 tier-1) and agent-skills/ canonical testing methodology.
+author: navistone
+embed_model: qwen3-embedding:0.6b
+embedding_dim: 1024
+license: MIT
+homepage: https://github.com/nrmeyers/skillsmith
+always_install: false
+depends_on:
+- core
+- engineering
+skills:
+- skill_id: testing-browser-and-e2e
+  file: testing-browser-and-e2e.yaml
+  fragment_count: 6
+- skill_id: testing-runner-fundamentals
+  file: testing-runner-fundamentals.yaml
+  fragment_count: 7
+- skill_id: testing-snapshots
+  file: testing-snapshots.yaml
+  fragment_count: 23
