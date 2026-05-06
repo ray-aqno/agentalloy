@@ -1,0 +1,255 @@
+skill_type: domain
+skill_id: rest-http-and-resource-design
+canonical_name: REST — HTTP, JSON, Resource Design
+category: design
+skill_class: domain
+domain_tags:
+  - REST
+  - HTTP
+  - JSON
+  - resource design
+  - API guidelines
+always_apply: false
+phase_scope: []
+category_scope: []
+author: authoring-agent
+change_summary: initial authoring draft
+raw_prose: |
+  # REST — HTTP, JSON, Resource Design
+
+  ## Overview
+
+  REST is HTTP applied with discipline — resources identified by URLs, methods that match their semantic intent, status codes that mean what they say. Microsoft's Azure API Guidelines codify the patterns most teams converge on. This skill covers the HTTP + resource fundamentals.
+
+  Sourced from microsoft/api-guidelines azure/Guidelines.md (Building Blocks: HTTP, REST, & JSON).
+
+  ---
+
+  ## Building Blocks: HTTP, REST, & JSON
+  The Microsoft Azure Cloud platform exposes its APIs through the core building blocks of the Internet; namely HTTP, REST, and JSON. This section provides you with a general understanding of how these technologies should be applied when creating your service.
+
+  <a href="#http" name="http"></a>
+  ### HTTP
+  Azure services must adhere to the HTTP specification, [RFC 7231](https://tools.ietf.org/html/rfc7231). This section further refines and constrains how service implementors should apply the constructs defined in the HTTP specification. It is therefore, important that you have a firm understanding of the following concepts:
+
+  - [Uniform Resource Locators (URLs)](#uniform-resource-locators-urls)
+  - [HTTP Request / Response Pattern](#http-request--response-pattern)
+  - [HTTP Query Parameters and Header Values](#http-query-parameters-and-header-values)
+
+  #### Uniform Resource Locators (URLs)
+
+  A Uniform Resource Locator (URL) is how developers access the resources of your service. Ultimately, URLs are how developers form a cognitive model of your service's resources.
+
+  <a href="#http-url-pattern" name="http-url-pattern">:white_check_mark:</a> **DO** use this URL pattern:
+  ```text
+  https://<tenant>.<region>.<service>.<cloud>/<service-root>/<resource-collection>/<resource-id>
+  ```
+
+  Where:
+   | Field | Description
+   | - | - |
+   | tenant | Regionally-unique ID representing a tenant (used for isolation, billing, quota enforcement, lifetime of resources, etc.)
+   | region | Identifies the tenant's selected region. This region string MUST match one of the strings in the "Name" column returned from running this Azure CLI's "az account list-locations -o table"
+   | service | Name of the service (ex: blobstore, servicebus, directory, or management)
+   | cloud | Cloud domain name, e.g. `azure.net` (see Azure CLI's "az cloud list")
+   | service-root | Service-specific path (ex: blobcontainer, myqueue)
+   | resource-collection | Name of the collection, unabbreviated, pluralized
+   | resource-id | Id of resource within the resource-collection. This MUST be the raw string/number/guid value with no quoting but properly escaped to fit in a URL segment.
+
+  <a href="#http-url-casing" name="http-url-casing">:white_check_mark:</a> **DO** use kebab-casing (preferred) or camel-casing for URL path segments. If the segment refers to a JSON field, use camel casing.
+
+  <a href="#http-url-length" name="http-url-length">:white_check_mark:</a> **DO** return `414-URI Too Long` if a URL exceeds 2083 characters
+
+  <a href="#http-url-case-sensitivity" name="http-url-case-sensitivity">:white_check_mark:</a> **DO** treat service-defined URL path segments as case-sensitive. If the passed-in case doesn't match what the service expects, the request **MUST** fail with a `404-Not found` HTTP return code.
+
+  Some customer-provided path segment values may be compared case-insensitivity if the abstraction they represent is normally compared with case-insensitivity. For example, a UUID path segment of 'c55f6b35-05f6-42da-8321-2af5099bd2a2' should be treated identical to 'C55F6B35-05F6-42DA-8321-2AF5099BD2A2'
+
+  <a href="#http-url-return-casing" name="http-url-return-casing">:white_check_mark:</a> **DO** ensure proper casing when returning a URL in an HTTP response header value or inside a JSON response body
+
+  <a href="#http-url-allowed-characters" name="http-url-allowed-characters">:white_check_mark:</a> **DO** restrict the characters in service-defined path segments to `0-9  A-Z  a-z  -  .  _  ~`, with `:` allowed only as described below to designate an action operation.
+
+  <a href="#http-url-allowed-characters-2" name="http-url-allowed-characters-2">:ballot_box_with_check:</a> **YOU SHOULD** restrict the characters allowed in user-specified path segments (i.e. path parameters values) to `0-9  A-Z  a-z  -  .  _  ~` (do not allow `:`).
+
+  <a href="#http-url-should-be-readable" name="http-url-should-be-readable">:ballot_box_with_check:</a> **YOU SHOULD** keep URLs readable; if possible, avoid UUIDs & %-encoding (ex: Cádiz is %-encoded as C%C3%A1diz)
+
+  <a href="#http-url-allowed-characters-3" name="http-url-allowed-characters-3">:heavy_check_mark:</a> **YOU MAY** use these other characters in the URL path but they will likely require %-encoding [[RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986#section-2.1)]: `/  ?  #  [  ]  @  !  $  &  '  (  )  *  +  ,  ;  =`
+
+  <a href="#http-direct-endpoints" name="http-direct-endpoints">:heavy_check_mark:</a> **YOU MAY** support a direct endpoint URL for performance/routing:
+  ```text
+  https://<tenant>-<service-root>.<service>.<cloud>/...
+  ```
+
+  Examples:
+  - Request URL: `https://blobstore.azure.net/contoso.com/account1/container1/blob2`
+  - Response header ([RFC 2557](https://datatracker.ietf.org/doc/html/rfc2557#section-4)): `content-location : https://contoso-dot-com-account1.blobstore.azure.net/container1/blob2`
+  - GUID format: `https://00000000-0000-0000-C000-000000000046-account1.blobstore.azure.net/container1/blob2`
+
+  <a href="#http-url-return-consistent-form" name="http-url-return-consistent-form">:white_check_mark:</a> **DO** return URLs in response headers/bodies in a consistent form regardless of the URL used to reach the resource. Either always a UUID for `<tenant>` or always a single verified domain.
+
+  <a href="#http-url-parameter-values" name="http-url-parameter-values">:heavy_check_mark:</a> **YOU MAY** use URLs as values
+  ```text
+  https://api.contoso.com/items?url=https://resources.contoso.com/shoes/fancy
+  ```
+
+  #### HTTP Request / Response Pattern
+  The HTTP Request / Response pattern dictates how your API behaves. For example: POST methods that create resources must be idempotent, GET method results may be cached, the If-Modified and ETag headers offer optimistic concurrency. The URL of a service, along with its request/response bodies, establishes the overall contract that developers have with your service. As a service provider, how you manage the overall request / response pattern should be one of the first implementation decisions you make.
+
+  Cloud applications embrace failure. Therefore, to enable customers to write fault-tolerant applications, _all_ service operations (including POST) **must** be idempotent. Implementing services in an idempotent manner, with an "exactly once" semantic, enables developers to retry requests without the risk of unintended consequences.
+
+  ##### Exactly Once Behavior = Client Retries & Service Idempotency
+
+  <a href="#http-all-methods-idempotent" name="http-all-methods-idempotent">:white_check_mark:</a> **DO** ensure that _all_ HTTP methods are idempotent.
+
+  <a href="#http-use-put-or-patch" name="http-use-put-or-patch">:ballot_box_with_check:</a> **YOU SHOULD** use PUT or PATCH to create a resource as these HTTP methods are easy to implement, allow the customer to name their own resource, and are idempotent.
+
+  <a href="#http-post-must-be-idempotent" name="http-post-must-be-idempotent">:heavy_check_mark:</a> **YOU MAY** use POST to create a resource but you must make it idempotent and, of course, the response **MUST** return the URL of the created resource with a 201-Created. One way to make POST idempotent is to use the Repeatability-Request-ID & Repeatability-First-Sent headers (See [Repeatability of requests](#repeatability-of-requests)).
+
+  ##### HTTP Return Codes
+
+  <a href="#http-success-status-codes" name="http-success-status-codes">:white_check_mark:</a> **DO** adhere to the return codes in the following table when the method completes synchronously and is successful:
+
+  Method | Description | Response Status Code
+  -------|-------------|---------------------
+  PATCH  | Create/Modify the resource with JSON Merge Patch | `200-OK`, `201-Created`
+  PUT    | Create/Replace the _whole_ resource | `200-OK`, `201-Created`
+  POST   | Create new resource (ID set by service) | `201-Created` with URL of created resource
+  POST   | Action | `200-OK`
+  GET    | Read (i.e. list) a resource collection | `200-OK`
+  GET    | Read the resource | `200-OK`
+  DELETE | Remove the resource | `204-No Content`\; avoid `404-Not Found`
+
+  <a href="#http-lro-status-code" name="http-lro-status-code">:white_check_mark:</a> **DO** return status code `202-Accepted` and follow the guidance in [Long-Running Operations & Jobs](#long-running-operations--jobs) when a PUT, POST, or DELETE method completes asynchronously.
+
+  <a href="#http-method-casing" name="http-method-casing">:white_check_mark:</a> **DO** treat method names as case sensitive and should always be in uppercase
+
+  <a href="#http-return-resource" name="http-return-resource">:white_check_mark:</a> **DO** return the state of the resource after a PUT, PATCH, POST, or GET operation with a `200-OK` or `201-Created`.
+
+  <a href="#http-delete-returns-204" name="http-delete-returns-204">:white_check_mark:</a> **DO** return a `204-No Content` without a resource/body for a DELETE operation (even if the URL identifies a resource that does not exist; do not return `404-Not Found`
+
+  <a href="#http-pos
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      REST is HTTP applied with discipline — resources identified by URLs, methods that match their semantic intent, status codes that mean what they say. Microsoft's Azure API Guidelines codify the patterns most teams converge on. This skill covers the HTTP + resource fundamentals.
+
+      Sourced from microsoft/api-guidelines azure/Guidelines.md (Building Blocks: HTTP, REST, & JSON).
+
+  - fragment_type: execution
+    sequence: 2
+    content: |
+      Azure services must adhere to the HTTP specification, [RFC 7231](https://tools.ietf.org/html/rfc7231). This section further refines and constrains how service implementors should apply the constructs defined in the HTTP specification. It is therefore, important that you have a firm understanding of the following concepts:
+
+      - [Uniform Resource Locators (URLs)](#uniform-resource-locators-urls)
+      - [HTTP Request / Response Pattern](#http-request--response-pattern)
+      - [HTTP Query Parameters and Header Values](#http-query-parameters-and-header-values)
+
+  - fragment_type: execution
+    sequence: 3
+    content: |
+      <a href="#http-url-pattern" name="http-url-pattern">:white_check_mark:</a> **DO** use this URL pattern:
+      ```text
+      https://<tenant>.<region>.<service>.<cloud>/<service-root>/<resource-collection>/<resource-id>
+      ```
+
+      Where:
+       | Field | Description
+       | - | - |
+       | tenant | Regionally-unique ID representing a tenant (used for isolation, billing, quota enforcement, lifetime of resources, etc.)
+       | region | Identifies the tenant's selected region. This region string MUST match one of the strings in the "Name" column returned from running this Azure CLI's "az account list-locations -o table"
+       | service | Name of the service (ex: blobstore, servicebus, directory, or management)
+       | cloud | Cloud domain name, e.g. `azure.net` (see Azure CLI's "az cloud list")
+       | service-root | Service-specific path (ex: blobcontainer, myqueue)
+       | resource-collection | Name of the collection, unabbreviated, pluralized
+       | resource-id | Id of resource within the resource-collection. This MUST be the raw string/number/guid value with no quoting but properly escaped to fit in a URL segment.
+
+  - fragment_type: execution
+    sequence: 4
+    content: |
+      <a href="#http-url-casing" name="http-url-casing">:white_check_mark:</a> **DO** use kebab-casing (preferred) or camel-casing for URL path segments. If the segment refers to a JSON field, use camel casing.
+
+      <a href="#http-url-length" name="http-url-length">:white_check_mark:</a> **DO** return `414-URI Too Long` if a URL exceeds 2083 characters
+
+      <a href="#http-url-case-sensitivity" name="http-url-case-sensitivity">:white_check_mark:</a> **DO** treat service-defined URL path segments as case-sensitive. If the passed-in case doesn't match what the service expects, the request **MUST** fail with a `404-Not found` HTTP return code.
+
+      Some customer-provided path segment values may be compared case-insensitivity if the abstraction they represent is normally compared with case-insensitivity. For example, a UUID path segment of 'c55f6b35-05f6-42da-8321-2af5099bd2a2' should be treated identical to 'C55F6B35-05F6-42DA-8321-2AF5099BD2A2'
+
+  - fragment_type: execution
+    sequence: 5
+    content: |
+      <a href="#http-url-return-casing" name="http-url-return-casing">:white_check_mark:</a> **DO** ensure proper casing when returning a URL in an HTTP response header value or inside a JSON response body
+
+      <a href="#http-url-allowed-characters" name="http-url-allowed-characters">:white_check_mark:</a> **DO** restrict the characters in service-defined path segments to `0-9  A-Z  a-z  -  .  _  ~`, with `:` allowed only as described below to designate an action operation.
+
+      <a href="#http-url-allowed-characters-2" name="http-url-allowed-characters-2">:ballot_box_with_check:</a> **YOU SHOULD** restrict the characters allowed in user-specified path segments (i.e. path parameters values) to `0-9  A-Z  a-z  -  .  _  ~` (do not allow `:`).
+
+      <a href="#http-url-should-be-readable" name="http-url-should-be-readable">:ballot_box_with_check:</a> **YOU SHOULD** keep URLs readable; if possible, avoid UUIDs & %-encoding (ex: Cádiz is %-encoded as C%C3%A1diz)
+
+  - fragment_type: execution
+    sequence: 6
+    content: |
+      <a href="#http-url-allowed-characters-3" name="http-url-allowed-characters-3">:heavy_check_mark:</a> **YOU MAY** use these other characters in the URL path but they will likely require %-encoding [[RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986#section-2.1)]: `/  ?  #  [  ]  @  !  $  &  '  (  )  *  +  ,  ;  =`
+
+      <a href="#http-direct-endpoints" name="http-direct-endpoints">:heavy_check_mark:</a> **YOU MAY** support a direct endpoint URL for performance/routing:
+      ```text
+      https://<tenant>-<service-root>.<service>.<cloud>/...
+      ```
+
+      Examples:
+      - Request URL: `https://blobstore.azure.net/contoso.com/account1/container1/blob2`
+      - Response header ([RFC 2557](https://datatracker.ietf.org/doc/html/rfc2557#section-4)): `content-location : https://contoso-dot-com-account1.blobstore.azure.net/container1/blob2`
+      - GUID format: `https://00000000-0000-0000-C000-000000000046-account1.blobstore.azure.net/container1/blob2`
+
+  - fragment_type: execution
+    sequence: 7
+    content: |
+      <a href="#http-url-return-consistent-form" name="http-url-return-consistent-form">:white_check_mark:</a> **DO** return URLs in response headers/bodies in a consistent form regardless of the URL used to reach the resource. Either always a UUID for `<tenant>` or always a single verified domain.
+
+      <a href="#http-url-parameter-values" name="http-url-parameter-values">:heavy_check_mark:</a> **YOU MAY** use URLs as values
+      ```text
+      https://api.contoso.com/items?url=https://resources.contoso.com/shoes/fancy
+      ```
+
+  - fragment_type: execution
+    sequence: 8
+    content: |
+      The HTTP Request / Response pattern dictates how your API behaves. For example: POST methods that create resources must be idempotent, GET method results may be cached, the If-Modified and ETag headers offer optimistic concurrency. The URL of a service, along with its request/response bodies, establishes the overall contract that developers have with your service. As a service provider, how you manage the overall request / response pattern should be one of the first implementation decisions you make.
+
+      Cloud applications embrace failure. Therefore, to enable customers to write fault-tolerant applications, _all_ service operations (including POST) **must** be idempotent. Implementing services in an idempotent manner, with an "exactly once" semantic, enables developers to retry requests without the risk of unintended consequences.
+
+  - fragment_type: execution
+    sequence: 9
+    content: |
+      <a href="#http-all-methods-idempotent" name="http-all-methods-idempotent">:white_check_mark:</a> **DO** ensure that _all_ HTTP methods are idempotent.
+
+      <a href="#http-use-put-or-patch" name="http-use-put-or-patch">:ballot_box_with_check:</a> **YOU SHOULD** use PUT or PATCH to create a resource as these HTTP methods are easy to implement, allow the customer to name their own resource, and are idempotent.
+
+      <a href="#http-post-must-be-idempotent" name="http-post-must-be-idempotent">:heavy_check_mark:</a> **YOU MAY** use POST to create a resource but you must make it idempotent and, of course, the response **MUST** return the URL of the created resource with a 201-Created. One way to make POST idempotent is to use the Repeatability-Request-ID & Repeatability-First-Sent headers (See [Repeatability of requests](#repeatability-of-requests)).
+
+  - fragment_type: execution
+    sequence: 10
+    content: |
+      <a href="#http-success-status-codes" name="http-success-status-codes">:white_check_mark:</a> **DO** adhere to the return codes in the following table when the method completes synchronously and is successful:
+
+      Method | Description | Response Status Code
+      -------|-------------|---------------------
+      PATCH  | Create/Modify the resource with JSON Merge Patch | `200-OK`, `201-Created`
+      PUT    | Create/Replace the _whole_ resource | `200-OK`, `201-Created`
+      POST   | Create new resource (ID set by service) | `201-Created` with URL of created resource
+      POST   | Action | `200-OK`
+      GET    | Read (i.e. list) a resource collection | `200-OK`
+      GET    | Read the resource | `200-OK`
+      DELETE | Remove the resource | `204-No Content`\; avoid `404-Not Found`
+
+  - fragment_type: execution
+    sequence: 11
+    content: |
+      <a href="#http-lro-status-code" name="http-lro-status-code">:white_check_mark:</a> **DO** return status code `202-Accepted` and follow the guidance in [Long-Running Operations & Jobs](#long-running-operations--jobs) when a PUT, POST, or DELETE method completes asynchronously.
+
+      <a href="#http-method-casing" name="http-method-casing">:white_check_mark:</a> **DO** treat method names as case sensitive and should always be in uppercase
+
+      <a href="#http-return-resource" name="http-return-resource">:white_check_mark:</a> **DO** return the state of the resource after a PUT, PATCH, POST, or GET operation with a `200-OK` or `201-Created`.
+
+      <a href="#http-delete-returns-204" name="http-delete-returns-204">:white_check_mark:</a> **DO** return a `204-No Content` without a resource/body for a DELETE operation (even if the URL identifies a resource that does not exist; do not return `404-Not Found`
+
+      <a href="#http-pos
