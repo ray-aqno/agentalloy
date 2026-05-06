@@ -138,7 +138,7 @@ def run_author(
     settings = get_settings()
     ac = settings.require_authoring_config()
     owned_client = client is None
-    _client = client or OpenAICompatClient(ac.lm_studio_base_url)
+    _client = client or OpenAICompatClient(ac.authoring_lm_base_url)
     system_prompt = load_authoring_prompt(repo_root)
     paths.ensure_all()
 
@@ -260,7 +260,7 @@ def run_revise(
     settings = get_settings()
     ac = settings.require_authoring_config()
     owned = client is None
-    _client = client or OpenAICompatClient(ac.lm_studio_base_url)
+    _client = client or OpenAICompatClient(ac.authoring_lm_base_url)
     system_prompt = load_authoring_prompt(repo_root)
     paths.ensure_all()
 

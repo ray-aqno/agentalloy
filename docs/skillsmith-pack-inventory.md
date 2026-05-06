@@ -106,14 +106,14 @@ TypeScript and Python lead because they're the two languages with the largest ac
 3. fastapi           [ga]   — Python async API framework
 4. express           [ga]   — Node minimalist HTTP
 5. django            [ga]   — Django ORM, views
-6. shadcn-ui         [v1]   — design system patterns
+6. shadcn-ui         [ga]   — design system patterns
 7. vue               [ga]   — Vue 3, Composition API
 8. flask             [ga]   — Flask, blueprints
 9. svelte            [ga]   — Svelte/SvelteKit
 10. spring-boot      [ga]   — Spring Boot, Java enterprise
 11. astro            [ga]   — Astro islands, content collections
 12. rails            [ga]   — Rails conventions, ActiveRecord
-13. nestjs           [ga]   — Node enterprise framework
+13. nestjs           [v1]   — Node enterprise framework
 14. fastify          [ga]   — Node high-performance HTTP
 15. nuxt             [ga]   — Nuxt 3, SSR
 16. remix            [ga]   — Remix routing, data loading
@@ -130,7 +130,7 @@ React and Next.js are non-negotiable — they're where most modern frontend work
 
 ```
 1. postgres          [v1]   — Postgres features, indexing, query planning
-2. redis             [ga]   — caching, pub/sub, data structures
+2. redis             [v1]   — caching, pub/sub, data structures
 3. sqlite            [ga]   — SQLite, embedded patterns
 4. mongodb           [gap]  — document modeling
 5. prisma            [gap]  — Prisma ORM patterns
@@ -142,16 +142,16 @@ React and Next.js are non-negotiable — they're where most modern frontend work
 11. dynamodb         [ga]   — DynamoDB modeling, GSIs
 12. snowflake        [v1]   — warehouse patterns, cost optimization
 13. clickhouse       [ga]   — analytical queries
-14. duckdb           [ga]   — embedded analytics
+14. duckdb           [v1]   — embedded analytics
 15. elasticsearch    [ga]   — search patterns, mappings
 16. opensearch       [ga]   — OpenSearch (post-fork)
 17. typeorm          [ga]   — TS/Node ORM
 18. redshift         [v1]   — warehouse patterns
-19. kafka            [ga]   — event streaming
+19. kafka            [v1]   — event streaming
 20. neo4j            [ga]   — graph patterns, Cypher
 21. rabbitmq         [ga]   — message queue patterns
 22. cassandra        [ga]   — wide-column patterns
-23. temporal         [ga]   — durable execution
+23. temporal         [v1]   — durable execution
 ```
 
 Postgres leads because it's the default OLTP for the modern stack and used by everyone. Redis is second because almost every production app needs caching or pub/sub. SQLite at 3 because it's everywhere — local dev, mobile, embedded — and undersold. MongoDB at 4 because it's the second-most-used database. Prisma/Drizzle/SQLAlchemy cluster at 5-7 because ORM selection is a daily question for most developers. Postgres-deep is separated from postgres because advanced patterns warrant their own pack but only after the basics. DynamoDB before Snowflake because more people hit DynamoDB than warehouses. Kafka, Neo4j, Cassandra, Temporal are specialized — useful but narrower.
@@ -160,12 +160,12 @@ Postgres leads because it's the default OLTP for the modern stack and used by ev
 
 ```
 1. auth              [v1]   — authentication, OAuth, SSO
-2. api-design        [ga]   — REST/GraphQL/RPC design, versioning
+2. api-design        [v1]   — REST/GraphQL/RPC design, versioning
 3. error-handling    [ga]   — error patterns, graceful degradation
 4. observability     [v1]   — logging, metrics, tracing
 5. caching           [ga]   — cache strategies, invalidation
 6. security          [v1]   — secrets management, vulnerability patterns
-7. data-validation   [ga]   — validation across layers
+7. data-validation   [v1]   — validation across layers
 8. rate-limiting     [ga]   — rate limit patterns
 9. accessibility     [ga]   — a11y patterns
 10. encryption       [ga]   — encryption at rest/transit, key management
@@ -177,22 +177,22 @@ Auth leads because it's the cross-cutting concern most likely to be done wrong, 
 ### Domain-class packs at `platform` tier (mixed)
 
 ```
-1. github-actions    [ga]   — GitHub Actions specifics
-2. docker            [ga]   — Docker-specific
+1. github-actions    [v1]   — GitHub Actions specifics
+2. docker            [v1]   — Docker-specific
 3. containers        [v1]   — generic container patterns
-4. aws               [ga]   — AWS service patterns
-5. terraform         [ga]   — Terraform-specific
+4. aws               [v1]   — AWS service patterns
+5. terraform         [v1]   — Terraform-specific
 6. kubernetes        [v1]   — K8s patterns
 7. vercel            [ga]   — Vercel deployment, edge functions
 8. cloudflare        [ga]   — Workers, Pages, R2, edge
-9. cicd              [ga]   — generic pipeline patterns
+9. cicd              [v1]   — generic pipeline patterns
 10. docker-compose   [ga]   — local orchestration
 11. iac              [v1]   — generic IaC patterns
-12. monorepo         [ga]   — Nx, Turborepo, Bazel
+12. monorepo         [v1]   — Nx, Turborepo, Bazel
 13. gcp              [ga]   — GCP service patterns
 14. fly-io           [ga]   — Fly.io patterns
 15. nginx            [ga]   — nginx config, reverse proxy
-16. serverless       [ga]   — Lambda, FaaS architecture
+16. serverless       [v1]   — Lambda, FaaS architecture
 17. helm             [ga]   — Helm charts
 18. azure            [ga]   — Azure service patterns
 19. podman           [gap]  — Podman-specific
@@ -210,16 +210,16 @@ GitHub Actions leads because it's the CI most OSS projects use, and most people 
 1. git               [ga]   — git workflows, advanced patterns
 2. testing           [v1]   — generic testing strategy
 3. vitest            [ga]   — Vitest specifics
-4. pytest            [ga]   — Python testing
+4. pytest            [v1]   — Python testing
 5. linting           [v1]   — eslint, prettier, language linters
 6. claude-code       [v1]   — Claude Code patterns, skill authoring
-7. playwright        [ga]   — E2E testing, browser automation
+7. playwright        [v1]   — E2E testing, browser automation
 8. mise              [v1]   — runtime version management
 9. ruff              [ga]   — Python linter
 10. biome            [ga]   — JS/TS linter (modern alternative)
 11. uv               [ga]   — Python uv (modern dep mgmt)
 12. pnpm             [v1]   — package management
-13. github-cli       [ga]   — gh CLI
+13. github-cli       [v1]   — gh CLI
 14. esbuild          [ga]   — esbuild
 15. vite             [gap]  — Vite
 16. neovim           [ga]   — Neovim, LSP
@@ -255,16 +255,16 @@ Git leads because everyone uses it and almost everyone uses it badly. Testing as
 ### Domain-class packs at `domain` tier (recall-favored)
 
 ```
-1. llm-engineering   [ga]   — prompt engineering, RAG, eval, fine-tuning
+1. llm-engineering   [v1]   — prompt engineering, RAG, eval, fine-tuning
 2. agents            [v1]   — agent design patterns, MCP integration
 3. cli-design        [ga]   — CLI UX, argument parsing
 4. ml-fundamentals   [ga]   — training basics, evaluation, pitfalls
 5. embeddings        [ga]   — embedding patterns, semantic search
 6. ui-design         [v1]   — design system patterns, accessibility
 7. saas-patterns     [ga]   — multi-tenancy, billing, onboarding
-8. analytics         [ga]   — product analytics, instrumentation
+8. analytics         [v1]   — product analytics, instrumentation
 9. data-engineering  [v1]   — ETL patterns, dbt, data modeling
-10. vector-databases [ga]   — Pinecone, Weaviate, Qdrant, pgvector
+10. vector-databases [v1]   — Pinecone, Weaviate, Qdrant, pgvector
 11. mobile-patterns  [ga]   — mobile architecture, offline-first
 12. realtime-collab  [ga]   — CRDT, OT, presence
 13. dbt              [ga]   — dbt-specific patterns
@@ -293,8 +293,8 @@ LLM engineering leads because it's the highest-demand domain right now and most 
 ```
 1. rest              [v1]   — REST API design
 2. jwt               [ga]   — JWT patterns, validation, pitfalls
-3. oauth             [ga]   — OAuth flows
-4. graphql           [ga]   — schema, resolvers, subscriptions
+3. oauth             [v1]   — OAuth flows
+4. graphql           [v1]   — schema, resolvers, subscriptions
 5. webhooks          [v1]   — webhook patterns
 6. websockets        [ga]   — real-time patterns
 7. oidc              [ga]   — OpenID Connect
@@ -318,11 +318,11 @@ REST leads because every API pack assumes REST literacy. JWT second because it's
 4. release           [v1]   — release procedures
 5. incident          [ga]   — incident response playbooks
 6. postmortem        [ga]   — postmortem authoring and follow-through
-7. rfc               [ga]   — RFC authoring guides
+7. rfc               [v1]   — RFC authoring guides
 8. migration         [ga]   — large migration project management
-9. design-review     [ga]   — design review workflows
-10. arch-review      [ga]   — architecture review workflows
-11. prd              [ga]   — product requirements document authoring
+9. design-review     [v1]   — design review workflows
+10. arch-review      [v1]   — architecture review workflows
+11. prd              [v1]   — product requirements document authoring
 12. onboarding       [ga]   — new contributor onboarding flows
 13. deprecation      [ga]   — feature/API deprecation playbooks
 14. security-review  [ga]   — security review workflows
@@ -343,20 +343,17 @@ This is the order for build sequencing if choosing freely. Actual priorities sho
 ## Pack count summary
 
 ```
-v1 (NaviStone) packs:         41
-ga additions:                157
-gap (audit-flagged):           6
-total general-release:       204
-estimated skill range:       1,020–2,040 skills total at 5–10 skills per pack
+v1 (NaviStone) packs:        ~29
+ga additions:                ~155
+total general-release:       ~185
+estimated skill range:       900–1800 skills total at 5–10 skills per pack
 ```
 
-(Counts derived from the numbered pack rows above; recount with `grep -E '^[ ]*[0-9]+\.' docs/skillsmith-pack-inventory.md | awk -F'[][]' '{print $2}' | sort | uniq -c` after edits.)
+The full ~185-pack inventory is the eventual destination, not the launch state. Recommended rollout:
 
-The full ~200-pack inventory is the eventual destination, not the launch state. Recommended rollout:
-
-1. Ship NaviStone v1 first (41 packs). Architecture stabilizes.
-2. Add the highest-leverage `[ga]` packs after v1: language tier completion (5–7), most common framework packs (8–10), must-have store packs (8–10), cross-cutting essentials (5–7), cloud providers (3–4), workflow expansions (5–8). Roughly 80–95 packs once layered on top of v1.
-3. Add the long tail (~110 more packs) opportunistically, prioritizing by what users actually request. Telemetry from v2 routing will tell you which packs are missing because routing will fail to find skills for certain queries. That's better signal than guessing.
+1. Ship NaviStone v1 first (~29 packs). Architecture stabilizes.
+2. Add the "core 50" general-access packs next: language packs (5–7), most common framework packs (8–10), must-have store packs (8–10), cross-cutting essentials (5–7), cloud providers (3–4), workflow expansions (5–8). Total roughly 80–85 packs.
+3. Add the long tail (~100 more packs) opportunistically, prioritizing by what users actually request. Telemetry from v2 routing will tell you which packs are missing because routing will fail to find skills for certain queries. That's better signal than guessing.
 
 ## Notes on what's intentionally NOT included
 

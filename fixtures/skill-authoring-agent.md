@@ -109,10 +109,21 @@ retrieval-safe fragments.
 
 Fragment requirements:
 
-- Use only `setup`, `execution`, `verification`, `example`, `guardrail`,
-  `rationale`.
+- Each fragment is a YAML mapping with exactly these keys:
+  `fragment_type`, `sequence`, `content`. Use `fragment_type` — not `type`.
+  The schema validator rejects `type` and any other alias.
+- Allowed `fragment_type` values: `setup`, `execution`, `verification`,
+  `example`, `guardrail`, `rationale`. No other values are valid.
 - Include at least one `execution` fragment.
 - Number `sequence` starting at 1 with no gaps.
+- Each fragment's `content` must be at least 20 words (hard floor). Target
+  80–800 words. Below 80 words produces under-discriminative embeddings;
+  below 20 words is rejected outright.
+- Do not emit a fragment for short trailing material that has no retrieval
+  value: bare reference link lists, "See also" sections, footers,
+  source-attribution one-liners. Keep them in `raw_prose` but skip the
+  fragment. Fragments need not cover every region of `raw_prose`; they only
+  need to be contiguous slices.
 - Keep each fragment single-intent.
 - Keep each fragment self-contained when surfaced alone by retrieval.
 - Preserve source text verbatim inside `content`. Do not summarize, rewrite,
@@ -143,6 +154,28 @@ Hard fragmentation rules:
 - Merge tiny fragments that are pure continuations of the same intent.
 - A fragment must make sense without “see above”, “as noted earlier”, or other
   cross-fragment dependency.
+
+Anti-patterns — DO NOT emit these as separate fragments:
+
+- API metadata lines under one heading (`- **Type:** ...`, `- **Argument:** ...`,
+  `- **Modifier:** ...`, `- **Details:** ...`). These belong WITH the heading
+  prose in ONE fragment, not split out.
+- "See also" / "Related" link lists. Keep in `raw_prose`; do not fragment.
+- Single-line one-liner subsections under a parent H2. Merge with the parent
+  prose.
+- A heading with only a code block underneath and no prose. Merge with the
+  prose section that introduces it.
+
+Heading-cluster rule:
+
+- When source has many small H2 sections under one H1 topic (e.g. 15 directives
+  each documented in 5–30 lines), emit ONE fragment per H2 — combining its
+  description, code example, and notes. Do NOT split a single H2 into 2–3
+  fragments by element type. If individual H2 sections are themselves under
+  20 words, group several adjacent H2s into one fragment.
+
+Target fragment count: 6–14 per skill. If you produce more than 16 fragments,
+you are over-splitting — re-merge before emitting.
 
 YAML emit style:
 

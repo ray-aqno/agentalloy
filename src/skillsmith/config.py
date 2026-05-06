@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     # Authoring pipeline — requires explicit configuration; not part of the
     # default install. Invoke authoring code paths only when these are set.
     lm_studio_base_url: str = "http://localhost:1234"
+    authoring_lm_base_url: str | None = None
     authoring_embed_base_url: str | None = None
     authoring_model: str | None = None
     critic_model: str | None = None
@@ -90,6 +91,7 @@ class Settings(BaseSettings):
             )
         return AuthoringConfig(
             lm_studio_base_url=self.lm_studio_base_url,
+            authoring_lm_base_url=self.authoring_lm_base_url or self.lm_studio_base_url,
             authoring_embed_base_url=self.authoring_embed_base_url,  # type: ignore[arg-type]
             authoring_model=self.authoring_model,  # type: ignore[arg-type]
             critic_model=self.critic_model,  # type: ignore[arg-type]
@@ -102,6 +104,7 @@ class AuthoringConfig:
     """Authoring fields narrowed to non-Optional str. Obtained via Settings.require_authoring_config()."""
 
     lm_studio_base_url: str
+    authoring_lm_base_url: str
     authoring_embed_base_url: str
     authoring_model: str
     critic_model: str

@@ -309,6 +309,12 @@ vendors:
     packs: [fastapi]
     fallback_root: https://fastapi.tiangolo.com/
 
+  express:
+    tier: 3
+    packs: [express]
+    fallback_root: https://expressjs.com/en/
+    notes: Express 5.x. Guide pages under /en/guide/ are authoritative for routing, middleware, error handling. API ref under /en/api.html.
+
   python:
     tier: 3
     packs: [python]
