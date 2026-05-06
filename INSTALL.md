@@ -213,7 +213,7 @@ The user is shown a list of available packs (each with description + skill count
 
 The command ingests each chosen pack and runs one bulk re-embed pass at the end. **Expect 5–10 minutes** on a warm-cache iGPU for a moderate selection (e.g., core + engineering + nodejs + typescript = ~115 skills, ~700 fragments).
 
-Non-interactive / scripted environments: pass `--packs <name1,name2,...>` (or `--packs all`) to skip the prompt. With no flag in non-TTY mode, only the always-on packs install.
+Non-interactive / scripted environments: pass `--packs <name1,name2,...>` (or `--packs all`) to skip the prompt. With no flag in non-TTY mode, only the always-on packs install. Unknown pack names in `--packs` cause the command to fail fast with the available pack list; pass `--ignore-unknown` to skip unrecognized names and continue with the known subset.
 
 If the bulk re-embed fails partway (e.g., LM Studio crashes mid-run), the install state records what landed and the embed step is idempotent — just re-run `skillsmith reembed` to finish.
 
@@ -292,7 +292,9 @@ If the user picked `manual`, the output includes copy-pasteable instructions for
 > skillsmith verify
 > ```
 
-This runs 8 enumerated install-time checks (embedding endpoint reachable, returns 1024-dim, DuckDB present at the user-scope corpus dir, harness config present, port available, etc.).
+This runs 8 enumerated install-time checks (embedding endpoint reachable, returns 1024-dim, DuckDB present at the user-scope corpus dir, LadybugDB present, skill count meets minimum, harness config present, harness config URL matches, runtime port available).
+
+When the service is running, the corpus checks (`duckdb_present`, `ladybug_present`, `skill_count_meets_minimum`) query `GET /diagnostics/runtime` instead of opening DB files directly — Kùzu's single-writer lock would otherwise make those checks fail spuriously while the service holds the corpus open. `runtime_port_available` accepts `"healthy"` (passes) and `"degraded"` (passes with warning) responses from `/health`.
 
 If `all_checks_passed: true`, proceed to step 11.
 

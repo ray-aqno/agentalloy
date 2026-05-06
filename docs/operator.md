@@ -59,6 +59,8 @@ python -m skillsmith.install server-restart
 
 `server-stop` SIGTERMs whatever process is bound to the configured port; it does not verify the target is skillsmith. On a shared port, that's the operator's concern. `server-start` and `serve` use the same `.env` loader, so background and foreground modes produce identical runtime configurations.
 
+`server-stop` exits 0 with `action: "already_stopped"` when nothing is listening on the configured port — running it twice in a row is safe and idempotent.
+
 ---
 
 ## Skill Category Vocabulary

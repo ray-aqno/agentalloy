@@ -83,11 +83,13 @@ uv run python -m skillsmith.install install-packs --packs all --non-interactive
 
 This walks `src/skillsmith/_packs/*/pack.yaml`, ingests every pack into the local LadybugDB + DuckDB corpus, and runs one bulk reembed at the end. Use when scripting CI environments, container builds, or fresh dev machines.
 
+`--packs` accepts a comma-separated list (`--packs core,nodejs,react`) or `all`. Unknown pack names fail fast in non-interactive mode; pass `--ignore-unknown` to skip unrecognized names and continue with the known subset.
+
 ---
 
 ## Packs shipping in-tree
 
-The corpus is split into **packs** — opt-in groups of related skills. As of 2026-05-05, `main` ships:
+The corpus is split into **packs** — opt-in groups of related skills. As of 2026-05-06, `main` ships:
 
 | Pack | Tier | Skills | Status |
 |---|---|---:|---|
@@ -103,6 +105,14 @@ The corpus is split into **packs** — opt-in groups of related skills. As of 20
 | `nodejs` | language | 5 | opt-in |
 | `go` | language | 5 | opt-in |
 | `rust` | language | 5 | opt-in |
+| `csharp-dotnet` | language | 5 | opt-in |
+| `java` | language | 5 | opt-in |
+| `react` | framework | 5 | opt-in |
+| `nextjs` | framework | 5 | opt-in |
+| `fastapi` | framework | 5 | opt-in |
+| `vue` | framework | 5 | opt-in |
+| `nestjs` | framework | 5 | opt-in |
+| `fastify` | framework | 4 | opt-in |
 
 Authored against authoritative upstream docs per the R1–R8 quality contract in `src/skillsmith/_packs/meta/sys-skill-authoring-rules.md`. Each pack ships with `.qa.md` reports under `docs/skill-review-history/` documenting the independent Critic review verdicts.
 
