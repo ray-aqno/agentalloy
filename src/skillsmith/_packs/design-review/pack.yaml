@@ -1,0 +1,24 @@
+name: design-review
+version: 1.0.0
+tier: workflow
+description: |
+  Design review workflow patterns — RFC + ADR document conventions, interface-contract review (Hyrum's Law, contract-first, deprecation planning), and non-functional-requirements review (security threat-model, performance targets, observability hooks, operational constraints). Precision-favored workflow tier; sourced from agent-skills/ canonical methodology per R1 internal procedure.
+author: navistone
+embed_model: qwen3-embedding:0.6b
+embedding_dim: 1024
+license: MIT
+homepage: https://github.com/nrmeyers/skillsmith
+always_install: false
+depends_on:
+- core
+- engineering
+skills:
+- skill_id: design-review-interface-contracts
+  file: design-review-interface-contracts.yaml
+  fragment_count: 13
+- skill_id: design-review-non-functional-requirements
+  file: design-review-non-functional-requirements.yaml
+  fragment_count: 19
+- skill_id: design-review-rfc-and-adrs
+  file: design-review-rfc-and-adrs.yaml
+  fragment_count: 14

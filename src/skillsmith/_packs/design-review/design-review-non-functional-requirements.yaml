@@ -1,0 +1,608 @@
+skill_type: domain
+skill_id: design-review-non-functional-requirements
+canonical_name: Design Review — Non-Functional Requirements
+category: quality
+skill_class: domain
+domain_tags:
+  - security
+  - performance
+  - observability
+  - operational-constraints
+author: navistone
+change_summary: initial authoring draft
+raw_prose: |
+  # Design Review — Non-Functional Requirements
+
+  ## Overview
+
+  Designs that pass functional review can still fail in production if non-functional requirements aren't surfaced early. The design-review checklist for NFRs covers security (threat model, secrets handling), performance (targets, load profile, latency budgets), observability (metrics, tracing, logging), and operational concerns (deploy, rollback, runbook). This skill covers NFR review patterns.
+
+  Sourced from agent-skills/security-and-hardening and agent-skills/performance-optimization.
+
+  # Security and Hardening
+
+  ## Overview
+
+  Security-first development practices for web applications. Treat every external input as hostile, every secret as sacred, and every authorization check as mandatory. Security isn't a phase — it's a constraint on every line of code that touches user data, authentication, or external systems.
+
+  ## When to Use
+
+  - Building anything that accepts user input
+  - Implementing authentication or authorization
+  - Storing or transmitting sensitive data
+  - Integrating with external APIs or services
+  - Adding file uploads, webhooks, or callbacks
+  - Handling payment or PII data
+
+  ## The Three-Tier Boundary System
+
+  ### Always Do (No Exceptions)
+
+  - **Validate all external input** at the system boundary (API routes, form handlers)
+  - **Parameterize all database queries** — never concatenate user input into SQL
+  - **Encode output** to prevent XSS (use framework auto-escaping, don't bypass it)
+  - **Use HTTPS** for all external communication
+  - **Hash passwords** with bcrypt/scrypt/argon2 (never store plaintext)
+  - **Set security headers** (CSP, HSTS, X-Frame-Options, X-Content-Type-Options)
+  - **Use httpOnly, secure, sameSite cookies** for sessions
+  - **Run `npm audit`** (or equivalent) before every release
+
+  ### Ask First (Requires Human Approval)
+
+  - Adding new authentication flows or changing auth logic
+  - Storing new categories of sensitive data (PII, payment info)
+  - Adding new external service integrations
+  - Changing CORS configuration
+  - Adding file upload handlers
+  - Modifying rate limiting or throttling
+  - Granting elevated permissions or roles
+
+  ### Never Do
+
+  - **Never commit secrets** to version control (API keys, passwords, tokens)
+  - **Never log sensitive data** (passwords, tokens, full credit card numbers)
+  - **Never trust client-side validation** as a security boundary
+  - **Never disable security headers** for convenience
+  - **Never use `eval()` or `innerHTML`** with user-provided data
+  - **Never store sessions in client-accessible storage** (localStorage for auth tokens)
+  - **Never expose stack traces** or internal error details to users
+
+  ## OWASP Top 10 Prevention
+
+  ### 1. Injection (SQL, NoSQL, OS Command)
+
+  ```typescript
+  // BAD: SQL injection via string concatenation
+  const query = `SELECT * FROM users WHERE id = '${userId}'`;
+
+  // GOOD: Parameterized query
+  const user = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
+
+  // GOOD: ORM with parameterized input
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  ```
+
+  ### 2. Broken Authentication
+
+  ```typescript
+  // Password hashing
+  import { hash, compare } from 'bcrypt';
+
+  const SALT_ROUNDS = 12;
+  const hashedPassword = await hash(plaintext, SALT_ROUNDS);
+  const isValid = await compare(plaintext, hashedPassword);
+
+  // Session management
+  app.use(session({
+    secret: process.env.SESSION_SECRET,  // From environment, not code
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,     // Not accessible via JavaScript
+      secure: true,       // HTTPS only
+      sameSite: 'lax',    // CSRF protection
+      maxAge: 24 * 60 * 60 * 1000,  // 24 hours
+    },
+  }));
+  ```
+
+  ### 3. Cross-Site Scripting (XSS)
+
+  ```typescript
+  // BAD: Rendering user input as HTML
+  element.innerHTML = userInput;
+
+  // GOOD: Use framework auto-escaping (React does this by default)
+  return <div>{userInput}</div>;
+
+  // If you MUST render HTML, sanitize first
+  import DOMPurify from 'dompurify';
+  const clean = DOMPurify.sanitize(userInput);
+  ```
+
+  ### 4. Broken Access Control
+
+  ```typescript
+  // Always check authorization, not just authentication
+  app.patch('/api/tasks/:id', authenticate, async (req, res) => {
+    const task = await taskService.findById(req.params.id);
+
+    // Check that the authenticated user owns this resource
+    if (task.ownerId !== req.user.id) {
+      return res.status(403).json({
+        error: { code: 'FORBIDDEN', message: 'Not authorized to modify this task' }
+      });
+    }
+
+    // Proceed with update
+    const updated = await taskService.update(req.params.id, req.body);
+    return res.json(updated);
+  });
+  ```
+
+  ### 5. Security Misconfiguration
+
+  ```typescript
+  // Security headers (use helmet for Express)
+  import helmet from 'helmet';
+  app.use(helmet());
+
+  // Content Security Policy
+  app.use(helmet.contentSecurityPolicy({
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],  // Tighten if possible
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'"],
+    },
+  }));
+
+  // CORS — restrict to known origins
+  app.use(cors({
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || 'http://localhost:3000',
+    credentials: true,
+  }));
+  ```
+
+  ### 6. Sensitive Data Exposure
+
+  ```typescript
+  // Never return sensitive fields in API responses
+  function sanitizeUser(user: UserRecord): PublicUser {
+    const { passwordHash, resetToken, ...publicFields } = user;
+    return publicFields;
+  }
+
+  // Use environment variables for secrets
+  const API_KEY = process.env.STRIPE_API_KEY;
+  if (!API_KEY) throw new Error('STRIPE_API_KEY not configured');
+  ```
+
+  # Performance Optimization
+
+  ## Overview
+
+  Measure before optimizing. Performance work without measurement is guessing — and guessing leads to premature optimization that adds complexity without improving what matters. Profile first, identify the actual bottleneck, fix it, measure again. Optimize only what measurements prove matters.
+
+  ## When to Use
+
+  - Performance requirements exist in the spec (load time budgets, response time SLAs)
+  - Users or monitoring report slow behavior
+  - Core Web Vitals scores are below thresholds
+  - You suspect a change introduced a regression
+  - Building features that handle large datasets or high traffic
+
+  **When NOT to use:** Don't optimize before you have evidence of a problem. Premature optimization adds complexity that costs more than the performance it gains.
+
+  ## Core Web Vitals Targets
+
+  | Metric | Good | Needs Improvement | Poor |
+  |--------|------|-------------------|------|
+  | **LCP** (Largest Contentful Paint) | ≤ 2.5s | ≤ 4.0s | > 4.0s |
+  | **INP** (Interaction to Next Paint) | ≤ 200ms | ≤ 500ms | > 500ms |
+  | **CLS** (Cumulative Layout Shift) | ≤ 0.1 | ≤ 0.25 | > 0.25 |
+
+  ## The Optimization Workflow
+
+  ```
+  1. MEASURE  → Establish baseline with real data
+  2. IDENTIFY → Find the actual bottleneck (not assumed)
+  3. FIX      → Address the specific bottleneck
+  4. VERIFY   → Measure again, confirm improvement
+  5. GUARD    → Add monitoring or tests to prevent regression
+  ```
+
+  ### Step 1: Measure
+
+  Two complementary approaches — use both:
+
+  - **Synthetic (Lighthouse, DevTools Performance tab):** Controlled conditions, reproducible. Best for CI regression detection and isolating specific issues.
+  - **RUM (web-vitals library, CrUX):** Real user data in real conditions. Required to validate that a fix actually improved user experience.
+
+  **Frontend:**
+  ```bash
+  # Synthetic: Lighthouse in Chrome DevTools (or CI)
+  # Chrome DevTools → Performance tab → Record
+  # Chrome DevTools MCP → Performance trace
+
+  # RUM: Web Vitals library in code
+  import { onLCP, onINP, onCLS } from 'web-vitals';
+
+  onLCP(console.log);
+  onINP(console.log);
+  onCLS(console.log);
+  ```
+
+  **Backend:**
+  ```bash
+  # Response time logging
+  # Application Performance Monitoring (APM)
+  # Database query logging with timing
+
+  # Simple timing
+  console.time('db-query');
+  const result = await db.query(...);
+  console.timeEnd('db-query');
+  ```
+
+  ### Where to Start Measuring
+
+  Use the symptom to decide what to measure first:
+
+  ```
+  What is slow?
+  ├── First page load
+  │   ├── Large bundle? --> Measure bundle size, check code splitting
+  │   ├── Slow server response? --> Measure TTFB in DevTools Network waterfall
+  │   │   ├── DNS long? --> Add dns-prefetch / preconnect for known origins
+  │   │   ├── TCP/TLS long? --> Enable HTTP/2, check edge deployment, keep-alive
+  │   │   └── Waiting (server) long? --> Profile backend, check queries and caching
+  │   └── Render-blocking resources? --> Check network waterfall for CSS/JS blocking
+  ├── Interaction feels sluggish
+  │   ├── UI freezes on click? --> Profile main thread, look for long tasks (>50ms)
+  │   ├── Form input lag? --> Check re-renders, controlled component overhead
+  │   └── Animation jank? --> Check layout thrashing, forced reflows
+  ├── Page after navigation
+  │   ├── Data loading? --> Measure API response times, check for waterfalls
+  │   └── Client rendering? --> Profile component render time, check for N+1 fetches
+  └── Backend / API
+      ├── Single endpoint slow? --> Profile database queries, check indexes
+      ├── All endpoints slow? --> Check connection pool, memory, CPU
+      └── Intermittent slowness? --> Check for lock contention, GC pauses, external deps
+  ```
+
+  ### Step 2: Identify the Bottleneck
+
+  Common bottlenecks by category:
+
+  **Frontend:**
+
+  | Symptom | Likely Cause | Investigation |
+  |---------|-------------|---------------|
+  | Slow LCP | Large images, render-blocking resources, slow server | Check network waterfall, image sizes |
+  | High CLS | Images without dimensions, late-loading content, font shifts | Check layout shift attribution |
+  | Poor INP | Heavy JavaScript on main thread, large DOM updates | Check long tasks in Performance trace |
+  | Slow initial load | Large bundle, many network requests | Check bundle size, code splitting |
+
+  **Backend:**
+
+  | Symptom | Likely Cause | Investigation |
+  |---------|-------------|---------------|
+  | Slow API responses | N+1 queries, missing indexes, unoptimized queries | Check database query log |
+  | Memory growth | Leaked references, unbounded caches, large payloads | Heap snapshot analysis |
+  | CPU spikes | S
+
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      Designs that pass functional review can still fail in production if non-functional requirements aren't surfaced early. The design-review checklist for NFRs covers security (threat model, secrets handling), performance (targets, load profile, latency budgets), observability (metrics, tracing, logging), and operational concerns (deploy, rollback, runbook). This skill covers NFR review patterns.
+  - fragment_type: execution
+    sequence: 2
+    content: |
+      ## Security and Hardening
+
+      ## Overview
+
+      Security-first development practices for web applications. Treat every external input as hostile, every secret as sacred, and every authorization check as mandatory. Security isn't a phase — it's a constraint on every line of code that touches user data, authentication, or external systems.
+  - fragment_type: execution
+    sequence: 3
+    content: |
+      ## When to Use
+
+      - Building anything that accepts user input
+      - Implementing authentication or authorization
+      - Storing or transmitting sensitive data
+      - Integrating with external APIs or services
+      - Adding file uploads, webhooks, or callbacks
+      - Handling payment or PII data
+  - fragment_type: execution
+    sequence: 4
+    content: |
+      ## The Three-Tier Boundary System
+
+      ### Always Do (No Exceptions)
+
+      - **Validate all external input** at the system boundary (API routes, form handlers)
+      - **Parameterize all database queries** — never concatenate user input into SQL
+      - **Encode output** to prevent XSS (use framework auto-escaping, don't bypass it)
+      - **Use HTTPS** for all external communication
+      - **Hash passwords** with bcrypt/scrypt/argon2 (never store plaintext)
+      - **Set security headers** (CSP, HSTS, X-Frame-Options, X-Content-Type-Options)
+      - **Use httpOnly, secure, sameSite cookies** for sessions
+      - **Run `npm audit`** (or equivalent) before every release
+  - fragment_type: execution
+    sequence: 5
+    content: |
+      ### Ask First (Requires Human Approval)
+
+      - Adding new authentication flows or changing auth logic
+      - Storing new categories of sensitive data (PII, payment info)
+      - Adding new external service integrations
+      - Changing CORS configuration
+      - Adding file upload handlers
+      - Modifying rate limiting or throttling
+      - Granting elevated permissions or roles
+  - fragment_type: execution
+    sequence: 6
+    content: |
+      ### Never Do
+
+      - **Never commit secrets** to version control (API keys, passwords, tokens)
+      - **Never log sensitive data** (passwords, tokens, full credit card numbers)
+      - **Never trust client-side validation** as a security boundary
+      - **Never disable security headers** for convenience
+      - **Never use `eval()` or `innerHTML`** with user-provided data
+      - **Never store sessions in client-accessible storage** (localStorage for auth tokens)
+      - **Never expose stack traces** or internal error details to users
+  - fragment_type: example
+    sequence: 7
+    content: |
+      ## OWASP Top 10 Prevention
+
+      ### 1. Injection (SQL, NoSQL, OS Command)
+
+      ```typescript
+      // BAD: SQL injection via string concatenation
+      const query = `SELECT * FROM users WHERE id = '${userId}'`;
+
+      // GOOD: Parameterized query
+      const user = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
+
+      // GOOD: ORM with parameterized input
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      ```
+  - fragment_type: example
+    sequence: 8
+    content: |
+      ### 2. Broken Authentication
+
+      ```typescript
+      // Password hashing
+      import { hash, compare } from 'bcrypt';
+
+      const SALT_ROUNDS = 12;
+      const hashedPassword = await hash(plaintext, SALT_ROUNDS);
+      const isValid = await compare(plaintext, hashedPassword);
+
+      // Session management
+      app.use(session({
+        secret: process.env.SESSION_SECRET,  // From environment, not code
+        resave: false,
+        saveUninitialized: false,
+        cookie: {
+          httpOnly: true,     // Not accessible via JavaScript
+          secure: true,       // HTTPS only
+          sameSite: 'lax',    // CSRF protection
+          maxAge: 24 * 60 * 60 * 1000,  // 24 hours
+        },
+      }));
+      ```
+  - fragment_type: example
+    sequence: 9
+    content: |
+      ### 3. Cross-Site Scripting (XSS)
+
+      ```typescript
+      // BAD: Rendering user input as HTML
+      element.innerHTML = userInput;
+
+      // GOOD: Use framework auto-escaping (React does this by default)
+      return <div>{userInput}</div>;
+
+      // If you MUST render HTML, sanitize first
+      import DOMPurify from 'dompurify';
+      const clean = DOMPurify.sanitize(userInput);
+      ```
+  - fragment_type: example
+    sequence: 10
+    content: |
+      ### 4. Broken Access Control
+
+      ```typescript
+      // Always check authorization, not just authentication
+      app.patch('/api/tasks/:id', authenticate, async (req, res) => {
+        const task = await taskService.findById(req.params.id);
+
+        // Check that the authenticated user owns this resource
+        if (task.ownerId !== req.user.id) {
+          return res.status(403).json({
+            error: { code: 'FORBIDDEN', message: 'Not authorized to modify this task' }
+          });
+        }
+
+        // Proceed with update
+        const updated = await taskService.update(req.params.id, req.body);
+        return res.json(updated);
+      });
+      ```
+  - fragment_type: example
+    sequence: 11
+    content: |
+      ### 5. Security Misconfiguration
+
+      ```typescript
+      // Security headers (use helmet for Express)
+      import helmet from 'helmet';
+      app.use(helmet());
+
+      // Content Security Policy
+      app.use(helmet.contentSecurityPolicy({
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],  // Tighten if possible
+          imgSrc: ["'self'", 'data:', 'https:'],
+          connectSrc: ["'self'"],
+        },
+      }));
+
+      // CORS — restrict to known origins
+      app.use(cors({
+        origin: process.env.ALLOWED_ORIGINS?.split(',') || 'http://localhost:3000',
+        credentials: true,
+      }));
+      ```
+  - fragment_type: example
+    sequence: 12
+    content: |
+      ### 6. Sensitive Data Exposure
+
+      ```typescript
+      // Never return sensitive fields in API responses
+      function sanitizeUser(user: UserRecord): PublicUser {
+        const { passwordHash, resetToken, ...publicFields } = user;
+        return publicFields;
+      }
+
+      // Use environment variables for secrets
+      const API_KEY = process.env.STRIPE_API_KEY;
+      if (!API_KEY) throw new Error('STRIPE_API_KEY not configured');
+  - fragment_type: execution
+    sequence: 13
+    content: |
+      # Performance Optimization
+
+      ## Overview
+
+      Measure before optimizing. Performance work without measurement is guessing — and guessing leads to premature optimization that adds complexity without improving what matters. Profile first, identify the actual bottleneck, fix it, measure again. Optimize only what measurements prove matters.
+  - fragment_type: execution
+    sequence: 14
+    content: |
+      ## When to Use
+
+      - Performance requirements exist in the spec (load time budgets, response time SLAs)
+      - Users or monitoring report slow behavior
+      - Core Web Vitals scores are below thresholds
+      - You suspect a change introduced a regression
+      - Building features that handle large datasets or high traffic
+
+      **When NOT to use:** Don't optimize before you have evidence of a problem. Premature optimization adds complexity that costs more than the performance it gains.
+  - fragment_type: example
+    sequence: 15
+    content: |
+      ## Core Web Vitals Targets
+
+      | Metric | Good | Needs Improvement | Poor |
+      |--------|------|-------------------|------|
+      | **LCP** (Largest Contentful Paint) | ≤ 2.5s | ≤ 4.0s | > 4.0s |
+      | **INP** (Interaction to Next Paint) | ≤ 200ms | ≤ 500ms | > 500ms |
+      | **CLS** (Cumulative Layout Shift) | ≤ 0.1 | ≤ 0.25 | > 0.25 |
+  - fragment_type: execution
+    sequence: 16
+    content: |
+      ## The Optimization Workflow
+
+      ```
+      1. MEASURE  → Establish baseline with real data
+      2. IDENTIFY → Find the actual bottleneck (not assumed)
+      3. FIX      → Address the specific bottleneck
+      4. VERIFY   → Measure again, confirm improvement
+      5. GUARD    → Add monitoring or tests to prevent regression
+      ```
+  - fragment_type: execution
+    sequence: 17
+    content: |
+      ### Step 1: Measure
+
+      Two complementary approaches — use both:
+
+      - **Synthetic (Lighthouse, DevTools Performance tab):** Controlled conditions, reproducible. Best for CI regression detection and isolating specific issues.
+      - **RUM (web-vitals library, CrUX):** Real user data in real conditions. Required to validate that a fix actually improved user experience.
+
+      **Frontend:**
+      ```bash
+      # Synthetic: Lighthouse in Chrome DevTools (or CI)
+      # Chrome DevTools → Performance tab → Record
+      # Chrome DevTools MCP → Performance trace
+
+      # RUM: Web Vitals library in code
+      import { onLCP, onINP, onCLS } from 'web-vitals';
+
+      onLCP(console.log);
+      onINP(console.log);
+      onCLS(console.log);
+      ```
+
+      **Backend:**
+      ```bash
+      # Response time logging
+      # Application Performance Monitoring (APM)
+      # Database query logging with timing
+
+      # Simple timing
+      console.time('db-query');
+      const result = await db.query(...);
+      console.timeEnd('db-query');
+      ```
+  - fragment_type: execution
+    sequence: 18
+    content: |
+      ### Where to Start Measuring
+
+      Use the symptom to decide what to measure first:
+
+      ```
+      What is slow?
+      ├── First page load
+      │   ├── Large bundle? --> Measure bundle size, check code splitting
+      │   ├── Slow server response? --> Measure TTFB in DevTools Network waterfall
+      │   │   ├── DNS long? --> Add dns-prefetch / preconnect for known origins
+      │   │   ├── TCP/TLS long? --> Enable HTTP/2, check edge deployment, keep-alive
+      │   │   └── Waiting (server) long? --> Profile backend, check queries and caching
+      │   └── Render-blocking resources? --> Check network waterfall for CSS/JS blocking
+      ├── Interaction feels sluggish
+      │   ├── UI freezes on click? --> Profile main thread, look for long tasks (>50ms)
+      │   ├── Form input lag? --> Check re-renders, controlled component overhead
+      │   └── Animation jank? --> Check layout thrashing, forced reflows
+      ├── Page after navigation
+      │   ├── Data loading? --> Measure API response times, check for waterfalls
+      │   └── Client rendering? --> Profile component render time, check for N+1 fetches
+      └── Backend / API
+          ├── Single endpoint slow? --> Profile database queries, check indexes
+          ├── All endpoints slow? --> Check connection pool, memory, CPU
+          └── Intermittent slowness? --> Check for lock contention, GC pauses, external deps
+  - fragment_type: execution
+    sequence: 19
+    content: |
+      ### Step 2: Identify the Bottleneck
+
+      Common bottlenecks by category:
+
+      **Frontend:**
+
+      | Symptom | Likely Cause | Investigation |
+      |---------|-------------|---------------|
+      | Slow LCP | Large images, render-blocking resources, slow server | Check network waterfall, image sizes |
+      | High CLS | Images without dimensions, late-loading content, font shifts | Check layout shift attribution |
+      | Poor INP | Heavy JavaScript on main thread, large DOM updates | Check long tasks in Performance trace |
+      | Slow initial load | Large bundle, many network requests | Check bundle size, code splitting |
+
+      **Backend:**
+
+      | Symptom | Likely Cause | Investigation |
+      |---------|-------------|---------------|
+      | Slow API responses | N+1 queries, missing indexes, unoptimized queries | Check database query log |
+      | Memory growth | Leaked references, unbounded caches, large payloads | Heap snapshot analysis |
+      | CPU spikes | S
