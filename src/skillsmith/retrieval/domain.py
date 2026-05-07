@@ -160,11 +160,16 @@ def retrieve_domain_candidates(
         source if isinstance(source, FragmentSource) else StoreFragmentSource(source)
     )
 
-    embed_prefix = (
+    # Qwen3-Embedding canonical query template — see model card.
+    # Documents are embedded with bare content (reembed/cli.py); only queries
+    # carry the instruct prefix. Format is exact: "Instruct: ...\nQuery:..."
+    # with literal newline and no space before {task}.
+    task_description = (
         "Given a software engineering task description, retrieve relevant "
-        "skill instruction fragments: "
+        "skill instruction fragments"
     )
-    query_vec = lm.embed(model=embedding_model, texts=[embed_prefix + task])[0]
+    embed_input = f"Instruct: {task_description}\nQuery:{task}"
+    query_vec = lm.embed(model=embedding_model, texts=[embed_input])[0]
 
     categories = phase_to_categories(phase)
     pool_size = max(k * 2, k)
