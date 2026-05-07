@@ -1,0 +1,301 @@
+skill_type: domain
+skill_id: java-spring-data
+canonical_name: Spring Data — Repositories and Queries
+category: engineering
+skill_class: domain
+domain_tags:
+- java
+- spring-data
+- repositories
+- queries
+- specifications
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Spring Data — Repositories and Queries
+
+  ## Overview
+
+  Spring Data abstracts repositories — declare an interface, get an implementation. The default JpaRepository provides CRUD + paging + sorting. Method names get translated to queries; @Query takes over for anything more complex. Specifications handle dynamic queries.
+
+  ---
+
+  ## The Repository Interface
+
+  ```java
+  public interface UserRepository extends JpaRepository<User, Long> {
+      // CRUD inherited: save, findById, findAll, delete, count, exists, etc.
+  }
+  ```
+
+  `JpaRepository<Entity, IdType>` gives you: `save`, `saveAll`, `findById`, `findAll`, `findAllById`, `count`, `delete*`, `existsById`. Most apps don't need to write any of these.
+
+  ## Derived Queries
+
+  Method names become queries:
+
+  ```java
+  List<User> findByEmail(String email);
+  Optional<User> findByEmailIgnoreCase(String email);
+  List<User> findByCountryAndPlanOrderByCreatedAtDesc(String country, Plan plan);
+  boolean existsByEmail(String email);
+  long countByCountry(String country);
+  ```
+
+  Spring parses the method name (`findBy`, `existsBy`, `countBy`, `deleteBy` + field names + keywords like `And`, `Or`, `OrderBy`, `IgnoreCase`).
+
+  Limit: complex queries get unreadable. `findByCountryAndPlanInAndCreatedAtAfter` is fine; longer than that, switch to @Query.
+
+  ## @Query — JPQL and Native
+
+  ```java
+  @Query("SELECT u FROM User u WHERE u.email LIKE %:domain")
+  List<User> findByEmailDomain(@Param("domain") String domain);
+
+  @Query(value = "SELECT * FROM users WHERE created_at > NOW() - INTERVAL '30 days'", nativeQuery = true)
+  List<User> findRecentUsers();
+  ```
+
+  JPQL operates on entity names; native uses the actual SQL. JPQL is portable across DBs; native uses DB-specific features.
+
+  ## Modifying Queries
+
+  ```java
+  @Modifying
+  @Transactional
+  @Query("UPDATE User u SET u.lastLogin = :now WHERE u.id = :id")
+  int updateLastLogin(@Param("id") Long id, @Param("now") Instant now);
+
+  @Modifying
+  @Query("DELETE FROM Token t WHERE t.expiresAt < :now")
+  int purgeExpired(@Param("now") Instant now);
+  ```
+
+  `@Modifying` is required for non-SELECT queries. Returns the count of affected rows.
+
+  ## Paging and Sorting
+
+  ```java
+  Page<User> findByCountry(String country, Pageable pageable);
+  Slice<User> findByPlan(Plan plan, Pageable pageable);  // no total count, faster
+  List<User> findByPlan(Plan plan, Sort sort);
+  ```
+
+  Caller passes `PageRequest.of(0, 20)` or with sort: `PageRequest.of(0, 20, Sort.by("createdAt").descending())`.
+
+  `Page` includes total count (an extra COUNT query). `Slice` doesn't — use when you only need 'is there a next page?'.
+
+  ## Specifications — Dynamic Queries
+
+  ```java
+  public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificationExecutor<User> { }
+
+  // Build a specification dynamically
+  Specification<User> hasCountry(String country) {
+      return (root, query, cb) -> cb.equal(root.get("country"), country);
+  }
+
+  Specification<User> isActive() {
+      return (root, query, cb) -> cb.isTrue(root.get("active"));
+  }
+
+  List<User> users = userRepo.findAll(
+      Specification.where(hasCountry("DE")).and(isActive())
+  );
+  ```
+
+  Compose specifications for filter-style search endpoints. Cleaner than building JPQL strings dynamically.
+
+  ## Projections
+
+  Interface projections — Spring generates a proxy returning only requested fields:
+
+  ```java
+  public interface UserSummary {
+      String getName();
+      String getEmail();
+  }
+
+  List<UserSummary> findByCountry(String country);
+  ```
+
+  Generates a query selecting only `name` and `email`. Faster than fetching the whole entity when you only need a few fields.
+
+  DTO projections — explicit class:
+
+  ```java
+  public record UserSummary(String name, String email) {}
+
+  @Query("SELECT new com.example.UserSummary(u.name, u.email) FROM User u WHERE u.country = :country")
+  List<UserSummary> findByCountry(@Param("country") String country);
+  ```
+
+  More explicit; useful when projection logic is complex.
+
+  ## Common Pitfalls
+
+  - **Calling `findAll()` on a 10M-row table.** Always paginate. Default sort is unspecified; add `ORDER BY` for stable results.
+  - **Forgetting `@Modifying` on UPDATE/DELETE @Query.** Throws an exception at startup.
+  - **N+1 with derived queries.** `userRepo.findAll()` then iterate `user.getOrders()` triggers N queries. Fetch joins or @EntityGraph.
+  - **Exposing repositories from REST endpoints directly via Spring Data REST without thinking.** Auto-exposed endpoints leak schema; harden before production.
+  - **Native queries with no fallback DB strategy.** Postgres-specific syntax breaks H2 in tests. Either match prod in tests (Testcontainers) or use JPQL.
+
+  ## Verification
+
+  A healthy Spring Data setup:
+
+  - All read endpoints have pagination — no unbounded `findAll`.
+  - N+1 queries surface in dev (logs show repeated SELECTs).
+  - Native queries are tested against the same DB version as production.
+  - Slow queries get logged via `spring.jpa.properties.hibernate.session.events.log.LOG_QUERIES_SLOWER_THAN_MS`.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## The Repository Interface
+
+    ```java
+    public interface UserRepository extends JpaRepository<User, Long> {
+        // CRUD inherited: save, findById, findAll, delete, count, exists, etc.
+    }
+    ```
+
+    `JpaRepository<Entity, IdType>` gives you: `save`, `saveAll`, `findById`, `findAll`, `findAllById`, `count`, `delete*`, `existsById`. Most apps don't need to write any of these.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Derived Queries
+
+    Method names become queries:
+
+    ```java
+    List<User> findByEmail(String email);
+    Optional<User> findByEmailIgnoreCase(String email);
+    List<User> findByCountryAndPlanOrderByCreatedAtDesc(String country, Plan plan);
+    boolean existsByEmail(String email);
+    long countByCountry(String country);
+    ```
+
+    Spring parses the method name (`findBy`, `existsBy`, `countBy`, `deleteBy` + field names + keywords like `And`, `Or`, `OrderBy`, `IgnoreCase`).
+
+    Limit: complex queries get unreadable. `findByCountryAndPlanInAndCreatedAtAfter` is fine; longer than that, switch to @Query.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## @Query — JPQL and Native
+
+    ```java
+    @Query("SELECT u FROM User u WHERE u.email LIKE %:domain")
+    List<User> findByEmailDomain(@Param("domain") String domain);
+
+    @Query(value = "SELECT * FROM users WHERE created_at > NOW() - INTERVAL '30 days'", nativeQuery = true)
+    List<User> findRecentUsers();
+    ```
+
+    JPQL operates on entity names; native uses the actual SQL. JPQL is portable across DBs; native uses DB-specific features.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Modifying Queries
+
+    ```java
+    @Modifying
+    @Transactional
+    @Query("UPDATE User u SET u.lastLogin = :now WHERE u.id = :id")
+    int updateLastLogin(@Param("id") Long id, @Param("now") Instant now);
+
+    @Modifying
+    @Query("DELETE FROM Token t WHERE t.expiresAt < :now")
+    int purgeExpired(@Param("now") Instant now);
+    ```
+
+    `@Modifying` is required for non-SELECT queries. Returns the count of affected rows.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Paging and Sorting
+
+    ```java
+    Page<User> findByCountry(String country, Pageable pageable);
+    Slice<User> findByPlan(Plan plan, Pageable pageable);  // no total count, faster
+    List<User> findByPlan(Plan plan, Sort sort);
+    ```
+
+    Caller passes `PageRequest.of(0, 20)` or with sort: `PageRequest.of(0, 20, Sort.by("createdAt").descending())`.
+
+    `Page` includes total count (an extra COUNT query). `Slice` doesn't — use when you only need 'is there a next page?'.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Specifications — Dynamic Queries
+
+    ```java
+    public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificationExecutor<User> { }
+
+    // Build a specification dynamically
+    Specification<User> hasCountry(String country) {
+        return (root, query, cb) -> cb.equal(root.get("country"), country);
+    }
+
+    Specification<User> isActive() {
+        return (root, query, cb) -> cb.isTrue(root.get("active"));
+    }
+
+    List<User> users = userRepo.findAll(
+        Specification.where(hasCountry("DE")).and(isActive())
+    );
+    ```
+
+    Compose specifications for filter-style search endpoints. Cleaner than building JPQL strings dynamically.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Projections
+
+    Interface projections — Spring generates a proxy returning only requested fields:
+
+    ```java
+    public interface UserSummary {
+        String getName();
+        String getEmail();
+    }
+
+    List<UserSummary> findByCountry(String country);
+    ```
+
+    Generates a query selecting only `name` and `email`. Faster than fetching the whole entity when you only need a few fields.
+
+    DTO projections — explicit class:
+
+    ```java
+    public record UserSummary(String name, String email) {}
+
+    @Query("SELECT new com.example.UserSummary(u.name, u.email) FROM User u WHERE u.country = :country")
+    List<UserSummary> findByCountry(@Param("country") String country);
+    ```
+
+    More explicit; useful when projection logic is complex.
+- fragment_type: guardrail
+  sequence: 8
+  content: |-
+    ## Common Pitfalls
+
+    - **Calling `findAll()` on a 10M-row table.** Always paginate. Default sort is unspecified; add `ORDER BY` for stable results.
+    - **Forgetting `@Modifying` on UPDATE/DELETE @Query.** Throws an exception at startup.
+    - **N+1 with derived queries.** `userRepo.findAll()` then iterate `user.getOrders()` triggers N queries. Fetch joins or @EntityGraph.
+    - **Exposing repositories from REST endpoints directly via Spring Data REST without thinking.** Auto-exposed endpoints leak schema; harden before production.
+    - **Native queries with no fallback DB strategy.** Postgres-specific syntax breaks H2 in tests. Either match prod in tests (Testcontainers) or use JPQL.
+- fragment_type: verification
+  sequence: 9
+  content: |-
+    ## Verification
+
+    A healthy Spring Data setup:
+
+    - All read endpoints have pagination — no unbounded `findAll`.
+    - N+1 queries surface in dev (logs show repeated SELECTs).
+    - Native queries are tested against the same DB version as production.
+    - Slow queries get logged via `spring.jpa.properties.hibernate.session.events.log.LOG_QUERIES_SLOWER_THAN_MS`.

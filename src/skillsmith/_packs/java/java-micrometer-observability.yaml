@@ -1,0 +1,393 @@
+skill_type: domain
+skill_id: java-micrometer-observability
+canonical_name: Micrometer + Spring Boot Observability
+category: engineering
+skill_class: domain
+domain_tags:
+- java
+- micrometer
+- observability
+- metrics
+- tracing
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Micrometer + Spring Boot Observability
+
+  ## Overview
+
+  Micrometer is the JVM observability facade — write code against Micrometer; pick exporters (Prometheus, OTLP, Datadog, etc.) at deploy time. Spring Boot auto-configures common metrics (HTTP, JVM, JDBC); your code adds business-specific meters.
+
+  ---
+
+  ## The Meter Registry
+
+  ```java
+  @Service
+  public class OrderService {
+      private final MeterRegistry registry;
+      private final Counter ordersPlaced;
+
+      public OrderService(MeterRegistry registry) {
+          this.registry = registry;
+          this.ordersPlaced = Counter.builder("orders.placed")
+              .description("Number of orders placed")
+              .tag("service", "order-service")
+              .register(registry);
+      }
+
+      public Order place(OrderRequest req) {
+          Order o = createOrder(req);
+          ordersPlaced.increment();
+          return o;
+      }
+  }
+  ```
+
+  `MeterRegistry` is auto-configured by Spring Boot. Build meters once at construction time, then increment / record on the hot path.
+
+  ## Common Meter Types
+
+  ```java
+  // Counter — monotonically increasing
+  Counter.builder("requests.total").register(registry).increment();
+
+  // Gauge — current value (must hold a reference to the source)
+  AtomicInteger queueSize = new AtomicInteger(0);
+  Gauge.builder("queue.size", queueSize, AtomicInteger::doubleValue).register(registry);
+
+  // Timer — duration distributions
+  Timer.Sample sample = Timer.start(registry);
+  try {
+      doWork();
+  } finally {
+      sample.stop(Timer.builder("work.duration").register(registry));
+  }
+
+  // DistributionSummary — value distributions (sizes, amounts)
+  DistributionSummary.builder("order.amount.cents").register(registry).record(amount);
+  ```
+
+  Counters: how many. Gauges: how big right now. Timers: how long. Distribution summaries: how much.
+
+  ## Tagging Conventions
+
+  Tags are key/value labels:
+
+  ```java
+  Counter.builder("orders.placed")
+      .tag("country", country)
+      .tag("plan", plan.name())
+      .tag("payment_method", method)
+      .register(registry)
+      .increment();
+  ```
+
+  Watch cardinality. Tagging by user ID is a disaster — millions of unique series. Tag by enumerable values (country code, plan tier, status). Cardinality budget is typically <100 unique values per tag.
+
+  ## Spring Boot Auto-Metrics
+
+  Spring Boot ships these for free when Actuator is enabled:
+
+  - `http.server.requests` — HTTP request duration with method/uri/status tags.
+  - `jvm.memory.*`, `jvm.gc.*`, `jvm.threads.*` — JVM internals.
+  - `jdbc.connections.*` — connection pool stats.
+  - `cache.*` — Spring Cache stats.
+  - `tomcat.sessions.*` — servlet sessions.
+
+  Just enable:
+
+  ```yaml
+  management:
+    endpoints:
+      web:
+        exposure:
+          include: health,metrics,prometheus
+    metrics:
+      tags:
+        application: my-service
+  ```
+
+  ## Exporters
+
+  Pick at deploy time via dependency:
+
+  ```kotlin
+  // Prometheus
+  implementation("io.micrometer:micrometer-registry-prometheus")
+
+  // OpenTelemetry (OTLP)
+  implementation("io.micrometer:micrometer-registry-otlp")
+
+  // Datadog
+  implementation("io.micrometer:micrometer-registry-datadog")
+  ```
+
+  Multiple at once is fine — Micrometer publishes to all registered exporters.
+
+  ## Distributed Tracing
+
+  ```kotlin
+  implementation("io.micrometer:micrometer-tracing-bridge-otel")  // OpenTelemetry bridge
+  implementation("io.opentelemetry:opentelemetry-exporter-otlp")
+  ```
+
+  Spring Boot auto-instruments HTTP server requests, RestTemplate, WebClient, JDBC. Traces propagate via headers (W3C Trace Context).
+
+  For custom spans:
+
+  ```java
+  @Service
+  public class OrderService {
+      private final Tracer tracer;
+
+      public Order place(OrderRequest req) {
+          return tracer.nextSpan().name("validate-order").event("started")
+              .tag("user.id", req.userId().toString())
+              .start()
+              .spanContext()
+              .let(ctx -> {
+                  Order o = doPlace(req);
+                  ctx.tag("order.id", o.id().toString()).end();
+                  return o;
+              });
+      }
+  }
+  ```
+
+  For most cases, auto-instrumentation is enough; custom spans only for important business operations.
+
+  ## @Timed and @Counted Annotations
+
+  ```java
+  @Service
+  public class OrderService {
+
+      @Timed(value = "orders.place.duration", percentiles = {0.5, 0.95, 0.99})
+      public Order place(OrderRequest req) {
+          // automatically timed
+      }
+
+      @Counted(value = "orders.placed.method", recordFailuresOnly = false)
+      public Order create(OrderRequest req) {
+          // counter incremented
+      }
+  }
+  ```
+
+  Requires `aspectjweaver` and `@EnableAspectJAutoProxy`. Quick way to add metrics without explicit registry calls.
+
+  ## Common Pitfalls
+
+  - **High-cardinality tags.** Tag by user ID and your TSDB chokes. Stick to enumerable values.
+  - **Creating a new meter on every call.** Build once at construction; reuse the reference.
+  - **Histograms without `publishPercentiles`.** Without it, you only get count and sum — no p95.
+  - **Not exporting JVM metrics.** They're usually free with Spring Boot Actuator; verify they show up in your dashboard.
+  - **Mixing Micrometer 1.x and Micrometer Tracing.** They share concepts but APIs differ; check Spring Boot version compatibility.
+
+  ## Verification
+
+  A working observability setup:
+
+  - HTTP server requests show up with method/uri/status tags in Prometheus or Datadog.
+  - Custom counters increment correctly under load.
+  - Distributed traces correlate across services with the same trace ID.
+  - Cardinality is bounded — no unique-per-user tags.
+  - `/actuator/metrics` and `/actuator/prometheus` endpoints respond.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## The Meter Registry
+
+    ```java
+    @Service
+    public class OrderService {
+        private final MeterRegistry registry;
+        private final Counter ordersPlaced;
+
+        public OrderService(MeterRegistry registry) {
+            this.registry = registry;
+            this.ordersPlaced = Counter.builder("orders.placed")
+                .description("Number of orders placed")
+                .tag("service", "order-service")
+                .register(registry);
+        }
+
+        public Order place(OrderRequest req) {
+            Order o = createOrder(req);
+            ordersPlaced.increment();
+            return o;
+        }
+    }
+    ```
+
+    `MeterRegistry` is auto-configured by Spring Boot. Build meters once at construction time, then increment / record on the hot path.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Common Meter Types
+
+    ```java
+    // Counter — monotonically increasing
+    Counter.builder("requests.total").register(registry).increment();
+
+    // Gauge — current value (must hold a reference to the source)
+    AtomicInteger queueSize = new AtomicInteger(0);
+    Gauge.builder("queue.size", queueSize, AtomicInteger::doubleValue).register(registry);
+
+    // Timer — duration distributions
+    Timer.Sample sample = Timer.start(registry);
+    try {
+        doWork();
+    } finally {
+        sample.stop(Timer.builder("work.duration").register(registry));
+    }
+
+    // DistributionSummary — value distributions (sizes, amounts)
+    DistributionSummary.builder("order.amount.cents").register(registry).record(amount);
+    ```
+
+    Counters: how many. Gauges: how big right now. Timers: how long. Distribution summaries: how much.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Tagging Conventions
+
+    Tags are key/value labels:
+
+    ```java
+    Counter.builder("orders.placed")
+        .tag("country", country)
+        .tag("plan", plan.name())
+        .tag("payment_method", method)
+        .register(registry)
+        .increment();
+    ```
+
+    Watch cardinality. Tagging by user ID is a disaster — millions of unique series. Tag by enumerable values (country code, plan tier, status). Cardinality budget is typically <100 unique values per tag.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Spring Boot Auto-Metrics
+
+    Spring Boot ships these for free when Actuator is enabled:
+
+    - `http.server.requests` — HTTP request duration with method/uri/status tags.
+    - `jvm.memory.*`, `jvm.gc.*`, `jvm.threads.*` — JVM internals.
+    - `jdbc.connections.*` — connection pool stats.
+    - `cache.*` — Spring Cache stats.
+    - `tomcat.sessions.*` — servlet sessions.
+
+    Just enable:
+
+    ```yaml
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: health,metrics,prometheus
+      metrics:
+        tags:
+          application: my-service
+    ```
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Exporters
+
+    Pick at deploy time via dependency:
+
+    ```kotlin
+    // Prometheus
+    implementation("io.micrometer:micrometer-registry-prometheus")
+
+    // OpenTelemetry (OTLP)
+    implementation("io.micrometer:micrometer-registry-otlp")
+
+    // Datadog
+    implementation("io.micrometer:micrometer-registry-datadog")
+    ```
+
+    Multiple at once is fine — Micrometer publishes to all registered exporters.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Distributed Tracing
+
+    ```kotlin
+    implementation("io.micrometer:micrometer-tracing-bridge-otel")  // OpenTelemetry bridge
+    implementation("io.opentelemetry:opentelemetry-exporter-otlp")
+    ```
+
+    Spring Boot auto-instruments HTTP server requests, RestTemplate, WebClient, JDBC. Traces propagate via headers (W3C Trace Context).
+
+    For custom spans:
+
+    ```java
+    @Service
+    public class OrderService {
+        private final Tracer tracer;
+
+        public Order place(OrderRequest req) {
+            return tracer.nextSpan().name("validate-order").event("started")
+                .tag("user.id", req.userId().toString())
+                .start()
+                .spanContext()
+                .let(ctx -> {
+                    Order o = doPlace(req);
+                    ctx.tag("order.id", o.id().toString()).end();
+                    return o;
+                });
+        }
+    }
+    ```
+
+    For most cases, auto-instrumentation is enough; custom spans only for important business operations.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## @Timed and @Counted Annotations
+
+    ```java
+    @Service
+    public class OrderService {
+
+        @Timed(value = "orders.place.duration", percentiles = {0.5, 0.95, 0.99})
+        public Order place(OrderRequest req) {
+            // automatically timed
+        }
+
+        @Counted(value = "orders.placed.method", recordFailuresOnly = false)
+        public Order create(OrderRequest req) {
+            // counter incremented
+        }
+    }
+    ```
+
+    Requires `aspectjweaver` and `@EnableAspectJAutoProxy`. Quick way to add metrics without explicit registry calls.
+- fragment_type: guardrail
+  sequence: 8
+  content: |-
+    ## Common Pitfalls
+
+    - **High-cardinality tags.** Tag by user ID and your TSDB chokes. Stick to enumerable values.
+    - **Creating a new meter on every call.** Build once at construction; reuse the reference.
+    - **Histograms without `publishPercentiles`.** Without it, you only get count and sum — no p95.
+    - **Not exporting JVM metrics.** They're usually free with Spring Boot Actuator; verify they show up in your dashboard.
+    - **Mixing Micrometer 1.x and Micrometer Tracing.** They share concepts but APIs differ; check Spring Boot version compatibility.
+- fragment_type: verification
+  sequence: 9
+  content: |-
+    ## Verification
+
+    A working observability setup:
+
+    - HTTP server requests show up with method/uri/status tags in Prometheus or Datadog.
+    - Custom counters increment correctly under load.
+    - Distributed traces correlate across services with the same trace ID.
+    - Cardinality is bounded — no unique-per-user tags.
+    - `/actuator/metrics` and `/actuator/prometheus` endpoints respond.

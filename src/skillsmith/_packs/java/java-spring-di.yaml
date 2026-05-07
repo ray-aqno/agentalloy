@@ -1,0 +1,343 @@
+skill_type: domain
+skill_id: java-spring-di
+canonical_name: Spring Dependency Injection
+category: engineering
+skill_class: domain
+domain_tags:
+- java
+- spring
+- dependency-injection
+- ioc
+- constructor-injection
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Spring Dependency Injection
+
+  ## Overview
+
+  Spring's IoC container instantiates beans and wires them. The modern style: constructor injection on records or final-field classes; component-scanning to find @Component-annotated types; @Configuration + @Bean for beans that need explicit construction.
+
+  ---
+
+  ## Constructor Injection — The Default
+
+  ```java
+  @Service
+  public class OrderService {
+      private final UserRepository users;
+      private final PaymentClient payments;
+      private final Clock clock;
+
+      public OrderService(UserRepository users, PaymentClient payments, Clock clock) {
+          this.users = users;
+          this.payments = payments;
+          this.clock = clock;
+      }
+  }
+  ```
+
+  Single constructor → Spring injects automatically. Final fields make the dependencies explicit and immutable. Easy to test (just `new OrderService(...)`).
+
+  Records are even cleaner:
+
+  ```java
+  @Service
+  public record OrderService(UserRepository users, PaymentClient payments, Clock clock) {}
+  ```
+
+  ## @Component and Stereotypes
+
+  `@Component` marks a class as managed by Spring. The stereotypes (`@Service`, `@Repository`, `@Controller`, `@Configuration`) are specializations:
+
+  - `@Service` — business logic.
+  - `@Repository` — data access; adds exception translation.
+  - `@Controller` / `@RestController` — web endpoints.
+  - `@Configuration` — bean definitions via @Bean methods.
+  - `@Component` — generic, when none of the above fit.
+
+  Component-scanning picks up these classes automatically (controlled by `@SpringBootApplication`).
+
+  ## @Configuration and @Bean
+
+  For beans that aren't your code (third-party classes, conditional construction, framework integration):
+
+  ```java
+  @Configuration
+  public class AppConfig {
+      @Bean
+      public Clock clock() {
+          return Clock.systemUTC();
+      }
+
+      @Bean
+      public RestClient restClient() {
+          return RestClient.builder()
+              .baseUrl("https://api.example.com")
+              .build();
+      }
+  }
+  ```
+
+  Each @Bean method returns one bean. Method name = bean name unless overridden.
+
+  ## Scopes
+
+  ```java
+  @Component
+  @Scope("singleton")  // default; one instance per container
+  public class UserService {}
+
+  @Component
+  @Scope("prototype")  // new instance per injection
+  public class RequestBuilder {}
+
+  @Component
+  @Scope(value = "request", proxyMode = ScopedProxyMode.TARGET_CLASS)
+  public class RequestContext {}  // one per HTTP request
+  ```
+
+  Almost everything is `singleton`. Reach for `prototype` when state can't be shared (builders); `request`/`session` for web-scoped state.
+
+  ## Qualifiers
+
+  When multiple beans of the same type exist:
+
+  ```java
+  @Bean("primaryDb")
+  public DataSource primaryDataSource() { ... }
+
+  @Bean("readonlyDb")
+  public DataSource readonlyDataSource() { ... }
+
+  @Service
+  public class OrderService {
+      public OrderService(@Qualifier("primaryDb") DataSource db) { ... }
+  }
+  ```
+
+  `@Primary` on a bean makes it the default when no qualifier is given.
+
+  ## Conditional Beans
+
+  ```java
+  @Bean
+  @ConditionalOnProperty(name = "feature.x.enabled", havingValue = "true")
+  public FeatureXClient featureXClient() { ... }
+
+  @Bean
+  @ConditionalOnMissingBean
+  public Clock defaultClock() { return Clock.systemUTC(); }
+  ```
+
+  `@ConditionalOnProperty` — bean exists only if a config property matches.
+  `@ConditionalOnMissingBean` — only if no other bean of this type was registered. Useful for defaults.
+
+  ## Field vs Setter vs Constructor Injection
+
+  ```java
+  // AVOID: field injection
+  @Autowired private UserRepository users;
+
+  // AVOID: setter injection (legacy)
+  @Autowired public void setUsers(UserRepository users) { this.users = users; }
+
+  // PREFER: constructor injection
+  public OrderService(UserRepository users) { this.users = users; }
+  ```
+
+  Constructor injection is preferred because:
+  - Dependencies are explicit (visible in the constructor signature).
+  - The class can be `final`-fielded → immutable.
+  - Trivially unit-testable without Spring.
+  - Compile-time enforcement of required deps.
+
+  Field/setter injection requires the Spring container to instantiate; tests need either `@SpringBootTest` or reflection.
+
+  ## Common Pitfalls
+
+  - **Circular dependencies between @Components.** Spring detects and fails startup. Refactor to break the cycle (often via an event bus or interface segregation).
+  - **Multiple beans of the same type, no @Primary or @Qualifier.** Startup fails with `NoUniqueBeanDefinitionException`.
+  - **Field injection for testing convenience.** Tempting but couples tests to Spring. Constructor injection is just as easy with `Mockito.mock()`.
+  - **@Service on classes that aren't business logic.** Stereotypes communicate intent; using them carelessly makes the codebase harder to navigate.
+
+  ## Verification
+
+  A healthy DI setup:
+
+  - All non-test classes use constructor injection.
+  - Beans are unit-testable without `@SpringBootTest` (just construct with mocks).
+  - No circular dependency exceptions at startup.
+  - Stereotypes accurately describe each component's role.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Constructor Injection — The Default
+
+    ```java
+    @Service
+    public class OrderService {
+        private final UserRepository users;
+        private final PaymentClient payments;
+        private final Clock clock;
+
+        public OrderService(UserRepository users, PaymentClient payments, Clock clock) {
+            this.users = users;
+            this.payments = payments;
+            this.clock = clock;
+        }
+    }
+    ```
+
+    Single constructor → Spring injects automatically. Final fields make the dependencies explicit and immutable. Easy to test (just `new OrderService(...)`).
+
+    Records are even cleaner:
+
+    ```java
+    @Service
+    public record OrderService(UserRepository users, PaymentClient payments, Clock clock) {}
+    ```
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## @Component and Stereotypes
+
+    `@Component` marks a class as managed by Spring. The stereotypes (`@Service`, `@Repository`, `@Controller`, `@Configuration`) are specializations:
+
+    - `@Service` — business logic.
+    - `@Repository` — data access; adds exception translation.
+    - `@Controller` / `@RestController` — web endpoints.
+    - `@Configuration` — bean definitions via @Bean methods.
+    - `@Component` — generic, when none of the above fit.
+
+    Component-scanning picks up these classes automatically (controlled by `@SpringBootApplication`).
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## @Configuration and @Bean
+
+    For beans that aren't your code (third-party classes, conditional construction, framework integration):
+
+    ```java
+    @Configuration
+    public class AppConfig {
+        @Bean
+        public Clock clock() {
+            return Clock.systemUTC();
+        }
+
+        @Bean
+        public RestClient restClient() {
+            return RestClient.builder()
+                .baseUrl("https://api.example.com")
+                .build();
+        }
+    }
+    ```
+
+    Each @Bean method returns one bean. Method name = bean name unless overridden.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Scopes
+
+    ```java
+    @Component
+    @Scope("singleton")  // default; one instance per container
+    public class UserService {}
+
+    @Component
+    @Scope("prototype")  // new instance per injection
+    public class RequestBuilder {}
+
+    @Component
+    @Scope(value = "request", proxyMode = ScopedProxyMode.TARGET_CLASS)
+    public class RequestContext {}  // one per HTTP request
+    ```
+
+    Almost everything is `singleton`. Reach for `prototype` when state can't be shared (builders); `request`/`session` for web-scoped state.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Qualifiers
+
+    When multiple beans of the same type exist:
+
+    ```java
+    @Bean("primaryDb")
+    public DataSource primaryDataSource() { ... }
+
+    @Bean("readonlyDb")
+    public DataSource readonlyDataSource() { ... }
+
+    @Service
+    public class OrderService {
+        public OrderService(@Qualifier("primaryDb") DataSource db) { ... }
+    }
+    ```
+
+    `@Primary` on a bean makes it the default when no qualifier is given.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Conditional Beans
+
+    ```java
+    @Bean
+    @ConditionalOnProperty(name = "feature.x.enabled", havingValue = "true")
+    public FeatureXClient featureXClient() { ... }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public Clock defaultClock() { return Clock.systemUTC(); }
+    ```
+
+    `@ConditionalOnProperty` — bean exists only if a config property matches.
+    `@ConditionalOnMissingBean` — only if no other bean of this type was registered. Useful for defaults.
+- fragment_type: rationale
+  sequence: 7
+  content: |-
+    ## Field vs Setter vs Constructor Injection
+
+    ```java
+    // AVOID: field injection
+    @Autowired private UserRepository users;
+
+    // AVOID: setter injection (legacy)
+    @Autowired public void setUsers(UserRepository users) { this.users = users; }
+
+    // PREFER: constructor injection
+    public OrderService(UserRepository users) { this.users = users; }
+    ```
+
+    Constructor injection is preferred because:
+    - Dependencies are explicit (visible in the constructor signature).
+    - The class can be `final`-fielded → immutable.
+    - Trivially unit-testable without Spring.
+    - Compile-time enforcement of required deps.
+
+    Field/setter injection requires the Spring container to instantiate; tests need either `@SpringBootTest` or reflection.
+- fragment_type: guardrail
+  sequence: 8
+  content: |-
+    ## Common Pitfalls
+
+    - **Circular dependencies between @Components.** Spring detects and fails startup. Refactor to break the cycle (often via an event bus or interface segregation).
+    - **Multiple beans of the same type, no @Primary or @Qualifier.** Startup fails with `NoUniqueBeanDefinitionException`.
+    - **Field injection for testing convenience.** Tempting but couples tests to Spring. Constructor injection is just as easy with `Mockito.mock()`.
+    - **@Service on classes that aren't business logic.** Stereotypes communicate intent; using them carelessly makes the codebase harder to navigate.
+- fragment_type: verification
+  sequence: 9
+  content: |-
+    ## Verification
+
+    A healthy DI setup:
+
+    - All non-test classes use constructor injection.
+    - Beans are unit-testable without `@SpringBootTest` (just construct with mocks).
+    - No circular dependency exceptions at startup.
+    - Stereotypes accurately describe each component's role.

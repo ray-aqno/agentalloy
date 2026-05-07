@@ -1,0 +1,351 @@
+skill_type: domain
+skill_id: java-junit5-mockito
+canonical_name: JUnit 5 + Mockito + Testcontainers
+category: engineering
+skill_class: domain
+domain_tags:
+- java
+- junit5
+- mockito
+- testcontainers
+- spring-boot-test
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # JUnit 5 + Mockito + Testcontainers
+
+  ## Overview
+
+  JUnit 5 is the modern JVM test framework. Mockito provides test doubles. Testcontainers spins up real services (Postgres, Redis, Kafka) in Docker for integration tests. Together they cover unit through integration testing on the JVM.
+
+  ---
+
+  ## JUnit 5 Basics
+
+  ```java
+  class OrderServiceTest {
+
+      @Test
+      void createsOrderWithGivenItems() {
+          OrderService svc = new OrderService(...);
+          Order o = svc.create(new OrderRequest(...));
+          assertThat(o.items()).hasSize(2);
+      }
+
+      @ParameterizedTest
+      @ValueSource(strings = {"foo", "bar", "baz"})
+      void acceptsAlphaNames(String name) {
+          assertThat(svc.validateName(name)).isTrue();
+      }
+
+      @Nested
+      class WhenUserIsAdmin {
+          @Test
+          void canDeleteAnyOrder() { ... }
+      }
+  }
+  ```
+
+  `@Test` for a single test. `@ParameterizedTest` runs once per input. `@Nested` groups related tests. Lifecycle: `@BeforeEach`, `@AfterEach`, `@BeforeAll`, `@AfterAll`.
+
+  ## AssertJ over Hamcrest
+
+  ```java
+  import static org.assertj.core.api.Assertions.*;
+
+  assertThat(order.items())
+      .hasSize(2)
+      .extracting(Item::sku)
+      .containsExactly("WIDGET", "GADGET");
+
+  assertThatThrownBy(() -> svc.create(invalidReq))
+      .isInstanceOf(ValidationException.class)
+      .hasMessageContaining("required");
+  ```
+
+  AssertJ's fluent API is more readable than JUnit's `assertEquals`. Standard in modern JVM projects.
+
+  ## Mockito for Mocks and Stubs
+
+  ```java
+  @ExtendWith(MockitoExtension.class)
+  class OrderServiceTest {
+
+      @Mock UserRepository users;
+      @Mock PaymentClient payments;
+
+      @InjectMocks OrderService svc;
+
+      @Test
+      void chargesUserOnSuccess() {
+          when(users.findById(1L)).thenReturn(Optional.of(new User(1L)));
+          when(payments.charge(any())).thenReturn(new PaymentResult(true));
+
+          svc.placeOrder(new OrderRequest(1L, ...));
+
+          verify(payments).charge(argThat(p -> p.amount().equals(BigDecimal.valueOf(100))));
+      }
+  }
+  ```
+
+  `@Mock` creates a mock; `@InjectMocks` constructs the unit under test with mocks. `when(...).thenReturn(...)` stubs; `verify(...)` asserts a call happened.
+
+  ## ArgumentCaptor for Complex Arguments
+
+  ```java
+  ArgumentCaptor<Email> captor = ArgumentCaptor.forClass(Email.class);
+  verify(emailClient).send(captor.capture());
+
+  Email sent = captor.getValue();
+  assertThat(sent.to()).isEqualTo("alice@example.com");
+  assertThat(sent.subject()).contains("Order");
+  ```
+
+  Captures the actual argument passed; assert on its fields. More robust than `verify(client).send(eq(specificEmail))` for complex objects.
+
+  ## Testcontainers for Integration Tests
+
+  ```java
+  @Testcontainers
+  class UserRepositoryIT {
+
+      @Container
+      static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
+
+      @DynamicPropertySource
+      static void registerProps(DynamicPropertyRegistry reg) {
+          reg.add("spring.datasource.url", postgres::getJdbcUrl);
+          reg.add("spring.datasource.username", postgres::getUsername);
+          reg.add("spring.datasource.password", postgres::getPassword);
+      }
+
+      @Autowired UserRepository users;
+
+      @Test
+      void persistsAndRetrievesUser() {
+          users.save(new User("alice"));
+          assertThat(users.findByName("alice")).isPresent();
+      }
+  }
+  ```
+
+  `@Testcontainers` manages the container lifecycle. The container starts before tests, stops after. `@DynamicPropertySource` wires the random container port into Spring properties.
+
+  ## Spring Boot Test Slices
+
+  ```java
+  @DataJpaTest  // loads only JPA-related beans + in-memory DB
+  class UserRepositoryTest {
+      @Autowired UserRepository users;
+      @Test
+      void findsByEmail() { ... }
+  }
+
+  @WebMvcTest(OrderController.class)  // loads only web layer
+  class OrderControllerTest {
+      @Autowired MockMvc mvc;
+      @MockBean OrderService svc;
+      @Test
+      void returns200OnValidRequest() throws Exception {
+          mvc.perform(post("/orders")...)
+             .andExpect(status().isOk());
+      }
+  }
+
+  @SpringBootTest  // full app context — slower, full integration
+  class FullStackTest { ... }
+  ```
+
+  Slices boot only what's needed → faster. Use the narrowest slice that still tests the right behavior.
+
+  ## Common Pitfalls
+
+  - **`assertEquals` instead of AssertJ.** Less readable, especially for collections.
+  - **`@MockBean` everywhere in @SpringBootTest.** Defeats integration testing. Use slice tests for unit-ish work; full @SpringBootTest for genuine integration.
+  - **Testcontainers without `@Testcontainers` annotation.** Container doesn't start automatically.
+  - **Slow tests because of `@SpringBootTest` for everything.** Slices boot in <1s; full context can take 10s. Use sparingly.
+  - **Stubbing `void` methods with `when()`.** Use `doNothing().when(mock).method()` or `doThrow().when(mock).method()`.
+
+  ## Verification
+
+  A healthy JVM test suite:
+
+  - Tests run in seconds, not minutes (test slices keep them fast).
+  - Integration tests use Testcontainers — no in-memory H2 standing in for prod Postgres.
+  - AssertJ assertions read like English.
+  - No tests passing because of mocks that don't reflect production behavior.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## JUnit 5 Basics
+
+    ```java
+    class OrderServiceTest {
+
+        @Test
+        void createsOrderWithGivenItems() {
+            OrderService svc = new OrderService(...);
+            Order o = svc.create(new OrderRequest(...));
+            assertThat(o.items()).hasSize(2);
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"foo", "bar", "baz"})
+        void acceptsAlphaNames(String name) {
+            assertThat(svc.validateName(name)).isTrue();
+        }
+
+        @Nested
+        class WhenUserIsAdmin {
+            @Test
+            void canDeleteAnyOrder() { ... }
+        }
+    }
+    ```
+
+    `@Test` for a single test. `@ParameterizedTest` runs once per input. `@Nested` groups related tests. Lifecycle: `@BeforeEach`, `@AfterEach`, `@BeforeAll`, `@AfterAll`.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## AssertJ over Hamcrest
+
+    ```java
+    import static org.assertj.core.api.Assertions.*;
+
+    assertThat(order.items())
+        .hasSize(2)
+        .extracting(Item::sku)
+        .containsExactly("WIDGET", "GADGET");
+
+    assertThatThrownBy(() -> svc.create(invalidReq))
+        .isInstanceOf(ValidationException.class)
+        .hasMessageContaining("required");
+    ```
+
+    AssertJ's fluent API is more readable than JUnit's `assertEquals`. Standard in modern JVM projects.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Mockito for Mocks and Stubs
+
+    ```java
+    @ExtendWith(MockitoExtension.class)
+    class OrderServiceTest {
+
+        @Mock UserRepository users;
+        @Mock PaymentClient payments;
+
+        @InjectMocks OrderService svc;
+
+        @Test
+        void chargesUserOnSuccess() {
+            when(users.findById(1L)).thenReturn(Optional.of(new User(1L)));
+            when(payments.charge(any())).thenReturn(new PaymentResult(true));
+
+            svc.placeOrder(new OrderRequest(1L, ...));
+
+            verify(payments).charge(argThat(p -> p.amount().equals(BigDecimal.valueOf(100))));
+        }
+    }
+    ```
+
+    `@Mock` creates a mock; `@InjectMocks` constructs the unit under test with mocks. `when(...).thenReturn(...)` stubs; `verify(...)` asserts a call happened.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## ArgumentCaptor for Complex Arguments
+
+    ```java
+    ArgumentCaptor<Email> captor = ArgumentCaptor.forClass(Email.class);
+    verify(emailClient).send(captor.capture());
+
+    Email sent = captor.getValue();
+    assertThat(sent.to()).isEqualTo("alice@example.com");
+    assertThat(sent.subject()).contains("Order");
+    ```
+
+    Captures the actual argument passed; assert on its fields. More robust than `verify(client).send(eq(specificEmail))` for complex objects.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Testcontainers for Integration Tests
+
+    ```java
+    @Testcontainers
+    class UserRepositoryIT {
+
+        @Container
+        static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
+
+        @DynamicPropertySource
+        static void registerProps(DynamicPropertyRegistry reg) {
+            reg.add("spring.datasource.url", postgres::getJdbcUrl);
+            reg.add("spring.datasource.username", postgres::getUsername);
+            reg.add("spring.datasource.password", postgres::getPassword);
+        }
+
+        @Autowired UserRepository users;
+
+        @Test
+        void persistsAndRetrievesUser() {
+            users.save(new User("alice"));
+            assertThat(users.findByName("alice")).isPresent();
+        }
+    }
+    ```
+
+    `@Testcontainers` manages the container lifecycle. The container starts before tests, stops after. `@DynamicPropertySource` wires the random container port into Spring properties.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Spring Boot Test Slices
+
+    ```java
+    @DataJpaTest  // loads only JPA-related beans + in-memory DB
+    class UserRepositoryTest {
+        @Autowired UserRepository users;
+        @Test
+        void findsByEmail() { ... }
+    }
+
+    @WebMvcTest(OrderController.class)  // loads only web layer
+    class OrderControllerTest {
+        @Autowired MockMvc mvc;
+        @MockBean OrderService svc;
+        @Test
+        void returns200OnValidRequest() throws Exception {
+            mvc.perform(post("/orders")...)
+               .andExpect(status().isOk());
+        }
+    }
+
+    @SpringBootTest  // full app context — slower, full integration
+    class FullStackTest { ... }
+    ```
+
+    Slices boot only what's needed → faster. Use the narrowest slice that still tests the right behavior.
+- fragment_type: guardrail
+  sequence: 7
+  content: |-
+    ## Common Pitfalls
+
+    - **`assertEquals` instead of AssertJ.** Less readable, especially for collections.
+    - **`@MockBean` everywhere in @SpringBootTest.** Defeats integration testing. Use slice tests for unit-ish work; full @SpringBootTest for genuine integration.
+    - **Testcontainers without `@Testcontainers` annotation.** Container doesn't start automatically.
+    - **Slow tests because of `@SpringBootTest` for everything.** Slices boot in <1s; full context can take 10s. Use sparingly.
+    - **Stubbing `void` methods with `when()`.** Use `doNothing().when(mock).method()` or `doThrow().when(mock).method()`.
+- fragment_type: verification
+  sequence: 8
+  content: |-
+    ## Verification
+
+    A healthy JVM test suite:
+
+    - Tests run in seconds, not minutes (test slices keep them fast).
+    - Integration tests use Testcontainers — no in-memory H2 standing in for prod Postgres.
+    - AssertJ assertions read like English.
+    - No tests passing because of mocks that don't reflect production behavior.

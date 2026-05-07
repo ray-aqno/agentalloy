@@ -8,20 +8,52 @@ embedding_dim: 1024
 license: MIT
 homepage: https://github.com/nrmeyers/skillsmith
 always_install: false
-depends_on: [core, engineering]
+depends_on:
+- core
+- engineering
 skills:
-  - skill_id: java-virtual-threads-and-concurrency
-    file: java-virtual-threads-and-concurrency.yaml
-    fragment_count: 9
-  - skill_id: java-exceptions-and-try-with-resources
-    file: java-exceptions-and-try-with-resources.yaml
-    fragment_count: 10
-  - skill_id: java-records-sealed-and-patterns
-    file: java-records-sealed-and-patterns.yaml
-    fragment_count: 8
-  - skill_id: java-modules-and-jpms
-    file: java-modules-and-jpms.yaml
-    fragment_count: 9
-  - skill_id: java-nio2-and-io
-    file: java-nio2-and-io.yaml
-    fragment_count: 10
+- skill_id: java-virtual-threads-and-concurrency
+  file: java-virtual-threads-and-concurrency.yaml
+  fragment_count: 9
+- skill_id: java-exceptions-and-try-with-resources
+  file: java-exceptions-and-try-with-resources.yaml
+  fragment_count: 10
+- skill_id: java-records-sealed-and-patterns
+  file: java-records-sealed-and-patterns.yaml
+  fragment_count: 8
+- skill_id: java-modules-and-jpms
+  file: java-modules-and-jpms.yaml
+  fragment_count: 9
+- skill_id: java-nio2-and-io
+  file: java-nio2-and-io.yaml
+  fragment_count: 10
+- skill_id: java-gradle
+  file: java-gradle.yaml
+  fragment_count: 9
+- skill_id: java-jpa-hibernate
+  file: java-jpa-hibernate.yaml
+  fragment_count: 8
+- skill_id: java-junit5-mockito
+  file: java-junit5-mockito.yaml
+  fragment_count: 8
+- skill_id: java-maven
+  file: java-maven.yaml
+  fragment_count: 9
+- skill_id: java-micrometer-observability
+  file: java-micrometer-observability.yaml
+  fragment_count: 9
+- skill_id: java-spring-boot-config
+  file: java-spring-boot-config.yaml
+  fragment_count: 9
+- skill_id: java-spring-data
+  file: java-spring-data.yaml
+  fragment_count: 9
+- skill_id: java-spring-di
+  file: java-spring-di.yaml
+  fragment_count: 9
+- skill_id: java-spring-security
+  file: java-spring-security.yaml
+  fragment_count: 8
+- skill_id: java-spring-webflux
+  file: java-spring-webflux.yaml
+  fragment_count: 10
