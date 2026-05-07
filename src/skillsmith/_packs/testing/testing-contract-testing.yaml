@@ -1,0 +1,214 @@
+skill_type: domain
+skill_id: testing-contract-testing
+canonical_name: Contract Testing
+category: quality
+skill_class: domain
+domain_tags:
+  - contract-testing
+  - pact
+  - openapi
+  - json-schema
+  - integration-tests
+always_apply: false
+phase_scope: []
+category_scope: []
+author: authoring-agent
+change_summary: initial authoring draft
+raw_prose: |
+  # Contract Testing
+
+  ## Overview
+
+  Contract tests verify two services agree on the API between them without standing both up. The consumer records what it expects; the provider verifies it can satisfy those expectations. This catches integration bugs at unit-test speed.
+
+  ## Why Contract Tests
+
+  Integration tests of a microservice graph are slow, flaky, and require operating the whole system. Unit tests miss interface mismatches between services. Contract tests fill the gap: they prove that consumer A and provider B agree on a specific contract without running them together.
+
+  Two flavors:
+
+  - **Consumer-driven** (Pact): consumer writes tests describing what it sends + expects back; the contract gets shared with the provider, who verifies it can satisfy those interactions.
+  - **Schema-based** (OpenAPI / JSON Schema / Avro): the schema IS the contract; both sides validate against it.
+
+  ## Consumer-Driven Contracts (Pact)
+
+  The consumer writes a test that uses a mock provider:
+
+  ```js
+  // Consumer test (in the consumer's repo)
+  provider.given('a user exists with id 42')
+    .uponReceiving('a request for user 42')
+    .withRequest({ method: 'GET', path: '/users/42' })
+    .willRespondWith({
+      status: 200,
+      body: { id: 42, name: like('Alice'), email: like('a@b.c') }
+    });
+
+  // Run the consumer's actual code against the mock
+  await userClient.getUser(42);
+  ```
+
+  The mock validates the consumer made the right request; on success, Pact emits a contract file. That file gets published to a Pact Broker. The provider's CI pulls it down and verifies the live API matches:
+
+  ```sh
+  pact-broker verify --pact-broker-url=... --provider=user-service
+  ```
+
+  If the provider can't satisfy any consumer's contract, the build fails — before deploying.
+
+  ## Schema-Based Contracts (OpenAPI)
+
+  Skip the consumer-test-emits-contract dance. Maintain an OpenAPI spec; both sides validate:
+
+  - **Provider**: validate that real responses match the schema (via middleware or test-time assertion).
+  - **Consumer**: generate types from the schema; validate received bodies in tests or runtime.
+
+  Trade-offs vs Pact:
+
+  - Schema-based is simpler if you already maintain OpenAPI.
+  - Pact captures consumer expectations more precisely (this consumer cares about `name` and `email` but not `created_at`).
+  - Schema-based catches additive provider changes (new optional field) that don't break consumers; Pact warns about them.
+
+  ## What to Put in a Contract
+
+  Contracts cover:
+
+  - Endpoint paths + methods
+  - Request shape (body, query params, headers)
+  - Response shape (status code, body, key headers)
+  - State preconditions ('given a user exists')
+
+  Contracts deliberately do NOT cover:
+
+  - Performance characteristics (latency, throughput)
+  - Authorization logic ('admin only' — that's an integration test)
+  - Side effects on other services (use end-to-end for that)
+
+  ## Pact Broker Workflow
+
+  1. Consumer CI: run consumer tests, publish pact files to Broker.
+  2. Provider CI on every push: pull all pacts tagged for production, verify each one against current code.
+  3. Broker tracks compatibility matrix: which (consumer-version, provider-version) pairs verify.
+  4. Deployment gate: before deploying provider v2 to prod, check the matrix — does it satisfy every consumer in prod?
+
+  This is the operational payoff: deployments become safe because the contract verified before the artifact reached production.
+
+  ## Common Pitfalls
+
+  - **Treating contract tests as a replacement for integration tests.** They prove the interface; they don't prove the system end-to-end. Keep some integration coverage.
+  - **Over-specifying matchers in Pact.** Using `equal` everywhere makes contracts brittle to harmless data changes. Use `like()`, `term()`, `eachLike()` for shape-not-value assertions.
+  - **Letting the contract drift from real consumer behavior.** If the consumer test stops running on every change (mock-only, no real consumer code), it's no longer driving anything.
+  - **Forgetting the provider verification step.** A pact file no one verifies is a wish list, not a contract.
+
+  ## Verification
+
+  A working contract test setup:
+
+  - Consumer changes break consumer-side contract tests immediately if the request shape changes.
+  - Provider CI fails when a change would break any in-production consumer.
+  - The Broker shows a green matrix between current consumer and provider versions before deploys.
+  - New service-to-service interactions get a pact published as part of the consumer's first PR.
+
+fragments:
+  - fragment_type: rationale
+    sequence: 1
+    content: |
+      Contract tests verify two services agree on the API between them without standing both up. The consumer records what it expects; the provider verifies it can satisfy those expectations. This catches integration bugs at unit-test speed.
+  - fragment_type: rationale
+    sequence: 2
+    content: |
+      Integration tests of a microservice graph are slow, flaky, and require operating the whole system. Unit tests miss interface mismatches between services. Contract tests fill the gap: they prove that consumer A and provider B agree on a specific contract without running them together.
+  - fragment_type: rationale
+    sequence: 3
+    content: |
+      Two flavors:
+
+      - **Consumer-driven** (Pact): consumer writes tests describing what it sends + expects back; the contract gets shared with the provider, who verifies it can satisfy those interactions.
+      - **Schema-based** (OpenAPI / JSON Schema / Avro): the schema IS the contract; both sides validate against it.
+  - fragment_type: example
+    sequence: 4
+    content: |
+      ```js
+      // Consumer test (in the consumer's repo)
+      provider.given('a user exists with id 42')
+        .uponReceiving('a request for user 42')
+        .withRequest({ method: 'GET', path: '/users/42' })
+        .willRespondWith({
+          status: 200,
+          body: { id: 42, name: like('Alice'), email: like('a@b.c') }
+        });
+
+      // Run the consumer's actual code against the mock
+      await userClient.getUser(42);
+      ```
+  - fragment_type: execution
+    sequence: 5
+    content: |
+      ```sh
+      pact-broker verify --pact-broker-url=... --provider=user-service
+      ```
+
+      If the provider can't satisfy any consumer's contract, the build fails — before deploying.
+  - fragment_type: rationale
+    sequence: 6
+    content: |
+      Skip the consumer-test-emits-contract dance. Maintain an OpenAPI spec; both sides validate:
+
+      - **Provider**: validate that real responses match the schema (via middleware or test-time assertion).
+      - **Consumer**: generate types from the schema; validate received bodies in tests or runtime.
+  - fragment_type: rationale
+    sequence: 7
+    content: |
+      Trade-offs vs Pact:
+
+      - Schema-based is simpler if you already maintain OpenAPI.
+      - Pact captures consumer expectations more precisely (this consumer cares about `name` and `email` but not `created_at`).
+      - Schema-based catches additive provider changes (new optional field) that don't break consumers; Pact warns about them.
+  - fragment_type: rationale
+    sequence: 8
+    content: |
+      Contracts cover:
+
+      - Endpoint paths + methods
+      - Request shape (body, query params, headers)
+      - Response shape (status code, body, key headers)
+      - State preconditions ('given a user exists')
+  - fragment_type: rationale
+    sequence: 9
+    content: |
+      Contracts deliberately do NOT cover:
+
+      - Performance characteristics (latency, throughput)
+      - Authorization logic ('admin only' — that's an integration test)
+      - Side effects on other services (use end-to-end for that)
+  - fragment_type: example
+    sequence: 10
+    content: |
+      ## Pact Broker Workflow
+
+      1. Consumer CI: run consumer tests, publish pact files to Broker.
+      2. Provider CI on every push: pull all pacts tagged for production, verify each one against current code.
+      3. Broker tracks compatibility matrix: which (consumer-version, provider-version) pairs verify.
+      4. Deployment gate: before deploying provider v2 to prod, check the matrix — does it satisfy every consumer in prod?
+
+      This is the operational payoff: deployments become safe because the contract verified before the artifact reached production.
+  - fragment_type: guardrail
+    sequence: 11
+    content: |
+      ## Common Pitfalls
+
+      - **Treating contract tests as a replacement for integration tests.** They prove the interface; they don't prove the system end-to-end. Keep some integration coverage.
+      - **Over-specifying matchers in Pact.** Using `equal` everywhere makes contracts brittle to harmless data changes. Use `like()`, `term()`, `eachLike()` for shape-not-value assertions.
+      - **Letting the contract drift from real consumer behavior.** If the consumer test stops running on every change (mock-only, no real consumer code), it's no longer driving anything.
+      - **Forgetting the provider verification step.** A pact file no one verifies is a wish list, not a contract.
+  - fragment_type: example
+    sequence: 12
+    content: |
+      ## Verification
+
+      A working contract test setup:
+
+      - Consumer changes break consumer-side contract tests immediately if the request shape changes.
+      - Provider CI fails when a change would break any in-production consumer.
+      - The Broker shows a green matrix between current consumer and provider versions before deploys.
+      - New service-to-service interactions get a pact published as part of the consumer's first PR.

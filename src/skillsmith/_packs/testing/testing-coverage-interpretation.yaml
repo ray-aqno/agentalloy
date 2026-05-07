@@ -1,0 +1,207 @@
+skill_type: domain
+skill_id: testing-coverage-interpretation
+canonical_name: Test Coverage — Interpretation and Limits
+category: quality
+skill_class: domain
+domain_tags:
+  - test coverage
+  - interpretation
+  - mutation testing
+  - code quality
+  - software development
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: initial authoring draft
+raw_prose: |
+  # Test Coverage — Interpretation and Limits
+
+  ## Overview
+
+  Test coverage measures what code your tests execute. It's a useful diagnostic — high coverage doesn't prove tests are good, but low coverage proves something is untested. The mistake is treating coverage as a target rather than a signal.
+
+  ## What Coverage Measures
+
+  - **Line coverage**: percentage of source lines executed by at least one test.
+  - **Statement coverage**: like line, but counts statements (handles multi-statement lines).
+  - **Branch coverage**: percentage of conditional branches taken. `if (x)` has two branches; both need a test for 100%.
+  - **Function coverage**: percentage of functions called.
+  - **Path coverage**: percentage of execution paths through the code. Combinatorially explosive; rarely used.
+
+  Branch coverage is the most useful single metric — line coverage misses untested branches.
+
+  ## What Coverage Does NOT Measure
+
+  - **Whether assertions are correct.** A test that runs the code but asserts `expect(true).toBe(true)` gives 100% coverage and 0 verification value.
+  - **Whether the test suite catches bugs.** Coverage measures execution, not validation.
+  - **Whether the right things are tested.** Trivial getters get tested; complex business logic might not.
+  - **The cost of an untested change failing in production.** A 50%-covered payment system is more dangerous than a 50%-covered logo renderer.
+
+  The most common misuse: setting a coverage threshold (e.g., '80%') and treating it as a quality gate. Tests written to hit the threshold are often shallow.
+
+  ## Useful Coverage Patterns
+
+  **Coverage as a diagnostic on PRs.** Show the diff in coverage on each PR. A drop in coverage means lines were added without tests; let the reviewer decide if that's acceptable.
+
+  **Coverage by file/module, not aggregate.** A repo at '85% overall' might have a critical module at 30%. The aggregate hides this.
+
+  **Coverage on changed lines.** Tools (e.g., Codecov, diff_cover) measure coverage on lines changed in a PR. Higher signal than aggregate.
+
+  **Coverage to find dead code.** Files showing 0% coverage that aren't intentionally untested may be unreachable. Worth investigating.
+
+  ## Mutation Testing — A Stronger Signal
+
+  Mutation testing modifies your code (changes `>` to `<`, removes a line, swaps `+` for `-`) and runs your tests. If the tests still pass, the mutation 'survived' — meaning the test suite didn't catch the change.
+
+  Tools: Stryker (JS/TS/C#), mutmut (Python), PIT (Java).
+
+  ```sh
+  npx stryker run
+  ```
+
+  Output: 'mutation score' = percentage of mutations killed by tests. A 90% mutation score means 90% of intentional bugs would be caught — much stronger than 'this code was executed during a test'.
+
+  Trade-off: mutation testing is slow (each mutation reruns the full suite or the affected tests). Run nightly or on-demand, not per PR.
+
+  ## Setting Sensible Coverage Goals
+
+  Pick goals by what the code does:
+
+  - **Pure business logic, public APIs**: 90%+ branch coverage. These are correctness-critical.
+  - **Glue code, framework boilerplate**: 60-70% is fine. Adding tests for `app.use(express.json())` is busywork.
+  - **Generated code**: 0% is fine, the generator is tested elsewhere.
+  - **UI rendering**: visual / snapshot testing is more useful than line coverage.
+
+  Don't enforce one threshold across the whole repo. Let modules pick.
+
+  ## False-Coverage Patterns
+
+  Tests that produce coverage without verification:
+
+  - **Smoke tests that just import a module** — every line of imports counts.
+  - **Tests that exercise but don't assert** — `service.do_thing()` with no `expect`.
+  - **Mocked-everything tests** — `getCurrentUser()` returns the mocked user, `expect(getCurrentUser()).toBe(mockedUser)` — proves nothing about real behavior.
+
+  Reading 'we have 95% coverage' in a project with these patterns means nothing.
+
+  ## Common Pitfalls
+
+  - **Goodhart's Law**: when coverage is the target, tests get gamed. Devs add `expect(true).toBe(true)` after running the code.
+  - **Reporting line coverage when you should report branch coverage.** Line coverage is the easier metric; it's also the less useful one. Configure your tool for branch.
+  - **Coverage in CI but no PR diff.** A 0.5% drop is invisible in 'we're at 84%'; reviewers can't tell what's not tested.
+  - **Coverage on code under test, not test code.** Self-test coverage is a sign of overengineering.
+
+  ## Verification
+
+  A healthy coverage program:
+
+  - Coverage is reported as branch coverage, not just line.
+  - PRs show coverage delta on changed lines.
+  - Critical modules have higher thresholds than glue code.
+  - Mutation testing runs at least nightly, surfacing surviving mutations as bugs to fix.
+  - Nobody on the team treats the coverage number as a quality measure on its own.
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      ## Overview
+
+      Test coverage measures what code your tests execute. It's a useful diagnostic — high coverage doesn't prove tests are good, but low coverage proves something is untested. The mistake is treating coverage as a target rather than a signal.
+  - fragment_type: execution
+    sequence: 2
+    content: |
+      ## What Coverage Measures
+
+      - **Line coverage**: percentage of source lines executed by at least one test.
+      - **Statement coverage**: like line, but counts statements (handles multi-statement lines).
+      - **Branch coverage**: percentage of conditional branches taken. `if (x)` has two branches; both need a test for 100%.
+      - **Function coverage**: percentage of functions called.
+      - **Path coverage**: percentage of execution paths through the code. Combinatorially explosive; rarely used.
+
+      Branch coverage is the most useful single metric — line coverage misses untested branches.
+  - fragment_type: verification
+    sequence: 3
+    content: |
+      ## What Coverage Does NOT Measure
+
+      - **Whether assertions are correct.** A test that runs the code but asserts `expect(true).toBe(true)` gives 100% coverage and 0 verification value.
+      - **Whether the test suite catches bugs.** Coverage measures execution, not validation.
+      - **Whether the right things are tested.** Trivial getters get tested; complex business logic might not.
+      - **The cost of an untested change failing in production.** A 50%-covered payment system is more dangerous than a 50%-covered logo renderer.
+
+      The most common misuse: setting a coverage threshold (e.g., '80%') and treating it as a quality gate. Tests written to hit the threshold are often shallow.
+  - fragment_type: example
+    sequence: 4
+    content: |
+      ## Useful Coverage Patterns
+
+      **Coverage as a diagnostic on PRs.** Show the diff in coverage on each PR. A drop in coverage means lines were added without tests; let the reviewer decide if that's acceptable.
+
+      **Coverage by file/module, not aggregate.** A repo at '85% overall' might have a critical module at 30%. The aggregate hides this.
+
+      **Coverage on changed lines.** Tools (e.g., Codecov, diff_cover) measure coverage on lines changed in a PR. Higher signal than aggregate.
+
+      **Coverage to find dead code.** Files showing 0% coverage that aren't intentionally untested may be unreachable. Worth investigating.
+  - fragment_type: example
+    sequence: 5
+    content: |
+      ## Mutation Testing — A Stronger Signal
+
+      Mutation testing modifies your code (changes `>` to `<`, removes a line, swaps `+` for `-`) and runs your tests. If the tests still pass, the mutation 'survived' — meaning the test suite didn't catch the change.
+
+      Tools: Stryker (JS/TS/C#), mutmut (Python), PIT (Java).
+
+      ```sh
+      npx stryker run
+      ```
+
+      Output: 'mutation score' = percentage of mutations killed by tests. A 90% mutation score means 90% of intentional bugs would be caught — much stronger than 'this code was executed during a test'.
+
+      Trade-off: mutation testing is slow (each mutation reruns the full suite or the affected tests). Run nightly or on-demand, not per PR.
+  - fragment_type: execution
+    sequence: 6
+    content: |
+      ## Setting Sensible Coverage Goals
+
+      Pick goals by what the code does:
+
+      - **Pure business logic, public APIs**: 90%+ branch coverage. These are correctness-critical.
+      - **Glue code, framework boilerplate**: 60-70% is fine. Adding tests for `app.use(express.json())` is busywork.
+      - **Generated code**: 0% is fine, the generator is tested elsewhere.
+      - **UI rendering**: visual / snapshot testing is more useful than line coverage.
+
+      Don't enforce one threshold across the whole repo. Let modules pick.
+  - fragment_type: verification
+    sequence: 7
+    content: |
+      ## False-Coverage Patterns
+
+      Tests that produce coverage without verification:
+
+      - **Smoke tests that just import a module** — every line of imports counts.
+      - **Tests that exercise but don't assert** — `service.do_thing()` with no `expect`.
+      - **Mocked-everything tests** — `getCurrentUser()` returns the mocked user, `expect(getCurrentUser()).toBe(mockedUser)` — proves nothing about real behavior.
+
+      Reading 'we have 95% coverage' in a project with these patterns means nothing.
+  - fragment_type: verification
+    sequence: 8
+    content: |
+      ## Common Pitfalls
+
+      - **Goodhart's Law**: when coverage is the target, tests get gamed. Devs add `expect(true).toBe(true)` after running the code.
+      - **Reporting line coverage when you should report branch coverage.** Line coverage is the easier metric; it's also the less useful one. Configure your tool for branch.
+      - **Coverage in CI but no PR diff.** A 0.5% drop is invisible in 'we're at 84%'; reviewers can't tell what's not tested.
+      - **Coverage on code under test, not test code.** Self-test coverage is a sign of overengineering.
+  - fragment_type: verification
+    sequence: 9
+    content: |
+      ## Verification
+
+      A healthy coverage program:
+
+      - Coverage is reported as branch coverage, not just line.
+      - PRs show coverage delta on changed lines.
+      - Critical modules have higher thresholds than glue code.
+      - Mutation testing runs at least nightly, surfacing surviving mutations as bugs to fix.
+      - Nobody on the team treats the coverage number as a quality measure on its own.

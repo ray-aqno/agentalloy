@@ -1,0 +1,262 @@
+skill_type: domain
+skill_id: testing-flaky-tests
+canonical_name: Diagnosing and Fixing Flaky Tests
+category: quality
+skill_class: domain
+domain_tags:
+  - flaky tests
+  - test reliability
+  - asynchronous programming
+  - test isolation
+  - time-dependent assertions
+author: authoring-agent
+change_summary: initial authoring draft
+raw_prose: |
+  # Diagnosing and Fixing Flaky Tests
+
+  ## Overview
+
+  A flaky test passes sometimes and fails sometimes with no code change. Flakes erode trust in the suite — green CI stops meaning anything. The fix is always either making the test deterministic or fixing the underlying race condition.
+
+  ## Don't Just Retry
+
+  The temptation: add a retry-on-failure annotation. Resist. Retries hide bugs and let real regressions ship. Every flake has a root cause; find it.
+
+  That said, a 'detect flakes early' retry mechanism — running suspected-flaky tests 10 times after a green CI run, alerting if any fail — is fine. The trigger for fixing is the alert, not 'just rerun until green'.
+
+  ## Common Causes (Ranked by Frequency)
+
+  **1. Asynchronous work without explicit waits.** Test fires an action, asserts immediately, but the action is async. Sometimes wins the race; sometimes doesn't.
+
+  ```js
+  // BAD
+  clickButton();
+  expect(text).toBe('Submitted');  // fails if submit hadn't completed
+
+  // GOOD
+  clickButton();
+  await waitFor(() => expect(text).toBe('Submitted'));
+  ```
+
+  **2. Test isolation failure.** Test A leaves database state, file system state, or in-memory state that test B reads. Order-dependent.
+
+  Detection: run tests in random order (`pytest --random-order`, `vitest --shuffle`, `jest --randomize`). If pass rate drops, you have isolation issues.
+
+  **3. Time-dependent assertions.** `expect(now).toBeWithin(target, 100ms)` works on a fast machine, fails on a slow CI runner.
+
+  Fix: mock time deterministically (`jest.useFakeTimers`, `freezegun`, `MockClock`). Don't assert on real wall-clock time.
+
+  **4. Randomness without a seed.** Generative tests (property-based, fuzz, even just `Math.random()`) hit a bad value occasionally.
+
+  Fix: seed the random source. Property-based test frameworks support this natively.
+
+  **5. Network and external services.** Timeouts vary; rate limits hit; DNS flakes.
+
+  Fix: mock external calls in unit tests. For integration tests, use Testcontainers (local) or VCR (recorded responses).
+
+  **6. Race conditions in production code.** The test exposes a real bug. Fix the production code, not the test.
+
+  ## Detection Patterns
+
+  **Reproduce locally with stress mode**: run the suspected test 100 times in a loop. If it ever fails, you've reproduced.
+
+  ```sh
+  for i in $(seq 1 100); do pytest path/to/test.py -k flaky_name || break; done
+  ```
+
+  **Random order**: shuffle test order to surface isolation bugs.
+
+  **Slow machine simulation**: throttle CPU (`stress-ng`, Docker --cpus=0.5) to expose timing-sensitive tests.
+
+  **Parallel execution**: run tests in parallel mode if your suite supports it. Many flakes appear only under contention.
+
+  ## Fixing Async Flakes
+
+  Replace fixed sleeps with assertions that retry:
+
+  ```python
+  # BAD
+  time.sleep(1)
+  assert state == 'ready'
+
+  # GOOD (with explicit retry)
+  def wait_for_state():
+      for _ in range(20):
+          if state == 'ready': return
+          time.sleep(0.1)
+      raise AssertionError('state never became ready')
+  ```
+
+  Or use library helpers: `waitFor` (Testing Library), `pytest-asyncio` polling, `Awaitility` (Java).
+
+  ## Fixing State-Leak Flakes
+
+  Three layers of defense:
+
+  1. **Reset state in teardown** — every fixture should leave the world as it found it.
+  2. **Use unique identifiers** — UUIDs in test data, not `user_1`, `user_2`. Avoids 'duplicate key' on retry.
+  3. **Run in containers** — full isolation per test process.
+
+  ## Quarantine Process
+
+  A flake you can't immediately fix shouldn't block the build. Pattern:
+
+  1. Tag the test as `@flaky` (don't delete it — that loses the signal).
+  2. Skip it in CI but run it in a separate quarantine job that doesn't fail the build.
+  3. Track quarantined tests in a public list with owners and date-skipped.
+  4. Triage weekly. Set a deadline (30 days?) — fix or delete.
+
+  The pathology to avoid: 50 tests in quarantine for 6 months, none being worked on.
+
+  ## When the Test Reveals a Real Bug
+
+  Sometimes a flake is the test catching an actual race in production code. Symptoms: it flakes more under load, the production code uses concurrency primitives, or the failure is timing-related.
+
+  Don't fix it by adding sleeps to the test. Fix the production code. The test is doing its job.
+
+  ## Common Pitfalls
+
+  - **Adding `flaky_retry` decorators.** Hides the bug, masks regressions, normalizes flakiness.
+  - **Increasing sleep durations.** Pushes the flake out, doesn't eliminate it. Will return when CI gets slower.
+  - **Marking as `xfail` without a fix plan.** Same as quarantine without a deadline — it stays forever.
+  - **Blaming infrastructure.** CI is sometimes flaky, but 'CI is flaky' is also the lazy conclusion. Investigate before blaming.
+
+  ## Verification
+
+  A flake is fixed when:
+
+  - The test runs 1000 times in a loop without failing on a stress run.
+  - It passes in random-order mode.
+  - It passes under simulated slow CPU and constrained memory.
+  - The fix is the test becoming deterministic, OR a fix to production code that removed a real race.
+fragments:
+  - fragment_type: rationale
+    sequence: 1
+    content: |
+      A flaky test passes sometimes and fails sometimes with no code change. Flakes erode trust in the suite — green CI stops meaning anything. The fix is always either making the test deterministic or fixing the underlying race condition.
+  - fragment_type: guardrail
+    sequence: 2
+    content: |
+      The temptation: add a retry-on-failure annotation. Resist. Retries hide bugs and let real regressions ship. Every flake has a root cause; find it.
+
+      That said, a 'detect flakes early' retry mechanism — running suspected-flaky tests 10 times after a green CI run, alerting if any fail — is fine. The trigger for fixing is the alert, not 'just rerun until green'.
+  - fragment_type: rationale
+    sequence: 3
+    content: |
+      **1. Asynchronous work without explicit waits.** Test fires an action, asserts immediately, but the action is async. Sometimes wins the race; sometimes doesn't.
+
+      ```js
+      // BAD
+      clickButton();
+      expect(text).toBe('Submitted');  // fails if submit hadn't completed
+
+      // GOOD
+      clickButton();
+      await waitFor(() => expect(text).toBe('Submitted'));
+      ```
+  - fragment_type: rationale
+    sequence: 4
+    content: |
+      **2. Test isolation failure.** Test A leaves database state, file system state, or in-memory state that test B reads. Order-dependent.
+
+      Detection: run tests in random order (`pytest --random-order`, `vitest --shuffle`, `jest --randomize`). If pass rate drops, you have isolation issues.
+  - fragment_type: rationale
+    sequence: 5
+    content: |
+      **3. Time-dependent assertions.** `expect(now).toBeWithin(target, 100ms)` works on a fast machine, fails on a slow CI runner.
+
+      Fix: mock time deterministically (`jest.useFakeTimers`, `freezegun`, `MockClock`). Don't assert on real wall-clock time.
+  - fragment_type: rationale
+    sequence: 6
+    content: |
+      **4. Randomness without a seed.** Generative tests (property-based, fuzz, even just `Math.random()`) hit a bad value occasionally.
+
+      Fix: seed the random source. Property-based test frameworks support this natively.
+  - fragment_type: rationale
+    sequence: 7
+    content: |
+      **5. Network and external services.** Timeouts vary; rate limits hit; DNS flakes.
+
+      Fix: mock external calls in unit tests. For integration tests, use Testcontainers (local) or VCR (recorded responses).
+  - fragment_type: rationale
+    sequence: 8
+    content: |
+      **6. Race conditions in production code.** The test exposes a real bug. Fix the production code, not the test.
+
+      ## Detection Patterns
+
+      **Reproduce locally with stress mode**: run the suspected test 100 times in a loop. If it ever fails, you've reproduced.
+
+      ```sh
+      for i in $(seq 1 100); do pytest path/to/test.py -k flaky_name || break; done
+      ```
+  - fragment_type: execution
+    sequence: 9
+    content: |
+      **Random order**: shuffle test order to surface isolation bugs.
+
+      **Slow machine simulation**: throttle CPU (`stress-ng`, Docker --cpus=0.5) to expose timing-sensitive tests.
+
+      **Parallel execution**: run tests in parallel mode if your suite supports it. Many flakes appear only under contention.
+  - fragment_type: example
+    sequence: 10
+    content: |
+      Replace fixed sleeps with assertions that retry:
+
+      ```python
+      # BAD
+      time.sleep(1)
+      assert state == 'ready'
+
+      # GOOD (with explicit retry)
+      def wait_for_state():
+          for _ in range(20):
+              if state == 'ready': return
+              time.sleep(0.1)
+          raise AssertionError('state never became ready')
+      ```
+
+      Or use library helpers: `waitFor` (Testing Library), `pytest-asyncio` polling, `Awaitility` (Java).
+  - fragment_type: example
+    sequence: 11
+    content: |
+      Three layers of defense:
+
+      1. **Reset state in teardown** — every fixture should leave the world as it found it.
+      2. **Use unique identifiers** — UUIDs in test data, not `user_1`, `user_2`. Avoids 'duplicate key' on retry.
+      3. **Run in containers** — full isolation per test process.
+  - fragment_type: execution
+    sequence: 12
+    content: |
+      A flake you can't immediately fix shouldn't block the build. Pattern:
+
+      1. Tag the test as `@flaky` (don't delete it — that loses the signal).
+      2. Skip it in CI but run it in a separate quarantine job that doesn't fail the build.
+      3. Track quarantined tests in a public list with owners and date-skipped.
+      4. Triage weekly. Set a deadline (30 days?) — fix or delete.
+
+      The pathology to avoid: 50 tests in quarantine for 6 months, none being worked on.
+  - fragment_type: rationale
+    sequence: 13
+    content: |
+      Sometimes a flake is the test catching an actual race in production code. Symptoms: it flakes more under load, the production code uses concurrency primitives, or the failure is timing-related.
+
+      Don't fix it by adding sleeps to the test. Fix the production code. The test is doing its job.
+  - fragment_type: guardrail
+    sequence: 14
+    content: |
+      ## Common Pitfalls
+
+      - **Adding `flaky_retry` decorators.** Hides the bug, masks regressions, normalizes flakiness.
+      - **Increasing sleep durations.** Pushes the flake out, doesn't eliminate it. Will return when CI gets slower.
+      - **Marking as `xfail` without a fix plan.** Same as quarantine without a deadline — it stays forever.
+      - **Blaming infrastructure.** CI is sometimes flaky, but 'CI is flaky' is also the lazy conclusion. Investigate before blaming.
+  - fragment_type: verification
+    sequence: 15
+    content: |
+      A flake is fixed when:
+
+      - The test runs 1000 times in a loop without failing on a stress run.
+      - It passes in random-order mode.
+      - It passes under simulated slow CPU and constrained memory.
+      - The fix is the test becoming deterministic, OR a fix to production code that removed a real race.

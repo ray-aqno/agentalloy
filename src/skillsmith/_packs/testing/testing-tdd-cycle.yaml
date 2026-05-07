@@ -1,0 +1,160 @@
+skill_type: domain
+skill_id: testing-tdd-cycle
+canonical_name: Test-Driven Development Cycle
+category: quality
+skill_class: domain
+domain_tags:
+  - tdd
+  - red-green-refactor
+  - test-driven-development
+  - software-testing
+  - agile-methodology
+always_apply: false
+phase_scope: []
+category_scope: []
+author: authoring-agent
+change_summary: initial authoring draft
+raw_prose: |
+  # Test-Driven Development Cycle
+
+  ## Overview
+
+  TDD is a discipline: write a test that fails for the right reason, implement the minimum that makes it pass, then refactor. The cycle is short (minutes), and it produces a durable test suite as a side effect of authoring code.
+
+  ---
+
+  ## The Three Phases
+
+  **Red** — write a test that fails. The failure must be for the right reason: assertion failed because behavior is missing, not because code doesn't compile or types don't match. A test that fails because the function doesn't exist yet is fine; a test that fails because of a typo isn't progress.
+
+  **Green** — write the minimum production code to make the test pass. Resist the urge to add features the test doesn't exercise. The simplest implementation that turns the test green — even hardcoded values — is correct here.
+
+  **Refactor** — improve the code with the test as a safety net. Eliminate duplication, rename for clarity, extract methods. Run tests after each change; revert if anything goes red.
+
+  ## What 'Failing for the Right Reason' Means
+
+  A test that fails with `TypeError: undefined is not a function` proves nothing about your assertion. A test that fails with `expected 5, got 0` proves the assertion mechanism works and the production code is wrong.
+
+  Always run a new test, see it fail, then make it pass. If a test passes the first time you write it, either it's not testing what you think, or the behavior was already there.
+
+  ## Cycle Length
+
+  Each cycle should be minutes, not hours:
+
+  - Red: 30 seconds — 2 minutes (one assertion, one new behavior)
+  - Green: 1-5 minutes (smallest change to pass)
+  - Refactor: 0-3 minutes (only what's obvious)
+
+  If a cycle takes 30 minutes, the test was too big. Break it into smaller tests covering individual behaviors.
+
+  ## Triangulation — Forcing Generality
+
+  When a single test can be passed by hardcoded values, write a second test that forces a real implementation:
+
+  ```python
+  # Red: test 1
+  def test_add_two_numbers():
+      assert add(1, 2) == 3
+
+  # Green (cheap): return 3 hardcoded
+  def add(a, b):
+      return 3
+
+  # Red: test 2 forces generality
+  def test_add_other_numbers():
+      assert add(2, 5) == 7
+
+  # Green: now real impl
+  def add(a, b):
+      return a + b
+  ```
+
+  This sounds wasteful but proves the test suite drives the implementation, not the developer's foreknowledge.
+
+  ## When TDD Helps Most
+
+  - Adding behavior to existing code with regression risk.
+  - New algorithms where the spec is clear but implementation isn't.
+  - Bug fixes — write the failing test first, then fix; you have proof the fix worked and the regression test is permanent.
+  - Refactors of business logic — the tests pin behavior so you can change structure freely.
+
+  ## When TDD Helps Less
+
+  - Pure exploration / spike code that will be deleted.
+  - UI-heavy work where the test cost is high and the design is iterating fast.
+  - Performance optimization — measure first; tests come after the right approach is identified.
+
+  ## Verification
+
+  A working TDD cycle produces:
+
+  - A test suite that fails the moment a behavior breaks (test isolation works).
+  - Code structured around what's tested rather than around speculative future needs.
+  - Confident refactoring without manual regression testing.
+  - A fossil record of intent — every commit has a test explaining what was added or fixed.
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      TDD is a discipline: write a test that fails for the right reason, implement the minimum that makes it pass, then refactor. The cycle is short (minutes), and it produces a durable test suite as a side effect of authoring code.
+  - fragment_type: execution
+    sequence: 2
+    content: |
+      **Red** — write a test that fails. The failure must be for the right reason: assertion failed because behavior is missing, not because code doesn't compile or types don't match. A test that fails because the function doesn't exist yet is fine; a test that fails because of a typo isn't progress.
+  - fragment_type: execution
+    sequence: 3
+    content: |
+      **Green** — write the minimum production code to make the test pass. Resist the urge to add features the test doesn't exercise. The simplest implementation that turns the test green — even hardcoded values — is correct here.
+  - fragment_type: execution
+    sequence: 4
+    content: |
+      **Refactor** — improve the code with the test as a safety net. Eliminate duplication, rename for clarity, extract methods. Run tests after each change; revert if anything goes red.
+  - fragment_type: rationale
+    sequence: 5
+    content: |
+      A test that fails with `TypeError: undefined is not a function` proves nothing about your assertion. A test that fails with `expected 5, got 0` proves the assertion mechanism works and the production code is wrong.
+
+      Always run a new test, see it fail, then make it pass. If a test passes the first time you write it, either it's not testing what you think, or the behavior was already there.
+  - fragment_type: rationale
+    sequence: 6
+    content: |
+      Each cycle should be minutes, not hours:
+
+      - Red: 30 seconds — 2 minutes (one assertion, one new behavior)
+      - Green: 1-5 minutes (smallest change to pass)
+      - Refactor: 0-3 minutes (only what's obvious)
+
+      If a cycle takes 30 minutes, the test was too big. Break it into smaller tests covering individual behaviors.
+  - fragment_type: example
+    sequence: 7
+    content: |
+      When a single test can be passed by hardcoded values, write a second test that forces a real implementation:
+
+      ```python
+      # Red: test 1
+      def test_add_two_numbers():
+          assert add(1, 2) == 3
+
+      # Green (cheap): return 3 hardcoded
+      def add(a, b):
+          return 3
+
+      # Red: test 2 forces generality
+      def test_add_other_numbers():
+          assert add(2, 5) == 7
+
+      # Green: now real impl
+      def add(a, b):
+          return a + b
+      ```
+
+      This sounds wasteful but proves the test suite drives the implementation, not the developer's foreknowledge.
+  - fragment_type: rationale
+    sequence: 8
+    content: |
+      A working TDD cycle produces:
+
+      - A test suite that fails the moment a behavior breaks (test isolation works).
+      - Code structured around what's tested rather than around speculative future needs.
+      - Confident refactoring without manual regression testing.
+      - A fossil record of intent — every commit has a test explaining what was added or fixed.

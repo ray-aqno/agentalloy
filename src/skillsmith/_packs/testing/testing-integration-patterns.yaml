@@ -1,0 +1,272 @@
+skill_type: domain
+skill_id: testing-integration-patterns
+canonical_name: Integration Test Patterns
+category: quality
+skill_class: domain
+domain_tags:
+  - integration-testing
+  - testcontainers
+  - database-isolation
+  - fixture-data
+  - mocking-external-apis
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: initial authoring draft
+raw_prose: |
+  # Integration Test Patterns
+
+  ## Overview
+
+  Integration tests exercise components against real or near-real collaborators. Done well, they catch wiring bugs unit tests miss without the cost of full end-to-end. Done badly, they're slow, flaky, and a maintenance burden.
+
+  ## Levels of Integration
+
+  - **Component integration**: one component (e.g., a repository) against its real backing store. Cheap, fast.
+  - **Service integration**: a service against its dependencies (DB, cache, queue) but not other services. Medium cost.
+  - **Cross-service integration**: multiple services running together. Expensive, slow, flaky. Use sparingly.
+
+  Most integration test value comes from level 1 and 2. Level 3 is for end-to-end smoke tests, not regression coverage.
+
+  ## Testcontainers
+
+  Testcontainers spins up real services in Docker for the test run:
+
+  ```java
+  // Java example
+  @Testcontainers
+  class UserRepositoryTest {
+      @Container
+      static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
+
+      @Test
+      void persistsUser() {
+          var ds = newDataSource(postgres.getJdbcUrl());
+          var repo = new UserRepository(ds);
+          repo.save(new User("alice"));
+          assertThat(repo.findByName("alice")).isPresent();
+      }
+  }
+  ```
+
+  Same pattern in Python (testcontainers-python), Node (testcontainers/node), .NET (Testcontainers.NET). The container starts on test class init, stops on teardown.
+
+  Trade-off: each container start costs 5-30 seconds. Use shared containers across tests in the same module; use ephemeral per-test only when state isolation matters.
+
+  ## Database Test Isolation
+
+  Two strategies:
+
+  **Transaction rollback** — start a transaction, run the test, roll back. Fast but doesn't survive code that commits.
+
+  ```python
+  @pytest.fixture
+  def db(connection):
+      trans = connection.begin()
+      yield connection
+      trans.rollback()
+  ```
+
+  **Truncate-after** — let the test commit, then truncate all tables. Slower but works for code that needs commits visible to other connections.
+
+  ```python
+  @pytest.fixture
+  def db(connection):
+      yield connection
+      connection.execute("TRUNCATE users, orders, payments CASCADE")
+  ```
+
+  For most test suites, prefer rollback. Move to truncate only when testing concurrency or commit-dependent behavior.
+
+  ## Fixture Data
+
+  Three approaches in increasing complexity:
+
+  1. **Inline** — create exactly the data the test needs in the test.
+  2. **Builders / factories** — `UserFactory.build(plan='pro')` — convenient defaults plus overrides.
+  3. **Snapshot fixtures** — load a JSON/SQL dump representing a realistic state.
+
+  Inline is the easiest to read. Builders scale better when many tests need similar setup. Snapshots are for end-to-end workflows; they're brittle to schema changes.
+
+  ## Avoid Test Pollution
+
+  The most common integration-test bug: test A leaves state that breaks test B. Symptoms:
+
+  - Tests pass alone but fail in suites.
+  - Tests pass on a fresh run but fail on retry.
+  - Tests' order matters.
+
+  Fixes: ensure every test rolls back or truncates; use unique IDs (UUIDs, not sequential ints); never write to global state.
+
+  ## Mocking External APIs
+
+  Don't hit real third-party APIs in CI. Options:
+
+  - **WireMock / mock-server**: containerized mock HTTP servers.
+  - **VCR / nock**: record real responses, replay them on test runs.
+  - **In-process stubs**: simplest but least faithful.
+
+  Always include a 'real-API smoke test' that runs nightly — mocks drift from reality otherwise.
+
+  ## Tests Over the Network Are Flaky
+
+  Even Testcontainers can fail intermittently (Docker daemon hiccups, port conflicts, slow image pulls). Mitigations:
+
+  - Retry-once on container start failures (most flakes are first-run timing).
+  - Pre-pull images in CI cache.
+  - Set generous startup timeouts (30-60s, not 5s).
+
+  ## Common Pitfalls
+
+  - **One huge integration test that does everything.** Hard to debug failures. Split by feature.
+  - **Tests that share state in setUp / @BeforeAll.** Adds coupling between tests. Prefer per-test setup unless container start is the bottleneck.
+  - **Mocking your own database.** That's a unit test, not an integration test. The point of integration is hitting real Postgres / Redis / etc.
+  - **Only running integration tests in CI, never locally.** Devs lose the feedback loop. Make local-run trivial via testcontainers + a docker daemon.
+
+  ## Verification
+
+  Healthy integration tests:
+
+  - Run in seconds (component-level) to a few minutes (service-level), not hours.
+  - Pass deterministically — flake rate under 1% on retry.
+  - Each test is isolated — running them in any order works.
+  - Failures point at one concrete cause, not 'something downstream broke'.
+  - Local devs run them as part of their normal commit flow.
+
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      Integration tests exercise components against real or near-real collaborators. Done well, they catch wiring bugs unit tests miss without the cost of full end-to-end. Done badly, they're slow, flaky, and a maintenance burden.
+  - fragment_type: execution
+    sequence: 2
+    content: |
+      ## Levels of Integration
+
+      - **Component integration**: one component (e.g., a repository) against its real backing store. Cheap, fast.
+      - **Service integration**: a service against its dependencies (DB, cache, queue) but not other services. Medium cost.
+      - **Cross-service integration**: multiple services running together. Expensive, slow, flaky. Use sparingly.
+
+      Most integration test value comes from level 1 and 2. Level 3 is for end-to-end smoke tests, not regression coverage.
+  - fragment_type: example
+    sequence: 3
+    content: |
+      ## Testcontainers
+
+      Testcontainers spins up real services in Docker for the test run:
+
+      ```java
+      // Java example
+      @Testcontainers
+      class UserRepositoryTest {
+          @Container
+          static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
+
+          @Test
+          void persistsUser() {
+              var ds = newDataSource(postgres.getJdbcUrl());
+              var repo = new UserRepository(ds);
+              repo.save(new User("alice"));
+              assertThat(repo.findByName("alice")).isPresent();
+          }
+      }
+      ```
+
+      Same pattern in Python (testcontainers-python), Node (testcontainers/node), .NET (Testcontainers.NET). The container starts on test class init, stops on teardown.
+
+      Trade-off: each container start costs 5-30 seconds. Use shared containers across tests in the same module; use ephemeral per-test only when state isolation matters.
+  - fragment_type: example
+    sequence: 4
+    content: |
+      ## Database Test Isolation
+
+      Two strategies:
+
+      **Transaction rollback** — start a transaction, run the test, roll back. Fast but doesn't survive code that commits.
+
+      ```python
+      @pytest.fixture
+      def db(connection):
+          trans = connection.begin()
+          yield connection
+          trans.rollback()
+      ```
+
+      **Truncate-after** — let the test commit, then truncate all tables. Slower but works for code that needs commits visible to other connections.
+
+      ```python
+      @pytest.fixture
+      def db(connection):
+          yield connection
+          connection.execute("TRUNCATE users, orders, payments CASCADE")
+      ```
+
+      For most test suites, prefer rollback. Move to truncate only when testing concurrency or commit-dependent behavior.
+  - fragment_type: example
+    sequence: 5
+    content: |
+      ## Fixture Data
+
+      Three approaches in increasing complexity:
+
+      1. **Inline** — create exactly the data the test needs in the test.
+      2. **Builders / factories** — `UserFactory.build(plan='pro')` — convenient defaults plus overrides.
+      3. **Snapshot fixtures** — load a JSON/SQL dump representing a realistic state.
+
+      Inline is the easiest to read. Builders scale better when many tests need similar setup. Snapshots are for end-to-end workflows; they're brittle to schema changes.
+  - fragment_type: guardrail
+    sequence: 6
+    content: |
+      ## Avoid Test Pollution
+
+      The most common integration-test bug: test A leaves state that breaks test B. Symptoms:
+
+      - Tests pass alone but fail in suites.
+      - Tests pass on a fresh run but fail on retry.
+      - Tests' order matters.
+
+      Fixes: ensure every test rolls back or truncates; use unique IDs (UUIDs, not sequential ints); never write to global state.
+  - fragment_type: example
+    sequence: 7
+    content: |
+      ## Mocking External APIs
+
+      Don't hit real third-party APIs in CI. Options:
+
+      - **WireMock / mock-server**: containerized mock HTTP servers.
+      - **VCR / nock**: record real responses, replay them on test runs.
+      - **In-process stubs**: simplest but least faithful.
+
+      Always include a 'real-API smoke test' that runs nightly — mocks drift from reality otherwise.
+  - fragment_type: guardrail
+    sequence: 8
+    content: |
+      ## Tests Over the Network Are Flaky
+
+      Even Testcontainers can fail intermittently (Docker daemon hiccups, port conflicts, slow image pulls). Mitigations:
+
+      - Retry-once on container start failures (most flakes are first-run timing).
+      - Pre-pull images in CI cache.
+      - Set generous startup timeouts (30-60s, not 5s).
+  - fragment_type: guardrail
+    sequence: 9
+    content: |
+      ## Common Pitfalls
+
+      - **One huge integration test that does everything.** Hard to debug failures. Split by feature.
+      - **Tests that share state in setUp / @BeforeAll.** Adds coupling between tests. Prefer per-test setup unless container start is the bottleneck.
+      - **Mocking your own database.** That's a unit test, not an integration test. The point of integration is hitting real Postgres / Redis / etc.
+      - **Only running integration tests in CI, never locally.** Devs lose the feedback loop. Make local-run trivial via testcontainers + a docker daemon.
+  - fragment_type: verification
+    sequence: 10
+    content: |
+      ## Verification
+
+      Healthy integration tests:
+
+      - Run in seconds (component-level) to a few minutes (service-level), not hours.
+      - Pass deterministically — flake rate under 1% on retry.
+      - Each test is isolated — running them in any order works.
+      - Failures point at one concrete cause, not 'something downstream broke'.
+      - Local devs run them as part of their normal commit flow.

@@ -1,0 +1,269 @@
+skill_type: domain
+skill_id: testing-property-based
+canonical_name: Property-Based Testing
+category: quality
+skill_class: domain
+domain_tags:
+- testing
+- property-based
+- fuzzing
+- hypothesis
+- fast-check
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |-
+  # Property-Based Testing
+
+  ## Overview
+
+  This skill covers testing property based patterns end-to-end.
+
+  ---
+
+  ## The Mental Shift
+
+  Example-based testing: 'sort([3,1,2]) returns [1,2,3]'.
+
+  Property-based: 'sort(any list) returns a list with the same elements in non-decreasing order'.
+
+  The property holds for all valid inputs. The framework generates many; if any fails, it minimizes (shrinks) to the smallest input that triggers the bug.
+
+  ## Common Properties
+
+  - **Round-trip**: `decode(encode(x)) == x` for any x.
+  - **Commutativity**: `op(a, b) == op(b, a)`.
+  - **Associativity**: `op(op(a, b), c) == op(a, op(b, c))`.
+  - **Idempotence**: `f(f(x)) == f(x)`.
+  - **Invariants**: a sort produces non-decreasing output of the same multiset.
+  - **Reference implementation**: `myFastImpl(x) == referenceImpl(x)` for any x.
+  - **Metamorphic**: `op(x + 1) == op(x) + 1` (or some other relationship between transformed inputs).
+
+  When in doubt, the round-trip property is the easiest starting point.
+
+  ## Hypothesis (Python)
+
+  ```python
+  from hypothesis import given, strategies as st
+
+  @given(st.lists(st.integers()))
+  def test_sort_preserves_length(xs):
+      assert len(sorted(xs)) == len(xs)
+
+  @given(st.lists(st.integers()))
+  def test_sort_is_idempotent(xs):
+      assert sorted(sorted(xs)) == sorted(xs)
+  ```
+
+  Strategies generate values: `st.integers()`, `st.text()`, `st.lists(...)`, `st.dictionaries(...)`. Compose with `st.tuples`, `.map()`, `.filter()`, `@composite`.
+
+  ## fast-check (JS/TS)
+
+  ```ts
+  import * as fc from 'fast-check';
+
+  test('sort preserves length', () => {
+    fc.assert(
+      fc.property(fc.array(fc.integer()), (xs) => {
+        expect(xs.sort().length).toBe(xs.length);
+      })
+    );
+  });
+  ```
+
+  Arbitraries (fc.array, fc.string, fc.record) compose like Hypothesis strategies. fast-check integrates with Jest, Vitest, Mocha.
+
+  ## Shrinking
+
+  When a property fails, the framework tries smaller inputs to find the minimal failing case. If `sort([7, -3, 9, 0])` fails an assertion, shrinking might reduce it to `sort([0, -1])` — much easier to debug.
+
+  This is the killer feature. A randomly-generated 1000-element list that fails is useless; a shrunk 2-element list points directly at the bug.
+
+  ## Generating Domain Objects
+
+  Compose strategies for your domain:
+
+  ```python
+  @composite
+  def user_strategy(draw):
+      return User(
+          name=draw(st.text(min_size=1, max_size=50)),
+          age=draw(st.integers(min_value=0, max_value=120)),
+          email=draw(st.emails())
+      )
+
+  @given(user_strategy())
+  def test_serialize_roundtrip(user):
+      assert User.from_json(user.to_json()) == user
+  ```
+
+  This generates a wide range of valid users and checks the JSON round-trip.
+
+  ## When to Reach for It
+
+  - Pure functions with universal properties: parsers, encoders, sorters, math.
+  - State machines: model the valid states + transitions, generate sequences, check invariants.
+  - Replacing an implementation: keep the old impl as a reference, property-test the new one matches.
+  - Fuzz testing for security-sensitive parsers (alongside dedicated fuzzers like AFL).
+
+  ## When NOT to Use It
+
+  - One-off business rules with specific examples in the spec.
+  - UI behavior — too many side effects to model as properties.
+  - Slow operations — generating 1000 inputs that each take 100ms = 100 seconds per test. Use a small `max_examples` or skip.
+
+  ## Combining With Example-Based Tests
+
+  Property-based tests don't replace examples — they complement them. Examples document specific behavior the spec calls out; properties catch the long tail of edge cases. A healthy suite has both.
+
+  ## Common Pitfalls
+
+  - **Properties that are vacuously true.** `len(filter(p, xs)) <= len(xs)` is always true; doesn't catch much. Pick discriminating properties.
+  - **Not seeding for reproducibility.** Both Hypothesis and fast-check support fixed seeds — use them in CI so failures reproduce.
+  - **Treating shrunk failures as the test cases.** The shrunk input shows the bug, but the fix should still ship with an example-based regression test for that specific input.
+  - **Properties that depend on external state.** Property tests must be deterministic given the input. Mock collaborators or test pure functions.
+
+  ## Verification
+
+  A working property-based test:
+
+  - Runs many generated inputs (default 100 in Hypothesis, 100 in fast-check) per test.
+  - Shrinks failures to minimal counterexamples.
+  - Fails reproducibly with the same seed across runs.
+  - Catches edge cases that example-based tests miss (empty inputs, max-int, unicode boundaries, etc.).
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## The Mental Shift
+
+    Example-based testing: 'sort([3,1,2]) returns [1,2,3]'.
+
+    Property-based: 'sort(any list) returns a list with the same elements in non-decreasing order'.
+
+    The property holds for all valid inputs. The framework generates many; if any fails, it minimizes (shrinks) to the smallest input that triggers the bug.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Common Properties
+
+    - **Round-trip**: `decode(encode(x)) == x` for any x.
+    - **Commutativity**: `op(a, b) == op(b, a)`.
+    - **Associativity**: `op(op(a, b), c) == op(a, op(b, c))`.
+    - **Idempotence**: `f(f(x)) == f(x)`.
+    - **Invariants**: a sort produces non-decreasing output of the same multiset.
+    - **Reference implementation**: `myFastImpl(x) == referenceImpl(x)` for any x.
+    - **Metamorphic**: `op(x + 1) == op(x) + 1` (or some other relationship between transformed inputs).
+
+    When in doubt, the round-trip property is the easiest starting point.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Hypothesis (Python)
+
+    ```python
+    from hypothesis import given, strategies as st
+
+    @given(st.lists(st.integers()))
+    def test_sort_preserves_length(xs):
+        assert len(sorted(xs)) == len(xs)
+
+    @given(st.lists(st.integers()))
+    def test_sort_is_idempotent(xs):
+        assert sorted(sorted(xs)) == sorted(xs)
+    ```
+
+    Strategies generate values: `st.integers()`, `st.text()`, `st.lists(...)`, `st.dictionaries(...)`. Compose with `st.tuples`, `.map()`, `.filter()`, `@composite`.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## fast-check (JS/TS)
+
+    ```ts
+    import * as fc from 'fast-check';
+
+    test('sort preserves length', () => {
+      fc.assert(
+        fc.property(fc.array(fc.integer()), (xs) => {
+          expect(xs.sort().length).toBe(xs.length);
+        })
+      );
+    });
+    ```
+
+    Arbitraries (fc.array, fc.string, fc.record) compose like Hypothesis strategies. fast-check integrates with Jest, Vitest, Mocha.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Shrinking
+
+    When a property fails, the framework tries smaller inputs to find the minimal failing case. If `sort([7, -3, 9, 0])` fails an assertion, shrinking might reduce it to `sort([0, -1])` — much easier to debug.
+
+    This is the killer feature. A randomly-generated 1000-element list that fails is useless; a shrunk 2-element list points directly at the bug.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Generating Domain Objects
+
+    Compose strategies for your domain:
+
+    ```python
+    @composite
+    def user_strategy(draw):
+        return User(
+            name=draw(st.text(min_size=1, max_size=50)),
+            age=draw(st.integers(min_value=0, max_value=120)),
+            email=draw(st.emails())
+        )
+
+    @given(user_strategy())
+    def test_serialize_roundtrip(user):
+        assert User.from_json(user.to_json()) == user
+    ```
+
+    This generates a wide range of valid users and checks the JSON round-trip.
+- fragment_type: rationale
+  sequence: 7
+  content: |-
+    ## When to Reach for It
+
+    - Pure functions with universal properties: parsers, encoders, sorters, math.
+    - State machines: model the valid states + transitions, generate sequences, check invariants.
+    - Replacing an implementation: keep the old impl as a reference, property-test the new one matches.
+    - Fuzz testing for security-sensitive parsers (alongside dedicated fuzzers like AFL).
+- fragment_type: rationale
+  sequence: 8
+  content: |-
+    ## When NOT to Use It
+
+    - One-off business rules with specific examples in the spec.
+    - UI behavior — too many side effects to model as properties.
+    - Slow operations — generating 1000 inputs that each take 100ms = 100 seconds per test. Use a small `max_examples` or skip.
+- fragment_type: execution
+  sequence: 9
+  content: |-
+    ## Combining With Example-Based Tests
+
+    Property-based tests don't replace examples — they complement them. Examples document specific behavior the spec calls out; properties catch the long tail of edge cases. A healthy suite has both.
+- fragment_type: guardrail
+  sequence: 10
+  content: |-
+    ## Common Pitfalls
+
+    - **Properties that are vacuously true.** `len(filter(p, xs)) <= len(xs)` is always true; doesn't catch much. Pick discriminating properties.
+    - **Not seeding for reproducibility.** Both Hypothesis and fast-check support fixed seeds — use them in CI so failures reproduce.
+    - **Treating shrunk failures as the test cases.** The shrunk input shows the bug, but the fix should still ship with an example-based regression test for that specific input.
+    - **Properties that depend on external state.** Property tests must be deterministic given the input. Mock collaborators or test pure functions.
+- fragment_type: verification
+  sequence: 11
+  content: |-
+    ## Verification
+
+    A working property-based test:
+
+    - Runs many generated inputs (default 100 in Hypothesis, 100 in fast-check) per test.
+    - Shrinks failures to minimal counterexamples.
+    - Fails reproducibly with the same seed across runs.
+    - Catches edge cases that example-based tests miss (empty inputs, max-int, unicode boundaries, etc.).

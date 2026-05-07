@@ -25,3 +25,33 @@ skills:
 - skill_id: testing-mocks-and-spies
   file: testing-mocks-and-spies.yaml
   fragment_count: 8
+- skill_id: testing-contract-testing
+  file: testing-contract-testing.yaml
+  fragment_count: 12
+- skill_id: testing-coverage-interpretation
+  file: testing-coverage-interpretation.yaml
+  fragment_count: 9
+- skill_id: testing-fixture-libraries
+  file: testing-fixture-libraries.yaml
+  fragment_count: 10
+- skill_id: testing-flaky-tests
+  file: testing-flaky-tests.yaml
+  fragment_count: 15
+- skill_id: testing-integration-patterns
+  file: testing-integration-patterns.yaml
+  fragment_count: 10
+- skill_id: testing-performance
+  file: testing-performance.yaml
+  fragment_count: 9
+- skill_id: testing-property-based
+  file: testing-property-based.yaml
+  fragment_count: 11
+- skill_id: testing-snapshot-strategies
+  file: testing-snapshot-strategies.yaml
+  fragment_count: 11
+- skill_id: testing-tdd-cycle
+  file: testing-tdd-cycle.yaml
+  fragment_count: 8
+- skill_id: testing-test-data-builders
+  file: testing-test-data-builders.yaml
+  fragment_count: 8

@@ -1,0 +1,247 @@
+skill_type: domain
+skill_id: testing-snapshot-strategies
+canonical_name: Snapshot Testing Strategies
+category: quality
+skill_class: domain
+domain_tags:
+  - snapshot-testing
+  - ui-testing
+  - approval-testing
+  - redacting-content
+  - test-maintenance
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: initial authoring draft
+raw_prose: |
+  # Snapshot Testing Strategies
+
+  ## Overview
+
+  Snapshot tests capture serialized output and compare it against a stored copy. Useful for rendered UI, complex objects, and approval-style verification. Dangerous when overused — snapshots become 'whatever the code did' rather than 'what the code should do'.
+
+  ## When Snapshots Help
+
+  - **Rendered UI**: React/Vue/Svelte components serialized to HTML or virtual DOM. Catches visual regressions.
+  - **API response shapes**: complex JSON where comparing every field by hand is tedious.
+  - **Generated code / templates**: code generators where the output should not change unexpectedly.
+  - **Approval-style tests**: 'I'm not sure what the right output is, let me eyeball it once and lock it in.'
+
+  The common thread: outputs that are large, structured, and rarely change in ways that should be silent.
+
+  ## When Snapshots Hurt
+
+  - **Behavior testing**: testing that a function returns a specific value. Use a regular `expect(x).toBe(y)` — snapshots obscure intent.
+  - **Anything time-dependent**: timestamps in output mean snapshot-update churn on every run.
+  - **Anything random**: same problem, every run is a diff.
+  - **Non-deterministic ordering**: `Object.keys()` order, `Set` iteration. Snapshots can't be order-flexible.
+
+  If the snapshot is more than 50 lines and the test name doesn't tell you what it's checking, you're using snapshots for the wrong job.
+
+  ## Inline vs File Snapshots
+
+  ```js
+  // Inline (Vitest/Jest)
+  expect(rendered).toMatchInlineSnapshot(`<div>Hello</div>`);
+
+  // File (default)
+  expect(rendered).toMatchSnapshot();  // writes to __snapshots__/file.test.ts.snap
+  ```
+
+  Inline keeps the expected value visible in the test — best for short outputs (under 5-10 lines). File snapshots scale to large outputs but require flipping between files to read the test.
+
+  Default to inline. Move to file only when output is long.
+
+  ## Reviewing Snapshot Diffs
+
+  The discipline that makes snapshots work: review every diff like you'd review a code change.
+
+  - Did the change to the output match the change in production code?
+  - Did anything change that shouldn't have? (timestamps, IDs, ordering)
+  - Is the new snapshot correct, or did the test just lock in a regression?
+
+  The reviewable-diff is the entire point. If you blindly run `--update-snapshots` to make tests pass, you've turned the suite into a 'changes are always allowed' rubber stamp.
+
+  ## Redacting Non-Deterministic Content
+
+  For outputs containing dynamic values (UUIDs, timestamps, generated keys), serialize them through a redactor:
+
+  ```ts
+  expect.addSnapshotSerializer({
+    test: (val) => typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(val),
+    print: () => '"<TIMESTAMP>"',
+  });
+  ```
+
+  Now the snapshot shows `"<TIMESTAMP>"` instead of the actual time. Surviving the redaction proves the structure is right without locking in the exact instant.
+
+  Common redactions: timestamps, UUIDs, request IDs, hashes, file paths, IP addresses.
+
+  ## Approval Testing — The Snapshot Cousin
+
+  Approval testing (ApprovalTests, approvaltests-js) is snapshots with a different framing. You verify a 'received' file against an 'approved' file:
+
+  ```ts
+  verify(rendered);  // compares against approved/Test.approved.txt
+  ```
+
+  If they differ, the test fails and emits a diff. You review and either copy received → approved (locking in the new behavior) or fix the code.
+
+  Heavier than vitest's built-in snapshots but better for large outputs (several KB) and useful when the output is the test artifact (e.g., generated documentation, generated SQL).
+
+  ## Snapshot Diff Tools
+
+  When snapshots are large, regular diff tools struggle. Tools that help:
+
+  - **vitest --ui** / **jest --watch** — interactive review.
+  - **prettier-plugin-organize-imports** — keeps the snapshot itself organized.
+  - **CI artifact upload** — when CI runs the snapshot, upload the diff as an artifact so you can review before merging.
+
+  ## Common Pitfalls
+
+  - **Snapshots without review.** `--update-snapshots` after every test failure makes the suite useless. Snapshots only work if humans look at the diffs.
+  - **Snapshots that lock in bugs.** If you take a snapshot of buggy output, the bug is now the expected behavior. Always read the snapshot before committing it.
+  - **Large snapshots that nobody reviews carefully.** A 500-line snapshot diff makes selective review impossible. Break into smaller snapshots, one per area of concern.
+  - **Snapshots cross-platform.** Path separators, line endings, locale-dependent dates. Run snapshot generation on the same OS as CI, or normalize at serialization time.
+
+  ## Verification
+
+  A healthy snapshot setup:
+
+  - Each snapshot has a clear name explaining what it represents.
+  - Diffs in PRs are small and reviewable.
+  - Updates happen consciously (PR + review), not automatically (force-update on every failure).
+  - Non-deterministic content is redacted so snapshots are stable.
+  - Snapshot files live next to the tests (or in a parallel directory) and are tracked in source control.
+
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      ## Overview
+
+      Snapshot tests capture serialized output and compare it against a stored copy. Useful for rendered UI, complex objects, and approval-style verification. Dangerous when overused — snapshots become 'whatever the code did' rather than 'what the code should do'.
+  - fragment_type: rationale
+    sequence: 2
+    content: |
+      ## When Snapshots Help
+
+      - **Rendered UI**: React/Vue/Svelte components serialized to HTML or virtual DOM. Catches visual regressions.
+      - **API response shapes**: complex JSON where comparing every field by hand is tedious.
+      - **Generated code / templates**: code generators where the output should not change unexpectedly.
+      - **Approval-style tests**: 'I'm not sure what the right output is, let me eyeball it once and lock it in.'
+
+      The common thread: outputs that are large, structured, and rarely change in ways that should be silent.
+  - fragment_type: rationale
+    sequence: 3
+    content: |
+      ## When Snapshots Hurt
+
+      - **Behavior testing**: testing that a function returns a specific value. Use a regular `expect(x).toBe(y)` — snapshots obscure intent.
+      - **Anything time-dependent**: timestamps in output mean snapshot-update churn on every run.
+      - **Anything random**: same problem, every run is a diff.
+      - **Non-deterministic ordering**: `Object.keys()` order, `Set` iteration. Snapshots can't be order-flexible.
+
+      If the snapshot is more than 50 lines and the test name doesn't tell you what it's checking, you're using snapshots for the wrong job.
+  - fragment_type: example
+    sequence: 4
+    content: |
+      ## Inline vs File Snapshots
+
+      ```js
+      // Inline (Vitest/Jest)
+      expect(rendered).toMatchInlineSnapshot(`<div>Hello</div>`);
+
+      // File (default)
+      expect(rendered).toMatchSnapshot();  // writes to __snapshots__/file.test.ts.snap
+      ```
+
+      Inline keeps the expected value visible in the test — best for short outputs (under 5-10 lines). File snapshots scale to large outputs but require flipping between files to read the test.
+
+      Default to inline. Move to file only when output is long.
+  - fragment_type: rationale
+    sequence: 5
+    content: |
+      ## Reviewing Snapshot Diffs
+
+      The discipline that makes snapshots work: review every diff like you'd review a code change.
+
+      - Did the change to the output match the change in production code?
+      - Did anything change that shouldn't have? (timestamps, IDs, ordering)
+      - Is the new snapshot correct, or did the test just lock in a regression?
+
+      The reviewable-diff is the entire point. If you blindly run `--update-snapshots` to make tests pass, you've turned the suite into a 'changes are always allowed' rubber stamp.
+  - fragment_type: example
+    sequence: 6
+    content: |
+      ## Redacting Non-Deterministic Content
+
+      For outputs containing dynamic values (UUIDs, timestamps, generated keys), serialize them through a redactor:
+
+      ```ts
+      expect.addSnapshotSerializer({
+        test: (val) => typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(val),
+        print: () => '"<TIMESTAMP>"',
+      });
+      ```
+
+      Now the snapshot shows `"<TIMESTAMP>"` instead of the actual time. Surviving the redaction proves the structure is right without locking in the exact instant.
+
+      Common redactions: timestamps, UUIDs, request IDs, hashes, file paths, IP addresses.
+  - fragment_type: example
+    sequence: 7
+    content: |
+      ## Approval Testing — The Snapshot Cousin
+
+      Approval testing (ApprovalTests, approvaltests-js) is snapshots with a different framing. You verify a 'received' file against an 'approved' file:
+
+      ```ts
+      verify(rendered);  // compares against approved/Test.approved.txt
+      ```
+
+      If they differ, the test fails and emits a diff. You review and either copy received → approved (locking in the new behavior) or fix the code.
+
+      Heavier than vitest's built-in snapshots but better for large outputs (several KB) and useful when the output is the test artifact (e.g., generated documentation, generated SQL).
+  - fragment_type: rationale
+    sequence: 8
+    content: |
+      ## Snapshot Diff Tools
+
+      When snapshots are large, regular diff tools struggle. Tools that help:
+
+      - **vitest --ui** / **jest --watch** — interactive review.
+      - **prettier-plugin-organize-imports** — keeps the snapshot itself organized.
+      - **CI artifact upload** — when CI runs the snapshot, upload the diff as an artifact so you can review before merging.
+  - fragment_type: rationale
+    sequence: 9
+    content: |
+      ## Common Pitfalls
+
+      - **Snapshots without review.** `--update-snapshots` after every test failure makes the suite useless. Snapshots only work if humans look at the diffs.
+      - **Snapshots that lock in bugs.** If you take a snapshot of buggy output, the bug is now the expected behavior. Always read the snapshot before committing it.
+      - **Large snapshots that nobody reviews carefully.** A 500-line snapshot diff makes selective review impossible. Break into smaller snapshots, one per area of concern.
+      - **Snapshots cross-platform.** Path separators, line endings, locale-dependent dates. Run snapshot generation on the same OS as CI, or normalize at serialization time.
+  - fragment_type: rationale
+    sequence: 10
+    content: |
+      ## Verification
+
+      A healthy snapshot setup:
+
+      - Each snapshot has a clear name explaining what it represents.
+      - Diffs in PRs are small and reviewable.
+      - Updates happen consciously (PR + review), not automatically (force-update on every failure).
+      - Non-deterministic content is redacted so snapshots are stable.
+      - Snapshot files live next to the tests (or in a parallel directory) and are tracked in source control.
+  - fragment_type: execution
+    sequence: 11
+    content: |
+      ## Execution Steps
+
+      1. Choose between inline and file snapshots based on output size.
+      2. Review every snapshot diff carefully.
+      3. Redact non-deterministic content to ensure stable snapshots.
+      4. Use approval testing for large outputs or when the output is a test artifact.
+      5. Utilize tools like `vitest --ui` and `jest --watch` for interactive review.
+      6. Ensure snapshot files are tracked in source control and named clearly.
