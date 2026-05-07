@@ -1,0 +1,328 @@
+skill_type: domain
+skill_id: typescript-build-tooling
+canonical_name: TypeScript Build Tooling — tsc, esbuild, swc, tsx
+category: engineering
+skill_class: domain
+domain_tags:
+- typescript
+- build
+- esbuild
+- swc
+- tsx
+- tsc
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion (wave 2)
+raw_prose: |
+  # TypeScript Build Tooling — tsc, esbuild, swc, tsx
+
+  ## Overview
+
+  TypeScript compilation has two parts: type checking (slow, semantic) and code emission (fast, syntactic). Tools split these differently: tsc does both slowly; esbuild/swc emit fast without checking; tsc --noEmit just checks. Most modern setups use a fast emitter for builds and tsc --noEmit in CI for checks.
+
+  ---
+
+  ## The Type-Check vs Emit Split
+
+  - **tsc** (TypeScript compiler) — full semantic analysis + emit. Slow.
+  - **esbuild / swc** — strip types syntactically; emit JS. 50-100x faster than tsc. No type checking.
+  - **tsc --noEmit** — type check only, no output. Use in CI.
+
+  The modern pattern: fast emitter for dev/build, separate type check in CI:
+
+  ```json
+  {
+    "scripts": {
+      "dev": "vite",                  // esbuild under the hood, no type check
+      "build": "vite build",
+      "typecheck": "tsc --noEmit"     // explicit type check
+    }
+  }
+  ```
+
+  CI runs both; dev runs only fast emitter.
+
+  ## tsc
+
+  ```bash
+  npx tsc                    # type check + emit
+  npx tsc --noEmit           # type check only
+  npx tsc --watch            # watch mode (for continuous checking)
+  npx tsc --build            # build mode for project references
+  ```
+
+  Slow but complete. Use for type checking; rarely for production builds anymore.
+
+  ## esbuild
+
+  ```bash
+  npm install -D esbuild
+  npx esbuild src/index.ts --bundle --platform=node --outfile=dist/index.js
+  ```
+
+  Strips TypeScript syntax; doesn't check types. Build a 100k-LOC TS project in <1 second. Use cases:
+
+  - Bundling for production.
+  - Building libraries.
+  - Underlying engine for Vite, tsup, esbuild-loader.
+
+  esbuild doesn't understand all TypeScript features (e.g., decorators with emitDecoratorMetadata before the new syntax). For most projects, it's fine.
+
+  ## swc
+
+  ```bash
+  npm install -D @swc/cli @swc/core
+  npx swc src --out-dir dist
+  ```
+
+  Rust-based, similar to esbuild. Used by Next.js (replaces Babel for transpilation), turbopack, parcel.
+
+  Trade-off vs esbuild: swc has better config flexibility (JSX transforms, decorators); esbuild is slightly faster.
+
+  ## tsx — Direct Execution
+
+  ```bash
+  npm install -D tsx
+  tsx src/script.ts                # run a TS file directly
+  tsx watch src/dev.ts             # like nodemon for TS
+  ```
+
+  tsx (formerly ts-node-esm) runs TypeScript without an explicit build. Useful for scripts, dev servers, prototyping.
+
+  For simple scripts: tsx beats compile-then-run.
+
+  ## Vite / Next.js / Frameworks
+
+  Most modern frameworks handle TS internally:
+
+  - **Vite** — esbuild for transforms, no built-in type check.
+  - **Next.js** — swc for transforms, type check during build (configurable).
+  - **Astro / Nuxt / Solid Start** — similar.
+
+  You generally don't configure TS compilation; the framework does. Add `tsc --noEmit` to your build step for type checking, or use the framework's built-in option (`next build` runs type check by default).
+
+  ## Project References for Monorepos
+
+  ```json
+  // tsconfig.json (root)
+  {
+      "files": [],
+      "references": [
+          { "path": "./packages/api" },
+          { "path": "./packages/ui" },
+          { "path": "./packages/utils" }
+      ]
+  }
+  ```
+
+  Each package has its own tsconfig with `composite: true`. Run `tsc --build` at the root; tsc builds in dependency order, caches results.
+
+  For typecheck speed in a monorepo: project references + incremental builds beat full repo recompile.
+
+  ## Type Checking Speed
+
+  If `tsc --noEmit` is slow:
+
+  1. Enable `incremental: true` (writes `.tsbuildinfo` cache).
+  2. Use project references to scope.
+  3. Set `skipLibCheck: true` (skip third-party `.d.ts` checks).
+  4. Audit slow files with `tsc --extendedDiagnostics`.
+
+  For huge codebases (>500k LOC), consider Bazel or similar build systems.
+
+  ## Bundlers vs Transformers
+
+  A 'bundler' merges modules into output files (Webpack, esbuild, Vite). A 'transformer' just translates TS → JS file-by-file (swc, tsc, Babel).
+
+  Use a bundler for app builds; a transformer for libraries (consumers do their own bundling).
+
+  For libraries, tsup (esbuild + .d.ts emit) is the modern choice:
+
+  ```bash
+  npm install -D tsup
+  tsup src/index.ts --format cjs,esm --dts
+  ```
+
+  Outputs CJS, ESM, and type definitions in one command.
+
+  ## Common Pitfalls
+
+  - **Skipping type checks in CI.** Fast builds + no checks = type errors slip to production.
+  - **Running tsc for every file save.** Use the framework's built-in or skip.
+  - **Decorators with esbuild + emitDecoratorMetadata.** Doesn't work; use swc or tsc.
+  - **Mismatched build and dev tools.** Vite handles dev with esbuild but production with rollup; don't fight it.
+  - **Forgetting `--isolatedModules`.** Some TS features (const enums in some configs) fail under transpiler tools. Set it to enforce file-by-file compatibility.
+
+  ## Verification
+
+  A clean build setup:
+
+  - Builds in seconds (esbuild/swc).
+  - CI runs `tsc --noEmit` separately and fails on type errors.
+  - Project references reduce monorepo type-check time.
+  - Library packages emit JS + .d.ts via tsup or equivalent.
+fragments:
+- fragment_type: rationale
+  sequence: 1
+  content: |-
+    ## The Type-Check vs Emit Split
+
+    - **tsc** (TypeScript compiler) — full semantic analysis + emit. Slow.
+    - **esbuild / swc** — strip types syntactically; emit JS. 50-100x faster than tsc. No type checking.
+    - **tsc --noEmit** — type check only, no output. Use in CI.
+
+    The modern pattern: fast emitter for dev/build, separate type check in CI:
+
+    ```json
+    {
+      "scripts": {
+        "dev": "vite",                  // esbuild under the hood, no type check
+        "build": "vite build",
+        "typecheck": "tsc --noEmit"     // explicit type check
+      }
+    }
+    ```
+
+    CI runs both; dev runs only fast emitter.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## tsc
+
+    ```bash
+    npx tsc                    # type check + emit
+    npx tsc --noEmit           # type check only
+    npx tsc --watch            # watch mode (for continuous checking)
+    npx tsc --build            # build mode for project references
+    ```
+
+    Slow but complete. Use for type checking; rarely for production builds anymore.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## esbuild
+
+    ```bash
+    npm install -D esbuild
+    npx esbuild src/index.ts --bundle --platform=node --outfile=dist/index.js
+    ```
+
+    Strips TypeScript syntax; doesn't check types. Build a 100k-LOC TS project in <1 second. Use cases:
+
+    - Bundling for production.
+    - Building libraries.
+    - Underlying engine for Vite, tsup, esbuild-loader.
+
+    esbuild doesn't understand all TypeScript features (e.g., decorators with emitDecoratorMetadata before the new syntax). For most projects, it's fine.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## swc
+
+    ```bash
+    npm install -D @swc/cli @swc/core
+    npx swc src --out-dir dist
+    ```
+
+    Rust-based, similar to esbuild. Used by Next.js (replaces Babel for transpilation), turbopack, parcel.
+
+    Trade-off vs esbuild: swc has better config flexibility (JSX transforms, decorators); esbuild is slightly faster.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## tsx — Direct Execution
+
+    ```bash
+    npm install -D tsx
+    tsx src/script.ts                # run a TS file directly
+    tsx watch src/dev.ts             # like nodemon for TS
+    ```
+
+    tsx (formerly ts-node-esm) runs TypeScript without an explicit build. Useful for scripts, dev servers, prototyping.
+
+    For simple scripts: tsx beats compile-then-run.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Vite / Next.js / Frameworks
+
+    Most modern frameworks handle TS internally:
+
+    - **Vite** — esbuild for transforms, no built-in type check.
+    - **Next.js** — swc for transforms, type check during build (configurable).
+    - **Astro / Nuxt / Solid Start** — similar.
+
+    You generally don't configure TS compilation; the framework does. Add `tsc --noEmit` to your build step for type checking, or use the framework's built-in option (`next build` runs type check by default).
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Project References for Monorepos
+
+    ```json
+    // tsconfig.json (root)
+    {
+        "files": [],
+        "references": [
+            { "path": "./packages/api" },
+            { "path": "./packages/ui" },
+            { "path": "./packages/utils" }
+        ]
+    }
+    ```
+
+    Each package has its own tsconfig with `composite: true`. Run `tsc --build` at the root; tsc builds in dependency order, caches results.
+
+    For typecheck speed in a monorepo: project references + incremental builds beat full repo recompile.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Type Checking Speed
+
+    If `tsc --noEmit` is slow:
+
+    1. Enable `incremental: true` (writes `.tsbuildinfo` cache).
+    2. Use project references to scope.
+    3. Set `skipLibCheck: true` (skip third-party `.d.ts` checks).
+    4. Audit slow files with `tsc --extendedDiagnostics`.
+
+    For huge codebases (>500k LOC), consider Bazel or similar build systems.
+- fragment_type: rationale
+  sequence: 9
+  content: |-
+    ## Bundlers vs Transformers
+
+    A 'bundler' merges modules into output files (Webpack, esbuild, Vite). A 'transformer' just translates TS → JS file-by-file (swc, tsc, Babel).
+
+    Use a bundler for app builds; a transformer for libraries (consumers do their own bundling).
+
+    For libraries, tsup (esbuild + .d.ts emit) is the modern choice:
+
+    ```bash
+    npm install -D tsup
+    tsup src/index.ts --format cjs,esm --dts
+    ```
+
+    Outputs CJS, ESM, and type definitions in one command.
+- fragment_type: guardrail
+  sequence: 10
+  content: |-
+    ## Common Pitfalls
+
+    - **Skipping type checks in CI.** Fast builds + no checks = type errors slip to production.
+    - **Running tsc for every file save.** Use the framework's built-in or skip.
+    - **Decorators with esbuild + emitDecoratorMetadata.** Doesn't work; use swc or tsc.
+    - **Mismatched build and dev tools.** Vite handles dev with esbuild but production with rollup; don't fight it.
+    - **Forgetting `--isolatedModules`.** Some TS features (const enums in some configs) fail under transpiler tools. Set it to enforce file-by-file compatibility.
+- fragment_type: verification
+  sequence: 11
+  content: |-
+    ## Verification
+
+    A clean build setup:
+
+    - Builds in seconds (esbuild/swc).
+    - CI runs `tsc --noEmit` separately and fails on type errors.
+    - Project references reduce monorepo type-check time.
+    - Library packages emit JS + .d.ts via tsup or equivalent.

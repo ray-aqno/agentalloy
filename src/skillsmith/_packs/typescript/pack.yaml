@@ -54,3 +54,15 @@ skills:
 - skill_id: typescript-utility-types
   file: typescript-utility-types.yaml
   fragment_count: 13
+- skill_id: typescript-build-tooling
+  file: typescript-build-tooling.yaml
+  fragment_count: 11
+- skill_id: typescript-declaration-files
+  file: typescript-declaration-files.yaml
+  fragment_count: 10
+- skill_id: typescript-jsx-types
+  file: typescript-jsx-types.yaml
+  fragment_count: 10
+- skill_id: typescript-narrowing-patterns
+  file: typescript-narrowing-patterns.yaml
+  fragment_count: 10

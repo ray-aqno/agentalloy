@@ -1,0 +1,327 @@
+skill_type: domain
+skill_id: typescript-narrowing-patterns
+canonical_name: TypeScript Narrowing Patterns
+category: engineering
+skill_class: domain
+domain_tags:
+- typescript
+- narrowing
+- type-guards
+- discriminated-unions
+- assertions
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion (wave 2)
+raw_prose: |
+  # TypeScript Narrowing Patterns
+
+  ## Overview
+
+  TypeScript's control flow analysis narrows union types within conditional branches. Built-in narrowing covers `typeof`, `instanceof`, `in`, equality. User-defined type guards extend this with custom predicates. Discriminated unions with exhaustiveness checks are the gold standard for safe branching.
+
+  ---
+
+  ## Built-In Narrowing
+
+  ```ts
+  function format(x: string | number) {
+      if (typeof x === 'string') {
+          return x.toUpperCase();  // x: string here
+      }
+      return x.toFixed(2);  // x: number here
+  }
+  ```
+
+  `typeof`, `instanceof`, `in`, equality, truthiness — all narrow types in their branches. Most everyday narrowing is built-in.
+
+  ## User-Defined Type Guards
+
+  For predicates the compiler can't infer:
+
+  ```ts
+  function isString(x: unknown): x is string {
+      return typeof x === 'string';
+  }
+
+  function process(x: unknown) {
+      if (isString(x)) {
+          x.toUpperCase();  // x: string
+      }
+  }
+  ```
+
+  The `x is string` return type tells the compiler 'this function returns true iff x is a string'. Inside the if, x is narrowed.
+
+  ## Assertion Functions
+
+  ```ts
+  function assertIsString(x: unknown): asserts x is string {
+      if (typeof x !== 'string') throw new Error('not a string');
+  }
+
+  function process(x: unknown) {
+      assertIsString(x);
+      x.toUpperCase();  // x: string from here on
+  }
+  ```
+
+  Like type guards but for assertions — the function throws on failure rather than returning true/false. Narrows the type for the rest of the scope.
+
+  ## Discriminated Unions
+
+  ```ts
+  type Action =
+      | { type: 'INCREMENT'; by: number }
+      | { type: 'DECREMENT'; by: number }
+      | { type: 'RESET' };
+
+  function reduce(action: Action) {
+      switch (action.type) {
+          case 'INCREMENT': return state + action.by;  // action.by typed
+          case 'DECREMENT': return state - action.by;
+          case 'RESET':     return 0;
+      }
+  }
+  ```
+
+  The shared `type` field is the discriminator. TypeScript narrows the rest of the type based on it. This is the canonical safe-branching pattern.
+
+  ## Exhaustiveness Checking
+
+  ```ts
+  function reduce(action: Action) {
+      switch (action.type) {
+          case 'INCREMENT': return state + action.by;
+          case 'DECREMENT': return state - action.by;
+          case 'RESET':     return 0;
+          default:
+              const _exhaustive: never = action;  // error if any case missed
+              throw new Error('unreachable');
+      }
+  }
+  ```
+
+  The `never` assignment fails compile if a case is unhandled. Add a new case to `Action`; existing reducers fail until updated.
+
+  ## The `satisfies` Operator
+
+  ```ts
+  const config = {
+      apiUrl: 'https://api.example.com',
+      timeout: 5000,
+  } satisfies Record<string, string | number>;
+
+  // config.apiUrl: 'https://api.example.com'  (literal string)
+  // config.timeout: 5000                       (literal number)
+  ```
+
+  `satisfies` checks the value matches a type without widening to that type. The variable keeps its narrow inferred type for downstream use. Use when you want validation without losing precision.
+
+  ## Narrowing on Optional Properties
+
+  ```ts
+  type User = { name?: string };
+
+  function greet(u: User) {
+      if (u.name) {
+          return `Hi ${u.name}`;  // u.name: string here (narrowed from string | undefined)
+      }
+      return 'Hi';
+  }
+  ```
+
+  Truthiness narrows out `undefined` (and empty string, falsy values). Be careful: `0` and `''` also fall to the else branch.
+
+  ## Narrowing on Array.isArray
+
+  ```ts
+  function process(input: string | string[]) {
+      if (Array.isArray(input)) {
+          input.forEach(...);  // input: string[]
+      } else {
+          input.toUpperCase();  // input: string
+      }
+  }
+  ```
+
+  `Array.isArray` is a built-in type guard. Useful for input that might be a single value or array.
+
+  ## Common Pitfalls
+
+  - **Type guard implementation lies.** `function isUser(x): x is User { return typeof x === 'object'; }` — the implementation accepts more than User. Compiler trusts; bugs slip through.
+  - **Forgetting `satisfies` and using `as` instead.** `as` casts; `satisfies` validates without widening. `as` hides errors; `satisfies` surfaces them.
+  - **Narrowing across async boundaries.** TypeScript doesn't know that `someProp` is still defined after `await`. Re-check or extract to a local.
+  - **Discriminated union without a discriminator.** Two members with overlapping shapes can't be narrowed. Add a `type` or `kind` field.
+
+  ## Verification
+
+  Working narrowing:
+
+  - Discriminated unions exhaustive (compile-time error if a case is added without handling).
+  - Type guards used instead of `as` casts.
+  - `satisfies` validates configs without widening their types.
+  - Narrowed branches don't have residual `T | undefined` types when they shouldn't.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Built-In Narrowing
+
+    ```ts
+    function format(x: string | number) {
+        if (typeof x === 'string') {
+            return x.toUpperCase();  // x: string here
+        }
+        return x.toFixed(2);  // x: number here
+    }
+    ```
+
+    `typeof`, `instanceof`, `in`, equality, truthiness — all narrow types in their branches. Most everyday narrowing is built-in.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## User-Defined Type Guards
+
+    For predicates the compiler can't infer:
+
+    ```ts
+    function isString(x: unknown): x is string {
+        return typeof x === 'string';
+    }
+
+    function process(x: unknown) {
+        if (isString(x)) {
+            x.toUpperCase();  // x: string
+        }
+    }
+    ```
+
+    The `x is string` return type tells the compiler 'this function returns true iff x is a string'. Inside the if, x is narrowed.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Assertion Functions
+
+    ```ts
+    function assertIsString(x: unknown): asserts x is string {
+        if (typeof x !== 'string') throw new Error('not a string');
+    }
+
+    function process(x: unknown) {
+        assertIsString(x);
+        x.toUpperCase();  // x: string from here on
+    }
+    ```
+
+    Like type guards but for assertions — the function throws on failure rather than returning true/false. Narrows the type for the rest of the scope.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Discriminated Unions
+
+    ```ts
+    type Action =
+        | { type: 'INCREMENT'; by: number }
+        | { type: 'DECREMENT'; by: number }
+        | { type: 'RESET' };
+
+    function reduce(action: Action) {
+        switch (action.type) {
+            case 'INCREMENT': return state + action.by;  // action.by typed
+            case 'DECREMENT': return state - action.by;
+            case 'RESET':     return 0;
+        }
+    }
+    ```
+
+    The shared `type` field is the discriminator. TypeScript narrows the rest of the type based on it. This is the canonical safe-branching pattern.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Exhaustiveness Checking
+
+    ```ts
+    function reduce(action: Action) {
+        switch (action.type) {
+            case 'INCREMENT': return state + action.by;
+            case 'DECREMENT': return state - action.by;
+            case 'RESET':     return 0;
+            default:
+                const _exhaustive: never = action;  // error if any case missed
+                throw new Error('unreachable');
+        }
+    }
+    ```
+
+    The `never` assignment fails compile if a case is unhandled. Add a new case to `Action`; existing reducers fail until updated.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## The `satisfies` Operator
+
+    ```ts
+    const config = {
+        apiUrl: 'https://api.example.com',
+        timeout: 5000,
+    } satisfies Record<string, string | number>;
+
+    // config.apiUrl: 'https://api.example.com'  (literal string)
+    // config.timeout: 5000                       (literal number)
+    ```
+
+    `satisfies` checks the value matches a type without widening to that type. The variable keeps its narrow inferred type for downstream use. Use when you want validation without losing precision.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Narrowing on Optional Properties
+
+    ```ts
+    type User = { name?: string };
+
+    function greet(u: User) {
+        if (u.name) {
+            return `Hi ${u.name}`;  // u.name: string here (narrowed from string | undefined)
+        }
+        return 'Hi';
+    }
+    ```
+
+    Truthiness narrows out `undefined` (and empty string, falsy values). Be careful: `0` and `''` also fall to the else branch.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Narrowing on Array.isArray
+
+    ```ts
+    function process(input: string | string[]) {
+        if (Array.isArray(input)) {
+            input.forEach(...);  // input: string[]
+        } else {
+            input.toUpperCase();  // input: string
+        }
+    }
+    ```
+
+    `Array.isArray` is a built-in type guard. Useful for input that might be a single value or array.
+- fragment_type: guardrail
+  sequence: 9
+  content: |-
+    ## Common Pitfalls
+
+    - **Type guard implementation lies.** `function isUser(x): x is User { return typeof x === 'object'; }` — the implementation accepts more than User. Compiler trusts; bugs slip through.
+    - **Forgetting `satisfies` and using `as` instead.** `as` casts; `satisfies` validates without widening. `as` hides errors; `satisfies` surfaces them.
+    - **Narrowing across async boundaries.** TypeScript doesn't know that `someProp` is still defined after `await`. Re-check or extract to a local.
+    - **Discriminated union without a discriminator.** Two members with overlapping shapes can't be narrowed. Add a `type` or `kind` field.
+- fragment_type: verification
+  sequence: 10
+  content: |-
+    ## Verification
+
+    Working narrowing:
+
+    - Discriminated unions exhaustive (compile-time error if a case is added without handling).
+    - Type guards used instead of `as` casts.
+    - `satisfies` validates configs without widening their types.
+    - Narrowed branches don't have residual `T | undefined` types when they shouldn't.
