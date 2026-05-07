@@ -1,0 +1,387 @@
+skill_type: domain
+skill_id: react-suspense-and-streaming
+canonical_name: React Suspense and Streaming
+category: engineering
+skill_class: domain
+domain_tags:
+- react
+- suspense
+- streaming
+- ssr
+- lazy-loading
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion (wave 2)
+raw_prose: |
+  # React Suspense and Streaming
+
+  ## Overview
+
+  Suspense lets components 'wait' for async work without manual loading state. The fallback shows during the wait; the children render when ready. Pairs with Server Components, React Query, lazy() for code splitting, and streaming SSR.
+
+  ---
+
+  ## The Basic Pattern
+
+  ```tsx
+  import { Suspense } from 'react';
+
+  <Suspense fallback={<Skeleton />}>
+      <UserProfile userId={123} />
+  </Suspense>
+  ```
+
+  If `UserProfile` suspends (throws a Promise), React renders the fallback. When the Promise resolves, React retries the render with the resolved data.
+
+  This declarative pattern replaces manual `isLoading ? <Spinner /> : <Component />`.
+
+  ## Lazy Code Splitting
+
+  ```tsx
+  const AdminPanel = lazy(() => import('./AdminPanel'));
+
+  <Suspense fallback={<div>Loading admin...</div>}>
+      <AdminPanel />
+  </Suspense>
+  ```
+
+  `lazy()` defers loading until the component renders. `Suspense` shows the fallback while the chunk downloads. Standard code-splitting pattern.
+
+  ## Server Components and Suspense
+
+  In Next.js App Router (and other server-component frameworks):
+
+  ```tsx
+  // app/users/[id]/page.tsx (server component)
+  async function UserDetails({ id }: { id: string }) {
+      const user = await fetchUser(id);  // top-level await
+      return <div>{user.name}</div>;
+  }
+
+  export default function Page({ params }) {
+      return (
+          <Suspense fallback={<Skeleton />}>
+              <UserDetails id={params.id} />
+          </Suspense>
+      );
+  }
+  ```
+
+  Async server components naturally suspend during their await. The Suspense boundary ships the shell first; the inner content streams when ready.
+
+  ## Streaming SSR
+
+  The pattern: ship HTML for above-the-fold instantly, stream slow sections in as their data arrives:
+
+  ```tsx
+  function Page() {
+      return (
+          <>
+              <Header />  {/* renders immediately */}
+              <Suspense fallback={<Skeleton />}>
+                  <SlowDataSection />  {/* streams when ready */}
+              </Suspense>
+              <Suspense fallback={<Skeleton />}>
+                  <Comments />  {/* streams independently */}
+              </Suspense>
+              <Footer />
+          </>
+      );
+  }
+  ```
+
+  User sees Header + Footer + skeletons in <100ms. Each Suspense boundary fills in as its data resolves. Hugely improves perceived performance for slow APIs.
+
+  ## React Query + Suspense
+
+  ```tsx
+  import { useSuspenseQuery } from '@tanstack/react-query';
+
+  function UserDetails({ id }: { id: string }) {
+      const { data: user } = useSuspenseQuery({
+          queryKey: ['user', id],
+          queryFn: () => fetchUser(id),
+      });
+      return <div>{user.name}</div>;
+  }
+  ```
+
+  `useSuspenseQuery` suspends when the query is pending. Wrap in `<Suspense>`; no `isLoading` checks in the component.
+
+  ## Error Boundaries Pair with Suspense
+
+  Suspense handles loading; Error Boundary handles errors:
+
+  ```tsx
+  import { ErrorBoundary } from 'react-error-boundary';
+
+  <ErrorBoundary fallback={<div>Failed to load</div>}>
+      <Suspense fallback={<Skeleton />}>
+          <SlowComponent />
+      </Suspense>
+  </ErrorBoundary>
+  ```
+
+  If the data fetch throws, Error Boundary catches. If it's still pending, Suspense shows fallback. Compose them.
+
+  ## Suspense for Routes
+
+  In React Router or Next.js, route-level Suspense lets fast routes ship while slow ones stream:
+
+  ```tsx
+  <Suspense fallback={<PageSkeleton />}>
+      <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/heavy" element={<HeavyRoute />} />
+      </Routes>
+  </Suspense>
+  ```
+
+  ## Multiple Boundaries — Don't Block
+
+  A single boundary at the top blocks everything:
+
+  ```tsx
+  // BAD: one boundary
+  <Suspense fallback={<FullPageSpinner />}>
+      <UserProfile />
+      <RecentOrders />
+      <Recommendations />
+  </Suspense>
+  ```
+
+  If any one is slow, all wait. Better:
+
+  ```tsx
+  <Suspense fallback={<UserSkeleton />}>
+      <UserProfile />
+  </Suspense>
+  <Suspense fallback={<OrdersSkeleton />}>
+      <RecentOrders />
+  </Suspense>
+  <Suspense fallback={<RecsSkeleton />}>
+      <Recommendations />
+  </Suspense>
+  ```
+
+  Each section streams independently. Fast ones land first.
+
+  ## Suspense and useEffect
+
+  useEffect doesn't trigger Suspense. Patterns:
+
+  - Use a Suspense-aware data fetcher (React Query, SWR, Relay).
+  - Use Server Components for initial data.
+  - Promise-throwing libraries integrate; ad-hoc useState/useEffect doesn't.
+
+  ## Common Pitfalls
+
+  - **Suspense without an aware fetcher.** Components don't actually suspend; fallback never shows. Use `useSuspenseQuery` or similar.
+  - **Single top-level Suspense.** Slow content blocks fast content; user sees nothing until everything's ready.
+  - **Forgetting Error Boundary.** Failed fetches show the fallback indefinitely. Always pair.
+  - **Suspense in client components reading from server data.** Doesn't suspend the way you expect; the boundary lives at the wrong level.
+  - **Over-nesting.** A boundary per component is overkill. Group by 'should they appear together'.
+
+  ## Verification
+
+  Working Suspense:
+
+  - Each section streams independently with its own fallback.
+  - Errors trigger error boundaries, not endless loading states.
+  - Initial HTML ships fast; slow sections fill in over the wire.
+  - React Query / Server Components actually suspend (visible in DevTools as suspended state).
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## The Basic Pattern
+
+    ```tsx
+    import { Suspense } from 'react';
+
+    <Suspense fallback={<Skeleton />}>
+        <UserProfile userId={123} />
+    </Suspense>
+    ```
+
+    If `UserProfile` suspends (throws a Promise), React renders the fallback. When the Promise resolves, React retries the render with the resolved data.
+
+    This declarative pattern replaces manual `isLoading ? <Spinner /> : <Component />`.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Lazy Code Splitting
+
+    ```tsx
+    const AdminPanel = lazy(() => import('./AdminPanel'));
+
+    <Suspense fallback={<div>Loading admin...</div>}>
+        <AdminPanel />
+    </Suspense>
+    ```
+
+    `lazy()` defers loading until the component renders. `Suspense` shows the fallback while the chunk downloads. Standard code-splitting pattern.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Server Components and Suspense
+
+    In Next.js App Router (and other server-component frameworks):
+
+    ```tsx
+    // app/users/[id]/page.tsx (server component)
+    async function UserDetails({ id }: { id: string }) {
+        const user = await fetchUser(id);  // top-level await
+        return <div>{user.name}</div>;
+    }
+
+    export default function Page({ params }) {
+        return (
+            <Suspense fallback={<Skeleton />}>
+                <UserDetails id={params.id} />
+            </Suspense>
+        );
+    }
+    ```
+
+    Async server components naturally suspend during their await. The Suspense boundary ships the shell first; the inner content streams when ready.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Streaming SSR
+
+    The pattern: ship HTML for above-the-fold instantly, stream slow sections in as their data arrives:
+
+    ```tsx
+    function Page() {
+        return (
+            <>
+                <Header />  {/* renders immediately */}
+                <Suspense fallback={<Skeleton />}>
+                    <SlowDataSection />  {/* streams when ready */}
+                </Suspense>
+                <Suspense fallback={<Skeleton />}>
+                    <Comments />  {/* streams independently */}
+                </Suspense>
+                <Footer />
+            </>
+        );
+    }
+    ```
+
+    User sees Header + Footer + skeletons in <100ms. Each Suspense boundary fills in as its data resolves. Hugely improves perceived performance for slow APIs.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## React Query + Suspense
+
+    ```tsx
+    import { useSuspenseQuery } from '@tanstack/react-query';
+
+    function UserDetails({ id }: { id: string }) {
+        const { data: user } = useSuspenseQuery({
+            queryKey: ['user', id],
+            queryFn: () => fetchUser(id),
+        });
+        return <div>{user.name}</div>;
+    }
+    ```
+
+    `useSuspenseQuery` suspends when the query is pending. Wrap in `<Suspense>`; no `isLoading` checks in the component.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Error Boundaries Pair with Suspense
+
+    Suspense handles loading; Error Boundary handles errors:
+
+    ```tsx
+    import { ErrorBoundary } from 'react-error-boundary';
+
+    <ErrorBoundary fallback={<div>Failed to load</div>}>
+        <Suspense fallback={<Skeleton />}>
+            <SlowComponent />
+        </Suspense>
+    </ErrorBoundary>
+    ```
+
+    If the data fetch throws, Error Boundary catches. If it's still pending, Suspense shows fallback. Compose them.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Suspense for Routes
+
+    In React Router or Next.js, route-level Suspense lets fast routes ship while slow ones stream:
+
+    ```tsx
+    <Suspense fallback={<PageSkeleton />}>
+        <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/heavy" element={<HeavyRoute />} />
+        </Routes>
+    </Suspense>
+    ```
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Multiple Boundaries — Don't Block
+
+    A single boundary at the top blocks everything:
+
+    ```tsx
+    // BAD: one boundary
+    <Suspense fallback={<FullPageSpinner />}>
+        <UserProfile />
+        <RecentOrders />
+        <Recommendations />
+    </Suspense>
+    ```
+
+    If any one is slow, all wait. Better:
+
+    ```tsx
+    <Suspense fallback={<UserSkeleton />}>
+        <UserProfile />
+    </Suspense>
+    <Suspense fallback={<OrdersSkeleton />}>
+        <RecentOrders />
+    </Suspense>
+    <Suspense fallback={<RecsSkeleton />}>
+        <Recommendations />
+    </Suspense>
+    ```
+
+    Each section streams independently. Fast ones land first.
+- fragment_type: execution
+  sequence: 9
+  content: |-
+    ## Suspense and useEffect
+
+    useEffect doesn't trigger Suspense. Patterns:
+
+    - Use a Suspense-aware data fetcher (React Query, SWR, Relay).
+    - Use Server Components for initial data.
+    - Promise-throwing libraries integrate; ad-hoc useState/useEffect doesn't.
+- fragment_type: guardrail
+  sequence: 10
+  content: |-
+    ## Common Pitfalls
+
+    - **Suspense without an aware fetcher.** Components don't actually suspend; fallback never shows. Use `useSuspenseQuery` or similar.
+    - **Single top-level Suspense.** Slow content blocks fast content; user sees nothing until everything's ready.
+    - **Forgetting Error Boundary.** Failed fetches show the fallback indefinitely. Always pair.
+    - **Suspense in client components reading from server data.** Doesn't suspend the way you expect; the boundary lives at the wrong level.
+    - **Over-nesting.** A boundary per component is overkill. Group by 'should they appear together'.
+- fragment_type: verification
+  sequence: 11
+  content: |-
+    ## Verification
+
+    Working Suspense:
+
+    - Each section streams independently with its own fallback.
+    - Errors trigger error boundaries, not endless loading states.
+    - Initial HTML ships fast; slow sections fill in over the wire.
+    - React Query / Server Components actually suspend (visible in DevTools as suspended state).

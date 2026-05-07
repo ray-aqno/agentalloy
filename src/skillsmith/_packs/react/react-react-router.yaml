@@ -1,0 +1,373 @@
+skill_type: domain
+skill_id: react-react-router
+canonical_name: React Router — Modern Patterns
+category: engineering
+skill_class: domain
+domain_tags:
+- react
+- react-router
+- routing
+- data-loading
+- lazy-routes
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion (wave 2)
+raw_prose: |
+  # React Router — Modern Patterns
+
+  ## Overview
+
+  React Router 7 unified Remix and React Router. Two modes: 'library' for client-only routing, 'framework' (formerly Remix) with loaders/actions and SSR. Loaders fetch data parallel to navigation; actions handle mutations. Routes can have error boundaries and lazy-loaded code.
+
+  ---
+
+  ## Library Mode — Client-Side Routing
+
+  ```tsx
+  import { createBrowserRouter, RouterProvider, Outlet } from 'react-router';
+
+  const router = createBrowserRouter([
+      {
+          path: '/',
+          element: <Layout />,
+          children: [
+              { index: true, element: <Home /> },
+              { path: 'orders/:id', element: <OrderDetail /> },
+              { path: 'orders/:id/items', element: <OrderItems /> },
+          ],
+      },
+  ]);
+
+  function App() { return <RouterProvider router={router} />; }
+  ```
+
+  Layout has `<Outlet />` where children render. URL `/orders/123` renders Layout → OrderDetail.
+
+  ## Loaders — Parallel Data Fetching
+
+  ```tsx
+  {
+      path: 'orders/:id',
+      loader: async ({ params }) => {
+          const order = await fetch(`/api/orders/${params.id}`).then(r => r.json());
+          return order;
+      },
+      element: <OrderDetail />,
+  }
+
+  function OrderDetail() {
+      const order = useLoaderData() as Order;
+      return <div>{order.id}</div>;
+  }
+  ```
+
+  Router invokes loaders before rendering. Data is ready when component renders — no useEffect spinner pattern.
+
+  For nested routes, loaders run in parallel.
+
+  ## Actions — Mutations
+
+  ```tsx
+  {
+      path: 'orders/:id',
+      action: async ({ request, params }) => {
+          const formData = await request.formData();
+          await fetch(`/api/orders/${params.id}`, { method: 'PATCH', body: formData });
+          return redirect('/orders');
+      },
+  }
+
+  // In the component:
+  <Form method="post">
+      <input name="status" />
+      <button type="submit">Update</button>
+  </Form>
+  ```
+
+  Actions handle form submissions. Returning a redirect navigates; returning data goes to `useActionData()`.
+
+  ## Error Boundaries
+
+  ```tsx
+  {
+      path: 'orders/:id',
+      errorElement: <OrderError />,
+      loader: async ({ params }) => { /* may throw */ },
+      element: <OrderDetail />,
+  }
+
+  function OrderError() {
+      const error = useRouteError();
+      return <div>Failed to load: {error.message}</div>;
+  }
+  ```
+
+  Errors in loaders or actions render the errorElement instead of the route. Per-route, not app-wide.
+
+  ## Lazy Routes
+
+  ```tsx
+  {
+      path: 'admin',
+      lazy: async () => {
+          const { default: AdminPanel, loader } = await import('./AdminPanel');
+          return { Component: AdminPanel, loader };
+      },
+  }
+  ```
+
+  Lazy() defers loading until navigation. Includes the loader in the lazy chunk so the data fetch and component arrive together.
+
+  ## Programmatic Navigation
+
+  ```tsx
+  import { useNavigate } from 'react-router';
+
+  const navigate = useNavigate();
+  navigate('/orders');
+  navigate(-1);   // back
+  navigate('/login', { replace: true });  // no history entry
+  ```
+
+  ## Form vs useFetcher
+
+  - **`<Form>`** — navigates after submit (URL changes).
+  - **`useFetcher`** — submits without navigation (for in-page mutations).
+
+  ```tsx
+  const fetcher = useFetcher();
+  fetcher.submit({ liked: true }, { method: 'post', action: '/likes' });
+  // fetcher.state: 'idle' | 'submitting' | 'loading'
+  ```
+
+  ## Search Params
+
+  ```tsx
+  import { useSearchParams } from 'react-router';
+
+  const [params, setParams] = useSearchParams();
+  const filter = params.get('filter');
+
+  setParams({ filter: 'active' });  // updates URL
+  ```
+
+  URL is the source of truth for filter state — survives reload, shareable.
+
+  ## Framework Mode (formerly Remix)
+
+  ```tsx
+  // app/routes/orders.$id.tsx — file-based routing
+  export async function loader({ params }) { ... }
+  export async function action({ request, params }) { ... }
+  export default function OrderDetail() {
+      const order = useLoaderData<typeof loader>();
+      return <div>{order.id}</div>;
+  }
+  ```
+
+  File-based routing + SSR + nested layouts. Ships less JS than client-side React Router; good for content-heavy apps.
+
+  ## Common Pitfalls
+
+  - **Fetching in components instead of loaders.** Loses parallel-loading benefits; flicker-on-navigation.
+  - **Action redirects without returning.** `redirect(...)` is a Response; you must return it from the action.
+  - **Loaders that throw without errorElement.** Crashes the app with a default React Router error.
+  - **Mixing useFetcher and Form.** Pick one per interaction; useFetcher for in-place updates, Form for navigation-driven submits.
+
+  ## Verification
+
+  A working React Router setup:
+
+  - Loaders fetch data; components render with data ready.
+  - Errors in loaders render the route's errorElement.
+  - Form submissions trigger actions; redirects work.
+  - Lazy routes split the bundle correctly.
+  - Search params drive filter state and persist on reload.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Library Mode — Client-Side Routing
+
+    ```tsx
+    import { createBrowserRouter, RouterProvider, Outlet } from 'react-router';
+
+    const router = createBrowserRouter([
+        {
+            path: '/',
+            element: <Layout />,
+            children: [
+                { index: true, element: <Home /> },
+                { path: 'orders/:id', element: <OrderDetail /> },
+                { path: 'orders/:id/items', element: <OrderItems /> },
+            ],
+        },
+    ]);
+
+    function App() { return <RouterProvider router={router} />; }
+    ```
+
+    Layout has `<Outlet />` where children render. URL `/orders/123` renders Layout → OrderDetail.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Loaders — Parallel Data Fetching
+
+    ```tsx
+    {
+        path: 'orders/:id',
+        loader: async ({ params }) => {
+            const order = await fetch(`/api/orders/${params.id}`).then(r => r.json());
+            return order;
+        },
+        element: <OrderDetail />,
+    }
+
+    function OrderDetail() {
+        const order = useLoaderData() as Order;
+        return <div>{order.id}</div>;
+    }
+    ```
+
+    Router invokes loaders before rendering. Data is ready when component renders — no useEffect spinner pattern.
+
+    For nested routes, loaders run in parallel.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Actions — Mutations
+
+    ```tsx
+    {
+        path: 'orders/:id',
+        action: async ({ request, params }) => {
+            const formData = await request.formData();
+            await fetch(`/api/orders/${params.id}`, { method: 'PATCH', body: formData });
+            return redirect('/orders');
+        },
+    }
+
+    // In the component:
+    <Form method="post">
+        <input name="status" />
+        <button type="submit">Update</button>
+    </Form>
+    ```
+
+    Actions handle form submissions. Returning a redirect navigates; returning data goes to `useActionData()`.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Error Boundaries
+
+    ```tsx
+    {
+        path: 'orders/:id',
+        errorElement: <OrderError />,
+        loader: async ({ params }) => { /* may throw */ },
+        element: <OrderDetail />,
+    }
+
+    function OrderError() {
+        const error = useRouteError();
+        return <div>Failed to load: {error.message}</div>;
+    }
+    ```
+
+    Errors in loaders or actions render the errorElement instead of the route. Per-route, not app-wide.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Lazy Routes
+
+    ```tsx
+    {
+        path: 'admin',
+        lazy: async () => {
+            const { default: AdminPanel, loader } = await import('./AdminPanel');
+            return { Component: AdminPanel, loader };
+        },
+    }
+    ```
+
+    Lazy() defers loading until navigation. Includes the loader in the lazy chunk so the data fetch and component arrive together.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Programmatic Navigation
+
+    ```tsx
+    import { useNavigate } from 'react-router';
+
+    const navigate = useNavigate();
+    navigate('/orders');
+    navigate(-1);   // back
+    navigate('/login', { replace: true });  // no history entry
+    ```
+- fragment_type: rationale
+  sequence: 7
+  content: |-
+    ## Form vs useFetcher
+
+    - **`<Form>`** — navigates after submit (URL changes).
+    - **`useFetcher`** — submits without navigation (for in-page mutations).
+
+    ```tsx
+    const fetcher = useFetcher();
+    fetcher.submit({ liked: true }, { method: 'post', action: '/likes' });
+    // fetcher.state: 'idle' | 'submitting' | 'loading'
+    ```
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Search Params
+
+    ```tsx
+    import { useSearchParams } from 'react-router';
+
+    const [params, setParams] = useSearchParams();
+    const filter = params.get('filter');
+
+    setParams({ filter: 'active' });  // updates URL
+    ```
+
+    URL is the source of truth for filter state — survives reload, shareable.
+- fragment_type: execution
+  sequence: 9
+  content: |-
+    ## Framework Mode (formerly Remix)
+
+    ```tsx
+    // app/routes/orders.$id.tsx — file-based routing
+    export async function loader({ params }) { ... }
+    export async function action({ request, params }) { ... }
+    export default function OrderDetail() {
+        const order = useLoaderData<typeof loader>();
+        return <div>{order.id}</div>;
+    }
+    ```
+
+    File-based routing + SSR + nested layouts. Ships less JS than client-side React Router; good for content-heavy apps.
+- fragment_type: guardrail
+  sequence: 10
+  content: |-
+    ## Common Pitfalls
+
+    - **Fetching in components instead of loaders.** Loses parallel-loading benefits; flicker-on-navigation.
+    - **Action redirects without returning.** `redirect(...)` is a Response; you must return it from the action.
+    - **Loaders that throw without errorElement.** Crashes the app with a default React Router error.
+    - **Mixing useFetcher and Form.** Pick one per interaction; useFetcher for in-place updates, Form for navigation-driven submits.
+- fragment_type: verification
+  sequence: 11
+  content: |-
+    ## Verification
+
+    A working React Router setup:
+
+    - Loaders fetch data; components render with data ready.
+    - Errors in loaders render the route's errorElement.
+    - Form submissions trigger actions; redirects work.
+    - Lazy routes split the bundle correctly.
+    - Search params drive filter state and persist on reload.

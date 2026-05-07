@@ -53,3 +53,18 @@ skills:
 - skill_id: react-transitions-and-deferred-values
   file: react-transitions-and-deferred-values.yaml
   fragment_count: 5
+- skill_id: react-context-patterns
+  file: react-context-patterns.yaml
+  fragment_count: 11
+- skill_id: react-react-router
+  file: react-react-router.yaml
+  fragment_count: 11
+- skill_id: react-react-testing-library
+  file: react-react-testing-library.yaml
+  fragment_count: 10
+- skill_id: react-server-actions
+  file: react-server-actions.yaml
+  fragment_count: 11
+- skill_id: react-suspense-and-streaming
+  file: react-suspense-and-streaming.yaml
+  fragment_count: 11

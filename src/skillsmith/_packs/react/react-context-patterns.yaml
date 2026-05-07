@@ -1,0 +1,379 @@
+skill_type: domain
+skill_id: react-context-patterns
+canonical_name: React Context — Patterns and Anti-Patterns
+category: engineering
+skill_class: domain
+domain_tags:
+- react
+- context
+- state-management
+- providers
+- performance
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion (wave 2)
+raw_prose: |
+  # React Context — Patterns and Anti-Patterns
+
+  ## Overview
+
+  Context lets you pass values without prop drilling. The trap: every consumer re-renders when the context value reference changes. The patterns: split contexts by update frequency, memoize values, prefer state libraries (Zustand, Jotai) for high-frequency state.
+
+  ---
+
+  ## The Basic Pattern
+
+  ```jsx
+  const ThemeContext = createContext('light');
+
+  function App() {
+      const [theme, setTheme] = useState('light');
+      return (
+          <ThemeContext.Provider value={theme}>
+              <Page />
+          </ThemeContext.Provider>
+      );
+  }
+
+  function DeepChild() {
+      const theme = useContext(ThemeContext);
+      return <div className={theme}>...</div>;
+  }
+  ```
+
+  Any component below the Provider can read the context value via `useContext`.
+
+  ## The Reference-Identity Trap
+
+  ```jsx
+  // BAD: new object every render
+  <ThemeContext.Provider value={{ theme, setTheme }}>
+  ```
+
+  Every parent render creates a new `{ theme, setTheme }` object. All consumers re-render even if `theme` is unchanged.
+
+  Fix:
+
+  ```jsx
+  const value = useMemo(() => ({ theme, setTheme }), [theme]);
+  return <ThemeContext.Provider value={value}>...</ThemeContext.Provider>;
+  ```
+
+  `useMemo` keeps the reference stable until `theme` actually changes.
+
+  ## Splitting Contexts
+
+  A context with `{ theme, user, locale, settings }` re-renders all consumers when ANY of those changes. Split:
+
+  ```jsx
+  <ThemeContext.Provider value={theme}>
+      <UserContext.Provider value={user}>
+          <LocaleContext.Provider value={locale}>
+              ...
+          </LocaleContext.Provider>
+      </UserContext.Provider>
+  </ThemeContext.Provider>
+  ```
+
+  Components consume only what they need; theme changes don't re-render user-only consumers.
+
+  ## State + Dispatch Split
+
+  For complex state, split readers from writers:
+
+  ```jsx
+  const StateContext = createContext();
+  const DispatchContext = createContext();
+
+  function Provider({ children }) {
+      const [state, dispatch] = useReducer(reducer, initialState);
+      return (
+          <StateContext.Provider value={state}>
+              <DispatchContext.Provider value={dispatch}>
+                  {children}
+              </DispatchContext.Provider>
+          </StateContext.Provider>
+      );
+  }
+  ```
+
+  Components that only dispatch don't re-render when state changes (dispatch reference is stable).
+
+  ## When Context Wins
+
+  - Theme (1-2 changes per session).
+  - Auth user (rarely changes).
+  - Locale (per-session).
+  - Routing state (changes per navigation).
+
+  Low update frequency, broad reads.
+
+  ## When Context Loses
+
+  - Form state (changes on every keystroke).
+  - Live data feeds (changes per WebSocket message).
+  - Animation state (changes every frame).
+
+  For these, every keystroke re-renders every consumer. Use a state library (Zustand, Jotai) that subscribes selectively.
+
+  ## Custom Hook Wrapper
+
+  ```jsx
+  const ThemeContext = createContext(null);
+
+  export function ThemeProvider({ children }) {
+      const [theme, setTheme] = useState('light');
+      const value = useMemo(() => ({ theme, setTheme }), [theme]);
+      return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+  }
+
+  export function useTheme() {
+      const ctx = useContext(ThemeContext);
+      if (!ctx) throw new Error('useTheme must be inside ThemeProvider');
+      return ctx;
+  }
+  ```
+
+  Custom hook hides the context, errors clearly if Provider missing. Standard pattern for context-as-feature.
+
+  ## Provider Composition
+
+  Multiple providers nest deeply:
+
+  ```jsx
+  <ThemeProvider>
+      <AuthProvider>
+          <RouterProvider>
+              <App />
+          </RouterProvider>
+      </AuthProvider>
+  </ThemeProvider>
+  ```
+
+  Compose with a helper:
+
+  ```jsx
+  function compose(...providers) {
+      return ({ children }) => providers.reduceRight((acc, P) => <P>{acc}</P>, children);
+  }
+
+  const Providers = compose(ThemeProvider, AuthProvider, RouterProvider);
+  ```
+
+  ## Server Components and Context
+
+  Context doesn't pass through Server / Client boundaries. Patterns:
+
+  - Read context in a client component, pass via props down to other components.
+  - Use cookie/header reads in server components instead of context.
+
+  The boundary is one-way: server passes to client via props; context lives client-side only.
+
+  ## Common Pitfalls
+
+  - **Inline value objects.** New reference every render = mass re-renders.
+  - **One context for everything.** Updates ripple to every consumer.
+  - **Nesting providers without selectors.** Switch to a real state library when context becomes unwieldy.
+  - **Forgetting the null/error case in useContext.** Cryptic errors when Provider is missing.
+  - **Context for high-frequency state.** Use a subscription-based store instead.
+
+  ## Verification
+
+  A healthy context usage:
+
+  - Each context has a clear purpose (theme, auth, etc.).
+  - Provider value is memoized; reference stable across renders.
+  - Custom hook wraps useContext for ergonomics + error handling.
+  - High-frequency state lives in a subscription store, not context.
+  - React DevTools Profiler doesn't show mass re-renders on context updates.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## The Basic Pattern
+
+    ```jsx
+    const ThemeContext = createContext('light');
+
+    function App() {
+        const [theme, setTheme] = useState('light');
+        return (
+            <ThemeContext.Provider value={theme}>
+                <Page />
+            </ThemeContext.Provider>
+        );
+    }
+
+    function DeepChild() {
+        const theme = useContext(ThemeContext);
+        return <div className={theme}>...</div>;
+    }
+    ```
+
+    Any component below the Provider can read the context value via `useContext`.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## The Reference-Identity Trap
+
+    ```jsx
+    // BAD: new object every render
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+    ```
+
+    Every parent render creates a new `{ theme, setTheme }` object. All consumers re-render even if `theme` is unchanged.
+
+    Fix:
+
+    ```jsx
+    const value = useMemo(() => ({ theme, setTheme }), [theme]);
+    return <ThemeContext.Provider value={value}>...</ThemeContext.Provider>;
+    ```
+
+    `useMemo` keeps the reference stable until `theme` actually changes.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Splitting Contexts
+
+    A context with `{ theme, user, locale, settings }` re-renders all consumers when ANY of those changes. Split:
+
+    ```jsx
+    <ThemeContext.Provider value={theme}>
+        <UserContext.Provider value={user}>
+            <LocaleContext.Provider value={locale}>
+                ...
+            </LocaleContext.Provider>
+        </UserContext.Provider>
+    </ThemeContext.Provider>
+    ```
+
+    Components consume only what they need; theme changes don't re-render user-only consumers.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## State + Dispatch Split
+
+    For complex state, split readers from writers:
+
+    ```jsx
+    const StateContext = createContext();
+    const DispatchContext = createContext();
+
+    function Provider({ children }) {
+        const [state, dispatch] = useReducer(reducer, initialState);
+        return (
+            <StateContext.Provider value={state}>
+                <DispatchContext.Provider value={dispatch}>
+                    {children}
+                </DispatchContext.Provider>
+            </StateContext.Provider>
+        );
+    }
+    ```
+
+    Components that only dispatch don't re-render when state changes (dispatch reference is stable).
+- fragment_type: rationale
+  sequence: 5
+  content: |-
+    ## When Context Wins
+
+    - Theme (1-2 changes per session).
+    - Auth user (rarely changes).
+    - Locale (per-session).
+    - Routing state (changes per navigation).
+
+    Low update frequency, broad reads.
+- fragment_type: rationale
+  sequence: 6
+  content: |-
+    ## When Context Loses
+
+    - Form state (changes on every keystroke).
+    - Live data feeds (changes per WebSocket message).
+    - Animation state (changes every frame).
+
+    For these, every keystroke re-renders every consumer. Use a state library (Zustand, Jotai) that subscribes selectively.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Custom Hook Wrapper
+
+    ```jsx
+    const ThemeContext = createContext(null);
+
+    export function ThemeProvider({ children }) {
+        const [theme, setTheme] = useState('light');
+        const value = useMemo(() => ({ theme, setTheme }), [theme]);
+        return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+    }
+
+    export function useTheme() {
+        const ctx = useContext(ThemeContext);
+        if (!ctx) throw new Error('useTheme must be inside ThemeProvider');
+        return ctx;
+    }
+    ```
+
+    Custom hook hides the context, errors clearly if Provider missing. Standard pattern for context-as-feature.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Provider Composition
+
+    Multiple providers nest deeply:
+
+    ```jsx
+    <ThemeProvider>
+        <AuthProvider>
+            <RouterProvider>
+                <App />
+            </RouterProvider>
+        </AuthProvider>
+    </ThemeProvider>
+    ```
+
+    Compose with a helper:
+
+    ```jsx
+    function compose(...providers) {
+        return ({ children }) => providers.reduceRight((acc, P) => <P>{acc}</P>, children);
+    }
+
+    const Providers = compose(ThemeProvider, AuthProvider, RouterProvider);
+    ```
+- fragment_type: execution
+  sequence: 9
+  content: |-
+    ## Server Components and Context
+
+    Context doesn't pass through Server / Client boundaries. Patterns:
+
+    - Read context in a client component, pass via props down to other components.
+    - Use cookie/header reads in server components instead of context.
+
+    The boundary is one-way: server passes to client via props; context lives client-side only.
+- fragment_type: guardrail
+  sequence: 10
+  content: |-
+    ## Common Pitfalls
+
+    - **Inline value objects.** New reference every render = mass re-renders.
+    - **One context for everything.** Updates ripple to every consumer.
+    - **Nesting providers without selectors.** Switch to a real state library when context becomes unwieldy.
+    - **Forgetting the null/error case in useContext.** Cryptic errors when Provider is missing.
+    - **Context for high-frequency state.** Use a subscription-based store instead.
+- fragment_type: verification
+  sequence: 11
+  content: |-
+    ## Verification
+
+    A healthy context usage:
+
+    - Each context has a clear purpose (theme, auth, etc.).
+    - Provider value is memoized; reference stable across renders.
+    - Custom hook wraps useContext for ergonomics + error handling.
+    - High-frequency state lives in a subscription store, not context.
+    - React DevTools Profiler doesn't show mass re-renders on context updates.
