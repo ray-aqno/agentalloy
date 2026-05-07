@@ -9,20 +9,56 @@ embedding_dim: 1024
 license: MIT
 homepage: https://github.com/nrmeyers/skillsmith
 always_install: false
-depends_on: [core, engineering, python]
+depends_on:
+- core
+- engineering
+- python
 skills:
-  - skill_id: fastapi-routing-and-path-operations
-    file: fastapi-routing-and-path-operations.yaml
-    fragment_count: 9
-  - skill_id: fastapi-pydantic-models-and-validation
-    file: fastapi-pydantic-models-and-validation.yaml
-    fragment_count: 11
-  - skill_id: fastapi-dependency-injection
-    file: fastapi-dependency-injection.yaml
-    fragment_count: 9
-  - skill_id: fastapi-async-and-background-tasks
-    file: fastapi-async-and-background-tasks.yaml
-    fragment_count: 10
-  - skill_id: fastapi-auth-and-security
-    file: fastapi-auth-and-security.yaml
-    fragment_count: 10
+- skill_id: fastapi-routing-and-path-operations
+  file: fastapi-routing-and-path-operations.yaml
+  fragment_count: 9
+- skill_id: fastapi-pydantic-models-and-validation
+  file: fastapi-pydantic-models-and-validation.yaml
+  fragment_count: 11
+- skill_id: fastapi-dependency-injection
+  file: fastapi-dependency-injection.yaml
+  fragment_count: 9
+- skill_id: fastapi-async-and-background-tasks
+  file: fastapi-async-and-background-tasks.yaml
+  fragment_count: 10
+- skill_id: fastapi-auth-and-security
+  file: fastapi-auth-and-security.yaml
+  fragment_count: 10
+- skill_id: fastapi-background-tasks-deep
+  file: fastapi-background-tasks-deep.yaml
+  fragment_count: 9
+- skill_id: fastapi-cors
+  file: fastapi-cors.yaml
+  fragment_count: 5
+- skill_id: fastapi-file-uploads
+  file: fastapi-file-uploads.yaml
+  fragment_count: 9
+- skill_id: fastapi-lifespan-events
+  file: fastapi-lifespan-events.yaml
+  fragment_count: 12
+- skill_id: fastapi-middleware-patterns
+  file: fastapi-middleware-patterns.yaml
+  fragment_count: 8
+- skill_id: fastapi-middleware
+  file: fastapi-middleware.yaml
+  fragment_count: 8
+- skill_id: fastapi-oauth2-scopes
+  file: fastapi-oauth2-scopes.yaml
+  fragment_count: 12
+- skill_id: fastapi-openapi-customization
+  file: fastapi-openapi-customization.yaml
+  fragment_count: 7
+- skill_id: fastapi-streaming-and-sse
+  file: fastapi-streaming-and-sse.yaml
+  fragment_count: 11
+- skill_id: fastapi-testing
+  file: fastapi-testing.yaml
+  fragment_count: 9
+- skill_id: fastapi-websockets
+  file: fastapi-websockets.yaml
+  fragment_count: 9

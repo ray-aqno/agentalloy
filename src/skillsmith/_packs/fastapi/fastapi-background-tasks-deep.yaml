@@ -1,0 +1,311 @@
+skill_type: domain
+skill_id: fastapi-background-tasks-deep
+canonical_name: FastAPI Background Tasks (Deep)
+category: engineering
+skill_class: domain
+domain_tags:
+- fastapi
+- background-tasks
+- post-response
+- async-work
+- celery-comparison
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # FastAPI Background Tasks (Deep)
+
+  ## Overview
+
+  BackgroundTasks lets a route schedule work to run after the response is returned. Same process, no persistence — fine for small jobs (sending an email, logging) but not for anything that needs durability or retry.
+
+  ---
+
+  ## The API
+
+  ```python
+  from fastapi import BackgroundTasks, FastAPI
+
+  app = FastAPI()
+
+  def write_log(message: str):
+      with open("log.txt", "a") as f:
+          f.write(message + "\n")
+
+  @app.post("/send")
+  async def send(message: str, background_tasks: BackgroundTasks):
+      background_tasks.add_task(write_log, f"sent: {message}")
+      return {"status": "queued"}
+  ```
+
+  The `BackgroundTasks` parameter is dependency-injected; FastAPI runs registered tasks after the response is returned to the client. The route returns immediately; the task runs in the background.
+
+  ## Multiple Tasks
+
+  ```python
+  @app.post("/order")
+  async def create_order(order: Order, bg: BackgroundTasks):
+      saved = save_order(order)
+      bg.add_task(send_confirmation_email, saved)
+      bg.add_task(notify_warehouse, saved)
+      bg.add_task(record_metric, "order.created")
+      return saved
+  ```
+
+  Tasks run sequentially in registration order. They don't block the response; the client gets the saved order immediately.
+
+  ## Async or Sync Tasks
+
+  ```python
+  async def async_task(payload):
+      async with httpx.AsyncClient() as client:
+          await client.post("https://api.example.com", json=payload)
+
+  def sync_task(payload):
+      requests.post("https://api.example.com", json=payload)
+
+  @app.post("/event")
+  async def event(e: Event, bg: BackgroundTasks):
+      bg.add_task(async_task, e.payload)  # awaited
+      bg.add_task(sync_task, e.payload)   # called in threadpool
+      return {"status": "ok"}
+  ```
+
+  Async tasks are awaited on the event loop. Sync tasks run on the thread pool. FastAPI handles both.
+
+  ## Dependency-Injected Background Tasks
+
+  You can inject background tasks into a dependency:
+
+  ```python
+  async def log_request(bg: BackgroundTasks):
+      bg.add_task(write_log, "request received")
+
+  @app.get("/data", dependencies=[Depends(log_request)])
+  async def data():
+      return {"data": 42}
+  ```
+
+  Useful for cross-cutting work (logging, metrics) without polluting every route signature.
+
+  ## Limits and When to Outgrow
+
+  BackgroundTasks runs in the same process as the request handler:
+
+  - **No durability.** Process restart = task lost. Server crash = task lost.
+  - **No retry.** Failure = lost. Errors get logged but the framework doesn't retry.
+  - **No isolation.** Tasks share the request handler's CPU and memory.
+  - **No scheduling.** Runs immediately after response, no 'in 5 minutes' option.
+  - **Limited backpressure.** A task that runs forever or blocks the loop affects request throughput.
+
+  When any of those constraints matter, you've outgrown BackgroundTasks. Move to Celery, RQ, Dramatiq, or a cloud queue (SQS, Pub/Sub) plus a separate worker process.
+
+  ## When BackgroundTasks Is Right
+
+  - **Lightweight async I/O after a response**: send an email, post a webhook, write a log line.
+  - **Operations that fire-and-forget is acceptable for**: analytics events, cache warming, soft notifications.
+  - **Tiny apps without infrastructure**: prototypes, internal tools, scripts.
+
+  When BackgroundTasks is wrong:
+
+  - **Anything money-related**: orders, charges, refunds. Need durability + retry.
+  - **Anything observable failure matters**: data syncs, ETL. Need a queue with DLQ.
+  - **Long-running work** (>30s): blocks the loop's task queue, hurts throughput.
+
+  ## Tasks and Database Sessions
+
+  A common pitfall: passing a request-scoped DB session into a background task:
+
+  ```python
+  @app.post("/order")
+  async def order(bg: BackgroundTasks, db: Session = Depends(get_db)):
+      bg.add_task(send_confirmation, db, order_id)  # WRONG
+      return {"ok": True}
+  ```
+
+  The DB session closes when the request ends, before the task runs. The task gets a closed session and crashes.
+
+  Fix: open a fresh session inside the task:
+
+  ```python
+  def send_confirmation(order_id):
+      db = SessionLocal()
+      try:
+          order = db.query(Order).get(order_id)
+          # ...
+      finally:
+          db.close()
+  ```
+
+  Pass IDs into background tasks, not ORM objects.
+
+  ## Common Pitfalls
+
+  - **Sharing request-scoped state with the task** (DB sessions, request objects). They close before the task runs.
+  - **Using BackgroundTasks for work that must survive crashes.** Use a real queue.
+  - **Returning task results to the client.** You can't — the response has already been sent. Use a job ID + status endpoint, or move to a queue + status table.
+  - **Long-running CPU-bound tasks.** They block the thread pool, starving other requests.
+
+  ## Verification
+
+  A working background task usage:
+
+  - Tasks run after the response without blocking it.
+  - Failed tasks log clearly so failures are visible (FastAPI logs unhandled exceptions).
+  - Tasks don't depend on request-scoped state that's torn down before they run.
+  - Total task volume per request stays small (1-3 tasks) — beyond that, queue infrastructure is the right tool.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## The API
+
+    ```python
+    from fastapi import BackgroundTasks, FastAPI
+
+    app = FastAPI()
+
+    def write_log(message: str):
+        with open("log.txt", "a") as f:
+            f.write(message + "\n")
+
+    @app.post("/send")
+    async def send(message: str, background_tasks: BackgroundTasks):
+        background_tasks.add_task(write_log, f"sent: {message}")
+        return {"status": "queued"}
+    ```
+
+    The `BackgroundTasks` parameter is dependency-injected; FastAPI runs registered tasks after the response is returned to the client. The route returns immediately; the task runs in the background.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Multiple Tasks
+
+    ```python
+    @app.post("/order")
+    async def create_order(order: Order, bg: BackgroundTasks):
+        saved = save_order(order)
+        bg.add_task(send_confirmation_email, saved)
+        bg.add_task(notify_warehouse, saved)
+        bg.add_task(record_metric, "order.created")
+        return saved
+    ```
+
+    Tasks run sequentially in registration order. They don't block the response; the client gets the saved order immediately.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Async or Sync Tasks
+
+    ```python
+    async def async_task(payload):
+        async with httpx.AsyncClient() as client:
+            await client.post("https://api.example.com", json=payload)
+
+    def sync_task(payload):
+        requests.post("https://api.example.com", json=payload)
+
+    @app.post("/event")
+    async def event(e: Event, bg: BackgroundTasks):
+        bg.add_task(async_task, e.payload)  # awaited
+        bg.add_task(sync_task, e.payload)   # called in threadpool
+        return {"status": "ok"}
+    ```
+
+    Async tasks are awaited on the event loop. Sync tasks run on the thread pool. FastAPI handles both.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Dependency-Injected Background Tasks
+
+    You can inject background tasks into a dependency:
+
+    ```python
+    async def log_request(bg: BackgroundTasks):
+        bg.add_task(write_log, "request received")
+
+    @app.get("/data", dependencies=[Depends(log_request)])
+    async def data():
+        return {"data": 42}
+    ```
+
+    Useful for cross-cutting work (logging, metrics) without polluting every route signature.
+- fragment_type: rationale
+  sequence: 5
+  content: |-
+    ## Limits and When to Outgrow
+
+    BackgroundTasks runs in the same process as the request handler:
+
+    - **No durability.** Process restart = task lost. Server crash = task lost.
+    - **No retry.** Failure = lost. Errors get logged but the framework doesn't retry.
+    - **No isolation.** Tasks share the request handler's CPU and memory.
+    - **No scheduling.** Runs immediately after response, no 'in 5 minutes' option.
+    - **Limited backpressure.** A task that runs forever or blocks the loop affects request throughput.
+
+    When any of those constraints matter, you've outgrown BackgroundTasks. Move to Celery, RQ, Dramatiq, or a cloud queue (SQS, Pub/Sub) plus a separate worker process.
+- fragment_type: rationale
+  sequence: 6
+  content: |-
+    ## When BackgroundTasks Is Right
+
+    - **Lightweight async I/O after a response**: send an email, post a webhook, write a log line.
+    - **Operations that fire-and-forget is acceptable for**: analytics events, cache warming, soft notifications.
+    - **Tiny apps without infrastructure**: prototypes, internal tools, scripts.
+
+    When BackgroundTasks is wrong:
+
+    - **Anything money-related**: orders, charges, refunds. Need durability + retry.
+    - **Anything observable failure matters**: data syncs, ETL. Need a queue with DLQ.
+    - **Long-running work** (>30s): blocks the loop's task queue, hurts throughput.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Tasks and Database Sessions
+
+    A common pitfall: passing a request-scoped DB session into a background task:
+
+    ```python
+    @app.post("/order")
+    async def order(bg: BackgroundTasks, db: Session = Depends(get_db)):
+        bg.add_task(send_confirmation, db, order_id)  # WRONG
+        return {"ok": True}
+    ```
+
+    The DB session closes when the request ends, before the task runs. The task gets a closed session and crashes.
+
+    Fix: open a fresh session inside the task:
+
+    ```python
+    def send_confirmation(order_id):
+        db = SessionLocal()
+        try:
+            order = db.query(Order).get(order_id)
+            # ...
+        finally:
+            db.close()
+    ```
+
+    Pass IDs into background tasks, not ORM objects.
+- fragment_type: guardrail
+  sequence: 8
+  content: |-
+    ## Common Pitfalls
+
+    - **Sharing request-scoped state with the task** (DB sessions, request objects). They close before the task runs.
+    - **Using BackgroundTasks for work that must survive crashes.** Use a real queue.
+    - **Returning task results to the client.** You can't — the response has already been sent. Use a job ID + status endpoint, or move to a queue + status table.
+    - **Long-running CPU-bound tasks.** They block the thread pool, starving other requests.
+- fragment_type: verification
+  sequence: 9
+  content: |-
+    ## Verification
+
+    A working background task usage:
+
+    - Tasks run after the response without blocking it.
+    - Failed tasks log clearly so failures are visible (FastAPI logs unhandled exceptions).
+    - Tasks don't depend on request-scoped state that's torn down before they run.
+    - Total task volume per request stays small (1-3 tasks) — beyond that, queue infrastructure is the right tool.

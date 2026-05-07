@@ -1,0 +1,221 @@
+skill_type: domain
+skill_id: fastapi-streaming-and-sse
+canonical_name: FastAPI Streaming Responses and SSE
+category: engineering
+skill_class: domain
+domain_tags:
+  - streaming
+  - sse
+  - fastapi
+  - response
+  - async
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: initial authoring draft
+raw_prose: |
+  # FastAPI Streaming Responses and SSE
+
+  ## Overview
+
+  FastAPI's StreamingResponse takes any iterable or async iterable and streams it to the client. SSE is a thin protocol on top — text/event-stream content type plus formatted lines. This skill covers streaming patterns.
+
+  By default, **FastAPI** will return JSON responses.
+
+  You can override it by returning a `Response` directly as seen in [Return a Response directly](response-directly.md).
+
+  But if you return a `Response` directly (or any subclass, like `JSONResponse`), the data won't be automatically converted (even if you declare a `response_model`), and the documentation won't be automatically generated (for example, including the specific "media type", in the HTTP header `Content-Type` as part of the generated OpenAPI).
+
+  But you can also declare the `Response` that you want to be used (e.g. any `Response` subclass), in the *path operation decorator* using the `response_class` parameter.
+
+  The contents that you return from your *path operation function* will be put inside of that `Response`.
+
+  /// note
+
+  If you use a response class with no media type, FastAPI will expect your response to have no content, so it will not document the response format in its generated OpenAPI docs.
+
+  ///
+
+  ## JSON Responses { #json-responses }
+
+  By default FastAPI returns JSON responses.
+
+  If you declare a [Response Model](../tutorial/response-model.md) FastAPI will use it to serialize the data to JSON, using Pydantic.
+
+  If you don't declare a response model, FastAPI will use the `jsonable_encoder` explained in [JSON Compatible Encoder](../tutorial/encoder.md) and put it in a `JSONResponse`.
+
+  If you declare a `response_class` with a JSON media type (`application/json`), like is the case with the `JSONResponse`, the data you return will be automatically converted (and filtered) with any Pydantic `response_model` that you declared in the *path operation decorator*. But the data won't be serialized to JSON bytes with Pydantic, instead it will be converted with the `jsonable_encoder` and then passed to the `JSONResponse` class, which will serialize it to bytes using the standard JSON library in Python.
+
+  ### JSON Performance { #json-performance }
+
+  In short, if you want the maximum performance, use a [Response Model](../tutorial/response-model.md) and don't declare a `response_class` in the *path operation decorator*.
+
+  {* ../../docs_src/response_model/tutorial001_01_py310.py ln[15:17] hl[16] *}
+
+  ## HTML Response { #html-response }
+
+  To return a response with HTML directly from **FastAPI**, use `HTMLResponse`.
+
+  * Import `HTMLResponse`.
+  * Pass `HTMLResponse` as the parameter `response_class` of your *path operation decorator*.
+
+  {* ../../docs_src/custom_response/tutorial002_py310.py hl[2,7] *}
+
+  /// info
+
+  The parameter `response_class` will also be used to define the "media type" of the response.
+
+  In this case, the HTTP header `Content-Type` will be set to `text/html`.
+
+  And it will be documented as such in OpenAPI.
+
+  ///
+
+  ### Return a `Response` { #return-a-response }
+
+  As seen in [Return a Response directly](response-directly.md), you can also override the response directly in your *path operation*, by returning it.
+
+  The same example from above, returning an `HTMLResponse`, could look like:
+
+  {* ../../docs_src/custom_response/tutorial003_py310.py hl[2,7,19] *}
+
+  /// warning
+
+  A `Response` returned directly by your *path operation function* won't be documented in OpenAPI (for example, the `Content-Type` won't be documented) and won't be visible in the automatic interactive docs.
+
+  ///
+
+  /// info
+
+  Of course, the actual `Content-Type` header, status code, etc, will come from the `Response` object you returned.
+
+  ///
+
+  ### Document in OpenAPI and override `Response` { #document-in-openapi-and-override-response }
+
+  If you want to override the response from inside of the function but at the same time document the "media type" in OpenAPI, you can use the `response_class` parameter AND return a `Response` object.
+
+  The `response_class` will then be used only to document the OpenAPI *path operation*, but your `Response` will be used as is.
+
+  #### Return an `HTMLResponse` directly { #return-an-htmlresponse-directly }
+
+  For example, it could be something like:
+
+  {* ../../docs_src/custom_response/tutorial004_py310.py hl[7,21,23] *}
+
+  In this example, the function `generate_html_response()` already generates and returns a `Response` instead of returning the HTML in a `str`.
+
+  By returning the result of calling `generate_html_response()`, you are already returning a `Response` that will override the default **FastAPI** behavior.
+
+  But as you passed the `HTMLResponse` in the `response_class` too, **FastAPI** will know how to document it in OpenAPI and the interactive docs as HTML with `text/html`:
+
+  <img src="/img/tutorial/custom-response/image01.png">
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      FastAPI's StreamingResponse takes any iterable or async iterable and streams it to the client. SSE is a thin protocol on top — text/event-stream content type plus formatted lines. This skill covers streaming patterns.
+      
+      By default, **FastAPI** will return JSON responses.
+      
+      You can override it by returning a `Response` directly as seen in [Return a Response directly](response-directly.md).
+      
+      But if you return a `Response` directly (or any subclass, like `JSONResponse`), the data won't be automatically converted (even if you declare a `response_model`), and the documentation won't be automatically generated (for example, including the specific "media type", in the HTTP header `Content-Type` as part of the generated OpenAPI).
+      
+      But you can also declare the `Response` that you want to be used (e.g. any `Response` subclass), in the *path operation decorator* using the `response_class` parameter.
+      
+      The contents that you return from your *path operation function* will be put inside of that `Response`.
+  - fragment_type: guardrail
+    sequence: 2
+    content: |
+      /// note
+      
+      If you use a response class with no media type, FastAPI will expect your response to have no content, so it will not document the response format in its generated OpenAPI docs.
+      
+      ///
+  - fragment_type: execution
+    sequence: 3
+    content: |
+      ## JSON Responses { #json-responses }
+      
+      By default FastAPI returns JSON responses.
+      
+      If you declare a [Response Model](../tutorial/response-model.md) FastAPI will use it to serialize the data to JSON, using Pydantic.
+      
+      If you don't declare a response model, FastAPI will use the `jsonable_encoder` explained in [JSON Compatible Encoder](../tutorial/encoder.md) and put it in a `JSONResponse`.
+      
+      If you declare a `response_class` with a JSON media type (`application/json`), like is the case with the `JSONResponse`, the data you return will be automatically converted (and filtered) with any Pydantic `response_model` that you declared in the *path operation decorator*. But the data won't be serialized to JSON bytes with Pydantic, instead it will be converted with the `jsonable_encoder` and then passed to the `JSONResponse` class, which will serialize it to bytes using the standard JSON library in Python.
+  - fragment_type: rationale
+    sequence: 4
+    content: |
+      ### JSON Performance { #json-performance }
+      
+      In short, if you want the maximum performance, use a [Response Model](../tutorial/response-model.md) and don't declare a `response_class` in the *path operation decorator*.
+      
+      {* ../../docs_src/response_model/tutorial001_01_py310.py ln[15:17] hl[16] *}
+  - fragment_type: execution
+    sequence: 5
+    content: |
+      ## HTML Response { #html-response }
+      
+      To return a response with HTML directly from **FastAPI**, use `HTMLResponse`.
+      
+      * Import `HTMLResponse`.
+      * Pass `HTMLResponse` as the parameter `response_class` of your *path operation decorator*.
+  - fragment_type: guardrail
+    sequence: 6
+    content: |
+      /// info
+      
+      The parameter `response_class` will also be used to define the "media type" of the response.
+      
+      In this case, the HTTP header `Content-Type` will be set to `text/html`.
+      
+      And it will be documented as such in OpenAPI.
+      
+      ///
+  - fragment_type: execution
+    sequence: 7
+    content: |
+      ### Return a `Response` { #return-a-response }
+      
+      As seen in [Return a Response directly](response-directly.md), you can also override the response directly in your *path operation*, by returning it.
+      
+      The same example from above, returning an `HTMLResponse`, could look like:
+  - fragment_type: guardrail
+    sequence: 8
+    content: |
+      /// warning
+      
+      A `Response` returned directly by your *path operation function* won't be documented in OpenAPI (for example, the `Content-Type` won't be documented) and won't be visible in the automatic interactive docs.
+      
+      ///
+  - fragment_type: guardrail
+    sequence: 9
+    content: |
+      /// info
+      
+      Of course, the actual `Content-Type` header, status code, etc, will come from the `Response` object you returned.
+      
+      ///
+  - fragment_type: execution
+    sequence: 10
+    content: |
+      ### Document in OpenAPI and override `Response` { #document-in-openapi-and-override-response }
+      
+      If you want to override the response from inside of the function but at the same time document the "media type" in OpenAPI, you can use the `response_class` parameter AND return a `Response` object.
+  - fragment_type: example
+    sequence: 11
+    content: |
+      #### Return an `HTMLResponse` directly { #return-an-htmlresponse-directly }
+      
+      For example, it could be something like:
+      
+      In this example, the function `generate_html_response()` already generates and returns a `Response` instead of returning the HTML in a `str`.
+      
+      By returning the result of calling `generate_html_response()`, you are already returning a `Response` that will override the default **FastAPI** behavior.
+      
+      But as you passed the `HTMLResponse` in the `response_class` too, **FastAPI** will know how to document it in OpenAPI and the interactive docs as HTML with `text/html`:
+      
+      <img src="/img/tutorial/custom-response/image01.png">

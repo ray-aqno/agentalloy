@@ -1,0 +1,401 @@
+skill_type: domain
+skill_id: fastapi-testing
+canonical_name: FastAPI Testing — TestClient and AsyncClient
+category: engineering
+skill_class: domain
+domain_tags:
+- fastapi
+- testing
+- testclient
+- asyncclient
+- dependency-override
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # FastAPI Testing — TestClient and AsyncClient
+
+  ## Overview
+
+  FastAPI's TestClient runs the app in-process with a sync requests-style API. AsyncClient with ASGITransport gives the same against async tests. Dependency overrides mock collaborators cleanly.
+
+  ---
+
+  ## TestClient — Sync, requests-Compatible
+
+  ```python
+  from fastapi.testclient import TestClient
+  from .main import app
+
+  client = TestClient(app)
+
+  def test_health():
+      response = client.get("/health")
+      assert response.status_code == 200
+      assert response.json() == {"status": "ok"}
+
+  def test_create_user():
+      response = client.post("/users", json={"name": "alice"})
+      assert response.status_code == 201
+      assert response.json()["name"] == "alice"
+  ```
+
+  TestClient wraps `requests` and runs your FastAPI app in the same process. No real HTTP — fast, no network flake, no port allocation needed.
+
+  ## AsyncClient — For Async Tests
+
+  When tests are async (using pytest-asyncio or anyio), use httpx.AsyncClient with ASGITransport:
+
+  ```python
+  import pytest
+  from httpx import AsyncClient, ASGITransport
+  from .main import app
+
+  @pytest.mark.anyio
+  async def test_async():
+      async with AsyncClient(
+          transport=ASGITransport(app=app),
+          base_url="http://test"
+      ) as client:
+          response = await client.get("/data")
+          assert response.status_code == 200
+  ```
+
+  This is the right pattern for testing FastAPI apps that have async-only behavior (database connections that must stay async, code that needs to await within the test).
+
+  ## Dependency Overrides
+
+  The most powerful FastAPI testing feature: replace any dependency with a mock during tests.
+
+  ```python
+  # Production
+  def get_db() -> Session:
+      db = SessionLocal()
+      try:
+          yield db
+      finally:
+          db.close()
+
+  @app.get("/users/{id}")
+  def get_user(id: int, db: Session = Depends(get_db)):
+      return db.query(User).get(id)
+
+  # Tests
+  def get_test_db():
+      return MockSession({1: User(id=1, name="Alice")})
+
+  app.dependency_overrides[get_db] = get_test_db
+
+  def test_get_user():
+      response = client.get("/users/1")
+      assert response.json()["name"] == "Alice"
+
+  # Clean up
+  app.dependency_overrides.clear()
+  ```
+
+  The override applies for the duration of the test. Set in setUp, clear in tearDown — or use a fixture.
+
+  ## Pytest Fixture Pattern
+
+  ```python
+  import pytest
+  from fastapi.testclient import TestClient
+  from .main import app
+  from .deps import get_db
+
+  @pytest.fixture
+  def client():
+      def get_test_db():
+          return TestSession()
+      app.dependency_overrides[get_db] = get_test_db
+      yield TestClient(app)
+      app.dependency_overrides.clear()
+
+  def test_create_user(client):
+      response = client.post("/users", json={"name": "alice"})
+      assert response.status_code == 201
+  ```
+
+  The fixture sets up the override, yields the client, and cleans up after. Each test gets a fresh dependency state.
+
+  ## Database Tests
+
+  For tests that need real DB integration (not mocked), use a separate test DB and rollback per test:
+
+  ```python
+  @pytest.fixture
+  def db():
+      connection = engine.connect()
+      transaction = connection.begin()
+      session = Session(bind=connection)
+      yield session
+      session.close()
+      transaction.rollback()
+      connection.close()
+
+  @pytest.fixture
+  def client(db):
+      def override():
+          return db
+      app.dependency_overrides[get_db] = override
+      yield TestClient(app)
+      app.dependency_overrides.clear()
+  ```
+
+  Each test gets a clean transaction; the rollback ensures isolation.
+
+  ## Authentication in Tests
+
+  Override the authenticator dependency:
+
+  ```python
+  def authenticated_user():
+      return User(id=1, name="test", is_admin=True)
+
+  def admin_user():
+      user = authenticated_user()
+      user.is_admin = True
+      return user
+
+  @pytest.fixture
+  def authed_client():
+      app.dependency_overrides[get_current_user] = authenticated_user
+      yield TestClient(app)
+      app.dependency_overrides.clear()
+
+  def test_admin_route(authed_client):
+      response = authed_client.get("/admin")
+      assert response.status_code == 200
+  ```
+
+  This sidesteps real JWT/OAuth flows in tests. Real auth gets covered by integration tests.
+
+  ## Testing WebSockets
+
+  ```python
+  def test_websocket():
+      with client.websocket_connect("/ws") as websocket:
+          websocket.send_text("hello")
+          data = websocket.receive_text()
+          assert data == "echo: hello"
+  ```
+
+  TestClient supports WebSocket testing in-process. Same pattern works for AsyncClient with `client.websocket_connect`.
+
+  ## Common Pitfalls
+
+  - **Forgetting to clear dependency_overrides.** Bleeds into other tests; symptoms are 'tests pass alone, fail in suite'.
+  - **Using TestClient inside an async test.** TestClient is sync; mixing creates event-loop conflicts. Use AsyncClient.
+  - **Not testing the real router.** Mounting only the route under test misses middleware. Always test against the real `app`.
+  - **Treating TestClient as integration testing.** It's in-process — doesn't catch ASGI server issues, deployment config, etc. Add real HTTP smoke tests at staging.
+
+  ## Verification
+
+  A working FastAPI test suite:
+
+  - Runs in seconds for the unit/component layer.
+  - Each test has a fresh DB transaction or override.
+  - Authentication is overridden to a known user, not bypassing the real flow.
+  - Failures point at one route; tests are scoped tightly.
+  - Fixtures clean up overrides — tests pass in any order.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## TestClient — Sync, requests-Compatible
+
+    ```python
+    from fastapi.testclient import TestClient
+    from .main import app
+
+    client = TestClient(app)
+
+    def test_health():
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+    def test_create_user():
+        response = client.post("/users", json={"name": "alice"})
+        assert response.status_code == 201
+        assert response.json()["name"] == "alice"
+    ```
+
+    TestClient wraps `requests` and runs your FastAPI app in the same process. No real HTTP — fast, no network flake, no port allocation needed.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## AsyncClient — For Async Tests
+
+    When tests are async (using pytest-asyncio or anyio), use httpx.AsyncClient with ASGITransport:
+
+    ```python
+    import pytest
+    from httpx import AsyncClient, ASGITransport
+    from .main import app
+
+    @pytest.mark.anyio
+    async def test_async():
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test"
+        ) as client:
+            response = await client.get("/data")
+            assert response.status_code == 200
+    ```
+
+    This is the right pattern for testing FastAPI apps that have async-only behavior (database connections that must stay async, code that needs to await within the test).
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Dependency Overrides
+
+    The most powerful FastAPI testing feature: replace any dependency with a mock during tests.
+
+    ```python
+    # Production
+    def get_db() -> Session:
+        db = SessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    @app.get("/users/{id}")
+    def get_user(id: int, db: Session = Depends(get_db)):
+        return db.query(User).get(id)
+
+    # Tests
+    def get_test_db():
+        return MockSession({1: User(id=1, name="Alice")})
+
+    app.dependency_overrides[get_db] = get_test_db
+
+    def test_get_user():
+        response = client.get("/users/1")
+        assert response.json()["name"] == "Alice"
+
+    # Clean up
+    app.dependency_overrides.clear()
+    ```
+
+    The override applies for the duration of the test. Set in setUp, clear in tearDown — or use a fixture.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Pytest Fixture Pattern
+
+    ```python
+    import pytest
+    from fastapi.testclient import TestClient
+    from .main import app
+    from .deps import get_db
+
+    @pytest.fixture
+    def client():
+        def get_test_db():
+            return TestSession()
+        app.dependency_overrides[get_db] = get_test_db
+        yield TestClient(app)
+        app.dependency_overrides.clear()
+
+    def test_create_user(client):
+        response = client.post("/users", json={"name": "alice"})
+        assert response.status_code == 201
+    ```
+
+    The fixture sets up the override, yields the client, and cleans up after. Each test gets a fresh dependency state.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Database Tests
+
+    For tests that need real DB integration (not mocked), use a separate test DB and rollback per test:
+
+    ```python
+    @pytest.fixture
+    def db():
+        connection = engine.connect()
+        transaction = connection.begin()
+        session = Session(bind=connection)
+        yield session
+        session.close()
+        transaction.rollback()
+        connection.close()
+
+    @pytest.fixture
+    def client(db):
+        def override():
+            return db
+        app.dependency_overrides[get_db] = override
+        yield TestClient(app)
+        app.dependency_overrides.clear()
+    ```
+
+    Each test gets a clean transaction; the rollback ensures isolation.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Authentication in Tests
+
+    Override the authenticator dependency:
+
+    ```python
+    def authenticated_user():
+        return User(id=1, name="test", is_admin=True)
+
+    def admin_user():
+        user = authenticated_user()
+        user.is_admin = True
+        return user
+
+    @pytest.fixture
+    def authed_client():
+        app.dependency_overrides[get_current_user] = authenticated_user
+        yield TestClient(app)
+        app.dependency_overrides.clear()
+
+    def test_admin_route(authed_client):
+        response = authed_client.get("/admin")
+        assert response.status_code == 200
+    ```
+
+    This sidesteps real JWT/OAuth flows in tests. Real auth gets covered by integration tests.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Testing WebSockets
+
+    ```python
+    def test_websocket():
+        with client.websocket_connect("/ws") as websocket:
+            websocket.send_text("hello")
+            data = websocket.receive_text()
+            assert data == "echo: hello"
+    ```
+
+    TestClient supports WebSocket testing in-process. Same pattern works for AsyncClient with `client.websocket_connect`.
+- fragment_type: guardrail
+  sequence: 8
+  content: |-
+    ## Common Pitfalls
+
+    - **Forgetting to clear dependency_overrides.** Bleeds into other tests; symptoms are 'tests pass alone, fail in suite'.
+    - **Using TestClient inside an async test.** TestClient is sync; mixing creates event-loop conflicts. Use AsyncClient.
+    - **Not testing the real router.** Mounting only the route under test misses middleware. Always test against the real `app`.
+    - **Treating TestClient as integration testing.** It's in-process — doesn't catch ASGI server issues, deployment config, etc. Add real HTTP smoke tests at staging.
+- fragment_type: verification
+  sequence: 9
+  content: |-
+    ## Verification
+
+    A working FastAPI test suite:
+
+    - Runs in seconds for the unit/component layer.
+    - Each test has a fresh DB transaction or override.
+    - Authentication is overridden to a known user, not bypassing the real flow.
+    - Failures point at one route; tests are scoped tightly.
+    - Fixtures clean up overrides — tests pass in any order.
