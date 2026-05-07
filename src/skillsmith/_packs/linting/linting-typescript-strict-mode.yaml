@@ -1,0 +1,367 @@
+skill_type: domain
+skill_id: linting-typescript-strict-mode
+canonical_name: TypeScript Strictness Migration
+category: tooling
+skill_class: domain
+domain_tags:
+- linting
+- typescript
+- strict-mode
+- migration
+- tsconfig
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # TypeScript Strictness Migration
+
+  ## Overview
+
+  Most legacy TypeScript codebases were written with `strict: false`. Turning it on flat fails compile across thousands of errors. The migration pattern: enable flags one at a time, fix incrementally, and use plugins to enforce strictness on new code while old code catches up.
+
+  ---
+
+  ## What 'strict' Bundles
+
+  ```json
+  "strict": true  // implies all of these:
+  {
+      "noImplicitAny": true,
+      "strictNullChecks": true,
+      "strictFunctionTypes": true,
+      "strictBindCallApply": true,
+      "strictPropertyInitialization": true,
+      "noImplicitThis": true,
+      "alwaysStrict": true,
+      "useUnknownInCatchVariables": true
+  }
+  ```
+
+  Each catches a different class of bug. Enable individually before flipping `strict: true`.
+
+  ## Order to Enable
+
+  By cost (lowest first):
+
+  1. **`alwaysStrict`** — emits `'use strict'`. Trivial.
+  2. **`noImplicitThis`** — function `this` must be typed. Few changes needed.
+  3. **`strictBindCallApply`** — typechecks .bind/.call/.apply. Few changes.
+  4. **`useUnknownInCatchVariables`** — `catch (err)` types err as `unknown` not `any`. Convert with type guards.
+  5. **`noImplicitAny`** — every parameter and variable must have a type. Often hundreds of fixes.
+  6. **`strictFunctionTypes`** — function params are contravariant. Rare gotchas.
+  7. **`strictPropertyInitialization`** — class fields must initialize. Often forces refactor.
+  8. **`strictNullChecks`** — null/undefined are real types. Usually the biggest migration.
+
+  Last is hardest; first is easiest. Stage them.
+
+  ## strictNullChecks — The Big Migration
+
+  Before:
+  ```ts
+  function getUser(id: number) {
+      return users.find(u => u.id === id).name;  // never null per types
+  }
+  ```
+
+  With strictNullChecks, `find` returns `User | undefined`. The above doesn't compile. Fixes:
+
+  ```ts
+  const user = users.find(u => u.id === id);
+  if (!user) return null;
+  return user.name;
+  ```
+
+  Or assert (when you're sure):
+
+  ```ts
+  return users.find(u => u.id === id)!.name;  // ! = trust me
+  ```
+
+  Or use the optional chain:
+
+  ```ts
+  return users.find(u => u.id === id)?.name ?? 'unknown';
+  ```
+
+  ## Incremental Migration with Plugins
+
+  `typescript-strict-plugin` enforces strict mode per-file. Add `// @ts-strict-ignore` to opt out a file; everything else gets strict checking.
+
+  Workflow:
+  1. Add the plugin.
+  2. Run `tsc --noEmit`. Add `@ts-strict-ignore` to every failing file.
+  3. Pick one file at a time, remove its ignore, fix the errors.
+  4. Over weeks/months, all ignores disappear.
+  5. Remove the plugin; full strict mode is now possible.
+
+  ## Migrating noImplicitAny
+
+  Most fixes:
+
+  ```ts
+  // before
+  function foo(x) { return x.length; }
+
+  // after
+  function foo(x: string) { return x.length; }
+  ```
+
+  For genuinely-any cases, declare explicitly:
+
+  ```ts
+  function logUnknown(x: unknown) { console.log(x); }
+  ```
+
+  `unknown` is safer than `any` — you can't access properties without narrowing.
+
+  ## strictPropertyInitialization
+
+  Before:
+  ```ts
+  class Service {
+      httpClient: HttpClient;  // error: not initialized
+  }
+  ```
+
+  Three fixes:
+
+  ```ts
+  // 1. Initialize at declaration
+  class Service {
+      httpClient: HttpClient = new HttpClient();
+  }
+
+  // 2. Initialize in constructor
+  class Service {
+      httpClient: HttpClient;
+      constructor(client: HttpClient) {
+          this.httpClient = client;
+      }
+  }
+
+  // 3. Definite assignment assertion (when init is async or framework-driven)
+  class Service {
+      httpClient!: HttpClient;
+  }
+  ```
+
+  For DI frameworks (Angular, NestJS), the `!` form is common.
+
+  ## useUnknownInCatchVariables
+
+  Before:
+  ```ts
+  try { ... } catch (err) {
+      console.log(err.message);  // err: any, no check needed
+  }
+  ```
+
+  After:
+  ```ts
+  try { ... } catch (err) {
+      if (err instanceof Error) {
+          console.log(err.message);
+      }
+  }
+  ```
+
+  Forces you to think about what you might catch. Strings, plain objects, undefined — all legal `throw`s.
+
+  ## Common Pitfalls
+
+  - **Flipping `strict: true` on a 100k-line codebase.** Thousands of errors at once. Stage individually.
+  - **Using `any` everywhere to silence errors.** Defeats the migration. Prefer `unknown` for genuine unknowns; type properly otherwise.
+  - **`@ts-ignore` carpet-bombs.** Hides errors permanently. Use `@ts-expect-error` so the comment errors when the underlying error is fixed (forcing cleanup).
+  - **Skipping `strictNullChecks` because it's hard.** It catches the most bugs. Worth the effort.
+
+  ## Verification
+
+  A successful migration:
+
+  - `tsc --noEmit` passes with `strict: true`.
+  - No `// @ts-ignore` or `as any` in non-test code (or each is justified in a comment).
+  - New code is strict-checked from day one.
+  - Errors caught at compile time that were runtime errors before.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## What 'strict' Bundles
+
+    ```json
+    "strict": true  // implies all of these:
+    {
+        "noImplicitAny": true,
+        "strictNullChecks": true,
+        "strictFunctionTypes": true,
+        "strictBindCallApply": true,
+        "strictPropertyInitialization": true,
+        "noImplicitThis": true,
+        "alwaysStrict": true,
+        "useUnknownInCatchVariables": true
+    }
+    ```
+
+    Each catches a different class of bug. Enable individually before flipping `strict: true`.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Order to Enable
+
+    By cost (lowest first):
+
+    1. **`alwaysStrict`** — emits `'use strict'`. Trivial.
+    2. **`noImplicitThis`** — function `this` must be typed. Few changes needed.
+    3. **`strictBindCallApply`** — typechecks .bind/.call/.apply. Few changes.
+    4. **`useUnknownInCatchVariables`** — `catch (err)` types err as `unknown` not `any`. Convert with type guards.
+    5. **`noImplicitAny`** — every parameter and variable must have a type. Often hundreds of fixes.
+    6. **`strictFunctionTypes`** — function params are contravariant. Rare gotchas.
+    7. **`strictPropertyInitialization`** — class fields must initialize. Often forces refactor.
+    8. **`strictNullChecks`** — null/undefined are real types. Usually the biggest migration.
+
+    Last is hardest; first is easiest. Stage them.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## strictNullChecks — The Big Migration
+
+    Before:
+    ```ts
+    function getUser(id: number) {
+        return users.find(u => u.id === id).name;  // never null per types
+    }
+    ```
+
+    With strictNullChecks, `find` returns `User | undefined`. The above doesn't compile. Fixes:
+
+    ```ts
+    const user = users.find(u => u.id === id);
+    if (!user) return null;
+    return user.name;
+    ```
+
+    Or assert (when you're sure):
+
+    ```ts
+    return users.find(u => u.id === id)!.name;  // ! = trust me
+    ```
+
+    Or use the optional chain:
+
+    ```ts
+    return users.find(u => u.id === id)?.name ?? 'unknown';
+    ```
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Incremental Migration with Plugins
+
+    `typescript-strict-plugin` enforces strict mode per-file. Add `// @ts-strict-ignore` to opt out a file; everything else gets strict checking.
+
+    Workflow:
+    1. Add the plugin.
+    2. Run `tsc --noEmit`. Add `@ts-strict-ignore` to every failing file.
+    3. Pick one file at a time, remove its ignore, fix the errors.
+    4. Over weeks/months, all ignores disappear.
+    5. Remove the plugin; full strict mode is now possible.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Migrating noImplicitAny
+
+    Most fixes:
+
+    ```ts
+    // before
+    function foo(x) { return x.length; }
+
+    // after
+    function foo(x: string) { return x.length; }
+    ```
+
+    For genuinely-any cases, declare explicitly:
+
+    ```ts
+    function logUnknown(x: unknown) { console.log(x); }
+    ```
+
+    `unknown` is safer than `any` — you can't access properties without narrowing.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## strictPropertyInitialization
+
+    Before:
+    ```ts
+    class Service {
+        httpClient: HttpClient;  // error: not initialized
+    }
+    ```
+
+    Three fixes:
+
+    ```ts
+    // 1. Initialize at declaration
+    class Service {
+        httpClient: HttpClient = new HttpClient();
+    }
+
+    // 2. Initialize in constructor
+    class Service {
+        httpClient: HttpClient;
+        constructor(client: HttpClient) {
+            this.httpClient = client;
+        }
+    }
+
+    // 3. Definite assignment assertion (when init is async or framework-driven)
+    class Service {
+        httpClient!: HttpClient;
+    }
+    ```
+
+    For DI frameworks (Angular, NestJS), the `!` form is common.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## useUnknownInCatchVariables
+
+    Before:
+    ```ts
+    try { ... } catch (err) {
+        console.log(err.message);  // err: any, no check needed
+    }
+    ```
+
+    After:
+    ```ts
+    try { ... } catch (err) {
+        if (err instanceof Error) {
+            console.log(err.message);
+        }
+    }
+    ```
+
+    Forces you to think about what you might catch. Strings, plain objects, undefined — all legal `throw`s.
+- fragment_type: guardrail
+  sequence: 8
+  content: |-
+    ## Common Pitfalls
+
+    - **Flipping `strict: true` on a 100k-line codebase.** Thousands of errors at once. Stage individually.
+    - **Using `any` everywhere to silence errors.** Defeats the migration. Prefer `unknown` for genuine unknowns; type properly otherwise.
+    - **`@ts-ignore` carpet-bombs.** Hides errors permanently. Use `@ts-expect-error` so the comment errors when the underlying error is fixed (forcing cleanup).
+    - **Skipping `strictNullChecks` because it's hard.** It catches the most bugs. Worth the effort.
+- fragment_type: verification
+  sequence: 9
+  content: |-
+    ## Verification
+
+    A successful migration:
+
+    - `tsc --noEmit` passes with `strict: true`.
+    - No `// @ts-ignore` or `as any` in non-test code (or each is justified in a comment).
+    - New code is strict-checked from day one.
+    - Errors caught at compile time that were runtime errors before.

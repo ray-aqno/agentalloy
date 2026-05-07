@@ -1,0 +1,451 @@
+skill_type: domain
+skill_id: linting-shareable-configs
+canonical_name: Shareable Lint Configs — eslint-config and beyond
+category: tooling
+skill_class: domain
+domain_tags:
+- linting
+- shareable-config
+- eslint-config
+- monorepo
+- config-package
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Shareable Lint Configs — eslint-config and beyond
+
+  ## Overview
+
+  If you have 10 repos with the same lint config copy-pasted, package it. Shareable configs install as a dependency; updates propagate via version bumps. The pattern works for ESLint, Stylelint, Prettier, and most modern linters.
+
+  ---
+
+  ## Why Package Configs
+
+  - **Single source of truth** — change once, every repo consumes the change.
+  - **Version control on the config** — repos pin to known-good config versions.
+  - **Onboarding** — new repos get the standard config in one install.
+  - **Internal vs published** — for org-internal configs, private npm packages or monorepo internal packages work.
+
+  ## Packaging an ESLint Config
+
+  ```
+  @myorg/eslint-config/
+  ├── package.json
+  ├── index.js
+  ├── react.js
+  └── node.js
+  ```
+
+  `index.js`:
+
+  ```js
+  module.exports = {
+      parser: '@typescript-eslint/parser',
+      plugins: ['@typescript-eslint'],
+      extends: [
+          'eslint:recommended',
+          'plugin:@typescript-eslint/recommended',
+      ],
+      rules: {
+          'no-console': 'warn',
+          'prefer-const': 'error',
+      },
+  };
+  ```
+
+  `package.json`:
+
+  ```json
+  {
+      "name": "@myorg/eslint-config",
+      "version": "1.0.0",
+      "main": "index.js",
+      "peerDependencies": {
+          "eslint": ">=8",
+          "@typescript-eslint/parser": ">=6"
+      }
+  }
+  ```
+
+  Consumer repo:
+
+  ```bash
+  npm install -D @myorg/eslint-config
+  ```
+
+  `.eslintrc.json`:
+
+  ```json
+  { "extends": "@myorg" }
+  ```
+
+  ## Layered Configs
+
+  Different repos need different rules. Ship a base + extensions:
+
+  ```
+  @myorg/eslint-config         # base
+  @myorg/eslint-config/react   # extends base + adds react rules
+  @myorg/eslint-config/node    # extends base + adds node rules
+  ```
+
+  `react.js`:
+
+  ```js
+  module.exports = {
+      extends: ['./index.js', 'plugin:react/recommended', 'plugin:react-hooks/recommended'],
+      rules: {
+          'react/prop-types': 'off',
+      },
+  };
+  ```
+
+  Consumer:
+
+  ```json
+  { "extends": "@myorg/eslint-config/react" }
+  ```
+
+  ## Monorepo Internal Configs
+
+  In a Turborepo / Nx / pnpm workspace:
+
+  ```
+  packages/
+  ├── eslint-config/
+  │   ├── package.json   { "name": "@myorg/eslint-config" }
+  │   └── index.js
+  ├── app-1/
+  │   └── package.json   { "devDependencies": { "@myorg/eslint-config": "workspace:*" } }
+  └── app-2/
+      └── ...
+  ```
+
+  Workspace protocol means edits to the config package are immediately visible to consuming packages — no publish step.
+
+  ## Versioning Strategy
+
+  - **Major bump**: rule additions that fail existing code.
+  - **Minor bump**: new optional rules, plugin updates that don't break.
+  - **Patch**: bug fixes.
+
+  Communicate breaking changes in CHANGELOG. Consumers can pin major to control adoption pace.
+
+  ## Same Pattern for Other Linters
+
+  ```
+  @myorg/stylelint-config
+  @myorg/prettier-config       (just a JSON file)
+  @myorg/tsconfig-base
+  ```
+
+  For Prettier, it's a single config file:
+
+  ```json
+  {
+      "name": "@myorg/prettier-config",
+      "version": "1.0.0",
+      "main": "index.json"
+  }
+  ```
+
+  `index.json`:
+
+  ```json
+  {
+      "semi": false,
+      "singleQuote": true,
+      "trailingComma": "all"
+  }
+  ```
+
+  Consumer's `package.json`:
+
+  ```json
+  { "prettier": "@myorg/prettier-config" }
+  ```
+
+  ## Ruff in pyproject.toml
+
+  For Python, Ruff config can be referenced via a base file:
+
+  ```toml
+  [tool.ruff]
+  extend = "../../shared/ruff.toml"
+  ```
+
+  Or for monorepos, include the path. Ruff doesn't have a published-package convention yet, but the file-reference works.
+
+  ## Documenting the Config
+
+  Ship a README explaining what each rule enforces and why. New contributors will encounter rules they don't understand — without docs, they assume the rules are arbitrary and disable them.
+
+  ```md
+  # @myorg/eslint-config
+
+  ## Rules and rationale
+
+  ### no-console: 'warn'
+  Console output in production hides intent. Use the structured logger.
+
+  ### prefer-const: 'error'
+  Mutable variables that aren't reassigned are noise.
+  ```
+
+  ## Migration
+
+  Adding a new rule that breaks existing code:
+
+  1. Ship as `'warn'` for one minor version. Code that violates it gets warnings but doesn't break.
+  2. Document migration path. Provide a codemod if one exists.
+  3. Bump to `'error'` in the next major version.
+
+  Sudden major changes that break every repo at once kill adoption.
+
+  ## Common Pitfalls
+
+  - **Hardcoding paths in the config.** A shareable config can't reference local files. Use `extends` correctly.
+  - **Forgetting peerDependencies.** Consumer installs the config but not the plugins it needs. List them as peerDeps.
+  - **Bumping major without changelog.** Consumers update blindly, builds break, lose trust.
+  - **Single config for every framework.** A React rule in a Node service is noise. Layer.
+  - **Locking versions too tight.** `"eslint": "8.45.0"` in peerDeps prevents consumers from upgrading independently. Use ranges.
+
+  ## Verification
+
+  A working shareable config:
+
+  - New repo gets standard lint config in one `npm install`.
+  - Updates propagate when consumers bump the version.
+  - Layered configs let different repos opt into different rule sets.
+  - Documented rationale; not just rules but why.
+  - Migration path for breaking changes — warn → error over multiple releases.
+fragments:
+- fragment_type: rationale
+  sequence: 1
+  content: |-
+    ## Why Package Configs
+
+    - **Single source of truth** — change once, every repo consumes the change.
+    - **Version control on the config** — repos pin to known-good config versions.
+    - **Onboarding** — new repos get the standard config in one install.
+    - **Internal vs published** — for org-internal configs, private npm packages or monorepo internal packages work.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Packaging an ESLint Config
+
+    ```
+    @myorg/eslint-config/
+    ├── package.json
+    ├── index.js
+    ├── react.js
+    └── node.js
+    ```
+
+    `index.js`:
+
+    ```js
+    module.exports = {
+        parser: '@typescript-eslint/parser',
+        plugins: ['@typescript-eslint'],
+        extends: [
+            'eslint:recommended',
+            'plugin:@typescript-eslint/recommended',
+        ],
+        rules: {
+            'no-console': 'warn',
+            'prefer-const': 'error',
+        },
+    };
+    ```
+
+    `package.json`:
+
+    ```json
+    {
+        "name": "@myorg/eslint-config",
+        "version": "1.0.0",
+        "main": "index.js",
+        "peerDependencies": {
+            "eslint": ">=8",
+            "@typescript-eslint/parser": ">=6"
+        }
+    }
+    ```
+
+    Consumer repo:
+
+    ```bash
+    npm install -D @myorg/eslint-config
+    ```
+
+    `.eslintrc.json`:
+
+    ```json
+    { "extends": "@myorg" }
+    ```
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Layered Configs
+
+    Different repos need different rules. Ship a base + extensions:
+
+    ```
+    @myorg/eslint-config         # base
+    @myorg/eslint-config/react   # extends base + adds react rules
+    @myorg/eslint-config/node    # extends base + adds node rules
+    ```
+
+    `react.js`:
+
+    ```js
+    module.exports = {
+        extends: ['./index.js', 'plugin:react/recommended', 'plugin:react-hooks/recommended'],
+        rules: {
+            'react/prop-types': 'off',
+        },
+    };
+    ```
+
+    Consumer:
+
+    ```json
+    { "extends": "@myorg/eslint-config/react" }
+    ```
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Monorepo Internal Configs
+
+    In a Turborepo / Nx / pnpm workspace:
+
+    ```
+    packages/
+    ├── eslint-config/
+    │   ├── package.json   { "name": "@myorg/eslint-config" }
+    │   └── index.js
+    ├── app-1/
+    │   └── package.json   { "devDependencies": { "@myorg/eslint-config": "workspace:*" } }
+    └── app-2/
+        └── ...
+    ```
+
+    Workspace protocol means edits to the config package are immediately visible to consuming packages — no publish step.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Versioning Strategy
+
+    - **Major bump**: rule additions that fail existing code.
+    - **Minor bump**: new optional rules, plugin updates that don't break.
+    - **Patch**: bug fixes.
+
+    Communicate breaking changes in CHANGELOG. Consumers can pin major to control adoption pace.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Same Pattern for Other Linters
+
+    ```
+    @myorg/stylelint-config
+    @myorg/prettier-config       (just a JSON file)
+    @myorg/tsconfig-base
+    ```
+
+    For Prettier, it's a single config file:
+
+    ```json
+    {
+        "name": "@myorg/prettier-config",
+        "version": "1.0.0",
+        "main": "index.json"
+    }
+    ```
+
+    `index.json`:
+
+    ```json
+    {
+        "semi": false,
+        "singleQuote": true,
+        "trailingComma": "all"
+    }
+    ```
+
+    Consumer's `package.json`:
+
+    ```json
+    { "prettier": "@myorg/prettier-config" }
+    ```
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Ruff in pyproject.toml
+
+    For Python, Ruff config can be referenced via a base file:
+
+    ```toml
+    [tool.ruff]
+    extend = "../../shared/ruff.toml"
+    ```
+
+    Or for monorepos, include the path. Ruff doesn't have a published-package convention yet, but the file-reference works.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Documenting the Config
+
+    Ship a README explaining what each rule enforces and why. New contributors will encounter rules they don't understand — without docs, they assume the rules are arbitrary and disable them.
+
+    ```md
+    # @myorg/eslint-config
+- fragment_type: execution
+  sequence: 9
+  content: |-
+    ## Rules and rationale
+
+    ### no-console: 'warn'
+    Console output in production hides intent. Use the structured logger.
+
+    ### prefer-const: 'error'
+    Mutable variables that aren't reassigned are noise.
+    ```
+- fragment_type: execution
+  sequence: 10
+  content: |-
+    ## Migration
+
+    Adding a new rule that breaks existing code:
+
+    1. Ship as `'warn'` for one minor version. Code that violates it gets warnings but doesn't break.
+    2. Document migration path. Provide a codemod if one exists.
+    3. Bump to `'error'` in the next major version.
+
+    Sudden major changes that break every repo at once kill adoption.
+- fragment_type: guardrail
+  sequence: 11
+  content: |-
+    ## Common Pitfalls
+
+    - **Hardcoding paths in the config.** A shareable config can't reference local files. Use `extends` correctly.
+    - **Forgetting peerDependencies.** Consumer installs the config but not the plugins it needs. List them as peerDeps.
+    - **Bumping major without changelog.** Consumers update blindly, builds break, lose trust.
+    - **Single config for every framework.** A React rule in a Node service is noise. Layer.
+    - **Locking versions too tight.** `"eslint": "8.45.0"` in peerDeps prevents consumers from upgrading independently. Use ranges.
+- fragment_type: verification
+  sequence: 12
+  content: |-
+    ## Verification
+
+    A working shareable config:
+
+    - New repo gets standard lint config in one `npm install`.
+    - Updates propagate when consumers bump the version.
+    - Layered configs let different repos opt into different rule sets.
+    - Documented rationale; not just rules but why.
+    - Migration path for breaking changes — warn → error over multiple releases.

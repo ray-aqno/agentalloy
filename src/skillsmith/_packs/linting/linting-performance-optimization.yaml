@@ -1,0 +1,383 @@
+skill_type: domain
+skill_id: linting-performance-optimization
+canonical_name: Linting Performance — Speed Beyond 100K LOC
+category: tooling
+skill_class: domain
+domain_tags:
+- linting
+- performance
+- speed
+- incremental
+- profiling
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Linting Performance — Speed Beyond 100K LOC
+
+  ## Overview
+
+  Lint speed matters because slow lint gets bypassed. A 30s lint on save → developers disable it. A 5min CI lint → people merge through failures. The patterns: cache aggressively, lint only changed files, use faster tools, profile what's slow.
+
+  ---
+
+  ## Why Speed Matters
+
+  Tools researchers measure: when feedback exceeds 1 second, devs lose flow. When it exceeds 10 seconds, they context-switch. When it exceeds a minute, they bypass.
+
+  Lint should target sub-second on incremental edits, sub-30-second on full repo, sub-2-minute in CI. Anything more, fix it.
+
+  ## Caching
+
+  ESLint:
+
+  ```bash
+  eslint . --cache
+  ```
+
+  `.eslintcache` stores per-file results keyed by file content + config hash. Files with unchanged content + config skip re-lint.
+
+  For monorepos, set explicit location:
+
+  ```bash
+  eslint . --cache --cache-location .cache/eslint/
+  ```
+
+  Cache invalidates on:
+  - File content change.
+  - ESLint version change.
+  - Config change (any rule added/removed).
+  - Plugin version change.
+
+  ## Incremental Linting
+
+  Lint only changed files:
+
+  ```bash
+  git diff --name-only HEAD~1 -- '*.ts' | xargs eslint
+  ```
+
+  For monorepos with Turbo / Nx, use `affected`:
+
+  ```bash
+  turbo lint --filter=...[HEAD~1]
+  ```
+
+  The graph-aware affected detection is the killer feature — touching `lib-x` re-lints `lib-x` AND every package that imports it.
+
+  ## Parallel Execution
+
+  ESLint 8.x added experimental parallel mode:
+
+  ```bash
+  eslint . --concurrency 4  # 4 workers
+  ```
+
+  For per-package monorepos, parallelize at the runner level instead:
+
+  ```bash
+  turbo lint --concurrency 8  # 8 packages in parallel
+  ```
+
+  Diminishing returns past CPU count. 4-8 is sweet spot.
+
+  ## Profile Slow Rules
+
+  ```bash
+  TIMING=10 eslint .
+  ```
+
+  Reports the 10 slowest rules:
+
+  ```
+  Rule                                  | Time (ms) | Relative
+  :-------------------------------------|----------:|--------:
+  import/no-cycle                       | 12450.123 |    25%
+  @typescript-eslint/no-unused-vars     |  3240.567 |     7%
+  react/prop-types                      |  1560.234 |     3%
+  ```
+
+  Common offenders:
+
+  - `import/no-cycle` — re-traverses the import graph; expensive.
+  - `import/no-unused-modules` — even more expensive.
+  - `@typescript-eslint/no-unsafe-*` — runs the type checker per node.
+  - Custom plugins that re-parse on every node.
+
+  If a rule takes >10% of total time, evaluate whether it's worth keeping.
+
+  ## TypeScript Type-Checked Rules
+
+  `@typescript-eslint` rules that require type information are slow. `parserOptions.project` invokes TS for every lint:
+
+  ```js
+  // expensive
+  parserOptions: {
+      project: './tsconfig.json'
+  }
+  ```
+
+  Faster: separate type-aware lint from non-type-aware lint:
+
+  ```js
+  // Fast lint job — no project
+  { files: ['**/*.ts'], parser: '@typescript-eslint/parser' }
+
+  // Slow lint job — with project, only critical rules
+  {
+      files: ['**/*.ts'],
+      parser: '@typescript-eslint/parser',
+      parserOptions: { project: './tsconfig.json' },
+      rules: {
+          '@typescript-eslint/no-floating-promises': 'error',
+          '@typescript-eslint/no-misused-promises': 'error',
+      }
+  }
+  ```
+
+  Most rules don't need types; isolate the type-aware ones to a slower job.
+
+  ## Faster Tools
+
+  Rust-based linters are 10-100x faster:
+
+  - **Biome** — replaces Prettier + most of ESLint.
+  - **Oxlint** — ESLint-compatible rule set, much faster.
+  - **Ruff** — Python (replaces flake8, pylint, isort).
+
+  Migration trade-off: less plugin ecosystem. For non-Python projects, Oxlint is the safer migration — it's compatible with most ESLint rules.
+
+  ```bash
+  npm install -D oxlint
+  npx oxlint
+  ```
+
+  Switching to Oxlint for the bulk lint and keeping ESLint for specific rules with no Oxlint equivalent is a reasonable middle ground.
+
+  ## Plugin Audit
+
+  ```bash
+  TIMING=ALL eslint . --quiet 2>&1 | grep -E '\d+\.\d+' | head -20
+  ```
+
+  Shows every rule's time. If a plugin you don't actively use takes 5%, drop it.
+
+  ```json
+  "extends": [
+      "eslint:recommended",
+      // "plugin:import/recommended",  // 25% of lint time, low value
+      // "plugin:promise/recommended"  // doesn't catch real issues
+  ]
+  ```
+
+  The 'recommended' set of every plugin you've ever installed adds up.
+
+  ## Common Pitfalls
+
+  - **No `.eslintcache`.** Trivial change in config nukes cache; otherwise it should be on.
+  - **`parserOptions.project` for fast jobs.** Type info is expensive; isolate it.
+  - **`--no-cache` in CI 'for safety'.** CI is exactly where you want the cache. Persist it across runs.
+  - **Using a plugin once for one rule.** Cost of loading the plugin > benefit of one rule. Cherry-pick the rule into your config.
+  - **Leaving slow rules enabled because 'they're recommended'.** Reevaluate. If a rule never finds bugs, kill it.
+
+  ## Verification
+
+  A fast lint setup:
+
+  - Incremental editor lint (single file): <500ms.
+  - Pre-commit lint (changed files): <5s.
+  - CI lint with cache: <30s.
+  - TIMING=ALL shows no rule >10% of total.
+  - Type-aware rules in a separate, slower job.
+fragments:
+- fragment_type: rationale
+  sequence: 1
+  content: |-
+    ## Why Speed Matters
+
+    Tools researchers measure: when feedback exceeds 1 second, devs lose flow. When it exceeds 10 seconds, they context-switch. When it exceeds a minute, they bypass.
+
+    Lint should target sub-second on incremental edits, sub-30-second on full repo, sub-2-minute in CI. Anything more, fix it.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Caching
+
+    ESLint:
+
+    ```bash
+    eslint . --cache
+    ```
+
+    `.eslintcache` stores per-file results keyed by file content + config hash. Files with unchanged content + config skip re-lint.
+
+    For monorepos, set explicit location:
+
+    ```bash
+    eslint . --cache --cache-location .cache/eslint/
+    ```
+
+    Cache invalidates on:
+    - File content change.
+    - ESLint version change.
+    - Config change (any rule added/removed).
+    - Plugin version change.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Incremental Linting
+
+    Lint only changed files:
+
+    ```bash
+    git diff --name-only HEAD~1 -- '*.ts' | xargs eslint
+    ```
+
+    For monorepos with Turbo / Nx, use `affected`:
+
+    ```bash
+    turbo lint --filter=...[HEAD~1]
+    ```
+
+    The graph-aware affected detection is the killer feature — touching `lib-x` re-lints `lib-x` AND every package that imports it.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Parallel Execution
+
+    ESLint 8.x added experimental parallel mode:
+
+    ```bash
+    eslint . --concurrency 4  # 4 workers
+    ```
+
+    For per-package monorepos, parallelize at the runner level instead:
+
+    ```bash
+    turbo lint --concurrency 8  # 8 packages in parallel
+    ```
+
+    Diminishing returns past CPU count. 4-8 is sweet spot.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Profile Slow Rules
+
+    ```bash
+    TIMING=10 eslint .
+    ```
+
+    Reports the 10 slowest rules:
+
+    ```
+    Rule                                  | Time (ms) | Relative
+    :-------------------------------------|----------:|--------:
+    import/no-cycle                       | 12450.123 |    25%
+    @typescript-eslint/no-unused-vars     |  3240.567 |     7%
+    react/prop-types                      |  1560.234 |     3%
+    ```
+
+    Common offenders:
+
+    - `import/no-cycle` — re-traverses the import graph; expensive.
+    - `import/no-unused-modules` — even more expensive.
+    - `@typescript-eslint/no-unsafe-*` — runs the type checker per node.
+    - Custom plugins that re-parse on every node.
+
+    If a rule takes >10% of total time, evaluate whether it's worth keeping.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## TypeScript Type-Checked Rules
+
+    `@typescript-eslint` rules that require type information are slow. `parserOptions.project` invokes TS for every lint:
+
+    ```js
+    // expensive
+    parserOptions: {
+        project: './tsconfig.json'
+    }
+    ```
+
+    Faster: separate type-aware lint from non-type-aware lint:
+
+    ```js
+    // Fast lint job — no project
+    { files: ['**/*.ts'], parser: '@typescript-eslint/parser' }
+
+    // Slow lint job — with project, only critical rules
+    {
+        files: ['**/*.ts'],
+        parser: '@typescript-eslint/parser',
+        parserOptions: { project: './tsconfig.json' },
+        rules: {
+            '@typescript-eslint/no-floating-promises': 'error',
+            '@typescript-eslint/no-misused-promises': 'error',
+        }
+    }
+    ```
+
+    Most rules don't need types; isolate the type-aware ones to a slower job.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Faster Tools
+
+    Rust-based linters are 10-100x faster:
+
+    - **Biome** — replaces Prettier + most of ESLint.
+    - **Oxlint** — ESLint-compatible rule set, much faster.
+    - **Ruff** — Python (replaces flake8, pylint, isort).
+
+    Migration trade-off: less plugin ecosystem. For non-Python projects, Oxlint is the safer migration — it's compatible with most ESLint rules.
+
+    ```bash
+    npm install -D oxlint
+    npx oxlint
+    ```
+
+    Switching to Oxlint for the bulk lint and keeping ESLint for specific rules with no Oxlint equivalent is a reasonable middle ground.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Plugin Audit
+
+    ```bash
+    TIMING=ALL eslint . --quiet 2>&1 | grep -E '\d+\.\d+' | head -20
+    ```
+
+    Shows every rule's time. If a plugin you don't actively use takes 5%, drop it.
+
+    ```json
+    "extends": [
+        "eslint:recommended",
+        // "plugin:import/recommended",  // 25% of lint time, low value
+        // "plugin:promise/recommended"  // doesn't catch real issues
+    ]
+    ```
+
+    The 'recommended' set of every plugin you've ever installed adds up.
+- fragment_type: guardrail
+  sequence: 9
+  content: |-
+    ## Common Pitfalls
+
+    - **No `.eslintcache`.** Trivial change in config nukes cache; otherwise it should be on.
+    - **`parserOptions.project` for fast jobs.** Type info is expensive; isolate it.
+    - **`--no-cache` in CI 'for safety'.** CI is exactly where you want the cache. Persist it across runs.
+    - **Using a plugin once for one rule.** Cost of loading the plugin > benefit of one rule. Cherry-pick the rule into your config.
+    - **Leaving slow rules enabled because 'they're recommended'.** Reevaluate. If a rule never finds bugs, kill it.
+- fragment_type: verification
+  sequence: 10
+  content: |-
+    ## Verification
+
+    A fast lint setup:
+
+    - Incremental editor lint (single file): <500ms.
+    - Pre-commit lint (changed files): <5s.
+    - CI lint with cache: <30s.
+    - TIMING=ALL shows no rule >10% of total.
+    - Type-aware rules in a separate, slower job.

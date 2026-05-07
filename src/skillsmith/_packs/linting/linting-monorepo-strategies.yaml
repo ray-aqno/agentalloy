@@ -1,0 +1,397 @@
+skill_type: domain
+skill_id: linting-monorepo-strategies
+canonical_name: Linting in Monorepos
+category: tooling
+skill_class: domain
+domain_tags:
+- linting
+- monorepo
+- turborepo
+- nx
+- pnpm-workspaces
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Linting in Monorepos
+
+  ## Overview
+
+  Monorepos amplify lint complexity: many packages, possibly different configs, different runtimes. The patterns: shared config package, root + per-package overrides, task-level caching, and only-affected linting. Done right, lint is fast even on huge repos.
+
+  ---
+
+  ## Shared Config Package
+
+  In a monorepo, package the lint config and consume it from each workspace:
+
+  ```
+  packages/
+  ├── eslint-config/
+  │   ├── package.json   { "name": "@myrepo/eslint-config" }
+  │   └── index.js
+  ├── app-1/
+  │   └── eslint.config.js   import { eslintConfig } from '@myrepo/eslint-config'
+  ├── app-2/
+  └── lib-1/
+  ```
+
+  The workspace protocol (`workspace:*`) means each consumer always has the latest:
+
+  ```json
+  {
+      "devDependencies": {
+          "@myrepo/eslint-config": "workspace:*"
+      }
+  }
+  ```
+
+  ## Root Config + Per-Package Override
+
+  ESLint flat config supports per-package overrides naturally:
+
+  ```js
+  // eslint.config.js (root)
+  import baseConfig from '@myrepo/eslint-config';
+  import reactConfig from '@myrepo/eslint-config/react';
+
+  export default [
+      ...baseConfig,
+      {
+          files: ['apps/web/**/*.{ts,tsx}'],
+          ...reactConfig,
+      },
+      {
+          files: ['libs/util/**/*.ts'],
+          rules: { 'no-console': 'off' },  // utility library can console.log
+      },
+  ];
+  ```
+
+  One root config, multiple file-pattern blocks. Each block applies to its matched files.
+
+  ## Turborepo
+
+  ```json
+  // turbo.json
+  {
+      "tasks": {
+          "lint": {
+              "outputs": [],
+              "cache": true
+          }
+      }
+  }
+  ```
+
+  ```bash
+  turbo lint
+  ```
+
+  Turbo runs `lint` in every package that defines it; caches the result keyed by file hashes. Subsequent runs that don't change files are instant.
+
+  ## Only-Affected
+
+  ```bash
+  turbo lint --filter=...[origin/main]
+  ```
+
+  Lints only packages affected by changes since `origin/main`. For a monorepo with 50 packages and a PR touching 2, this is 25x faster than linting everything.
+
+  The pattern relies on Turbo's dependency graph: if you touch `lib-utils` and `app-web` depends on it, both are linted.
+
+  ## Nx
+
+  Nx has the same model:
+
+  ```bash
+  npx nx lint app-1
+  npx nx affected --target=lint  # only changed
+  npx nx run-many --target=lint  # all
+  ```
+
+  Nx caches more aggressively than Turbo (also caches the inputs not just outputs).
+
+  ## pnpm Workspaces
+
+  For projects without a build orchestrator:
+
+  ```bash
+  pnpm -r lint  # run lint in every package recursively
+  pnpm --filter @myrepo/app-1 lint  # one package
+  pnpm --filter '...^...' lint  # changed + dependents
+  ```
+
+  Less smart than Turbo / Nx but no overhead, no extra config.
+
+  ## CI Integration
+
+  ```yaml
+  - run: pnpm install --frozen-lockfile
+  - run: pnpm turbo lint --filter=...[origin/main]
+  ```
+
+  In a 50-package monorepo, this changes 5-minute CI to 30 seconds when the PR is small.
+
+  Cache the Turbo cache directory:
+
+  ```yaml
+  - uses: actions/cache@v4
+    with:
+      path: .turbo
+      key: turbo-${{ runner.os }}-${{ github.sha }}
+      restore-keys: turbo-${{ runner.os }}-
+  ```
+
+  ## Per-Package Lint Scripts
+
+  Each package needs `"lint"` in its package.json:
+
+  ```json
+  {
+      "name": "@myrepo/app-1",
+      "scripts": {
+          "lint": "eslint . --max-warnings 0"
+      }
+  }
+  ```
+
+  Without this, Turbo / pnpm `-r` skip the package. Standardize across packages so the runner can find them.
+
+  ## Pre-Commit in Monorepos
+
+  `lint-staged` works at the root, but globs may fail for moved files across packages. Configure carefully:
+
+  ```json
+  {
+      "lint-staged": {
+          "*.{ts,tsx}": "eslint --fix",
+          "*.{json,md}": "prettier --write"
+      }
+  }
+  ```
+
+  Or use Turbo's affected detection:
+
+  ```bash
+  husky pre-commit:
+    turbo lint --filter=...[HEAD~1]
+  ```
+
+  ## Common Pitfalls
+
+  - **One ESLint config in the root for everything.** Big repos need per-package or per-pattern config.
+  - **Linting all packages on every PR.** Wasted compute. Use `--filter` or `affected`.
+  - **No cache.** Even small monorepos benefit from Turbo's caching.
+  - **Different lint config in different packages.** Drift accumulates. Centralize in a config package.
+  - **Skipping pre-commit because it's slow.** Use affected detection at the hook level too.
+
+  ## Verification
+
+  A working monorepo lint setup:
+
+  - Shared config package keeps every package in sync.
+  - Per-package overrides exist where needed (a Node lib has different rules than a React app).
+  - `turbo lint` (or equivalent) runs only affected packages on PRs.
+  - CI runs in seconds for small PRs, minutes for huge ones.
+  - Pre-commit catches issues before they hit the repo.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Shared Config Package
+
+    In a monorepo, package the lint config and consume it from each workspace:
+
+    ```
+    packages/
+    ├── eslint-config/
+    │   ├── package.json   { "name": "@myrepo/eslint-config" }
+    │   └── index.js
+    ├── app-1/
+    │   └── eslint.config.js   import { eslintConfig } from '@myrepo/eslint-config'
+    ├── app-2/
+    └── lib-1/
+    ```
+
+    The workspace protocol (`workspace:*`) means each consumer always has the latest:
+
+    ```json
+    {
+        "devDependencies": {
+            "@myrepo/eslint-config": "workspace:*"
+        }
+    }
+    ```
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Root Config + Per-Package Override
+
+    ESLint flat config supports per-package overrides naturally:
+
+    ```js
+    // eslint.config.js (root)
+    import baseConfig from '@myrepo/eslint-config';
+    import reactConfig from '@myrepo/eslint-config/react';
+
+    export default [
+        ...baseConfig,
+        {
+            files: ['apps/web/**/*.{ts,tsx}'],
+            ...reactConfig,
+        },
+        {
+            files: ['libs/util/**/*.ts'],
+            rules: { 'no-console': 'off' },  // utility library can console.log
+        },
+    ];
+    ```
+
+    One root config, multiple file-pattern blocks. Each block applies to its matched files.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Turborepo
+
+    ```json
+    // turbo.json
+    {
+        "tasks": {
+            "lint": {
+                "outputs": [],
+                "cache": true
+            }
+        }
+    }
+    ```
+
+    ```bash
+    turbo lint
+    ```
+
+    Turbo runs `lint` in every package that defines it; caches the result keyed by file hashes. Subsequent runs that don't change files are instant.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Only-Affected
+
+    ```bash
+    turbo lint --filter=...[origin/main]
+    ```
+
+    Lints only packages affected by changes since `origin/main`. For a monorepo with 50 packages and a PR touching 2, this is 25x faster than linting everything.
+
+    The pattern relies on Turbo's dependency graph: if you touch `lib-utils` and `app-web` depends on it, both are linted.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Nx
+
+    Nx has the same model:
+
+    ```bash
+    npx nx lint app-1
+    npx nx affected --target=lint  # only changed
+    npx nx run-many --target=lint  # all
+    ```
+
+    Nx caches more aggressively than Turbo (also caches the inputs not just outputs).
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## pnpm Workspaces
+
+    For projects without a build orchestrator:
+
+    ```bash
+    pnpm -r lint  # run lint in every package recursively
+    pnpm --filter @myrepo/app-1 lint  # one package
+    pnpm --filter '...^...' lint  # changed + dependents
+    ```
+
+    Less smart than Turbo / Nx but no overhead, no extra config.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## CI Integration
+
+    ```yaml
+    - run: pnpm install --frozen-lockfile
+    - run: pnpm turbo lint --filter=...[origin/main]
+    ```
+
+    In a 50-package monorepo, this changes 5-minute CI to 30 seconds when the PR is small.
+
+    Cache the Turbo cache directory:
+
+    ```yaml
+    - uses: actions/cache@v4
+      with:
+        path: .turbo
+        key: turbo-${{ runner.os }}-${{ github.sha }}
+        restore-keys: turbo-${{ runner.os }}-
+    ```
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Per-Package Lint Scripts
+
+    Each package needs `"lint"` in its package.json:
+
+    ```json
+    {
+        "name": "@myrepo/app-1",
+        "scripts": {
+            "lint": "eslint . --max-warnings 0"
+        }
+    }
+    ```
+
+    Without this, Turbo / pnpm `-r` skip the package. Standardize across packages so the runner can find them.
+- fragment_type: execution
+  sequence: 9
+  content: |-
+    ## Pre-Commit in Monorepos
+
+    `lint-staged` works at the root, but globs may fail for moved files across packages. Configure carefully:
+
+    ```json
+    {
+        "lint-staged": {
+            "*.{ts,tsx}": "eslint --fix",
+            "*.{json,md}": "prettier --write"
+        }
+    }
+    ```
+
+    Or use Turbo's affected detection:
+
+    ```bash
+    husky pre-commit:
+      turbo lint --filter=...[HEAD~1]
+    ```
+- fragment_type: guardrail
+  sequence: 10
+  content: |-
+    ## Common Pitfalls
+
+    - **One ESLint config in the root for everything.** Big repos need per-package or per-pattern config.
+    - **Linting all packages on every PR.** Wasted compute. Use `--filter` or `affected`.
+    - **No cache.** Even small monorepos benefit from Turbo's caching.
+    - **Different lint config in different packages.** Drift accumulates. Centralize in a config package.
+    - **Skipping pre-commit because it's slow.** Use affected detection at the hook level too.
+- fragment_type: verification
+  sequence: 11
+  content: |-
+    ## Verification
+
+    A working monorepo lint setup:
+
+    - Shared config package keeps every package in sync.
+    - Per-package overrides exist where needed (a Node lib has different rules than a React app).
+    - `turbo lint` (or equivalent) runs only affected packages on PRs.
+    - CI runs in seconds for small PRs, minutes for huge ones.
+    - Pre-commit catches issues before they hit the repo.

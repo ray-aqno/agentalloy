@@ -28,3 +28,33 @@ skills:
 - skill_id: linting-typescript-eslint
   file: linting-typescript-eslint.yaml
   fragment_count: 6
+- skill_id: linting-ci-integration
+  file: linting-ci-integration.yaml
+  fragment_count: 12
+- skill_id: linting-eslint-plugin-authoring
+  file: linting-eslint-plugin-authoring.yaml
+  fragment_count: 10
+- skill_id: linting-format-vs-lint
+  file: linting-format-vs-lint.yaml
+  fragment_count: 10
+- skill_id: linting-golangci-lint
+  file: linting-golangci-lint.yaml
+  fragment_count: 11
+- skill_id: linting-monorepo-strategies
+  file: linting-monorepo-strategies.yaml
+  fragment_count: 11
+- skill_id: linting-performance-optimization
+  file: linting-performance-optimization.yaml
+  fragment_count: 10
+- skill_id: linting-pre-commit-hooks
+  file: linting-pre-commit-hooks.yaml
+  fragment_count: 10
+- skill_id: linting-shareable-configs
+  file: linting-shareable-configs.yaml
+  fragment_count: 12
+- skill_id: linting-stylelint
+  file: linting-stylelint.yaml
+  fragment_count: 10
+- skill_id: linting-typescript-strict-mode
+  file: linting-typescript-strict-mode.yaml
+  fragment_count: 9
