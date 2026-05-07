@@ -1,0 +1,275 @@
+skill_type: domain
+skill_id: data-engineering-spark-fundamentals
+canonical_name: Apache Spark Fundamentals
+category: engineering
+skill_class: domain
+domain_tags:
+- data-engineering
+- spark
+- pyspark
+- distributed-computing
+- dataframes
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Apache Spark Fundamentals
+
+  ## Overview
+
+  Spark processes large datasets across a cluster. The DataFrame API is the modern interface — declarative, optimized by Catalyst, runs the same on PySpark / Scala / SQL. The mental model: transformations are lazy; actions trigger computation; partition layout determines performance.
+
+  ---
+
+  ## DataFrame Basics
+
+  ```python
+  from pyspark.sql import SparkSession
+
+  spark = SparkSession.builder.appName("example").getOrCreate()
+
+  orders = spark.read.parquet("s3://bucket/orders/")
+  result = (
+      orders
+      .filter(orders.status == "completed")
+      .groupBy("customer_id")
+      .agg({"total": "sum"})
+      .orderBy("sum(total)", ascending=False)
+      .limit(100)
+  )
+  result.show()
+  ```
+
+  DataFrames are immutable; each transformation returns a new DataFrame. Operations are queued; nothing runs until an action (.show, .collect, .write).
+
+  ## Transformations vs Actions
+
+  **Transformations** (lazy — build the plan):
+  - `select`, `filter`, `withColumn`
+  - `groupBy`, `agg`
+  - `join`, `union`
+  - `orderBy`, `limit`
+
+  **Actions** (eager — execute the plan):
+  - `show`, `collect`, `take`, `count`
+  - `write`, `save`
+  - `foreach`, `toPandas`
+
+  The plan optimizer (Catalyst) sees the whole pipeline before running, so it can reorder filters before joins, push predicates to source, etc.
+
+  ## Partitioning
+
+  Spark splits data into partitions; each partition processes on one executor core in parallel. Partition layout affects everything:
+
+  - **Read partitions** match the source files (one per Parquet file by default).
+  - **Shuffle partitions** controlled by `spark.sql.shuffle.partitions` (default 200).
+  - **Repartition** explicitly: `df.repartition(50, "customer_id")`.
+
+  Too few partitions: under-utilizes the cluster. Too many: overhead dominates. Sweet spot: ~100MB per partition, ~3x cluster cores total.
+
+  ## Broadcast Joins
+
+  When joining large + small tables, broadcast the small one:
+
+  ```python
+  from pyspark.sql.functions import broadcast
+
+  result = orders.join(broadcast(states), orders.state_code == states.code)
+  ```
+
+  Avoids a shuffle. Spark auto-broadcasts tables under `spark.sql.autoBroadcastJoinThreshold` (default 10MB). Larger small-table sizes (~100MB-1GB) often warrant explicit `broadcast()`.
+
+  ## Catalyst Optimizer
+
+  Catalyst transforms your query through phases:
+
+  1. Logical plan — what you wrote.
+  2. Optimized logical plan — predicate pushdown, constant folding.
+  3. Physical plan — choose join strategy, partition strategy.
+  4. Code generation — JVM bytecode for the actual loop.
+
+  Run `df.explain(True)` to see all phases. Most performance debugging starts here.
+
+  ## Structured Streaming
+
+  Same DataFrame API, but reads from streaming sources (Kafka, Kinesis, file dirs):
+
+  ```python
+  events = (
+      spark.readStream
+      .format("kafka")
+      .option("subscribe", "user-events")
+      .load()
+  )
+
+  (events
+      .writeStream
+      .format("parquet")
+      .option("path", "s3://bucket/processed/")
+      .trigger(processingTime="1 minute")
+      .start())
+  ```
+
+  Spark continuously processes new data, checkpoints progress, exactly-once semantics with appropriate sinks.
+
+  ## PySpark vs Scala
+
+  - **PySpark** — Python wrapper. Same DataFrame API. Runs JVM under the hood; UDFs cross JVM↔Python boundary (slow).
+  - **Scala** — native. UDFs run on JVM (fast). Less common for data science teams.
+  - **Spark SQL** — pure SQL. Optimized identically to DataFrame ops. Use when the query is naturally SQL.
+
+  For most teams: PySpark for development speed; Scala for performance-critical paths; SQL for ad hoc.
+
+  ## Common Pitfalls
+
+  - **Calling `.collect()` on huge DataFrames.** Pulls everything to driver memory; OOMs.
+  - **UDFs in PySpark for what could be a SQL function.** UDF crosses JVM↔Python serialization. Use `pyspark.sql.functions` whenever possible.
+  - **Forgetting to cache reused DataFrames.** Each action recomputes the whole plan from source. `df.cache()` materializes.
+  - **`groupBy` then `count` on a high-cardinality key.** Skewed shuffle: a few partitions get most the data. Use salting or different key.
+  - **Reading lots of small files.** Each file is a partition; thousands of partitions = overhead. Coalesce on write.
+
+  ## Verification
+
+  A working Spark job:
+
+  - Cluster utilization stays high (executors busy throughout, not idle waiting).
+  - `df.explain(True)` shows pushed-down filters, expected joins.
+  - Memory pressure stays under limits — no executor OOMs.
+  - Streaming jobs checkpoint regularly and resume cleanly after restart.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## DataFrame Basics
+
+    ```python
+    from pyspark.sql import SparkSession
+
+    spark = SparkSession.builder.appName("example").getOrCreate()
+
+    orders = spark.read.parquet("s3://bucket/orders/")
+    result = (
+        orders
+        .filter(orders.status == "completed")
+        .groupBy("customer_id")
+        .agg({"total": "sum"})
+        .orderBy("sum(total)", ascending=False)
+        .limit(100)
+    )
+    result.show()
+    ```
+
+    DataFrames are immutable; each transformation returns a new DataFrame. Operations are queued; nothing runs until an action (.show, .collect, .write).
+- fragment_type: rationale
+  sequence: 2
+  content: |-
+    ## Transformations vs Actions
+
+    **Transformations** (lazy — build the plan):
+    - `select`, `filter`, `withColumn`
+    - `groupBy`, `agg`
+    - `join`, `union`
+    - `orderBy`, `limit`
+
+    **Actions** (eager — execute the plan):
+    - `show`, `collect`, `take`, `count`
+    - `write`, `save`
+    - `foreach`, `toPandas`
+
+    The plan optimizer (Catalyst) sees the whole pipeline before running, so it can reorder filters before joins, push predicates to source, etc.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Partitioning
+
+    Spark splits data into partitions; each partition processes on one executor core in parallel. Partition layout affects everything:
+
+    - **Read partitions** match the source files (one per Parquet file by default).
+    - **Shuffle partitions** controlled by `spark.sql.shuffle.partitions` (default 200).
+    - **Repartition** explicitly: `df.repartition(50, "customer_id")`.
+
+    Too few partitions: under-utilizes the cluster. Too many: overhead dominates. Sweet spot: ~100MB per partition, ~3x cluster cores total.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Broadcast Joins
+
+    When joining large + small tables, broadcast the small one:
+
+    ```python
+    from pyspark.sql.functions import broadcast
+
+    result = orders.join(broadcast(states), orders.state_code == states.code)
+    ```
+
+    Avoids a shuffle. Spark auto-broadcasts tables under `spark.sql.autoBroadcastJoinThreshold` (default 10MB). Larger small-table sizes (~100MB-1GB) often warrant explicit `broadcast()`.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Catalyst Optimizer
+
+    Catalyst transforms your query through phases:
+
+    1. Logical plan — what you wrote.
+    2. Optimized logical plan — predicate pushdown, constant folding.
+    3. Physical plan — choose join strategy, partition strategy.
+    4. Code generation — JVM bytecode for the actual loop.
+
+    Run `df.explain(True)` to see all phases. Most performance debugging starts here.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Structured Streaming
+
+    Same DataFrame API, but reads from streaming sources (Kafka, Kinesis, file dirs):
+
+    ```python
+    events = (
+        spark.readStream
+        .format("kafka")
+        .option("subscribe", "user-events")
+        .load()
+    )
+
+    (events
+        .writeStream
+        .format("parquet")
+        .option("path", "s3://bucket/processed/")
+        .trigger(processingTime="1 minute")
+        .start())
+    ```
+
+    Spark continuously processes new data, checkpoints progress, exactly-once semantics with appropriate sinks.
+- fragment_type: rationale
+  sequence: 7
+  content: |-
+    ## PySpark vs Scala
+
+    - **PySpark** — Python wrapper. Same DataFrame API. Runs JVM under the hood; UDFs cross JVM↔Python boundary (slow).
+    - **Scala** — native. UDFs run on JVM (fast). Less common for data science teams.
+    - **Spark SQL** — pure SQL. Optimized identically to DataFrame ops. Use when the query is naturally SQL.
+
+    For most teams: PySpark for development speed; Scala for performance-critical paths; SQL for ad hoc.
+- fragment_type: guardrail
+  sequence: 8
+  content: |-
+    ## Common Pitfalls
+
+    - **Calling `.collect()` on huge DataFrames.** Pulls everything to driver memory; OOMs.
+    - **UDFs in PySpark for what could be a SQL function.** UDF crosses JVM↔Python serialization. Use `pyspark.sql.functions` whenever possible.
+    - **Forgetting to cache reused DataFrames.** Each action recomputes the whole plan from source. `df.cache()` materializes.
+    - **`groupBy` then `count` on a high-cardinality key.** Skewed shuffle: a few partitions get most the data. Use salting or different key.
+    - **Reading lots of small files.** Each file is a partition; thousands of partitions = overhead. Coalesce on write.
+- fragment_type: verification
+  sequence: 9
+  content: |-
+    ## Verification
+
+    A working Spark job:
+
+    - Cluster utilization stays high (executors busy throughout, not idle waiting).
+    - `df.explain(True)` shows pushed-down filters, expected joins.
+    - Memory pressure stays under limits — no executor OOMs.
+    - Streaming jobs checkpoint regularly and resume cleanly after restart.

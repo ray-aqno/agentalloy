@@ -28,3 +28,18 @@ skills:
 - skill_id: data-engineering-dbt-tests-and-snapshots
   file: data-engineering-dbt-tests-and-snapshots.yaml
   fragment_count: 3
+- skill_id: data-engineering-data-quality
+  file: data-engineering-data-quality.yaml
+  fragment_count: 12
+- skill_id: data-engineering-dimensional-modeling
+  file: data-engineering-dimensional-modeling.yaml
+  fragment_count: 11
+- skill_id: data-engineering-iceberg-lakehouse
+  file: data-engineering-iceberg-lakehouse.yaml
+  fragment_count: 11
+- skill_id: data-engineering-slowly-changing-dimensions
+  file: data-engineering-slowly-changing-dimensions.yaml
+  fragment_count: 9
+- skill_id: data-engineering-spark-fundamentals
+  file: data-engineering-spark-fundamentals.yaml
+  fragment_count: 9

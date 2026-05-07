@@ -1,0 +1,293 @@
+skill_type: domain
+skill_id: data-engineering-iceberg-lakehouse
+canonical_name: Apache Iceberg and the Lakehouse Pattern
+category: engineering
+skill_class: domain
+domain_tags:
+- data-engineering
+- iceberg
+- lakehouse
+- delta-lake
+- data-lake
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Apache Iceberg and the Lakehouse Pattern
+
+  ## Overview
+
+  Iceberg is a table format that sits on top of file formats (Parquet/ORC). It adds ACID transactions, schema evolution, time travel, and partition evolution to data lakes. The 'lakehouse' pattern: warehouse-grade queries against lake-priced storage.
+
+  ---
+
+  ## Why Iceberg Exists
+
+  Plain Parquet on S3 has problems for analytical workloads:
+
+  - **No transactions** — concurrent writers corrupt data.
+  - **No schema evolution** — adding a column is a full table rewrite.
+  - **No time travel** — can't query 'what was the table yesterday'.
+  - **Hive partition layout is rigid** — repartitioning means rewriting everything.
+
+  Iceberg solves these by adding a metadata layer above the files. The files stay Parquet; Iceberg tracks which files belong to which version of the table.
+
+  ## Architecture
+
+  ```
+  metadata.json          ← table version pointer (atomic swap on write)
+  ├── manifest-list-v1
+  │   ├── manifest-1     ← list of data files, with stats
+  │   ├── manifest-2
+  │   └── ...
+  └── manifest-list-v2   ← next snapshot
+
+  data/
+  ├── partition_a/file-1.parquet
+  ├── partition_a/file-2.parquet
+  └── partition_b/file-3.parquet
+  ```
+
+  Writers add new manifests; the metadata.json swap is atomic. Readers always see a consistent snapshot.
+
+  ## Schema Evolution
+
+  ```sql
+  ALTER TABLE orders ADD COLUMN gift_message STRING;
+  ALTER TABLE orders RENAME COLUMN cust_id TO customer_id;
+  ALTER TABLE orders DROP COLUMN deprecated_field;
+  ```
+
+  These are metadata-only operations. Existing files don't change; the schema entry says 'this column exists from version X'. Reads project the new schema; old files return null for new columns.
+
+  ## Time Travel
+
+  ```sql
+  SELECT * FROM orders FOR VERSION AS OF 1234;
+  SELECT * FROM orders FOR TIMESTAMP AS OF '2026-05-01 10:00:00';
+  ```
+
+  Each write creates a new snapshot. Iceberg keeps them (per retention policy). Useful for:
+
+  - **Auditing**: 'what was the data last Tuesday?'
+  - **Rollback**: 'revert the bad write'.
+  - **Reproducibility**: pin an analysis to a specific version.
+
+  ## Partition Evolution
+
+  Hive partitioning bakes the partition column into the directory layout. Changing it requires a rewrite.
+
+  Iceberg decouples the partition spec from the file layout. You can change `partitioned by hour(ts)` to `partitioned by day(ts)` without rewriting old files. New writes use the new spec; old data is queryable through the original spec.
+
+  ## Hidden Partitioning
+
+  ```sql
+  CREATE TABLE events (
+      id BIGINT,
+      ts TIMESTAMP,
+      user_id BIGINT,
+      payload STRING
+  )
+  PARTITIONED BY (day(ts));
+
+  SELECT * FROM events WHERE ts > '2026-05-01';
+  ```
+
+  Iceberg figures out from `day(ts)` which partitions to scan. The user writes natural predicates; Iceberg handles partition pruning. Compare with Hive where you'd have to write `WHERE day = '2026-05-01' AND ts > '2026-05-01'`.
+
+  ## Delta Lake and Hudi
+
+  - **Delta Lake** — Databricks-developed, similar feature set. Integrates tightly with Spark + Databricks. Open-sourced under Linux Foundation.
+  - **Apache Hudi** — older, optimized for streaming-ingest with copy-on-write or merge-on-read.
+  - **Apache Iceberg** — vendor-neutral, broadest engine support (Spark, Trino, Flink, Snowflake, Athena, BigQuery).
+
+  Iceberg is winning on multi-engine support; Delta on Databricks-centric stacks. All three solve the same problems.
+
+  ## Read-Modify-Write Patterns
+
+  ```sql
+  MERGE INTO orders t
+  USING source s
+  ON t.id = s.id
+  WHEN MATCHED THEN UPDATE SET t.status = s.status
+  WHEN NOT MATCHED THEN INSERT *;
+  ```
+
+  Iceberg supports atomic MERGE. Underneath, it produces new files with the merged result and atomically swaps the metadata pointer.
+
+  ## Compaction
+
+  Streaming ingest produces many small files. Compaction combines them:
+
+  ```sql
+  CALL system.rewrite_data_files('orders');
+  ```
+
+  This reads the small files, writes larger ones, swaps the metadata. Reads see the same data; queries get faster because there's less file open overhead.
+
+  Run compaction nightly on streaming-ingest tables.
+
+  ## Common Pitfalls
+
+  - **Treating Iceberg tables like Parquet directories.** Don't manually delete files; use Iceberg APIs. Hand-deletes corrupt the metadata.
+  - **Forgetting snapshot expiration.** Old snapshots accumulate. Configure `snapshot_id_inheritance.enabled` and an expiration policy.
+  - **Cross-engine writes without coordination.** Two writers (Spark + Trino) writing concurrently to the same table can both succeed, but conflict resolution is strict — one will lose. Use REST catalog or Nessie for serialization.
+  - **Tiny-file proliferation from streaming ingest.** Schedule compaction; otherwise read performance degrades over time.
+
+  ## Verification
+
+  A working Iceberg setup:
+
+  - Schema evolution works without rewriting historical data.
+  - Time travel returns the right snapshot for a given timestamp.
+  - Concurrent writes serialize via the catalog without corruption.
+  - Compaction keeps file counts bounded.
+  - All your engines (Spark, Trino, etc.) read the same table consistently.
+fragments:
+- fragment_type: rationale
+  sequence: 1
+  content: |-
+    ## Why Iceberg Exists
+
+    Plain Parquet on S3 has problems for analytical workloads:
+
+    - **No transactions** — concurrent writers corrupt data.
+    - **No schema evolution** — adding a column is a full table rewrite.
+    - **No time travel** — can't query 'what was the table yesterday'.
+    - **Hive partition layout is rigid** — repartitioning means rewriting everything.
+
+    Iceberg solves these by adding a metadata layer above the files. The files stay Parquet; Iceberg tracks which files belong to which version of the table.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Architecture
+
+    ```
+    metadata.json          ← table version pointer (atomic swap on write)
+    ├── manifest-list-v1
+    │   ├── manifest-1     ← list of data files, with stats
+    │   ├── manifest-2
+    │   └── ...
+    └── manifest-list-v2   ← next snapshot
+
+    data/
+    ├── partition_a/file-1.parquet
+    ├── partition_a/file-2.parquet
+    └── partition_b/file-3.parquet
+    ```
+
+    Writers add new manifests; the metadata.json swap is atomic. Readers always see a consistent snapshot.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Schema Evolution
+
+    ```sql
+    ALTER TABLE orders ADD COLUMN gift_message STRING;
+    ALTER TABLE orders RENAME COLUMN cust_id TO customer_id;
+    ALTER TABLE orders DROP COLUMN deprecated_field;
+    ```
+
+    These are metadata-only operations. Existing files don't change; the schema entry says 'this column exists from version X'. Reads project the new schema; old files return null for new columns.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Time Travel
+
+    ```sql
+    SELECT * FROM orders FOR VERSION AS OF 1234;
+    SELECT * FROM orders FOR TIMESTAMP AS OF '2026-05-01 10:00:00';
+    ```
+
+    Each write creates a new snapshot. Iceberg keeps them (per retention policy). Useful for:
+
+    - **Auditing**: 'what was the data last Tuesday?'
+    - **Rollback**: 'revert the bad write'.
+    - **Reproducibility**: pin an analysis to a specific version.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Partition Evolution
+
+    Hive partitioning bakes the partition column into the directory layout. Changing it requires a rewrite.
+
+    Iceberg decouples the partition spec from the file layout. You can change `partitioned by hour(ts)` to `partitioned by day(ts)` without rewriting old files. New writes use the new spec; old data is queryable through the original spec.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Hidden Partitioning
+
+    ```sql
+    CREATE TABLE events (
+        id BIGINT,
+        ts TIMESTAMP,
+        user_id BIGINT,
+        payload STRING
+    )
+    PARTITIONED BY (day(ts));
+
+    SELECT * FROM events WHERE ts > '2026-05-01';
+    ```
+
+    Iceberg figures out from `day(ts)` which partitions to scan. The user writes natural predicates; Iceberg handles partition pruning. Compare with Hive where you'd have to write `WHERE day = '2026-05-01' AND ts > '2026-05-01'`.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Delta Lake and Hudi
+
+    - **Delta Lake** — Databricks-developed, similar feature set. Integrates tightly with Spark + Databricks. Open-sourced under Linux Foundation.
+    - **Apache Hudi** — older, optimized for streaming-ingest with copy-on-write or merge-on-read.
+    - **Apache Iceberg** — vendor-neutral, broadest engine support (Spark, Trino, Flink, Snowflake, Athena, BigQuery).
+
+    Iceberg is winning on multi-engine support; Delta on Databricks-centric stacks. All three solve the same problems.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Read-Modify-Write Patterns
+
+    ```sql
+    MERGE INTO orders t
+    USING source s
+    ON t.id = s.id
+    WHEN MATCHED THEN UPDATE SET t.status = s.status
+    WHEN NOT MATCHED THEN INSERT *;
+    ```
+
+    Iceberg supports atomic MERGE. Underneath, it produces new files with the merged result and atomically swaps the metadata pointer.
+- fragment_type: execution
+  sequence: 9
+  content: |-
+    ## Compaction
+
+    Streaming ingest produces many small files. Compaction combines them:
+
+    ```sql
+    CALL system.rewrite_data_files('orders');
+    ```
+
+    This reads the small files, writes larger ones, swaps the metadata. Reads see the same data; queries get faster because there's less file open overhead.
+
+    Run compaction nightly on streaming-ingest tables.
+- fragment_type: guardrail
+  sequence: 10
+  content: |-
+    ## Common Pitfalls
+
+    - **Treating Iceberg tables like Parquet directories.** Don't manually delete files; use Iceberg APIs. Hand-deletes corrupt the metadata.
+    - **Forgetting snapshot expiration.** Old snapshots accumulate. Configure `snapshot_id_inheritance.enabled` and an expiration policy.
+    - **Cross-engine writes without coordination.** Two writers (Spark + Trino) writing concurrently to the same table can both succeed, but conflict resolution is strict — one will lose. Use REST catalog or Nessie for serialization.
+    - **Tiny-file proliferation from streaming ingest.** Schedule compaction; otherwise read performance degrades over time.
+- fragment_type: verification
+  sequence: 11
+  content: |-
+    ## Verification
+
+    A working Iceberg setup:
+
+    - Schema evolution works without rewriting historical data.
+    - Time travel returns the right snapshot for a given timestamp.
+    - Concurrent writes serialize via the catalog without corruption.
+    - Compaction keeps file counts bounded.
+    - All your engines (Spark, Trino, etc.) read the same table consistently.

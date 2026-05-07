@@ -1,0 +1,321 @@
+skill_type: domain
+skill_id: data-engineering-dimensional-modeling
+canonical_name: Dimensional Modeling — Star and Snowflake Schemas
+category: engineering
+skill_class: domain
+domain_tags:
+- data-engineering
+- dimensional-modeling
+- star-schema
+- fact-tables
+- kimball
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Dimensional Modeling — Star and Snowflake Schemas
+
+  ## Overview
+
+  Dimensional modeling, popularized by Ralph Kimball, organizes analytical data into fact tables (events, with measures) and dimension tables (descriptive context). Star schemas — facts surrounded by dimensions — are easy to query, fast to scan, and the standard for warehouses.
+
+  ---
+
+  ## Fact and Dimension Tables
+
+  **Fact table** — the events. One row per event (a sale, a click, a sensor reading). Foreign keys to dimensions; numeric measures.
+
+  ```sql
+  CREATE TABLE fact_orders (
+      order_id BIGINT,
+      date_key INT,            -- FK to dim_date
+      customer_key INT,         -- FK to dim_customer
+      product_key INT,          -- FK to dim_product
+      quantity INT,
+      revenue_cents BIGINT,
+      discount_cents BIGINT
+  );
+  ```
+
+  **Dimension table** — descriptive attributes. One row per entity. Primary key is a surrogate key (not the natural key).
+
+  ```sql
+  CREATE TABLE dim_customer (
+      customer_key INT PRIMARY KEY,  -- surrogate
+      customer_id BIGINT,            -- natural ('business') key
+      name STRING,
+      country STRING,
+      plan STRING,
+      valid_from DATE,
+      valid_to DATE
+  );
+  ```
+
+  The fact table is huge (rows per event); dimensions are small (rows per entity).
+
+  ## Grain — Define It Explicitly
+
+  The 'grain' is what one row represents. Define it before adding columns:
+
+  - 'one row per order' → grain is order.
+  - 'one row per order line item' → grain is line item.
+  - 'one row per customer per day' → grain is customer-day.
+
+  Mixing grains in one table is the most common dimensional-modeling failure.
+
+  ## Surrogate Keys
+
+  Use integer surrogate keys (auto-incrementing or hash-derived), not natural keys, for dimension PKs.
+
+  Why:
+  - Natural keys can change (a customer changes email).
+  - Surrogate keys are smaller (4-byte int vs string) — joins are faster.
+  - They support type-2 SCD (slowly-changing dimensions) cleanly.
+
+  ## Conformed Dimensions
+
+  A 'conformed dimension' is shared across fact tables:
+
+  ```
+  dim_date is conformed across fact_orders, fact_clicks, fact_inventory
+  ```
+
+  This lets you join across facts via the shared dimension: 'orders by month' uses the same `dim_date` as 'clicks by month'. Conformed dimensions are the unsung hero of warehouse design.
+
+  ## Measure Types
+
+  - **Additive**: can sum across any dimension. Quantity, revenue.
+  - **Semi-additive**: can sum across some dimensions but not all. Inventory levels (sum across products at a store, but not across days — that double-counts).
+  - **Non-additive**: can't sum at all. Ratios, percentages.
+
+  Document each measure's additivity. Mistakes here mislead BI tools.
+
+  ## Junk Dimensions
+
+  When a fact table has many low-cardinality flag columns (is_promo, is_gift, is_repeat), put them in a 'junk dimension' instead of as fact columns:
+
+  ```sql
+  CREATE TABLE dim_order_flags (
+      flags_key INT PRIMARY KEY,
+      is_promo BOOLEAN,
+      is_gift BOOLEAN,
+      is_repeat BOOLEAN
+  );
+  -- only 8 rows for 3 flags
+  ```
+
+  Saves space (one int per fact instead of three booleans) and makes the dimensional model cleaner.
+
+  ## Role-Playing Dimensions
+
+  The same dimension can appear multiple times in one fact:
+
+  ```sql
+  CREATE TABLE fact_shipment (
+      -- ...
+      order_date_key INT,         -- FK to dim_date (role: order)
+      ship_date_key INT,          -- FK to dim_date (role: ship)
+      delivery_date_key INT       -- FK to dim_date (role: delivery)
+  );
+  ```
+
+  Same `dim_date` referenced three times with different aliases. Common for date and time dimensions.
+
+  ## Star vs Snowflake
+
+  - **Star schema** — dimensions are flat. `dim_product` has all product attributes including category.
+  - **Snowflake schema** — dimensions are normalized. `dim_product` references `dim_category`.
+
+  Star is simpler and faster (fewer joins). Snowflake saves space if categories have lots of attributes that repeat across products.
+
+  Default to star unless space is a real concern. BI tools optimize star.
+
+  ## Slowly Changing Dimensions
+
+  When dimension attributes change over time (a customer's plan upgrades, address moves):
+
+  - **Type 1**: overwrite. Lose history.
+  - **Type 2**: new row per change with valid_from/valid_to. Preserves history; queries can ask 'what was the plan when this order shipped?'.
+  - **Type 3**: track previous value as separate column. Limited but simple.
+
+  Type 2 is the standard for important dimensions. See the SCD skill.
+
+  ## Common Pitfalls
+
+  - **Mixing grain in one fact.** Order-level and line-item-level rows in the same table → impossible to aggregate correctly.
+  - **Natural keys as primary keys.** A customer email change requires updating every fact's FK. Surrogate keys insulate.
+  - **Flat 'tall and narrow' tables instead of star schemas.** Common in NoSQL-influenced thinking; queries become unbearable.
+  - **Measures that aren't actually additive.** A 'percentage' column summed across rows produces nonsense.
+  - **Forgetting the date dimension.** A `dim_date` table with day, week, month, quarter, year, fiscal-year columns saves countless date-truncation expressions in queries.
+
+  ## Verification
+
+  A working dimensional model:
+
+  - Each fact table has explicit grain documented.
+  - All dimension PKs are surrogates.
+  - Joining facts via conformed dimensions works.
+  - BI tools auto-discover the star.
+  - Date / customer dimensions are reused across facts.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Fact and Dimension Tables
+
+    **Fact table** — the events. One row per event (a sale, a click, a sensor reading). Foreign keys to dimensions; numeric measures.
+
+    ```sql
+    CREATE TABLE fact_orders (
+        order_id BIGINT,
+        date_key INT,            -- FK to dim_date
+        customer_key INT,         -- FK to dim_customer
+        product_key INT,          -- FK to dim_product
+        quantity INT,
+        revenue_cents BIGINT,
+        discount_cents BIGINT
+    );
+    ```
+
+    **Dimension table** — descriptive attributes. One row per entity. Primary key is a surrogate key (not the natural key).
+
+    ```sql
+    CREATE TABLE dim_customer (
+        customer_key INT PRIMARY KEY,  -- surrogate
+        customer_id BIGINT,            -- natural ('business') key
+        name STRING,
+        country STRING,
+        plan STRING,
+        valid_from DATE,
+        valid_to DATE
+    );
+    ```
+
+    The fact table is huge (rows per event); dimensions are small (rows per entity).
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Grain — Define It Explicitly
+
+    The 'grain' is what one row represents. Define it before adding columns:
+
+    - 'one row per order' → grain is order.
+    - 'one row per order line item' → grain is line item.
+    - 'one row per customer per day' → grain is customer-day.
+
+    Mixing grains in one table is the most common dimensional-modeling failure.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Surrogate Keys
+
+    Use integer surrogate keys (auto-incrementing or hash-derived), not natural keys, for dimension PKs.
+
+    Why:
+    - Natural keys can change (a customer changes email).
+    - Surrogate keys are smaller (4-byte int vs string) — joins are faster.
+    - They support type-2 SCD (slowly-changing dimensions) cleanly.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Conformed Dimensions
+
+    A 'conformed dimension' is shared across fact tables:
+
+    ```
+    dim_date is conformed across fact_orders, fact_clicks, fact_inventory
+    ```
+
+    This lets you join across facts via the shared dimension: 'orders by month' uses the same `dim_date` as 'clicks by month'. Conformed dimensions are the unsung hero of warehouse design.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Measure Types
+
+    - **Additive**: can sum across any dimension. Quantity, revenue.
+    - **Semi-additive**: can sum across some dimensions but not all. Inventory levels (sum across products at a store, but not across days — that double-counts).
+    - **Non-additive**: can't sum at all. Ratios, percentages.
+
+    Document each measure's additivity. Mistakes here mislead BI tools.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Junk Dimensions
+
+    When a fact table has many low-cardinality flag columns (is_promo, is_gift, is_repeat), put them in a 'junk dimension' instead of as fact columns:
+
+    ```sql
+    CREATE TABLE dim_order_flags (
+        flags_key INT PRIMARY KEY,
+        is_promo BOOLEAN,
+        is_gift BOOLEAN,
+        is_repeat BOOLEAN
+    );
+    -- only 8 rows for 3 flags
+    ```
+
+    Saves space (one int per fact instead of three booleans) and makes the dimensional model cleaner.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Role-Playing Dimensions
+
+    The same dimension can appear multiple times in one fact:
+
+    ```sql
+    CREATE TABLE fact_shipment (
+        -- ...
+        order_date_key INT,         -- FK to dim_date (role: order)
+        ship_date_key INT,          -- FK to dim_date (role: ship)
+        delivery_date_key INT       -- FK to dim_date (role: delivery)
+    );
+    ```
+
+    Same `dim_date` referenced three times with different aliases. Common for date and time dimensions.
+- fragment_type: rationale
+  sequence: 8
+  content: |-
+    ## Star vs Snowflake
+
+    - **Star schema** — dimensions are flat. `dim_product` has all product attributes including category.
+    - **Snowflake schema** — dimensions are normalized. `dim_product` references `dim_category`.
+
+    Star is simpler and faster (fewer joins). Snowflake saves space if categories have lots of attributes that repeat across products.
+
+    Default to star unless space is a real concern. BI tools optimize star.
+- fragment_type: execution
+  sequence: 9
+  content: |-
+    ## Slowly Changing Dimensions
+
+    When dimension attributes change over time (a customer's plan upgrades, address moves):
+
+    - **Type 1**: overwrite. Lose history.
+    - **Type 2**: new row per change with valid_from/valid_to. Preserves history; queries can ask 'what was the plan when this order shipped?'.
+    - **Type 3**: track previous value as separate column. Limited but simple.
+
+    Type 2 is the standard for important dimensions. See the SCD skill.
+- fragment_type: guardrail
+  sequence: 10
+  content: |-
+    ## Common Pitfalls
+
+    - **Mixing grain in one fact.** Order-level and line-item-level rows in the same table → impossible to aggregate correctly.
+    - **Natural keys as primary keys.** A customer email change requires updating every fact's FK. Surrogate keys insulate.
+    - **Flat 'tall and narrow' tables instead of star schemas.** Common in NoSQL-influenced thinking; queries become unbearable.
+    - **Measures that aren't actually additive.** A 'percentage' column summed across rows produces nonsense.
+    - **Forgetting the date dimension.** A `dim_date` table with day, week, month, quarter, year, fiscal-year columns saves countless date-truncation expressions in queries.
+- fragment_type: verification
+  sequence: 11
+  content: |-
+    ## Verification
+
+    A working dimensional model:
+
+    - Each fact table has explicit grain documented.
+    - All dimension PKs are surrogates.
+    - Joining facts via conformed dimensions works.
+    - BI tools auto-discover the star.
+    - Date / customer dimensions are reused across facts.

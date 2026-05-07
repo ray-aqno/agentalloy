@@ -1,0 +1,445 @@
+skill_type: domain
+skill_id: data-engineering-data-quality
+canonical_name: Data Quality with Great Expectations and dbt Tests
+category: engineering
+skill_class: domain
+domain_tags:
+- data-engineering
+- data-quality
+- great-expectations
+- dbt-tests
+- validation
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Data Quality with Great Expectations and dbt Tests
+
+  ## Overview
+
+  Data quality bugs are silent — the pipeline succeeds, downstream dashboards show wrong numbers, and nobody knows for hours or days. The fix: assert expectations explicitly. Tools: Great Expectations (general purpose), dbt tests (warehouse-native), Soda (commercial).
+
+  ---
+
+  ## What to Validate
+
+  Three categories:
+
+  - **Schema** — columns exist, types match. Cheapest; should always be enforced.
+  - **Constraints** — uniqueness, non-null, referential integrity, value ranges.
+  - **Distributions** — freshness, row counts in expected range, anomaly detection.
+
+  The first two are cheap. The third is harder — what's a 'normal' row count?
+
+  ## dbt Generic Tests
+
+  Built-in:
+
+  ```yaml
+  # models/schema.yml
+  models:
+    - name: stg_orders
+      columns:
+        - name: order_id
+          tests:
+            - unique
+            - not_null
+        - name: customer_id
+          tests:
+            - relationships:
+                to: ref('stg_customers')
+                field: customer_id
+        - name: status
+          tests:
+            - accepted_values:
+                values: ['pending', 'shipped', 'delivered', 'cancelled']
+  ```
+
+  Run: `dbt test`. Fails the pipeline on test failure (or warns, depending on severity).
+
+  ## dbt Singular Tests
+
+  For checks that don't fit the generic pattern, write SQL:
+
+  ```sql
+  -- tests/orders_have_positive_amounts.sql
+  SELECT order_id, amount
+  FROM {{ ref('stg_orders') }}
+  WHERE amount <= 0
+  ```
+
+  If the SELECT returns rows, the test fails. dbt reports the failing rows.
+
+  ## Custom Generic Tests
+
+  Wrap reusable test patterns:
+
+  ```sql
+  -- tests/generic/no_future_dates.sql
+  {% test no_future_dates(model, column_name) %}
+  SELECT *
+  FROM {{ model }}
+  WHERE {{ column_name }} > current_timestamp
+  {% endtest %}
+  ```
+
+  Use:
+
+  ```yaml
+  columns:
+    - name: created_at
+      tests:
+        - no_future_dates
+  ```
+
+  ## Great Expectations
+
+  For validation outside dbt (raw files, streaming, non-warehouse data):
+
+  ```python
+  import great_expectations as ge
+
+  df = ge.read_parquet("data/orders.parquet")
+
+  df.expect_column_values_to_not_be_null("order_id")
+  df.expect_column_values_to_be_unique("order_id")
+  df.expect_column_values_to_be_between("amount", min_value=0, max_value=1_000_000)
+  df.expect_column_values_to_be_in_set("status", ["pending", "shipped", "delivered"])
+
+  results = df.validate()
+  if not results["success"]:
+      raise ValueError(results)
+  ```
+
+  Or declarative YAML in 'expectation suites'. GE generates documentation, integrates with Airflow / dbt / Spark.
+
+  ## Freshness Checks
+
+  ```yaml
+  # dbt
+  sources:
+    - name: app_db
+      tables:
+        - name: orders
+          freshness:
+            warn_after: { count: 1, period: hour }
+            error_after: { count: 6, period: hour }
+          loaded_at_field: updated_at
+  ```
+
+  `dbt source freshness` checks the latest `updated_at` against now. Fails if stale.
+
+  ## Anomaly Detection
+
+  Beyond static rules — detect changes from baseline:
+
+  - Row counts vs last-run / 7-day rolling avg.
+  - Distinct counts of categorical columns (was it 4 statuses; suddenly 5?).
+  - Numeric distributions (mean, p99 of amount; sudden shift = something broke).
+
+  Tools: re_data, Elementary, Monte Carlo (commercial).
+
+  A simple homegrown version:
+
+  ```sql
+  -- tests/orders_count_in_range.sql
+  WITH today AS (SELECT count(*) cnt FROM {{ ref('stg_orders') }} WHERE date_trunc('day', created_at) = current_date),
+  yesterday AS (SELECT count(*) cnt FROM {{ ref('stg_orders') }} WHERE date_trunc('day', created_at) = current_date - 1)
+  SELECT *
+  FROM today, yesterday
+  WHERE today.cnt < yesterday.cnt * 0.5  -- 50% drop
+     OR today.cnt > yesterday.cnt * 2.0  -- 100% spike
+  ```
+
+  ## Test Severity
+
+  dbt and GE both support warn vs error:
+
+  - **Warn** — log it, don't block. For checks where false positives are common.
+  - **Error** — block the pipeline. For checks where the data is unusable.
+
+  Categorize each test. Don't make every test an error — pipeline failures lose meaning.
+
+  ## Data Contracts
+
+  A 'data contract' is a formal agreement: 'this table has these columns, types, constraints; the producer commits to maintaining them.'
+
+  ```yaml
+  # orders_contract.yml
+  columns:
+    - name: order_id
+      type: bigint
+      constraints: [not_null, unique]
+    - name: amount
+      type: decimal(10, 2)
+      constraints: [not_null]
+  freshness: 1 hour
+  ```
+
+  dbt 1.5+ enforces contracts at build time:
+
+  ```sql
+  {{
+    config(
+      contract={'enforced': true}
+    )
+  }}
+  ```
+
+  Schema changes require explicit contract updates — coordinated with consumers.
+
+  ## Pipeline Integration
+
+  Wire data quality into your orchestrator:
+
+  ```python
+  # Airflow DAG
+  load_data = BashOperator(task_id='load', bash_command='dbt run')
+  test_data = BashOperator(task_id='test', bash_command='dbt test')
+  load_data >> test_data >> downstream_jobs
+  ```
+
+  If `dbt test` fails, downstream stops. Quality gates prevent bad data from propagating.
+
+  ## Common Pitfalls
+
+  - **All tests as errors, no warns.** Every flake stops the pipeline. Triage by severity.
+  - **No baseline metrics.** 'Row count looks weird' is unactionable without a baseline.
+  - **Tests that test the test data.** Validate against live data, not the fixture you wrote tests against.
+  - **Unmonitored test results.** A test that fails silently in CI is no test. Alert on quality failures with the same urgency as outages.
+  - **Stale expectations.** Expectations need maintenance — what was valid in 2023 may not be in 2026. Review quarterly.
+
+  ## Verification
+
+  A working data-quality program:
+
+  - Every load step has tests that gate downstream.
+  - Schema is contracted; breaking changes require cross-team coordination.
+  - Freshness alerts trigger before consumers notice.
+  - Anomaly detection flags distribution shifts.
+  - Failures get triaged within hours, not days.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## What to Validate
+
+    Three categories:
+
+    - **Schema** — columns exist, types match. Cheapest; should always be enforced.
+    - **Constraints** — uniqueness, non-null, referential integrity, value ranges.
+    - **Distributions** — freshness, row counts in expected range, anomaly detection.
+
+    The first two are cheap. The third is harder — what's a 'normal' row count?
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## dbt Generic Tests
+
+    Built-in:
+
+    ```yaml
+    # models/schema.yml
+    models:
+      - name: stg_orders
+        columns:
+          - name: order_id
+            tests:
+              - unique
+              - not_null
+          - name: customer_id
+            tests:
+              - relationships:
+                  to: ref('stg_customers')
+                  field: customer_id
+          - name: status
+            tests:
+              - accepted_values:
+                  values: ['pending', 'shipped', 'delivered', 'cancelled']
+    ```
+
+    Run: `dbt test`. Fails the pipeline on test failure (or warns, depending on severity).
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## dbt Singular Tests
+
+    For checks that don't fit the generic pattern, write SQL:
+
+    ```sql
+    -- tests/orders_have_positive_amounts.sql
+    SELECT order_id, amount
+    FROM {{ ref('stg_orders') }}
+    WHERE amount <= 0
+    ```
+
+    If the SELECT returns rows, the test fails. dbt reports the failing rows.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Custom Generic Tests
+
+    Wrap reusable test patterns:
+
+    ```sql
+    -- tests/generic/no_future_dates.sql
+    {% test no_future_dates(model, column_name) %}
+    SELECT *
+    FROM {{ model }}
+    WHERE {{ column_name }} > current_timestamp
+    {% endtest %}
+    ```
+
+    Use:
+
+    ```yaml
+    columns:
+      - name: created_at
+        tests:
+          - no_future_dates
+    ```
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Great Expectations
+
+    For validation outside dbt (raw files, streaming, non-warehouse data):
+
+    ```python
+    import great_expectations as ge
+
+    df = ge.read_parquet("data/orders.parquet")
+
+    df.expect_column_values_to_not_be_null("order_id")
+    df.expect_column_values_to_be_unique("order_id")
+    df.expect_column_values_to_be_between("amount", min_value=0, max_value=1_000_000)
+    df.expect_column_values_to_be_in_set("status", ["pending", "shipped", "delivered"])
+
+    results = df.validate()
+    if not results["success"]:
+        raise ValueError(results)
+    ```
+
+    Or declarative YAML in 'expectation suites'. GE generates documentation, integrates with Airflow / dbt / Spark.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Freshness Checks
+
+    ```yaml
+    # dbt
+    sources:
+      - name: app_db
+        tables:
+          - name: orders
+            freshness:
+              warn_after: { count: 1, period: hour }
+              error_after: { count: 6, period: hour }
+            loaded_at_field: updated_at
+    ```
+
+    `dbt source freshness` checks the latest `updated_at` against now. Fails if stale.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Anomaly Detection
+
+    Beyond static rules — detect changes from baseline:
+
+    - Row counts vs last-run / 7-day rolling avg.
+    - Distinct counts of categorical columns (was it 4 statuses; suddenly 5?).
+    - Numeric distributions (mean, p99 of amount; sudden shift = something broke).
+
+    Tools: re_data, Elementary, Monte Carlo (commercial).
+
+    A simple homegrown version:
+
+    ```sql
+    -- tests/orders_count_in_range.sql
+    WITH today AS (SELECT count(*) cnt FROM {{ ref('stg_orders') }} WHERE date_trunc('day', created_at) = current_date),
+    yesterday AS (SELECT count(*) cnt FROM {{ ref('stg_orders') }} WHERE date_trunc('day', created_at) = current_date - 1)
+    SELECT *
+    FROM today, yesterday
+    WHERE today.cnt < yesterday.cnt * 0.5  -- 50% drop
+       OR today.cnt > yesterday.cnt * 2.0  -- 100% spike
+    ```
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Test Severity
+
+    dbt and GE both support warn vs error:
+
+    - **Warn** — log it, don't block. For checks where false positives are common.
+    - **Error** — block the pipeline. For checks where the data is unusable.
+
+    Categorize each test. Don't make every test an error — pipeline failures lose meaning.
+- fragment_type: execution
+  sequence: 9
+  content: |-
+    ## Data Contracts
+
+    A 'data contract' is a formal agreement: 'this table has these columns, types, constraints; the producer commits to maintaining them.'
+
+    ```yaml
+    # orders_contract.yml
+    columns:
+      - name: order_id
+        type: bigint
+        constraints: [not_null, unique]
+      - name: amount
+        type: decimal(10, 2)
+        constraints: [not_null]
+    freshness: 1 hour
+    ```
+
+    dbt 1.5+ enforces contracts at build time:
+
+    ```sql
+    {{
+      config(
+        contract={'enforced': true}
+      )
+    }}
+    ```
+
+    Schema changes require explicit contract updates — coordinated with consumers.
+- fragment_type: execution
+  sequence: 10
+  content: |-
+    ## Pipeline Integration
+
+    Wire data quality into your orchestrator:
+
+    ```python
+    # Airflow DAG
+    load_data = BashOperator(task_id='load', bash_command='dbt run')
+    test_data = BashOperator(task_id='test', bash_command='dbt test')
+    load_data >> test_data >> downstream_jobs
+    ```
+
+    If `dbt test` fails, downstream stops. Quality gates prevent bad data from propagating.
+- fragment_type: guardrail
+  sequence: 11
+  content: |-
+    ## Common Pitfalls
+
+    - **All tests as errors, no warns.** Every flake stops the pipeline. Triage by severity.
+    - **No baseline metrics.** 'Row count looks weird' is unactionable without a baseline.
+    - **Tests that test the test data.** Validate against live data, not the fixture you wrote tests against.
+    - **Unmonitored test results.** A test that fails silently in CI is no test. Alert on quality failures with the same urgency as outages.
+    - **Stale expectations.** Expectations need maintenance — what was valid in 2023 may not be in 2026. Review quarterly.
+- fragment_type: verification
+  sequence: 12
+  content: |-
+    ## Verification
+
+    A working data-quality program:
+
+    - Every load step has tests that gate downstream.
+    - Schema is contracted; breaking changes require cross-team coordination.
+    - Freshness alerts trigger before consumers notice.
+    - Anomaly detection flags distribution shifts.
+    - Failures get triaged within hours, not days.
