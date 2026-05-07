@@ -8,20 +8,52 @@ embedding_dim: 1024
 license: MIT
 homepage: https://github.com/nrmeyers/skillsmith
 always_install: false
-depends_on: [core, engineering]
+depends_on:
+- core
+- engineering
 skills:
-  - skill_id: node-event-loop-and-async
-    file: node-event-loop-and-async.yaml
-    fragment_count: 9
-  - skill_id: node-streams-and-fs
-    file: node-streams-and-fs.yaml
-    fragment_count: 11
-  - skill_id: node-esm-and-cjs-interop
-    file: node-esm-and-cjs-interop.yaml
-    fragment_count: 10
-  - skill_id: node-built-in-test-runner
-    file: node-built-in-test-runner.yaml
-    fragment_count: 11
-  - skill_id: node-error-handling-and-process
-    file: node-error-handling-and-process.yaml
-    fragment_count: 11
+- skill_id: node-event-loop-and-async
+  file: node-event-loop-and-async.yaml
+  fragment_count: 9
+- skill_id: node-streams-and-fs
+  file: node-streams-and-fs.yaml
+  fragment_count: 11
+- skill_id: node-esm-and-cjs-interop
+  file: node-esm-and-cjs-interop.yaml
+  fragment_count: 10
+- skill_id: node-built-in-test-runner
+  file: node-built-in-test-runner.yaml
+  fragment_count: 11
+- skill_id: node-error-handling-and-process
+  file: node-error-handling-and-process.yaml
+  fragment_count: 11
+- skill_id: nodejs-child-process
+  file: nodejs-child-process.yaml
+  fragment_count: 17
+- skill_id: nodejs-cluster
+  file: nodejs-cluster.yaml
+  fragment_count: 4
+- skill_id: nodejs-esm-edge-cases
+  file: nodejs-esm-edge-cases.yaml
+  fragment_count: 10
+- skill_id: nodejs-events-and-emitter
+  file: nodejs-events-and-emitter.yaml
+  fragment_count: 10
+- skill_id: nodejs-fs-promises
+  file: nodejs-fs-promises.yaml
+  fragment_count: 7
+- skill_id: nodejs-native-test-runner
+  file: nodejs-native-test-runner.yaml
+  fragment_count: 7
+- skill_id: nodejs-perf-hooks
+  file: nodejs-perf-hooks.yaml
+  fragment_count: 9
+- skill_id: nodejs-process-and-signals
+  file: nodejs-process-and-signals.yaml
+  fragment_count: 7
+- skill_id: nodejs-streams-deep
+  file: nodejs-streams-deep.yaml
+  fragment_count: 9
+- skill_id: nodejs-worker-threads
+  file: nodejs-worker-threads.yaml
+  fragment_count: 12

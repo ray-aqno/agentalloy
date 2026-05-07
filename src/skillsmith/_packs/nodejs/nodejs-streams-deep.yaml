@@ -1,0 +1,297 @@
+skill_type: domain
+skill_id: nodejs-streams-deep
+canonical_name: Node.js Streams Deep
+category: engineering
+skill_class: domain
+domain_tags:
+- nodejs
+- streams
+- backpressure
+- pipeline
+- transform
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Node.js Streams Deep
+
+  ## Overview
+
+  Node streams are the foundation of efficient data processing. Four types (Readable/Writable/Duplex/Transform), object vs binary mode, backpressure semantics, and `pipeline()` for composition with error handling.
+
+  ---
+
+  ## The Four Stream Types
+
+  - **Readable** — produces data. Examples: `fs.createReadStream`, HTTP request body, process.stdin.
+  - **Writable** — consumes data. Examples: `fs.createWriteStream`, HTTP response, process.stdout.
+  - **Duplex** — both Readable and Writable. Examples: TCP sockets, web sockets.
+  - **Transform** — Duplex where output is a transformed version of input. Examples: zlib.createGzip, crypto.createHash.
+
+  All extend EventEmitter and emit standard events: `data`, `end`, `error`, `close`, `drain`.
+
+  ## Object Mode vs Binary Mode
+
+  By default, streams chunk data as Buffer or string. Object mode treats each push as a discrete object:
+
+  ```js
+  import { Readable } from 'node:stream';
+
+  const objectStream = new Readable({
+    objectMode: true,
+    read() {
+      this.push({ id: 1, name: 'Alice' });
+      this.push({ id: 2, name: 'Bob' });
+      this.push(null);  // end
+    }
+  });
+  ```
+
+  Object mode is universal across data-pipeline libraries (RxJS-like processing, ETL pipelines). Binary mode is for raw I/O.
+
+  ## Backpressure
+
+  When a writable can't keep up with a readable, the writable returns `false` from `.write()`. Honor this:
+
+  ```js
+  function copy(source, dest) {
+    source.on('data', (chunk) => {
+      if (!dest.write(chunk)) {
+        source.pause();              // stop reading until drain
+        dest.once('drain', () => source.resume());
+      }
+    });
+    source.on('end', () => dest.end());
+  }
+  ```
+
+  Without backpressure handling, a fast producer + slow consumer causes unbounded memory growth.
+
+  ## pipeline() — The Right Way to Connect Streams
+
+  `pipe()` doesn't propagate errors well. `pipeline()` from `node:stream/promises` does:
+
+  ```js
+  import { pipeline } from 'node:stream/promises';
+  import { createReadStream, createWriteStream } from 'node:fs';
+  import { createGzip } from 'node:zlib';
+
+  await pipeline(
+    createReadStream('input.txt'),
+    createGzip(),
+    createWriteStream('output.txt.gz')
+  );
+  ```
+
+  Errors propagate to the await; resources are cleaned up on error or completion. Always prefer `pipeline()` over chained `pipe()`.
+
+  ## Async Iteration
+
+  Readable streams are async-iterable:
+
+  ```js
+  const stream = createReadStream('input.txt', { encoding: 'utf8' });
+  for await (const chunk of stream) {
+    console.log(chunk);
+  }
+  ```
+
+  Cleaner than `.on('data')` for most consumers. Errors throw inside the loop.
+
+  ## Custom Transform Streams
+
+  ```js
+  import { Transform } from 'node:stream';
+
+  class Uppercase extends Transform {
+    _transform(chunk, encoding, callback) {
+      this.push(chunk.toString().toUpperCase());
+      callback();
+    }
+  }
+
+  await pipeline(
+    process.stdin,
+    new Uppercase(),
+    process.stdout
+  );
+  ```
+
+  `_transform` runs once per chunk. Call `callback(err, data)` to push or signal error. For batched output, call `this.push` multiple times before callback.
+
+  ## Web Streams Interop
+
+  Node 18+ ships Web Streams (ReadableStream, WritableStream, TransformStream) — the WHATWG standard. Convert between Node streams and Web streams with `.toWeb()` / `Readable.fromWeb()`:
+
+  ```js
+  import { Readable } from 'node:stream';
+
+  const webReadable = nodeReadable.toWeb();
+  const nodeReadableAgain = Readable.fromWeb(webReadable);
+  ```
+
+  Use Web Streams when integrating with fetch's body, Service Workers, or libraries that target both Node and browsers.
+
+  ## Common Pitfalls
+
+  - **Forgetting to handle 'error' events.** Unhandled stream errors crash the process. `pipeline()` handles this; manual `pipe()` requires explicit `.on('error')` on every stream.
+  - **Not honoring backpressure.** `for await` honors it automatically; manual `.on('data')` does not.
+  - **Mixing pipe() and pipeline().** Pick one. Pipeline composes errors and cleanup; pipe() doesn't.
+  - **Reading before listening to 'data'.** Adding a 'data' listener flips a Readable into flowing mode. If data arrives before the listener is attached, it's lost. Use `pipe()`, `pipeline()`, or async iteration to avoid this race.
+
+  ## Verification
+
+  A working stream pipeline:
+
+  - Memory stays bounded regardless of total data size (backpressure works).
+  - Errors at any stage propagate to the consumer (pipeline handles cleanup).
+  - All file descriptors close (no leaks visible in `lsof` or `process.report`).
+  - Async iteration yields chunks in order without missing or duplicating data.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## The Four Stream Types
+
+    - **Readable** — produces data. Examples: `fs.createReadStream`, HTTP request body, process.stdin.
+    - **Writable** — consumes data. Examples: `fs.createWriteStream`, HTTP response, process.stdout.
+    - **Duplex** — both Readable and Writable. Examples: TCP sockets, web sockets.
+    - **Transform** — Duplex where output is a transformed version of input. Examples: zlib.createGzip, crypto.createHash.
+
+    All extend EventEmitter and emit standard events: `data`, `end`, `error`, `close`, `drain`.
+- fragment_type: rationale
+  sequence: 2
+  content: |-
+    ## Object Mode vs Binary Mode
+
+    By default, streams chunk data as Buffer or string. Object mode treats each push as a discrete object:
+
+    ```js
+    import { Readable } from 'node:stream';
+
+    const objectStream = new Readable({
+      objectMode: true,
+      read() {
+        this.push({ id: 1, name: 'Alice' });
+        this.push({ id: 2, name: 'Bob' });
+        this.push(null);  // end
+      }
+    });
+    ```
+
+    Object mode is universal across data-pipeline libraries (RxJS-like processing, ETL pipelines). Binary mode is for raw I/O.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Backpressure
+
+    When a writable can't keep up with a readable, the writable returns `false` from `.write()`. Honor this:
+
+    ```js
+    function copy(source, dest) {
+      source.on('data', (chunk) => {
+        if (!dest.write(chunk)) {
+          source.pause();              // stop reading until drain
+          dest.once('drain', () => source.resume());
+        }
+      });
+      source.on('end', () => dest.end());
+    }
+    ```
+
+    Without backpressure handling, a fast producer + slow consumer causes unbounded memory growth.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## pipeline() — The Right Way to Connect Streams
+
+    `pipe()` doesn't propagate errors well. `pipeline()` from `node:stream/promises` does:
+
+    ```js
+    import { pipeline } from 'node:stream/promises';
+    import { createReadStream, createWriteStream } from 'node:fs';
+    import { createGzip } from 'node:zlib';
+
+    await pipeline(
+      createReadStream('input.txt'),
+      createGzip(),
+      createWriteStream('output.txt.gz')
+    );
+    ```
+
+    Errors propagate to the await; resources are cleaned up on error or completion. Always prefer `pipeline()` over chained `pipe()`.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Async Iteration
+
+    Readable streams are async-iterable:
+
+    ```js
+    const stream = createReadStream('input.txt', { encoding: 'utf8' });
+    for await (const chunk of stream) {
+      console.log(chunk);
+    }
+    ```
+
+    Cleaner than `.on('data')` for most consumers. Errors throw inside the loop.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Custom Transform Streams
+
+    ```js
+    import { Transform } from 'node:stream';
+
+    class Uppercase extends Transform {
+      _transform(chunk, encoding, callback) {
+        this.push(chunk.toString().toUpperCase());
+        callback();
+      }
+    }
+
+    await pipeline(
+      process.stdin,
+      new Uppercase(),
+      process.stdout
+    );
+    ```
+
+    `_transform` runs once per chunk. Call `callback(err, data)` to push or signal error. For batched output, call `this.push` multiple times before callback.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Web Streams Interop
+
+    Node 18+ ships Web Streams (ReadableStream, WritableStream, TransformStream) — the WHATWG standard. Convert between Node streams and Web streams with `.toWeb()` / `Readable.fromWeb()`:
+
+    ```js
+    import { Readable } from 'node:stream';
+
+    const webReadable = nodeReadable.toWeb();
+    const nodeReadableAgain = Readable.fromWeb(webReadable);
+    ```
+
+    Use Web Streams when integrating with fetch's body, Service Workers, or libraries that target both Node and browsers.
+- fragment_type: guardrail
+  sequence: 8
+  content: |-
+    ## Common Pitfalls
+
+    - **Forgetting to handle 'error' events.** Unhandled stream errors crash the process. `pipeline()` handles this; manual `pipe()` requires explicit `.on('error')` on every stream.
+    - **Not honoring backpressure.** `for await` honors it automatically; manual `.on('data')` does not.
+    - **Mixing pipe() and pipeline().** Pick one. Pipeline composes errors and cleanup; pipe() doesn't.
+    - **Reading before listening to 'data'.** Adding a 'data' listener flips a Readable into flowing mode. If data arrives before the listener is attached, it's lost. Use `pipe()`, `pipeline()`, or async iteration to avoid this race.
+- fragment_type: verification
+  sequence: 9
+  content: |-
+    ## Verification
+
+    A working stream pipeline:
+
+    - Memory stays bounded regardless of total data size (backpressure works).
+    - Errors at any stage propagate to the consumer (pipeline handles cleanup).
+    - All file descriptors close (no leaks visible in `lsof` or `process.report`).
+    - Async iteration yields chunks in order without missing or duplicating data.
