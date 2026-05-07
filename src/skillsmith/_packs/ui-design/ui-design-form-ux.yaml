@@ -1,0 +1,269 @@
+skill_type: domain
+skill_id: ui-design-form-ux
+canonical_name: Form UX Patterns
+category: design
+skill_class: domain
+domain_tags:
+- ui-design
+- forms
+- validation
+- input-design
+- form-flow
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Form UX Patterns
+
+  ## Overview
+
+  Forms are where users do work. Every label, every error, every field affects completion rates. The discipline: ask only what you need, validate at the right moment, communicate errors clearly, and make recovery easy.
+
+  ---
+
+  ## One Column Almost Always
+
+  Multi-column forms force users to zigzag visually:
+
+  ```
+  [Name] [Email]      ← scan right
+  [Address] [City]    ← jump back left, then right
+  ```
+
+  Single column is faster to scan and complete. Exception: short paired fields like first/last name.
+
+  ## Label Placement
+
+  - **Above the input** — best for accessibility and scanning. Default choice.
+  - **Inline (left of input)** — saves vertical space; only OK when forms have few labels.
+  - **Floating (inside input, animates up)** — visually nice but worse a11y. Avoid for high-stakes forms (government, banking, healthcare).
+  - **Placeholder as label** — never. Placeholder disappears on focus; users forget what was asked.
+
+  ## Required Field Indicators
+
+  The asterisk convention is universal but inverts: mark optional fields as `(optional)` instead. Reasoning: most fields are required; marking only optional ones reduces visual clutter.
+
+  Either way, mark visibly. Don't rely on color alone (red asterisk fails for color-blind users).
+
+  ## Validation Timing
+
+  Three phases:
+
+  - **As-you-type**: distracting for new fields; useful for password strength, character limits.
+  - **On blur (after leaving field)**: best balance. Validates when the user finishes the field.
+  - **On submit**: catches everything. Always have this layer too.
+
+  Pattern: validate on blur for new errors; once a field has been validated and is invalid, switch to on-change so corrections show immediately.
+
+  ## Error Messages
+
+  - **Inline next to the field** — close to the problem.
+  - **Specific** — 'Email must contain @' beats 'Invalid email'.
+  - **Constructive** — 'Add your zip code so we can ship' beats 'Required field'.
+  - **Visible without scrolling** — if the user submits and errors are off-screen, scroll to first error.
+  - **Persistent** — don't clear errors immediately; let users see what went wrong.
+
+  ## Autofill
+
+  Use `autocomplete` attributes correctly:
+
+  ```html
+  <input name="email" autocomplete="email" type="email" />
+  <input name="cc-number" autocomplete="cc-number" inputmode="numeric" />
+  <input name="postal" autocomplete="postal-code" />
+  ```
+
+  Browser autofill saves users 30+ seconds. The standard tokens are at WHATWG's HTML spec.
+
+  `inputmode` controls the on-screen keyboard (numeric vs text vs tel vs email).
+
+  ## Multi-Step vs Long Forms
+
+  Multi-step:
+  - **Pros**: progress feedback, smaller chunks feel less daunting, can save partial progress.
+  - **Cons**: more clicks, harder to review/edit earlier sections.
+
+  Long single form:
+  - **Pros**: one-page review, simpler to implement.
+  - **Cons**: feels overwhelming if >15 fields.
+
+  Rule of thumb: <8 fields → single page; >15 fields → multi-step; in between → judgment.
+
+  For multi-step, always show progress (1 of 4, etc.) and let users go back without losing data.
+
+  ## Required Field Discipline
+
+  Every required field should answer 'why do you need this?'. Anything optional becomes a checkbox-or-omit decision.
+
+  Common over-asking:
+
+  - Phone number when email works.
+  - Title (Mr/Ms/Dr) — almost never necessary.
+  - Date of birth when month is enough (or not at all).
+  - Address when shipping isn't involved.
+
+  Each removed field measurably increases completion. The discipline: 'every field is a leak.'
+
+  ## Submit Button States
+
+  Three states minimum:
+
+  - **Default**: ready to submit.
+  - **Loading**: clicked, request in flight (disabled + spinner).
+  - **Disabled**: validation failing — but visible, not hidden. Tooltip explains why.
+
+  Anti-pattern: disabling submit until everything's filled. Users wonder why nothing happens; better to allow click → show errors.
+
+  ## Common Pitfalls
+
+  - **Clearing the form on validation error.** Re-typing 14 fields is rage-inducing. Preserve all values.
+  - **Vague errors ('Invalid input').** Specific is faster.
+  - **Validating too early.** 'Invalid email' on the first character. Wait for blur or threshold.
+  - **Hidden submit errors.** Server returns 500, UI silently fails. Show the user.
+  - **Mismatched a11y between visible and screen reader.** Required asterisks must be announced. Use `aria-required="true"` and `<label>`.
+
+  ## Verification
+
+  A working form UX:
+
+  - Single-column flow scans cleanly.
+  - autocomplete tokens trigger browser fill correctly.
+  - Validation fires at the right moment per field.
+  - Errors are inline, specific, and persistent.
+  - Submit button visibly indicates state — never silently disabled.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## One Column Almost Always
+
+    Multi-column forms force users to zigzag visually:
+
+    ```
+    [Name] [Email]      ← scan right
+    [Address] [City]    ← jump back left, then right
+    ```
+
+    Single column is faster to scan and complete. Exception: short paired fields like first/last name.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Label Placement
+
+    - **Above the input** — best for accessibility and scanning. Default choice.
+    - **Inline (left of input)** — saves vertical space; only OK when forms have few labels.
+    - **Floating (inside input, animates up)** — visually nice but worse a11y. Avoid for high-stakes forms (government, banking, healthcare).
+    - **Placeholder as label** — never. Placeholder disappears on focus; users forget what was asked.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Required Field Indicators
+
+    The asterisk convention is universal but inverts: mark optional fields as `(optional)` instead. Reasoning: most fields are required; marking only optional ones reduces visual clutter.
+
+    Either way, mark visibly. Don't rely on color alone (red asterisk fails for color-blind users).
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Validation Timing
+
+    Three phases:
+
+    - **As-you-type**: distracting for new fields; useful for password strength, character limits.
+    - **On blur (after leaving field)**: best balance. Validates when the user finishes the field.
+    - **On submit**: catches everything. Always have this layer too.
+
+    Pattern: validate on blur for new errors; once a field has been validated and is invalid, switch to on-change so corrections show immediately.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Error Messages
+
+    - **Inline next to the field** — close to the problem.
+    - **Specific** — 'Email must contain @' beats 'Invalid email'.
+    - **Constructive** — 'Add your zip code so we can ship' beats 'Required field'.
+    - **Visible without scrolling** — if the user submits and errors are off-screen, scroll to first error.
+    - **Persistent** — don't clear errors immediately; let users see what went wrong.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Autofill
+
+    Use `autocomplete` attributes correctly:
+
+    ```html
+    <input name="email" autocomplete="email" type="email" />
+    <input name="cc-number" autocomplete="cc-number" inputmode="numeric" />
+    <input name="postal" autocomplete="postal-code" />
+    ```
+
+    Browser autofill saves users 30+ seconds. The standard tokens are at WHATWG's HTML spec.
+
+    `inputmode` controls the on-screen keyboard (numeric vs text vs tel vs email).
+- fragment_type: rationale
+  sequence: 7
+  content: |-
+    ## Multi-Step vs Long Forms
+
+    Multi-step:
+    - **Pros**: progress feedback, smaller chunks feel less daunting, can save partial progress.
+    - **Cons**: more clicks, harder to review/edit earlier sections.
+
+    Long single form:
+    - **Pros**: one-page review, simpler to implement.
+    - **Cons**: feels overwhelming if >15 fields.
+
+    Rule of thumb: <8 fields → single page; >15 fields → multi-step; in between → judgment.
+
+    For multi-step, always show progress (1 of 4, etc.) and let users go back without losing data.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Required Field Discipline
+
+    Every required field should answer 'why do you need this?'. Anything optional becomes a checkbox-or-omit decision.
+
+    Common over-asking:
+
+    - Phone number when email works.
+    - Title (Mr/Ms/Dr) — almost never necessary.
+    - Date of birth when month is enough (or not at all).
+    - Address when shipping isn't involved.
+
+    Each removed field measurably increases completion. The discipline: 'every field is a leak.'
+- fragment_type: execution
+  sequence: 9
+  content: |-
+    ## Submit Button States
+
+    Three states minimum:
+
+    - **Default**: ready to submit.
+    - **Loading**: clicked, request in flight (disabled + spinner).
+    - **Disabled**: validation failing — but visible, not hidden. Tooltip explains why.
+
+    Anti-pattern: disabling submit until everything's filled. Users wonder why nothing happens; better to allow click → show errors.
+- fragment_type: guardrail
+  sequence: 10
+  content: |-
+    ## Common Pitfalls
+
+    - **Clearing the form on validation error.** Re-typing 14 fields is rage-inducing. Preserve all values.
+    - **Vague errors ('Invalid input').** Specific is faster.
+    - **Validating too early.** 'Invalid email' on the first character. Wait for blur or threshold.
+    - **Hidden submit errors.** Server returns 500, UI silently fails. Show the user.
+    - **Mismatched a11y between visible and screen reader.** Required asterisks must be announced. Use `aria-required="true"` and `<label>`.
+- fragment_type: verification
+  sequence: 11
+  content: |-
+    ## Verification
+
+    A working form UX:
+
+    - Single-column flow scans cleanly.
+    - autocomplete tokens trigger browser fill correctly.
+    - Validation fires at the right moment per field.
+    - Errors are inline, specific, and persistent.
+    - Submit button visibly indicates state — never silently disabled.

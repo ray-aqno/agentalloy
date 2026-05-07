@@ -1,0 +1,261 @@
+skill_type: domain
+skill_id: ui-design-motion-and-animation
+canonical_name: UI Motion and Animation Systems
+category: design
+skill_class: domain
+domain_tags:
+- ui-design
+- motion
+- animation
+- transitions
+- framer-motion
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # UI Motion and Animation Systems
+
+  ## Overview
+
+  Motion is a UI language: tells the user where things came from, where they go, what's loading. Done well, motion is invisible. Done badly, it's nausea-inducing. The discipline: short durations, restrained easing, respect for prefers-reduced-motion.
+
+  ---
+
+  ## Duration — Shorter Than You Think
+
+  - **100-200ms**: micro-interactions (button hover, focus rings).
+  - **200-300ms**: most state transitions (panel open, modal show).
+  - **300-500ms**: emphasis transitions (page change, hero entrance).
+  - **>500ms**: reserved for storytelling moments.
+
+  Defaults to 200-250ms. If a designer asks for 800ms, that's a flag — does it need to feel slow, or did they just leave it at the figma default?
+
+  ## Easing
+
+  Easing curves communicate physics:
+
+  - **ease-out** — fast start, slow end. Best for elements entering or moving toward attention.
+  - **ease-in** — slow start, fast end. Best for elements leaving (off-screen).
+  - **ease-in-out** — symmetric. Most overused; default to ease-out unless leaving.
+  - **linear** — never for UI. Mechanical, unnatural.
+  - **spring** — physics-based. Feels lifelike but can be hard to predict.
+
+  Standard CSS values: `cubic-bezier(0.4, 0, 0.2, 1)` for entrance ('material standard'), `cubic-bezier(0.4, 0, 1, 1)` for exit.
+
+  ## Staggered Animations
+
+  When animating multiple items, stagger them slightly:
+
+  ```js
+  items.forEach((el, i) => {
+      el.style.transitionDelay = `${i * 50}ms`;
+  });
+  ```
+
+  50-80ms stagger looks intentional; 200ms+ feels slow. Cap total stagger at ~600ms — past that, the user perceives it as broken instead of choreographed.
+
+  ## Exit Animations
+
+  Always pair entrance with exit. Elements should leave the way they arrived (or symmetric):
+
+  ```jsx
+  <AnimatePresence>
+      {isOpen && (
+          <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+          />
+      )}
+  </AnimatePresence>
+  ```
+
+  Without an exit animation, items disappear instantly while everything else animates — feels broken.
+
+  ## prefers-reduced-motion
+
+  Always respect this:
+
+  ```css
+  @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+          animation-duration: 0.01ms !important;
+          transition-duration: 0.01ms !important;
+      }
+  }
+  ```
+
+  Or in JS:
+
+  ```js
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const duration = reduce ? 0 : 250;
+  ```
+
+  Some users get vestibular reactions to motion; others just prefer less. Don't force it on them.
+
+  ## Spring vs Tween
+
+  - **Tween** — duration + easing curve. Predictable, easy to choreograph.
+  - **Spring** — stiffness + damping. Feels lifelike, harder to time precisely.
+
+  Tweens are right for most UI. Springs are right when realism matters (a draggable panel that 'snaps back', a modal that 'lands').
+
+  Framer Motion / motion-one let you mix: tween for entrance, spring for drag.
+
+  ## Loading vs Transitioning
+
+  Different motions for different states:
+
+  - **Loading** (no result yet): pulsing skeleton, spinner. Indeterminate.
+  - **Transitioning** (result is rendering): slide, fade, lift. Determinate.
+
+  Mixing them confuses users — a skeleton that fades in then morphs into content is two animations doing the same job.
+
+  ## Common Pitfalls
+
+  - **Animating on every render.** A toast that re-animates every time the parent re-renders. Lock animations to mount/unmount and explicit state changes.
+  - **Long durations.** 500ms+ feels sluggish. Cut in half; users won't notice you cut it but will notice the sluggishness if you don't.
+  - **Animating layout properties.** `width`, `height`, `top`, `left` cause reflow. Use `transform` (translate, scale, rotate) and `opacity` — they're GPU-accelerated.
+  - **Ignoring prefers-reduced-motion.** Inaccessible. Easy to fix; no excuse.
+  - **Bouncy springs everywhere.** Cute once; nausea on the tenth modal.
+
+  ## Verification
+
+  Working motion:
+
+  - All transitions under 500ms unless storytelling.
+  - ease-out for entrances, ease-in for exits.
+  - AnimatePresence (or equivalent) handles unmounts.
+  - prefers-reduced-motion media query degrades gracefully.
+  - DevTools timeline shows compositor-only animation (transform + opacity), no layout thrashing.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Duration — Shorter Than You Think
+
+    - **100-200ms**: micro-interactions (button hover, focus rings).
+    - **200-300ms**: most state transitions (panel open, modal show).
+    - **300-500ms**: emphasis transitions (page change, hero entrance).
+    - **>500ms**: reserved for storytelling moments.
+
+    Defaults to 200-250ms. If a designer asks for 800ms, that's a flag — does it need to feel slow, or did they just leave it at the figma default?
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Easing
+
+    Easing curves communicate physics:
+
+    - **ease-out** — fast start, slow end. Best for elements entering or moving toward attention.
+    - **ease-in** — slow start, fast end. Best for elements leaving (off-screen).
+    - **ease-in-out** — symmetric. Most overused; default to ease-out unless leaving.
+    - **linear** — never for UI. Mechanical, unnatural.
+    - **spring** — physics-based. Feels lifelike but can be hard to predict.
+
+    Standard CSS values: `cubic-bezier(0.4, 0, 0.2, 1)` for entrance ('material standard'), `cubic-bezier(0.4, 0, 1, 1)` for exit.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Staggered Animations
+
+    When animating multiple items, stagger them slightly:
+
+    ```js
+    items.forEach((el, i) => {
+        el.style.transitionDelay = `${i * 50}ms`;
+    });
+    ```
+
+    50-80ms stagger looks intentional; 200ms+ feels slow. Cap total stagger at ~600ms — past that, the user perceives it as broken instead of choreographed.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Exit Animations
+
+    Always pair entrance with exit. Elements should leave the way they arrived (or symmetric):
+
+    ```jsx
+    <AnimatePresence>
+        {isOpen && (
+            <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+            />
+        )}
+    </AnimatePresence>
+    ```
+
+    Without an exit animation, items disappear instantly while everything else animates — feels broken.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## prefers-reduced-motion
+
+    Always respect this:
+
+    ```css
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+            animation-duration: 0.01ms !important;
+            transition-duration: 0.01ms !important;
+        }
+    }
+    ```
+
+    Or in JS:
+
+    ```js
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const duration = reduce ? 0 : 250;
+    ```
+
+    Some users get vestibular reactions to motion; others just prefer less. Don't force it on them.
+- fragment_type: rationale
+  sequence: 6
+  content: |-
+    ## Spring vs Tween
+
+    - **Tween** — duration + easing curve. Predictable, easy to choreograph.
+    - **Spring** — stiffness + damping. Feels lifelike, harder to time precisely.
+
+    Tweens are right for most UI. Springs are right when realism matters (a draggable panel that 'snaps back', a modal that 'lands').
+
+    Framer Motion / motion-one let you mix: tween for entrance, spring for drag.
+- fragment_type: rationale
+  sequence: 7
+  content: |-
+    ## Loading vs Transitioning
+
+    Different motions for different states:
+
+    - **Loading** (no result yet): pulsing skeleton, spinner. Indeterminate.
+    - **Transitioning** (result is rendering): slide, fade, lift. Determinate.
+
+    Mixing them confuses users — a skeleton that fades in then morphs into content is two animations doing the same job.
+- fragment_type: guardrail
+  sequence: 8
+  content: |-
+    ## Common Pitfalls
+
+    - **Animating on every render.** A toast that re-animates every time the parent re-renders. Lock animations to mount/unmount and explicit state changes.
+    - **Long durations.** 500ms+ feels sluggish. Cut in half; users won't notice you cut it but will notice the sluggishness if you don't.
+    - **Animating layout properties.** `width`, `height`, `top`, `left` cause reflow. Use `transform` (translate, scale, rotate) and `opacity` — they're GPU-accelerated.
+    - **Ignoring prefers-reduced-motion.** Inaccessible. Easy to fix; no excuse.
+    - **Bouncy springs everywhere.** Cute once; nausea on the tenth modal.
+- fragment_type: verification
+  sequence: 9
+  content: |-
+    ## Verification
+
+    Working motion:
+
+    - All transitions under 500ms unless storytelling.
+    - ease-out for entrances, ease-in for exits.
+    - AnimatePresence (or equivalent) handles unmounts.
+    - prefers-reduced-motion media query degrades gracefully.
+    - DevTools timeline shows compositor-only animation (transform + opacity), no layout thrashing.

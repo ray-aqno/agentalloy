@@ -1,0 +1,309 @@
+skill_type: domain
+skill_id: ui-design-loading-patterns
+canonical_name: Loading State Patterns
+category: design
+skill_class: domain
+domain_tags:
+- ui-design
+- loading-states
+- skeletons
+- spinners
+- progress-indicators
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Loading State Patterns
+
+  ## Overview
+
+  Every async operation needs a visual signal. Picking the right loader is about expected duration, what's known about progress, and what the user can do while waiting. Skeletons beat spinners for content; spinners beat skeletons for actions.
+
+  ---
+
+  ## Skeleton vs Spinner
+
+  **Skeleton** — placeholder shape that previews where content will appear:
+
+  ```
+  [gray rounded rect — title area]
+  [gray line — subtitle]
+  [gray rect — body content]
+  ```
+
+  Best when:
+  - Content area has a known shape.
+  - Loading typically takes 200ms-2s.
+  - The user is waiting in-place (not initiating an action).
+
+  **Spinner** — animated indicator (often a rotating arc):
+
+  Best when:
+  - Action triggered by user click (button, form submit).
+  - Duration is short (<2s) or indeterminate.
+  - The shape of the eventual UI isn't known.
+
+  Default: skeleton for content loads; spinner for action loads.
+
+  ## Progress Bar — When Measurable
+
+  If you know how complete the operation is, show a bar:
+
+  ```
+  [████████░░░░░░░] 50%
+  ```
+
+  Best for:
+  - File uploads (bytes uploaded / total).
+  - Multi-step operations (step 2 of 5).
+  - Large jobs with known completion criteria.
+
+  Don't fake progress. Users notice when a bar that's been at 90% for 30s is lying. If you can't measure, use a spinner.
+
+  ## Shimmer Effect
+
+  A subtle gradient animation across skeleton placeholders to indicate liveness:
+
+  ```css
+  @keyframes shimmer {
+      0% { background-position: -200px 0; }
+      100% { background-position: 200px 0; }
+  }
+  .skeleton {
+      background: linear-gradient(90deg, #eee 25%, #f5f5f5 50%, #eee 75%);
+      background-size: 400px 100%;
+      animation: shimmer 1.5s infinite;
+  }
+  ```
+
+  Communicates 'this is loading, not just empty'. Subtle is the key — too aggressive and it becomes distracting.
+
+  ## Matching Loader to Expected Duration
+
+  | Duration | Loader |
+  |---|---|
+  | <100ms | Nothing — the eye doesn't catch it |
+  | 100-300ms | Subtle spinner or no loader (UI just updates) |
+  | 300ms-2s | Skeleton or inline spinner |
+  | 2-10s | Skeleton + reassurance text ('Fetching latest orders...') |
+  | >10s | Progress bar if measurable; otherwise spinner with cancel option |
+
+  Showing a giant 'Loading...' modal for a 200ms operation feels broken. Showing nothing for a 5s operation feels unresponsive.
+
+  ## Optimistic UI
+
+  For user-initiated changes, update the UI immediately and reconcile when the server responds:
+
+  ```
+  User clicks [Like]
+  → UI: heart fills immediately
+  → POST /likes (200ms in flight)
+  → on success: nothing else needed
+  → on failure: revert + error toast
+  ```
+
+  No loader needed. Feels instant. The trade-off: occasional revert on failure (rare and recoverable).
+
+  Pair with `useOptimistic` (React 19+) or equivalent.
+
+  ## Inline vs Overlay Loaders
+
+  - **Inline** (skeleton or spinner inside the affected component) — preferred. Other parts of the UI remain interactive.
+  - **Overlay** (full-screen blocker) — only for actions that prevent further interaction (initial app load, full-page transitions).
+
+  A modal-blocking 'Loading...' on every click is rage-inducing.
+
+  ## Suspense and Streaming
+
+  React Suspense (and similar in Vue/Solid) declaratively models loading:
+
+  ```jsx
+  <Suspense fallback={<OrderListSkeleton />}>
+      <OrderList />
+  </Suspense>
+  ```
+
+  The fallback shows during data fetching; the children render when data is ready. Pairs well with streaming SSR — the shell ships immediately; suspended children resolve as data arrives.
+
+  ## Loading State Hierarchy
+
+  A page might have multiple loading states at different levels:
+
+  - **Page-level** — the whole page is loading (skeleton).
+  - **Section-level** — one section refetches while the rest stays interactive.
+  - **Item-level** — a single item is updating (small inline spinner).
+
+  Don't show overlapping loaders. Page-level absorbs section-level; section absorbs item.
+
+  ## Common Pitfalls
+
+  - **Spinner for everything.** Skeletons feel faster for content loads.
+  - **Skeletons for action submit.** A spinner inside the button is more accurate — the action is what's loading, not new content.
+  - **Loaders that flash.** For sub-100ms operations, showing then hiding a loader looks like a glitch. Either don't show one, or hold it visible for a minimum 200ms.
+  - **Fake progress bars.** Users learn to distrust them. Use spinners for unknown durations.
+  - **Overlay loaders for short actions.** Blocking the UI for 200ms is annoying.
+
+  ## Verification
+
+  A working loading-state system:
+
+  - Sub-100ms operations show no loader (just update).
+  - Content loads use skeletons matching final layout.
+  - Action loads use inline button spinners.
+  - Long operations (>10s) show progress when measurable, spinner with cancel when not.
+  - Optimistic UI handles likes/comments instantly with revert-on-failure.
+fragments:
+- fragment_type: rationale
+  sequence: 1
+  content: |-
+    ## Skeleton vs Spinner
+
+    **Skeleton** — placeholder shape that previews where content will appear:
+
+    ```
+    [gray rounded rect — title area]
+    [gray line — subtitle]
+    [gray rect — body content]
+    ```
+
+    Best when:
+    - Content area has a known shape.
+    - Loading typically takes 200ms-2s.
+    - The user is waiting in-place (not initiating an action).
+
+    **Spinner** — animated indicator (often a rotating arc):
+
+    Best when:
+    - Action triggered by user click (button, form submit).
+    - Duration is short (<2s) or indeterminate.
+    - The shape of the eventual UI isn't known.
+
+    Default: skeleton for content loads; spinner for action loads.
+- fragment_type: rationale
+  sequence: 2
+  content: |-
+    ## Progress Bar — When Measurable
+
+    If you know how complete the operation is, show a bar:
+
+    ```
+    [████████░░░░░░░] 50%
+    ```
+
+    Best for:
+    - File uploads (bytes uploaded / total).
+    - Multi-step operations (step 2 of 5).
+    - Large jobs with known completion criteria.
+
+    Don't fake progress. Users notice when a bar that's been at 90% for 30s is lying. If you can't measure, use a spinner.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Shimmer Effect
+
+    A subtle gradient animation across skeleton placeholders to indicate liveness:
+
+    ```css
+    @keyframes shimmer {
+        0% { background-position: -200px 0; }
+        100% { background-position: 200px 0; }
+    }
+    .skeleton {
+        background: linear-gradient(90deg, #eee 25%, #f5f5f5 50%, #eee 75%);
+        background-size: 400px 100%;
+        animation: shimmer 1.5s infinite;
+    }
+    ```
+
+    Communicates 'this is loading, not just empty'. Subtle is the key — too aggressive and it becomes distracting.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Matching Loader to Expected Duration
+
+    | Duration | Loader |
+    |---|---|
+    | <100ms | Nothing — the eye doesn't catch it |
+    | 100-300ms | Subtle spinner or no loader (UI just updates) |
+    | 300ms-2s | Skeleton or inline spinner |
+    | 2-10s | Skeleton + reassurance text ('Fetching latest orders...') |
+    | >10s | Progress bar if measurable; otherwise spinner with cancel option |
+
+    Showing a giant 'Loading...' modal for a 200ms operation feels broken. Showing nothing for a 5s operation feels unresponsive.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Optimistic UI
+
+    For user-initiated changes, update the UI immediately and reconcile when the server responds:
+
+    ```
+    User clicks [Like]
+    → UI: heart fills immediately
+    → POST /likes (200ms in flight)
+    → on success: nothing else needed
+    → on failure: revert + error toast
+    ```
+
+    No loader needed. Feels instant. The trade-off: occasional revert on failure (rare and recoverable).
+
+    Pair with `useOptimistic` (React 19+) or equivalent.
+- fragment_type: rationale
+  sequence: 6
+  content: |-
+    ## Inline vs Overlay Loaders
+
+    - **Inline** (skeleton or spinner inside the affected component) — preferred. Other parts of the UI remain interactive.
+    - **Overlay** (full-screen blocker) — only for actions that prevent further interaction (initial app load, full-page transitions).
+
+    A modal-blocking 'Loading...' on every click is rage-inducing.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Suspense and Streaming
+
+    React Suspense (and similar in Vue/Solid) declaratively models loading:
+
+    ```jsx
+    <Suspense fallback={<OrderListSkeleton />}>
+        <OrderList />
+    </Suspense>
+    ```
+
+    The fallback shows during data fetching; the children render when data is ready. Pairs well with streaming SSR — the shell ships immediately; suspended children resolve as data arrives.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Loading State Hierarchy
+
+    A page might have multiple loading states at different levels:
+
+    - **Page-level** — the whole page is loading (skeleton).
+    - **Section-level** — one section refetches while the rest stays interactive.
+    - **Item-level** — a single item is updating (small inline spinner).
+
+    Don't show overlapping loaders. Page-level absorbs section-level; section absorbs item.
+- fragment_type: guardrail
+  sequence: 9
+  content: |-
+    ## Common Pitfalls
+
+    - **Spinner for everything.** Skeletons feel faster for content loads.
+    - **Skeletons for action submit.** A spinner inside the button is more accurate — the action is what's loading, not new content.
+    - **Loaders that flash.** For sub-100ms operations, showing then hiding a loader looks like a glitch. Either don't show one, or hold it visible for a minimum 200ms.
+    - **Fake progress bars.** Users learn to distrust them. Use spinners for unknown durations.
+    - **Overlay loaders for short actions.** Blocking the UI for 200ms is annoying.
+- fragment_type: verification
+  sequence: 10
+  content: |-
+    ## Verification
+
+    A working loading-state system:
+
+    - Sub-100ms operations show no loader (just update).
+    - Content loads use skeletons matching final layout.
+    - Action loads use inline button spinners.
+    - Long operations (>10s) show progress when measurable, spinner with cancel when not.
+    - Optimistic UI handles likes/comments instantly with revert-on-failure.

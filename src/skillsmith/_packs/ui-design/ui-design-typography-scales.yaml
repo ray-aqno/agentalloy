@@ -1,0 +1,277 @@
+skill_type: domain
+skill_id: ui-design-typography-scales
+canonical_name: Typography Scales and Vertical Rhythm
+category: design
+skill_class: domain
+domain_tags:
+- ui-design
+- typography
+- type-scale
+- vertical-rhythm
+- fluid-typography
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Typography Scales and Vertical Rhythm
+
+  ## Overview
+
+  Typography is the most ubiquitous design surface — every screen has type. A typographic system: a scale (predictable size jumps), consistent line heights, weight semantics, and fluid sizing for responsive contexts. Done right, type recedes; done wrong, it grates.
+
+  ---
+
+  ## Modular Scales
+
+  Pick a ratio; multiply from a base:
+
+  ```
+  ratio: 1.25 (major third)
+  12px → 15px → 19px → 23px → 29px → 36px → 45px → 56px → 70px
+  ```
+
+  Common ratios:
+
+  - **1.125** (major second) — gentle scale, good for content-heavy sites.
+  - **1.2** (minor third) — versatile default.
+  - **1.25** (major third) — slightly more contrast.
+  - **1.333** (perfect fourth) — strong contrast, headings stand out.
+  - **1.5** (perfect fifth) — dramatic, for marketing pages.
+
+  Apps usually want 1.2-1.25; marketing pages 1.333-1.5.
+
+  ## Type Tokens
+
+  ```css
+  --text-xs:    0.75rem;   /* 12px */
+  --text-sm:    0.875rem;  /* 14px */
+  --text-base:  1rem;      /* 16px */
+  --text-lg:    1.125rem;  /* 18px */
+  --text-xl:    1.25rem;   /* 20px */
+  --text-2xl:   1.5rem;    /* 24px */
+  --text-3xl:   1.875rem;  /* 30px */
+  --text-4xl:   2.25rem;   /* 36px */
+  --text-5xl:   3rem;      /* 48px */
+  ```
+
+  This is roughly Tailwind's scale. App body text at `--text-base` (16px); component text at sm or base; headings climb the scale.
+
+  ## Line Height by Size
+
+  Line height is contextual:
+
+  - **Body text (14-18px)**: 1.5-1.7 ratio. Plenty of breathing room for reading.
+  - **Display text (24px+)**: 1.1-1.3 ratio. Tight for impact.
+  - **Buttons / labels (12-16px)**: 1 to 1.4. Just enough to not clip descenders.
+
+  Don't use one ratio for everything. CSS:
+
+  ```css
+  .body  { font-size: 1rem; line-height: 1.6; }
+  .h1    { font-size: 3rem; line-height: 1.1; }
+  .label { font-size: 0.75rem; line-height: 1; }
+  ```
+
+  ## Font Pairing
+
+  - **Sans + sans (different weights)** — modern, restrained. Inter for body, Inter Display or a bolder weight for headings.
+  - **Sans + serif** — classic, slight drama. Sans body + serif headings (or vice versa).
+  - **Sans + mono** — for product UIs with code. Monospace for code blocks, hashes, SKUs.
+
+  Avoid pairing two display fonts. The contrast becomes noise.
+
+  ## Font Weight Semantics
+
+  Use weights consistently:
+
+  - **400 (regular)** — body text.
+  - **500 (medium)** — slightly emphasized, button labels, table headers.
+  - **600 (semibold)** — strong emphasis, section headers.
+  - **700 (bold)** — hero headings, calls to action.
+
+  Don't sprinkle weights randomly. A design where buttons are 500 and section headers are 600 is consistent; mixing 600 buttons + 700 headers + 400 buttons elsewhere is chaotic.
+
+  ## Fluid Typography with clamp()
+
+  Sizes that scale between viewport widths:
+
+  ```css
+  :root {
+      --text-hero: clamp(2rem, 4vw + 1rem, 4.5rem);
+  }
+  ```
+
+  `clamp(min, preferred, max)`. The preferred value scales with viewport; min and max bound it. The hero is 2rem on phones, scales up, capped at 4.5rem on huge screens.
+
+  Use for headings and marketing pages. Body text usually stays fixed (16px) — readability over scale.
+
+  ## Vertical Rhythm
+
+  Spacing between lines should be a multiple of the base line height. If body is 16px × 1.6 = 25.6px, baseline grid is ~25.6px increments.
+
+  In practice this is approximate — pure baseline grids are hard with web type. Aim for consistent margins between elements (typically multiples of 4px or 8px) and don't sweat exact baseline alignment.
+
+  ## Letter Spacing
+
+  - **Normal** (0) — body text. Default.
+  - **Tight** (-0.02 to -0.04em) — large headings; reduces gaps between big letters.
+  - **Wide** (0.05 to 0.1em) — small caps, button labels in all-caps. Aids legibility.
+
+  Never use wide spacing on body text. Reading speed drops.
+
+  ## Common Pitfalls
+
+  - **Same line-height for body and headings.** Body looks cramped or headings look loose.
+  - **Too many sizes.** A design with 12 distinct font sizes is incoherent. Stick to 6-8.
+  - **System fonts on macOS / iOS look great; not so on Linux/Windows.** Test on the worst stack you ship to.
+  - **Unbounded fluid sizes.** clamp() without a max grows huge on 4K monitors.
+  - **Mixing font weights too freely.** 6 weights in a UI = visual noise. Stick to 2-3.
+
+  ## Verification
+
+  A working type system:
+
+  - All sizes derive from a single scale.
+  - Body text reads comfortably at 16px+ with 1.5-1.7 line height.
+  - Headings get tighter line height than body.
+  - Fluid hero sizes are bounded with clamp().
+  - Weight semantics are consistent (regular for body, medium for emphasis, etc.).
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Modular Scales
+
+    Pick a ratio; multiply from a base:
+
+    ```
+    ratio: 1.25 (major third)
+    12px → 15px → 19px → 23px → 29px → 36px → 45px → 56px → 70px
+    ```
+
+    Common ratios:
+
+    - **1.125** (major second) — gentle scale, good for content-heavy sites.
+    - **1.2** (minor third) — versatile default.
+    - **1.25** (major third) — slightly more contrast.
+    - **1.333** (perfect fourth) — strong contrast, headings stand out.
+    - **1.5** (perfect fifth) — dramatic, for marketing pages.
+
+    Apps usually want 1.2-1.25; marketing pages 1.333-1.5.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Type Tokens
+
+    ```css
+    --text-xs:    0.75rem;   /* 12px */
+    --text-sm:    0.875rem;  /* 14px */
+    --text-base:  1rem;      /* 16px */
+    --text-lg:    1.125rem;  /* 18px */
+    --text-xl:    1.25rem;   /* 20px */
+    --text-2xl:   1.5rem;    /* 24px */
+    --text-3xl:   1.875rem;  /* 30px */
+    --text-4xl:   2.25rem;   /* 36px */
+    --text-5xl:   3rem;      /* 48px */
+    ```
+
+    This is roughly Tailwind's scale. App body text at `--text-base` (16px); component text at sm or base; headings climb the scale.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Line Height by Size
+
+    Line height is contextual:
+
+    - **Body text (14-18px)**: 1.5-1.7 ratio. Plenty of breathing room for reading.
+    - **Display text (24px+)**: 1.1-1.3 ratio. Tight for impact.
+    - **Buttons / labels (12-16px)**: 1 to 1.4. Just enough to not clip descenders.
+
+    Don't use one ratio for everything. CSS:
+
+    ```css
+    .body  { font-size: 1rem; line-height: 1.6; }
+    .h1    { font-size: 3rem; line-height: 1.1; }
+    .label { font-size: 0.75rem; line-height: 1; }
+    ```
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Font Pairing
+
+    - **Sans + sans (different weights)** — modern, restrained. Inter for body, Inter Display or a bolder weight for headings.
+    - **Sans + serif** — classic, slight drama. Sans body + serif headings (or vice versa).
+    - **Sans + mono** — for product UIs with code. Monospace for code blocks, hashes, SKUs.
+
+    Avoid pairing two display fonts. The contrast becomes noise.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Font Weight Semantics
+
+    Use weights consistently:
+
+    - **400 (regular)** — body text.
+    - **500 (medium)** — slightly emphasized, button labels, table headers.
+    - **600 (semibold)** — strong emphasis, section headers.
+    - **700 (bold)** — hero headings, calls to action.
+
+    Don't sprinkle weights randomly. A design where buttons are 500 and section headers are 600 is consistent; mixing 600 buttons + 700 headers + 400 buttons elsewhere is chaotic.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Fluid Typography with clamp()
+
+    Sizes that scale between viewport widths:
+
+    ```css
+    :root {
+        --text-hero: clamp(2rem, 4vw + 1rem, 4.5rem);
+    }
+    ```
+
+    `clamp(min, preferred, max)`. The preferred value scales with viewport; min and max bound it. The hero is 2rem on phones, scales up, capped at 4.5rem on huge screens.
+
+    Use for headings and marketing pages. Body text usually stays fixed (16px) — readability over scale.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Vertical Rhythm
+
+    Spacing between lines should be a multiple of the base line height. If body is 16px × 1.6 = 25.6px, baseline grid is ~25.6px increments.
+
+    In practice this is approximate — pure baseline grids are hard with web type. Aim for consistent margins between elements (typically multiples of 4px or 8px) and don't sweat exact baseline alignment.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Letter Spacing
+
+    - **Normal** (0) — body text. Default.
+    - **Tight** (-0.02 to -0.04em) — large headings; reduces gaps between big letters.
+    - **Wide** (0.05 to 0.1em) — small caps, button labels in all-caps. Aids legibility.
+
+    Never use wide spacing on body text. Reading speed drops.
+- fragment_type: guardrail
+  sequence: 9
+  content: |-
+    ## Common Pitfalls
+
+    - **Same line-height for body and headings.** Body looks cramped or headings look loose.
+    - **Too many sizes.** A design with 12 distinct font sizes is incoherent. Stick to 6-8.
+    - **System fonts on macOS / iOS look great; not so on Linux/Windows.** Test on the worst stack you ship to.
+    - **Unbounded fluid sizes.** clamp() without a max grows huge on 4K monitors.
+    - **Mixing font weights too freely.** 6 weights in a UI = visual noise. Stick to 2-3.
+- fragment_type: verification
+  sequence: 10
+  content: |-
+    ## Verification
+
+    A working type system:
+
+    - All sizes derive from a single scale.
+    - Body text reads comfortably at 16px+ with 1.5-1.7 line height.
+    - Headings get tighter line height than body.
+    - Fluid hero sizes are bounded with clamp().
+    - Weight semantics are consistent (regular for body, medium for emphasis, etc.).

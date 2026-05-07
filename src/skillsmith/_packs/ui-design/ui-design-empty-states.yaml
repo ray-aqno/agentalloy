@@ -1,0 +1,279 @@
+skill_type: domain
+skill_id: ui-design-empty-states
+canonical_name: Empty States
+category: design
+skill_class: domain
+domain_tags:
+- ui-design
+- empty-states
+- onboarding
+- ux-writing
+- first-run
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Empty States
+
+  ## Overview
+
+  Empty states are the moments users see when they have nothing yet — a brand new account, a filter with no matches, a cleared inbox. Done right, they orient and motivate; done badly, they look broken.
+
+  ---
+
+  ## Three Kinds of Empty State
+
+  - **First run** — user has never had data here. Teach what this is and how to add the first item.
+  - **No results** — user filtered or searched, nothing matched. Explain what was searched and how to broaden.
+  - **Cleared** — user just deleted everything. Confirm the action; don't show 'add your first' framing (they had data).
+
+  Each calls for different copy and visuals. A 'Welcome! Add your first task' message after a user clears their inbox is jarring.
+
+  ## First-Run Anatomy
+
+  ```
+  [Illustration]
+  You don't have any orders yet
+  Place your first order to see it here.
+  [Button: Place an order]
+  [Link: Learn how orders work]
+  ```
+
+  Components:
+  - **Visual** — illustration, icon, or screenshot. Sets tone.
+  - **Headline** — what's missing, in user terms ('You don't have any X' beats 'No data').
+  - **Description** — one sentence explaining what'll appear here.
+  - **Primary action** — the most likely thing the user wants to do.
+  - **Secondary action** (optional) — a help link, sample data, or alternative.
+
+  ## Search No-Results
+
+  ```
+  [Icon: magnifying glass]
+  No results for "qwerasdf"
+  Try a shorter search term or check your spelling.
+  [Button: Clear search]
+  ```
+
+  Always quote what they searched. Without it, users wonder if their query was even received.
+
+  For filtered lists, also offer 'Clear filters' as a one-click reset.
+
+  ## Error Empty States
+
+  When the empty state is due to an error (failed fetch), say so:
+
+  ```
+  [Icon: alert]
+  We couldn't load your orders
+  Check your connection and try again.
+  [Button: Retry]
+  ```
+
+  Don't show a generic 'No orders' when the actual situation is a 500. Users will think their data is gone.
+
+  ## Onboarding Empty States as Teaching
+
+  The first-run empty state is prime onboarding real estate. Instead of just 'You have no projects', use it to:
+
+  - Show what a typical item looks like (skeleton with placeholder text).
+  - List 2-3 reasons the user might want to create one.
+  - Offer to create a sample.
+
+  ```
+  You don't have any projects yet
+  Projects help you organize your work into shipping milestones.
+  [Button: Create your first project]
+  [Button: Create a sample project] (secondary)
+  ```
+
+  The 'sample project' button is gold — lets users see the experience before committing.
+
+  ## Tone
+
+  Match the product:
+
+  - **Friendly tools (Notion, Linear)**: conversational, slightly playful. 'Looks empty around here. Let's fix that.'
+  - **Professional (financial, healthcare, government)**: clear, neutral. 'No transactions in this period.'
+
+  Don't import another product's tone wholesale. A bank making jokes about empty inboxes feels off.
+
+  ## What NOT to Show
+
+  - **Generic stock illustrations** — 'people pointing at empty boxes' is overused.
+  - **Too many actions** — one primary action; add secondary only if it's qualitatively different.
+  - **Disclaimers** ('Loading data may take a moment...') — distracts from the core message.
+  - **Marketing copy** ('Try our Pro plan!') — irritates users who just want to use the product.
+
+  ## Loading vs Empty
+
+  Don't show empty state during initial load:
+
+  ```
+  [mounted] → loading state (skeleton/spinner)
+              ↓
+              data arrives
+              ↓
+  [has data]                  [no data]
+     render rows              render empty state
+  ```
+
+  A user who lands on the screen and immediately sees 'You have no data' will think they're broken or not logged in. Show the loading state long enough for fast networks to populate.
+
+  ## Common Pitfalls
+
+  - **The same empty state for first-run and post-deletion.** They need different messages.
+  - **No primary action.** User reads 'You have no orders' and doesn't know what to do next.
+  - **Emojis used as illustrations.** Cute on a personal tool; unprofessional in business software.
+  - **Skipping empty states for filtered views.** Users hit an unexpected 'nothing here' and assume their filter is broken.
+  - **Empty state shows before data has loaded.** Always sequence loading → empty/data.
+
+  ## Verification
+
+  A working empty-state system:
+
+  - First-run empty state teaches and offers a clear next step.
+  - Search no-results quotes the query and offers reset.
+  - Errors get error-state framing, not 'no data'.
+  - Tone matches the product's voice elsewhere.
+  - Loading states bridge initial-mount to populated, never showing empty during load.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Three Kinds of Empty State
+
+    - **First run** — user has never had data here. Teach what this is and how to add the first item.
+    - **No results** — user filtered or searched, nothing matched. Explain what was searched and how to broaden.
+    - **Cleared** — user just deleted everything. Confirm the action; don't show 'add your first' framing (they had data).
+
+    Each calls for different copy and visuals. A 'Welcome! Add your first task' message after a user clears their inbox is jarring.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## First-Run Anatomy
+
+    ```
+    [Illustration]
+    You don't have any orders yet
+    Place your first order to see it here.
+    [Button: Place an order]
+    [Link: Learn how orders work]
+    ```
+
+    Components:
+    - **Visual** — illustration, icon, or screenshot. Sets tone.
+    - **Headline** — what's missing, in user terms ('You don't have any X' beats 'No data').
+    - **Description** — one sentence explaining what'll appear here.
+    - **Primary action** — the most likely thing the user wants to do.
+    - **Secondary action** (optional) — a help link, sample data, or alternative.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Search No-Results
+
+    ```
+    [Icon: magnifying glass]
+    No results for "qwerasdf"
+    Try a shorter search term or check your spelling.
+    [Button: Clear search]
+    ```
+
+    Always quote what they searched. Without it, users wonder if their query was even received.
+
+    For filtered lists, also offer 'Clear filters' as a one-click reset.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Error Empty States
+
+    When the empty state is due to an error (failed fetch), say so:
+
+    ```
+    [Icon: alert]
+    We couldn't load your orders
+    Check your connection and try again.
+    [Button: Retry]
+    ```
+
+    Don't show a generic 'No orders' when the actual situation is a 500. Users will think their data is gone.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Onboarding Empty States as Teaching
+
+    The first-run empty state is prime onboarding real estate. Instead of just 'You have no projects', use it to:
+
+    - Show what a typical item looks like (skeleton with placeholder text).
+    - List 2-3 reasons the user might want to create one.
+    - Offer to create a sample.
+
+    ```
+    You don't have any projects yet
+    Projects help you organize your work into shipping milestones.
+    [Button: Create your first project]
+    [Button: Create a sample project] (secondary)
+    ```
+
+    The 'sample project' button is gold — lets users see the experience before committing.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Tone
+
+    Match the product:
+
+    - **Friendly tools (Notion, Linear)**: conversational, slightly playful. 'Looks empty around here. Let's fix that.'
+    - **Professional (financial, healthcare, government)**: clear, neutral. 'No transactions in this period.'
+
+    Don't import another product's tone wholesale. A bank making jokes about empty inboxes feels off.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## What NOT to Show
+
+    - **Generic stock illustrations** — 'people pointing at empty boxes' is overused.
+    - **Too many actions** — one primary action; add secondary only if it's qualitatively different.
+    - **Disclaimers** ('Loading data may take a moment...') — distracts from the core message.
+    - **Marketing copy** ('Try our Pro plan!') — irritates users who just want to use the product.
+- fragment_type: rationale
+  sequence: 8
+  content: |-
+    ## Loading vs Empty
+
+    Don't show empty state during initial load:
+
+    ```
+    [mounted] → loading state (skeleton/spinner)
+                ↓
+                data arrives
+                ↓
+    [has data]                  [no data]
+       render rows              render empty state
+    ```
+
+    A user who lands on the screen and immediately sees 'You have no data' will think they're broken or not logged in. Show the loading state long enough for fast networks to populate.
+- fragment_type: guardrail
+  sequence: 9
+  content: |-
+    ## Common Pitfalls
+
+    - **The same empty state for first-run and post-deletion.** They need different messages.
+    - **No primary action.** User reads 'You have no orders' and doesn't know what to do next.
+    - **Emojis used as illustrations.** Cute on a personal tool; unprofessional in business software.
+    - **Skipping empty states for filtered views.** Users hit an unexpected 'nothing here' and assume their filter is broken.
+    - **Empty state shows before data has loaded.** Always sequence loading → empty/data.
+- fragment_type: verification
+  sequence: 10
+  content: |-
+    ## Verification
+
+    A working empty-state system:
+
+    - First-run empty state teaches and offers a clear next step.
+    - Search no-results quotes the query and offers reset.
+    - Errors get error-state framing, not 'no data'.
+    - Tone matches the product's voice elsewhere.
+    - Loading states bridge initial-mount to populated, never showing empty during load.

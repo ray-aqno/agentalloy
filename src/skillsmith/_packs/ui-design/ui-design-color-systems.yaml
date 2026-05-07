@@ -1,0 +1,276 @@
+skill_type: domain
+skill_id: ui-design-color-systems
+canonical_name: Color Systems and Contrast
+category: design
+skill_class: domain
+domain_tags:
+- ui-design
+- color
+- oklch
+- contrast
+- accessibility
+- color-blindness
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Color Systems and Contrast
+
+  ## Overview
+
+  Color in UI is mostly about contrast and consistency. OKLCH (perceptually uniform) is the modern color space for palette generation. WCAG sets contrast minimums; AA is the floor most products target. Color must work for color-blind users.
+
+  ---
+
+  ## OKLCH — The Modern Color Space
+
+  HSL/HSV are perceptually non-uniform — `hsl(50, 100%, 50%)` (yellow) and `hsl(240, 100%, 50%)` (blue) have the same lightness '50%' but yellow looks much brighter. This breaks 'darker by 10%' design semantics.
+
+  OKLCH (Oklab + LCh polar form) is perceptually uniform — equal L means equal perceived lightness, regardless of hue:
+
+  ```css
+  --blue-500: oklch(60% 0.18 240);
+  --yellow-500: oklch(60% 0.18 100);
+  /* both look similarly bright */
+  ```
+
+  Browser support: Chrome 111+, Safari 15.4+, Firefox 113+. Production-safe in 2024+.
+
+  ## Palette Generation
+
+  Pick a base hue. Generate 12 shades by varying L (lightness) and C (chroma):
+
+  ```
+  50:  oklch(98% 0.02 H)   — lightest, near-white
+  100: oklch(95% 0.04 H)
+  200: oklch(89% 0.08 H)
+  300: oklch(82% 0.12 H)
+  400: oklch(72% 0.15 H)
+  500: oklch(60% 0.18 H)   — base / brand
+  600: oklch(50% 0.18 H)
+  700: oklch(42% 0.16 H)
+  800: oklch(34% 0.13 H)
+  900: oklch(26% 0.10 H)
+  950: oklch(18% 0.07 H)   — darkest, near-black
+  ```
+
+  Keep C lower at the extremes — high-chroma very-light or very-dark colors look unnatural.
+
+  ## WCAG Contrast
+
+  Two thresholds:
+
+  - **AA**: normal text 4.5:1, large text 3:1. The legal floor in many jurisdictions.
+  - **AAA**: normal 7:1, large 4.5:1. For high-stakes accessibility (govt, healthcare).
+
+  Tools: WebAIM Contrast Checker, Stark plugin, Chrome DevTools' color picker.
+
+  For body text, target AA at minimum. For interactive elements (buttons, links), target AAA — they're harder to spot already.
+
+  ## Semantic Colors
+
+  Standard set:
+
+  ```
+  success: green  (positive, confirmation)
+  warning: amber  (caution, soft alert)
+  error:   red    (problem, blocking)
+  info:    blue   (neutral information)
+  ```
+
+  Each gets its own ramp (success-50 through success-950). Apply via semantic tokens:
+
+  ```css
+  --text-success: var(--green-700);
+  --bg-success-subtle: var(--green-50);
+  --border-success: var(--green-300);
+  ```
+
+  Don't reach for `green-500` directly in app code — semantic naming survives palette changes.
+
+  ## Color-Blind Safe Palettes
+
+  8% of men have some form of color vision deficiency (most commonly red-green). Don't encode information by hue alone:
+
+  - **Status indicators**: pair color with icon (✓ check, ⚠ warning, ✕ X).
+  - **Charts**: use distinguishable hues — blue + orange instead of red + green. Add patterns or labels.
+  - **Form errors**: red border AND error message text, not just red border.
+
+  Tools: Sim Daltonism (macOS), Coblis (web), Chrome DevTools' vision deficiency simulator.
+
+  ## Dark Mode Color Adjustments
+
+  Don't just invert — that produces ugly colors. Strategy:
+
+  - Dark backgrounds use 900-950 not pure black (#000 is too harsh).
+  - Light text uses 50-100 not pure white (#fff is too bright on dark).
+  - Brand colors shift slightly — pure 500 may need to brighten to 400 in dark mode.
+  - Reduce saturation of accent colors slightly — dark backgrounds amplify chroma.
+
+  ```css
+  :root {
+      --color-bg: var(--white);
+      --color-text: var(--gray-900);
+      --color-brand: var(--blue-500);
+  }
+
+  [data-theme="dark"] {
+      --color-bg: var(--gray-950);
+      --color-text: var(--gray-50);
+      --color-brand: var(--blue-400);  /* slightly brighter */
+  }
+  ```
+
+  ## Common Pitfalls
+
+  - **Generating palettes in HSL.** Non-uniform lightness; 'darker' looks inconsistent across hues.
+  - **Using pure black (#000) on light backgrounds.** Harsh; use 900 instead.
+  - **Color-only status indicators.** Inaccessible to color-blind users. Pair with text or icon.
+  - **Skipping AA contrast for 'placeholder text'.** WCAG counts placeholders as text; many designs fail here.
+  - **Hardcoded colors in components.** Theme switch breaks. Always reference tokens.
+
+  ## Verification
+
+  A working color system:
+
+  - Every text/background pair meets AA at minimum (4.5:1 for normal text).
+  - Color-blind simulator shows status / charts remain distinguishable.
+  - Dark mode doesn't just invert — colors are tuned.
+  - All component colors reference semantic tokens, not primitives.
+  - Token additions go through review with contrast checks.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## OKLCH — The Modern Color Space
+
+    HSL/HSV are perceptually non-uniform — `hsl(50, 100%, 50%)` (yellow) and `hsl(240, 100%, 50%)` (blue) have the same lightness '50%' but yellow looks much brighter. This breaks 'darker by 10%' design semantics.
+
+    OKLCH (Oklab + LCh polar form) is perceptually uniform — equal L means equal perceived lightness, regardless of hue:
+
+    ```css
+    --blue-500: oklch(60% 0.18 240);
+    --yellow-500: oklch(60% 0.18 100);
+    /* both look similarly bright */
+    ```
+
+    Browser support: Chrome 111+, Safari 15.4+, Firefox 113+. Production-safe in 2024+.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Palette Generation
+
+    Pick a base hue. Generate 12 shades by varying L (lightness) and C (chroma):
+
+    ```
+    50:  oklch(98% 0.02 H)   — lightest, near-white
+    100: oklch(95% 0.04 H)
+    200: oklch(89% 0.08 H)
+    300: oklch(82% 0.12 H)
+    400: oklch(72% 0.15 H)
+    500: oklch(60% 0.18 H)   — base / brand
+    600: oklch(50% 0.18 H)
+    700: oklch(42% 0.16 H)
+    800: oklch(34% 0.13 H)
+    900: oklch(26% 0.10 H)
+    950: oklch(18% 0.07 H)   — darkest, near-black
+    ```
+
+    Keep C lower at the extremes — high-chroma very-light or very-dark colors look unnatural.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## WCAG Contrast
+
+    Two thresholds:
+
+    - **AA**: normal text 4.5:1, large text 3:1. The legal floor in many jurisdictions.
+    - **AAA**: normal 7:1, large 4.5:1. For high-stakes accessibility (govt, healthcare).
+
+    Tools: WebAIM Contrast Checker, Stark plugin, Chrome DevTools' color picker.
+
+    For body text, target AA at minimum. For interactive elements (buttons, links), target AAA — they're harder to spot already.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Semantic Colors
+
+    Standard set:
+
+    ```
+    success: green  (positive, confirmation)
+    warning: amber  (caution, soft alert)
+    error:   red    (problem, blocking)
+    info:    blue   (neutral information)
+    ```
+
+    Each gets its own ramp (success-50 through success-950). Apply via semantic tokens:
+
+    ```css
+    --text-success: var(--green-700);
+    --bg-success-subtle: var(--green-50);
+    --border-success: var(--green-300);
+    ```
+
+    Don't reach for `green-500` directly in app code — semantic naming survives palette changes.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Color-Blind Safe Palettes
+
+    8% of men have some form of color vision deficiency (most commonly red-green). Don't encode information by hue alone:
+
+    - **Status indicators**: pair color with icon (✓ check, ⚠ warning, ✕ X).
+    - **Charts**: use distinguishable hues — blue + orange instead of red + green. Add patterns or labels.
+    - **Form errors**: red border AND error message text, not just red border.
+
+    Tools: Sim Daltonism (macOS), Coblis (web), Chrome DevTools' vision deficiency simulator.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Dark Mode Color Adjustments
+
+    Don't just invert — that produces ugly colors. Strategy:
+
+    - Dark backgrounds use 900-950 not pure black (#000 is too harsh).
+    - Light text uses 50-100 not pure white (#fff is too bright on dark).
+    - Brand colors shift slightly — pure 500 may need to brighten to 400 in dark mode.
+    - Reduce saturation of accent colors slightly — dark backgrounds amplify chroma.
+
+    ```css
+    :root {
+        --color-bg: var(--white);
+        --color-text: var(--gray-900);
+        --color-brand: var(--blue-500);
+    }
+
+    [data-theme="dark"] {
+        --color-bg: var(--gray-950);
+        --color-text: var(--gray-50);
+        --color-brand: var(--blue-400);  /* slightly brighter */
+    }
+    ```
+- fragment_type: guardrail
+  sequence: 7
+  content: |-
+    ## Common Pitfalls
+
+    - **Generating palettes in HSL.** Non-uniform lightness; 'darker' looks inconsistent across hues.
+    - **Using pure black (#000) on light backgrounds.** Harsh; use 900 instead.
+    - **Color-only status indicators.** Inaccessible to color-blind users. Pair with text or icon.
+    - **Skipping AA contrast for 'placeholder text'.** WCAG counts placeholders as text; many designs fail here.
+    - **Hardcoded colors in components.** Theme switch breaks. Always reference tokens.
+- fragment_type: verification
+  sequence: 8
+  content: |-
+    ## Verification
+
+    A working color system:
+
+    - Every text/background pair meets AA at minimum (4.5:1 for normal text).
+    - Color-blind simulator shows status / charts remain distinguishable.
+    - Dark mode doesn't just invert — colors are tuned.
+    - All component colors reference semantic tokens, not primitives.
+    - Token additions go through review with contrast checks.

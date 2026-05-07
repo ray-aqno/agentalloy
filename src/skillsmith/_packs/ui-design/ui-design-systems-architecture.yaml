@@ -1,0 +1,277 @@
+skill_type: domain
+skill_id: ui-design-systems-architecture
+canonical_name: Design Systems — Architecture and Tokens
+category: design
+skill_class: domain
+domain_tags:
+- ui-design
+- design-systems
+- design-tokens
+- component-library
+- theming
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Design Systems — Architecture and Tokens
+
+  ## Overview
+
+  A design system is a contract — the design team commits to a vocabulary; engineering implements once, app code uses tokens not magic numbers. Tokens are the lingua franca; components consume them.
+
+  ---
+
+  ## Token Tiers
+
+  Three layers, each consuming the layer below:
+
+  **Primitive tokens** — raw values. `--blue-500: #3b82f6;` `--spacing-4: 1rem;`. The atoms. No semantic meaning.
+
+  **Semantic tokens** — named by intent. `--color-primary: var(--blue-500);` `--color-text-default: var(--gray-900);` `--color-border-error: var(--red-500);`. Tells you the use, not the value.
+
+  **Component tokens** — scoped to a component. `--button-bg-primary: var(--color-primary);` `--card-shadow: var(--shadow-md);`.
+
+  App code uses semantic and component tokens. Direct primitive use is a smell ('app code references --blue-500' = the app code knows the brand color, which it shouldn't).
+
+  ## Color System Design
+
+  Build palettes systematically:
+
+  - 12 shades per hue (50, 100, 200, ..., 950 — Tailwind convention).
+  - Generate from base via OKLCH for perceptual uniformity (vs HSL which is non-uniform).
+  - One brand hue + neutral grays + status hues (success, warning, error, info).
+
+  Example:
+
+  ```css
+  :root {
+      --blue-50:  oklch(97% 0.02 240);
+      --blue-500: oklch(60% 0.18 240);
+      --blue-900: oklch(28% 0.10 240);
+      /* ... */
+  }
+  ```
+
+  OKLCH lets a designer say 'darker blue' and you adjust L while keeping C and H — perceptually predictable.
+
+  ## Theming via CSS Custom Properties
+
+  Light/dark via attribute toggle:
+
+  ```css
+  :root {
+      --color-bg: var(--white);
+      --color-text: var(--gray-900);
+  }
+
+  [data-theme="dark"] {
+      --color-bg: var(--gray-900);
+      --color-text: var(--gray-50);
+  }
+  ```
+
+  Toggle in JS: `document.documentElement.dataset.theme = 'dark'`. CSS variables cascade automatically; no JS-driven re-renders needed.
+
+  ## Component Versioning
+
+  Two strategies:
+
+  - **Single package, semver**: one `@org/ui` package; breaking changes bump major. Simple, but every consumer upgrades together.
+  - **Per-component packages**: `@org/ui-button`, `@org/ui-modal`. More flexibility but more dependency churn.
+
+  Most teams start with single-package and split only when scale demands it.
+
+  ## The Application Boundary
+
+  What's in the design system:
+
+  - Tokens, primitive components (Button, Input, Card), accessibility primitives, layout primitives (Stack, Grid).
+
+  What's NOT in the design system:
+
+  - Domain components (UserCard, OrderRow). They live in the app — they reference the system but aren't part of it.
+
+  Mixing the two means design-system updates require coordinating with every product team.
+
+  ## Documenting Components
+
+  Each component should have:
+
+  - A live demo (Storybook is the standard).
+  - Props table generated from types.
+  - Usage examples (do this, don't do that).
+  - Accessibility notes (keyboard interactions, ARIA roles).
+  - Version + changelog.
+
+  Without this, the design system devolves into 'whatever components people import'.
+
+  ## Token Pipelines
+
+  Generate platform-specific outputs from one source:
+
+  ```
+  tokens.json
+      ↓ Style Dictionary
+      ├── tokens.css        (web)
+      ├── tokens.swift      (iOS)
+      ├── tokens.kt         (Android)
+      └── tokens.figma.json (Figma plugin)
+  ```
+
+  Single source of truth eliminates drift between platforms. Style Dictionary is the standard tool.
+
+  ## Common Pitfalls
+
+  - **Skipping the semantic tier.** App code uses `--blue-500` directly; rebrand requires touching every file.
+  - **One mega-component for variations.** `<Button variant="primary" size="md" loading shadow rounded>` becomes unconfigurable. Compose small pieces instead.
+  - **Different teams adding tokens ad hoc.** Token namespace fragments. Centralize ownership.
+  - **Designers in Figma drift from code.** Token sync via plugin (Tokens Studio, Figma variables); review token additions in PRs like code.
+  - **No deprecation policy.** Old tokens linger forever. Mark deprecated in the token file; remove after a quarter of warning.
+
+  ## Verification
+
+  A working design system:
+
+  - App code uses semantic tokens, not primitives.
+  - Theme switch (light/dark) works without re-renders.
+  - Storybook (or equivalent) covers every component with realistic states.
+  - Tokens are pipeline-generated; no hand-edited platform output.
+  - New components ship with docs + accessibility checks.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Token Tiers
+
+    Three layers, each consuming the layer below:
+
+    **Primitive tokens** — raw values. `--blue-500: #3b82f6;` `--spacing-4: 1rem;`. The atoms. No semantic meaning.
+
+    **Semantic tokens** — named by intent. `--color-primary: var(--blue-500);` `--color-text-default: var(--gray-900);` `--color-border-error: var(--red-500);`. Tells you the use, not the value.
+
+    **Component tokens** — scoped to a component. `--button-bg-primary: var(--color-primary);` `--card-shadow: var(--shadow-md);`.
+
+    App code uses semantic and component tokens. Direct primitive use is a smell ('app code references --blue-500' = the app code knows the brand color, which it shouldn't).
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Color System Design
+
+    Build palettes systematically:
+
+    - 12 shades per hue (50, 100, 200, ..., 950 — Tailwind convention).
+    - Generate from base via OKLCH for perceptual uniformity (vs HSL which is non-uniform).
+    - One brand hue + neutral grays + status hues (success, warning, error, info).
+
+    Example:
+
+    ```css
+    :root {
+        --blue-50:  oklch(97% 0.02 240);
+        --blue-500: oklch(60% 0.18 240);
+        --blue-900: oklch(28% 0.10 240);
+        /* ... */
+    }
+    ```
+
+    OKLCH lets a designer say 'darker blue' and you adjust L while keeping C and H — perceptually predictable.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Theming via CSS Custom Properties
+
+    Light/dark via attribute toggle:
+
+    ```css
+    :root {
+        --color-bg: var(--white);
+        --color-text: var(--gray-900);
+    }
+
+    [data-theme="dark"] {
+        --color-bg: var(--gray-900);
+        --color-text: var(--gray-50);
+    }
+    ```
+
+    Toggle in JS: `document.documentElement.dataset.theme = 'dark'`. CSS variables cascade automatically; no JS-driven re-renders needed.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Component Versioning
+
+    Two strategies:
+
+    - **Single package, semver**: one `@org/ui` package; breaking changes bump major. Simple, but every consumer upgrades together.
+    - **Per-component packages**: `@org/ui-button`, `@org/ui-modal`. More flexibility but more dependency churn.
+
+    Most teams start with single-package and split only when scale demands it.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## The Application Boundary
+
+    What's in the design system:
+
+    - Tokens, primitive components (Button, Input, Card), accessibility primitives, layout primitives (Stack, Grid).
+
+    What's NOT in the design system:
+
+    - Domain components (UserCard, OrderRow). They live in the app — they reference the system but aren't part of it.
+
+    Mixing the two means design-system updates require coordinating with every product team.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Documenting Components
+
+    Each component should have:
+
+    - A live demo (Storybook is the standard).
+    - Props table generated from types.
+    - Usage examples (do this, don't do that).
+    - Accessibility notes (keyboard interactions, ARIA roles).
+    - Version + changelog.
+
+    Without this, the design system devolves into 'whatever components people import'.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Token Pipelines
+
+    Generate platform-specific outputs from one source:
+
+    ```
+    tokens.json
+        ↓ Style Dictionary
+        ├── tokens.css        (web)
+        ├── tokens.swift      (iOS)
+        ├── tokens.kt         (Android)
+        └── tokens.figma.json (Figma plugin)
+    ```
+
+    Single source of truth eliminates drift between platforms. Style Dictionary is the standard tool.
+- fragment_type: guardrail
+  sequence: 8
+  content: |-
+    ## Common Pitfalls
+
+    - **Skipping the semantic tier.** App code uses `--blue-500` directly; rebrand requires touching every file.
+    - **One mega-component for variations.** `<Button variant="primary" size="md" loading shadow rounded>` becomes unconfigurable. Compose small pieces instead.
+    - **Different teams adding tokens ad hoc.** Token namespace fragments. Centralize ownership.
+    - **Designers in Figma drift from code.** Token sync via plugin (Tokens Studio, Figma variables); review token additions in PRs like code.
+    - **No deprecation policy.** Old tokens linger forever. Mark deprecated in the token file; remove after a quarter of warning.
+- fragment_type: verification
+  sequence: 9
+  content: |-
+    ## Verification
+
+    A working design system:
+
+    - App code uses semantic tokens, not primitives.
+    - Theme switch (light/dark) works without re-renders.
+    - Storybook (or equivalent) covers every component with realistic states.
+    - Tokens are pipeline-generated; no hand-edited platform output.
+    - New components ship with docs + accessibility checks.

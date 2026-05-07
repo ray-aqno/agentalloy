@@ -28,3 +28,33 @@ skills:
 - skill_id: ui-design-tailwind-utility-classes
   file: ui-design-tailwind-utility-classes.yaml
   fragment_count: 4
+- skill_id: ui-design-color-systems
+  file: ui-design-color-systems.yaml
+  fragment_count: 8
+- skill_id: ui-design-component-patterns
+  file: ui-design-component-patterns.yaml
+  fragment_count: 9
+- skill_id: ui-design-empty-states
+  file: ui-design-empty-states.yaml
+  fragment_count: 10
+- skill_id: ui-design-error-states
+  file: ui-design-error-states.yaml
+  fragment_count: 12
+- skill_id: ui-design-form-ux
+  file: ui-design-form-ux.yaml
+  fragment_count: 11
+- skill_id: ui-design-layout-primitives
+  file: ui-design-layout-primitives.yaml
+  fragment_count: 10
+- skill_id: ui-design-loading-patterns
+  file: ui-design-loading-patterns.yaml
+  fragment_count: 10
+- skill_id: ui-design-motion-and-animation
+  file: ui-design-motion-and-animation.yaml
+  fragment_count: 9
+- skill_id: ui-design-systems-architecture
+  file: ui-design-systems-architecture.yaml
+  fragment_count: 9
+- skill_id: ui-design-typography-scales
+  file: ui-design-typography-scales.yaml
+  fragment_count: 10
