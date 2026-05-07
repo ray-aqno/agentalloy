@@ -1,0 +1,193 @@
+skill_type: domain
+skill_id: redis-hashes-and-sets
+canonical_name: Redis Hashes and Sets
+category: engineering
+skill_class: domain
+domain_tags:
+- redis
+- hashes
+- sets
+- data-types
+- key-value
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus source after 14B over-fragmented
+raw_prose: |
+  # Redis Hashes and Sets
+
+  ## Overview
+
+  Redis hashes are field/value maps for representing objects compactly. Redis sets are unordered unique-member collections supporting fast set algebra. Both are core data-type primitives. This skill covers when to use each and the operations that matter most.
+
+  ---
+
+  ## Why Hashes Beat Multiple Strings for Object Records
+
+  When storing object-like records (a user, an order, a config), the obvious approach is one Redis string per field with a key like `user:1:name`, `user:1:email`. This works but creates two problems: every field is a separate key (memory + namespace pollution), and you can't atomically update multiple fields together.
+
+  A hash collapses all fields under one key:
+
+  ```
+  HSET user:1 name "Alice" email "alice@example.com" plan "pro"
+  HGET user:1 email          # "alice@example.com"
+  HMGET user:1 name plan     # ["Alice", "pro"]
+  HGETALL user:1             # all fields
+  ```
+
+  Hashes are also more memory-efficient than multiple strings — small hashes (under ~512 fields, values under ~64 bytes) use a compact ziplist encoding internally.
+
+  ## Hash Operations You'll Actually Use
+
+  - `HSET key field value [field value ...]` — set one or more fields atomically.
+  - `HGET key field` / `HMGET key field [field ...]` — read one or many fields.
+  - `HGETALL key` — read all fields. Avoid on hashes with thousands of fields; use `HSCAN` instead.
+  - `HINCRBY key field n` — atomic counter increment on a single hash field.
+  - `HEXISTS key field` — check if a field exists; cheaper than reading the value.
+  - `HDEL key field [field ...]` — remove fields. When the last field is removed, the key itself is deleted.
+  - `HSCAN key cursor [MATCH pattern] [COUNT hint]` — iterate large hashes without blocking.
+
+  ## When to Reach for Hashes vs. Strings
+
+  Use a hash when the record has multiple fields you'll read or update together. Use separate strings when fields have very different access patterns or different TTLs (Redis TTL is per-key, not per-field).
+
+  A common anti-pattern: storing JSON-serialized records as a single string. That works for read-only data, but every field update requires read-modify-write of the whole blob. Hashes give you per-field atomic updates for free.
+
+  ## Sets — Unique Membership
+
+  A Redis set is an unordered collection where each member appears at most once. Adding an existing member is a no-op. Operations:
+
+  ```
+  SADD active_users 1001 1002 1003
+  SISMEMBER active_users 1002        # 1 (true)
+  SCARD active_users                 # 3
+  SREM active_users 1003             # remove
+  SMEMBERS active_users              # all members (avoid on large sets)
+  SSCAN active_users 0 COUNT 100     # iterate large sets
+  ```
+
+  Sets are the right tool when you need to track 'has X done Y?' efficiently. SISMEMBER is O(1).
+
+  ## Set Algebra
+
+  Sets shine when you need to combine collections — Redis computes intersections, unions, and differences server-side:
+
+  ```
+  SADD subscribers:plan-pro 100 101 102
+  SADD subscribers:newsletter 101 102 103
+  SINTER subscribers:plan-pro subscribers:newsletter  # 101, 102
+  SUNION subscribers:plan-pro subscribers:newsletter  # 100, 101, 102, 103
+  SDIFF subscribers:plan-pro subscribers:newsletter   # 100 (pro but not newsletter)
+  SINTERSTORE result subscribers:plan-pro subscribers:newsletter  # store result
+  ```
+
+  Common uses: tag-based filtering, audience segmentation, follower/following overlap, multi-criteria membership checks.
+
+  ## Performance Considerations
+
+  - `HGETALL` and `SMEMBERS` are O(N) in the size of the structure. Use `HSCAN` / `SSCAN` for anything large.
+  - Set operations are server-side, no round-trip per member. `SINTER` over million-member sets is fast.
+  - Both hashes and sets have a 'small' encoding optimization that breaks if you add too many or too-large members. Watch memory under load if structures grow unbounded.
+  - Use TTL on the parent key. Per-field TTL doesn't exist for hashes (yet).
+
+  ## Verification
+
+  Confirm a hash or set is doing what you expect:
+
+  - For hashes: `HGETALL` after a write should show all expected fields with correct types.
+  - For sets: `SCARD` should match the expected member count after additions/removals.
+  - For set operations: precompute expected results in code and compare against `SINTER` / `SUNION` output on a fixture set.
+  - Watch memory with `OBJECT ENCODING key` to confirm small-encoding optimization is engaged when expected (`listpack` for small, `hashtable`/`skiplist` for large).
+fragments:
+- fragment_type: rationale
+  sequence: 1
+  content: |-
+    ## Why Hashes Beat Multiple Strings for Object Records
+
+    When storing object-like records (a user, an order, a config), the obvious approach is one Redis string per field with a key like `user:1:name`, `user:1:email`. This works but creates two problems: every field is a separate key (memory + namespace pollution), and you can't atomically update multiple fields together.
+
+    A hash collapses all fields under one key:
+
+    ```
+    HSET user:1 name "Alice" email "alice@example.com" plan "pro"
+    HGET user:1 email          # "alice@example.com"
+    HMGET user:1 name plan     # ["Alice", "pro"]
+    HGETALL user:1             # all fields
+    ```
+
+    Hashes are also more memory-efficient than multiple strings — small hashes (under ~512 fields, values under ~64 bytes) use a compact ziplist encoding internally.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Hash Operations You'll Actually Use
+
+    - `HSET key field value [field value ...]` — set one or more fields atomically.
+    - `HGET key field` / `HMGET key field [field ...]` — read one or many fields.
+    - `HGETALL key` — read all fields. Avoid on hashes with thousands of fields; use `HSCAN` instead.
+    - `HINCRBY key field n` — atomic counter increment on a single hash field.
+    - `HEXISTS key field` — check if a field exists; cheaper than reading the value.
+    - `HDEL key field [field ...]` — remove fields. When the last field is removed, the key itself is deleted.
+    - `HSCAN key cursor [MATCH pattern] [COUNT hint]` — iterate large hashes without blocking.
+- fragment_type: rationale
+  sequence: 3
+  content: |-
+    ## When to Reach for Hashes vs. Strings
+
+    Use a hash when the record has multiple fields you'll read or update together. Use separate strings when fields have very different access patterns or different TTLs (Redis TTL is per-key, not per-field).
+
+    A common anti-pattern: storing JSON-serialized records as a single string. That works for read-only data, but every field update requires read-modify-write of the whole blob. Hashes give you per-field atomic updates for free.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Sets — Unique Membership
+
+    A Redis set is an unordered collection where each member appears at most once. Adding an existing member is a no-op. Operations:
+
+    ```
+    SADD active_users 1001 1002 1003
+    SISMEMBER active_users 1002        # 1 (true)
+    SCARD active_users                 # 3
+    SREM active_users 1003             # remove
+    SMEMBERS active_users              # all members (avoid on large sets)
+    SSCAN active_users 0 COUNT 100     # iterate large sets
+    ```
+
+    Sets are the right tool when you need to track 'has X done Y?' efficiently. SISMEMBER is O(1).
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Set Algebra
+
+    Sets shine when you need to combine collections — Redis computes intersections, unions, and differences server-side:
+
+    ```
+    SADD subscribers:plan-pro 100 101 102
+    SADD subscribers:newsletter 101 102 103
+    SINTER subscribers:plan-pro subscribers:newsletter  # 101, 102
+    SUNION subscribers:plan-pro subscribers:newsletter  # 100, 101, 102, 103
+    SDIFF subscribers:plan-pro subscribers:newsletter   # 100 (pro but not newsletter)
+    SINTERSTORE result subscribers:plan-pro subscribers:newsletter  # store result
+    ```
+
+    Common uses: tag-based filtering, audience segmentation, follower/following overlap, multi-criteria membership checks.
+- fragment_type: guardrail
+  sequence: 6
+  content: |-
+    ## Performance Considerations
+
+    - `HGETALL` and `SMEMBERS` are O(N) in the size of the structure. Use `HSCAN` / `SSCAN` for anything large.
+    - Set operations are server-side, no round-trip per member. `SINTER` over million-member sets is fast.
+    - Both hashes and sets have a 'small' encoding optimization that breaks if you add too many or too-large members. Watch memory under load if structures grow unbounded.
+    - Use TTL on the parent key. Per-field TTL doesn't exist for hashes (yet).
+- fragment_type: verification
+  sequence: 7
+  content: |-
+    ## Verification
+
+    Confirm a hash or set is doing what you expect:
+
+    - For hashes: `HGETALL` after a write should show all expected fields with correct types.
+    - For sets: `SCARD` should match the expected member count after additions/removals.
+    - For set operations: precompute expected results in code and compare against `SINTER` / `SUNION` output on a fixture set.
+    - Watch memory with `OBJECT ENCODING key` to confirm small-encoding optimization is engaged when expected (`listpack` for small, `hashtable`/`skiplist` for large).

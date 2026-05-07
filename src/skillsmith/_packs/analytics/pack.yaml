@@ -22,3 +22,9 @@ skills:
 - skill_id: analytics-otel-traces
   file: analytics-otel-traces.yaml
   fragment_count: 10
+- skill_id: analytics-event-tracking
+  file: analytics-event-tracking.yaml
+  fragment_count: 7
+- skill_id: analytics-observability-primer
+  file: analytics-observability-primer.yaml
+  fragment_count: 12

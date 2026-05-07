@@ -1,0 +1,217 @@
+skill_type: domain
+skill_id: code-simplification
+canonical_name: Code Simplification
+category: engineering
+skill_class: domain
+domain_tags:
+- code-simplification
+- refactoring
+- clean-code
+- complexity-reduction
+- naming
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus source after 14B failed structural authoring
+raw_prose: |-
+  # Code Simplification
+
+  ## Overview
+
+  This skill covers code simplification patterns end-to-end.
+
+  ---
+
+  ## Why Simplify
+
+  Most code is more complicated than what it does. Complexity accretes from defensive coding, premature abstractions, branches that handle imagined cases, and names that obscure intent. Simplification is the discipline of removing what isn't earning its keep.
+
+  Simpler code is easier to read, easier to change, and easier to reason about. The cost of simplification is upfront effort; the payoff compounds over the life of the code.
+
+  ## Reduce Nesting
+
+  Deep nesting (`if` inside `if` inside `for`) hides intent. Common refactors:
+
+  - **Early return** — replace `if (x) { ... long body ... }` with `if (!x) return;` followed by the body unindented.
+  - **Extract function** — pull the inner block into a named function. The function name documents what the block does.
+  - **Replace conditional with polymorphism** — when nesting branches by type, pull the type-specific behavior into methods.
+
+  ```js
+  // before
+  function process(user) {
+    if (user) {
+      if (user.active) {
+        if (user.permissions) {
+          if (user.permissions.canEdit) {
+            // do the work
+          }
+        }
+      }
+    }
+  }
+
+  // after
+  function process(user) {
+    if (!user?.active) return;
+    if (!user.permissions?.canEdit) return;
+    // do the work
+  }
+  ```
+
+  ## Remove Dead Branches
+
+  Code paths that never execute are not safety nets — they are noise that obscures the live paths.
+
+  - **Dead defensive checks** — guard clauses for impossible states (a value the type system already excludes, a parameter that's always set by the caller). Delete them.
+  - **Speculative `else` branches** — `if (rare_condition) ... else ...` where the else covers an unreachable case. Drop the else; let the rare condition raise an explicit error.
+  - **Disabled feature flags** — flags that have been off for months. Delete the flag and the gated code together.
+
+  ## Extract Clear Names
+
+  A clever name is a clue you have to decode. A clear name is a label you can read once.
+
+  - **Replace abbreviations with full words** — `usr` → `user`, `cfg` → `config`. Modern editors autocomplete; the win on readability is permanent.
+  - **Name what, not how** — `getUserById` is fine; `findUserViaIndex` leaks implementation. The name is the public contract.
+  - **Verb-noun for actions, noun for things** — `validate(user)` and `validUser`, not `userValidate` or `validateForUser`.
+
+  ## Delete Premature Abstractions
+
+  Abstractions are easy to create and hard to remove once code depends on them. Apply the rule of three: write the code three times before extracting an abstraction. Two repetitions might just be coincidence; three is a pattern.
+
+  Common premature-abstraction smells:
+
+  - **A factory used by exactly one caller.** Inline it.
+  - **A configuration object with one field.** Pass the field directly.
+  - **A base class with one subclass.** Merge them.
+  - **A wrapper that delegates every method to the underlying object.** Use the underlying object directly.
+
+  ## Don't Future-Proof Hypothetically
+
+  Code added 'in case we need it' is dead weight today and likely to be wrong when the future arrives — the actual requirement always differs from what was anticipated.
+
+  - **Don't add config knobs for behaviors no caller has asked for.**
+  - **Don't add hooks/extension points until a second use case appears.**
+  - **Don't preserve old code paths 'just in case'.** Version control remembers; comments rot.
+
+  ## Verification
+
+  After a simplification pass, the code should:
+
+  - Run the same test suite green (no behavior change).
+  - Have fewer total lines than before.
+  - Have shallower maximum nesting depth.
+  - Have at least as many top-level functions, since extraction is the primary refactor.
+
+  If a simplification removes test coverage, the simplification was actually a behavior change — back it out.
+
+  ## Common Rationalizations
+
+  - *'But what if we need this later?'* — version control. If you need it, you can recover it. In the meantime it's noise.
+  - *'It's working, why change it?'* — because you're about to read it again, and so is everyone else. Reading time dwarfs writing time.
+  - *'I'll simplify after the next refactor.'* — the next refactor is harder because of this complexity. Pay it down now.
+fragments:
+- fragment_type: rationale
+  sequence: 1
+  content: |-
+    ## Why Simplify
+
+    Most code is more complicated than what it does. Complexity accretes from defensive coding, premature abstractions, branches that handle imagined cases, and names that obscure intent. Simplification is the discipline of removing what isn't earning its keep.
+
+    Simpler code is easier to read, easier to change, and easier to reason about. The cost of simplification is upfront effort; the payoff compounds over the life of the code.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Reduce Nesting
+
+    Deep nesting (`if` inside `if` inside `for`) hides intent. Common refactors:
+
+    - **Early return** — replace `if (x) { ... long body ... }` with `if (!x) return;` followed by the body unindented.
+    - **Extract function** — pull the inner block into a named function. The function name documents what the block does.
+    - **Replace conditional with polymorphism** — when nesting branches by type, pull the type-specific behavior into methods.
+
+    ```js
+    // before
+    function process(user) {
+      if (user) {
+        if (user.active) {
+          if (user.permissions) {
+            if (user.permissions.canEdit) {
+              // do the work
+            }
+          }
+        }
+      }
+    }
+
+    // after
+    function process(user) {
+      if (!user?.active) return;
+      if (!user.permissions?.canEdit) return;
+      // do the work
+    }
+    ```
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Remove Dead Branches
+
+    Code paths that never execute are not safety nets — they are noise that obscures the live paths.
+
+    - **Dead defensive checks** — guard clauses for impossible states (a value the type system already excludes, a parameter that's always set by the caller). Delete them.
+    - **Speculative `else` branches** — `if (rare_condition) ... else ...` where the else covers an unreachable case. Drop the else; let the rare condition raise an explicit error.
+    - **Disabled feature flags** — flags that have been off for months. Delete the flag and the gated code together.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Extract Clear Names
+
+    A clever name is a clue you have to decode. A clear name is a label you can read once.
+
+    - **Replace abbreviations with full words** — `usr` → `user`, `cfg` → `config`. Modern editors autocomplete; the win on readability is permanent.
+    - **Name what, not how** — `getUserById` is fine; `findUserViaIndex` leaks implementation. The name is the public contract.
+    - **Verb-noun for actions, noun for things** — `validate(user)` and `validUser`, not `userValidate` or `validateForUser`.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Delete Premature Abstractions
+
+    Abstractions are easy to create and hard to remove once code depends on them. Apply the rule of three: write the code three times before extracting an abstraction. Two repetitions might just be coincidence; three is a pattern.
+
+    Common premature-abstraction smells:
+
+    - **A factory used by exactly one caller.** Inline it.
+    - **A configuration object with one field.** Pass the field directly.
+    - **A base class with one subclass.** Merge them.
+    - **A wrapper that delegates every method to the underlying object.** Use the underlying object directly.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Don't Future-Proof Hypothetically
+
+    Code added 'in case we need it' is dead weight today and likely to be wrong when the future arrives — the actual requirement always differs from what was anticipated.
+
+    - **Don't add config knobs for behaviors no caller has asked for.**
+    - **Don't add hooks/extension points until a second use case appears.**
+    - **Don't preserve old code paths 'just in case'.** Version control remembers; comments rot.
+- fragment_type: verification
+  sequence: 7
+  content: |-
+    ## Verification
+
+    After a simplification pass, the code should:
+
+    - Run the same test suite green (no behavior change).
+    - Have fewer total lines than before.
+    - Have shallower maximum nesting depth.
+    - Have at least as many top-level functions, since extraction is the primary refactor.
+
+    If a simplification removes test coverage, the simplification was actually a behavior change — back it out.
+- fragment_type: rationale
+  sequence: 8
+  content: |-
+    ## Common Rationalizations
+
+    - *'But what if we need this later?'* — version control. If you need it, you can recover it. In the meantime it's noise.
+    - *'It's working, why change it?'* — because you're about to read it again, and so is everyone else. Reading time dwarfs writing time.
+    - *'I'll simplify after the next refactor.'* — the next refactor is harder because of this complexity. Pay it down now.

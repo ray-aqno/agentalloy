@@ -22,3 +22,6 @@ skills:
 - skill_id: testing-snapshots
   file: testing-snapshots.yaml
   fragment_count: 23
+- skill_id: testing-mocks-and-spies
+  file: testing-mocks-and-spies.yaml
+  fragment_count: 8

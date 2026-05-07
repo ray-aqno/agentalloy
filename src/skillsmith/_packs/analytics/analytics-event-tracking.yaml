@@ -1,0 +1,175 @@
+skill_type: domain
+skill_id: analytics-event-tracking
+canonical_name: Analytics — Event Tracking and Identity
+category: ops
+skill_class: domain
+domain_tags:
+- analytics
+- event-tracking
+- distinct-id
+- identify
+- posthog
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus source after 14B identity content overlapped + dense
+raw_prose: |-
+  # Analytics — Event Tracking and Identity
+
+  ## Overview
+
+  This skill covers analytics event tracking patterns end-to-end.
+
+  ---
+
+  ## Event-First Modeling
+
+  Product analytics centers on events. Each user action becomes a tracked event with properties. Get this layer right and downstream funnels, retention, and dashboards mostly take care of themselves.
+
+  A well-formed event has:
+
+  - **Name** — verb_noun, present tense, lowercase. `user_signed_up`, `cart_item_added`, `checkout_completed`. Bad: `signup`, `New User`, `cartAddItem`.
+  - **Distinct ID** — the user identifier that ties events together over time.
+  - **Timestamp** — server-set, not client-set, to avoid clock drift.
+  - **Properties** — typed key/value pairs describing the event context.
+
+  ## Naming Conventions
+
+  Pick a convention and stick to it across the catalog:
+
+  - `verb_noun` is the most common (`user_signed_up`).
+  - Some teams prefer `noun.verb` (`user.signed_up`).
+  - Avoid mixed casing (`User_SignedUp`, `userSignedUp`).
+  - Avoid past-tense vs present-tense churn within the catalog.
+
+  The cost of inconsistency is forever-confused dashboard authors and split-by-name analyses that miss half the data.
+
+  ## Property Schemas
+
+  Define properties per event type. Two property categories:
+
+  - **Event properties** — describe the event. `cart_item_added` has `product_id`, `price_cents`, `quantity`.
+  - **User properties** — describe the user. `email`, `plan`, `signup_date`. Set via `identify()` or `setPersonProperties()`, not on every event.
+
+  Use stable types. If `price_cents` is sometimes a number and sometimes a string, downstream aggregations break. Add a schema validator at the SDK boundary.
+
+  ## Anonymous vs Identified Events
+
+  Most products track events before login (anonymous) and continue tracking after (identified). The boundary between these is where bugs live.
+
+  - **Anonymous** — distinct_id is a generated UUID stored in a cookie/localStorage. Persists across sessions on the same browser.
+  - **Identified** — distinct_id is the application's user ID. Set after login or signup.
+  - **Pre-login funnel** — events before signup belong to the anonymous user. After signup, you want them attributed to the identified user.
+
+  The `identify()` call (with the application's user ID + the previous anonymous ID) bridges these. Without it, your funnel data attributes signups to anonymous users and post-signup behavior to identified users — they look like two separate cohorts.
+
+  ## The identify() and alias() Calls
+
+  `identify(user_id, properties)` — declare 'this distinct_id is now this user'. Subsequent events use the new distinct_id; the analytics platform merges histories.
+
+  `alias(new_id, previous_id)` — older API for the same purpose; some platforms require it explicitly. Use `identify()` if your platform supports it.
+
+  Common bugs:
+
+  - **Calling identify before signup.** The user isn't who you think they are; you've now linked some random anonymous session to a bogus user_id.
+  - **Forgetting to call identify after login on a new device.** The user looks like a fresh anonymous visitor.
+  - **Calling identify with different IDs on different sessions.** Splits one user into many.
+
+  ## Idempotency
+
+  Events are sometimes sent twice (network retry, double-click on a button, page reload). To avoid duplicate-counting:
+
+  - **Deterministic event IDs.** Pass an `event_id` derived from action + timestamp + user. Platforms with native dedup (PostHog, Segment) drop duplicates with the same ID.
+  - **Server-side validation.** For revenue-impacting events (purchases), confirm against the source-of-truth database before counting.
+
+  ## Verification
+
+  Before shipping a tracking change:
+
+  - Open the analytics platform's live event view, perform the user action, confirm the event arrives within seconds with the right properties.
+  - For new event types, run a synthetic test that fires every property variant. Catches type drift early.
+  - Watch for orphan events (events with no associated user) for a week post-launch. These are usually identify-call bugs.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Event-First Modeling
+
+    Product analytics centers on events. Each user action becomes a tracked event with properties. Get this layer right and downstream funnels, retention, and dashboards mostly take care of themselves.
+
+    A well-formed event has:
+
+    - **Name** — verb_noun, present tense, lowercase. `user_signed_up`, `cart_item_added`, `checkout_completed`. Bad: `signup`, `New User`, `cartAddItem`.
+    - **Distinct ID** — the user identifier that ties events together over time.
+    - **Timestamp** — server-set, not client-set, to avoid clock drift.
+    - **Properties** — typed key/value pairs describing the event context.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Naming Conventions
+
+    Pick a convention and stick to it across the catalog:
+
+    - `verb_noun` is the most common (`user_signed_up`).
+    - Some teams prefer `noun.verb` (`user.signed_up`).
+    - Avoid mixed casing (`User_SignedUp`, `userSignedUp`).
+    - Avoid past-tense vs present-tense churn within the catalog.
+
+    The cost of inconsistency is forever-confused dashboard authors and split-by-name analyses that miss half the data.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Property Schemas
+
+    Define properties per event type. Two property categories:
+
+    - **Event properties** — describe the event. `cart_item_added` has `product_id`, `price_cents`, `quantity`.
+    - **User properties** — describe the user. `email`, `plan`, `signup_date`. Set via `identify()` or `setPersonProperties()`, not on every event.
+
+    Use stable types. If `price_cents` is sometimes a number and sometimes a string, downstream aggregations break. Add a schema validator at the SDK boundary.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Anonymous vs Identified Events
+
+    Most products track events before login (anonymous) and continue tracking after (identified). The boundary between these is where bugs live.
+
+    - **Anonymous** — distinct_id is a generated UUID stored in a cookie/localStorage. Persists across sessions on the same browser.
+    - **Identified** — distinct_id is the application's user ID. Set after login or signup.
+    - **Pre-login funnel** — events before signup belong to the anonymous user. After signup, you want them attributed to the identified user.
+
+    The `identify()` call (with the application's user ID + the previous anonymous ID) bridges these. Without it, your funnel data attributes signups to anonymous users and post-signup behavior to identified users — they look like two separate cohorts.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## The identify() and alias() Calls
+
+    `identify(user_id, properties)` — declare 'this distinct_id is now this user'. Subsequent events use the new distinct_id; the analytics platform merges histories.
+
+    `alias(new_id, previous_id)` — older API for the same purpose; some platforms require it explicitly. Use `identify()` if your platform supports it.
+
+    Common bugs:
+
+    - **Calling identify before signup.** The user isn't who you think they are; you've now linked some random anonymous session to a bogus user_id.
+    - **Forgetting to call identify after login on a new device.** The user looks like a fresh anonymous visitor.
+    - **Calling identify with different IDs on different sessions.** Splits one user into many.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Idempotency
+
+    Events are sometimes sent twice (network retry, double-click on a button, page reload). To avoid duplicate-counting:
+
+    - **Deterministic event IDs.** Pass an `event_id` derived from action + timestamp + user. Platforms with native dedup (PostHog, Segment) drop duplicates with the same ID.
+    - **Server-side validation.** For revenue-impacting events (purchases), confirm against the source-of-truth database before counting.
+- fragment_type: verification
+  sequence: 7
+  content: |-
+    ## Verification
+
+    Before shipping a tracking change:
+
+    - Open the analytics platform's live event view, perform the user action, confirm the event arrives within seconds with the right properties.
+    - For new event types, run a synthetic test that fires every property variant. Catches type drift early.
+    - Watch for orphan events (events with no associated user) for a week post-launch. These are usually identify-call bugs.

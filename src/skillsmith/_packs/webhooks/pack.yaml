@@ -25,3 +25,6 @@ skills:
 - skill_id: webhooks-signature-verification
   file: webhooks-signature-verification.yaml
   fragment_count: 11
+- skill_id: webhooks-documentation
+  file: webhooks-documentation.yaml
+  fragment_count: 8

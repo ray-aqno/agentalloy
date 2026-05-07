@@ -1,0 +1,289 @@
+skill_type: domain
+skill_id: github-actions-expressions-and-contexts
+canonical_name: GitHub Actions Expressions and Contexts
+category: tooling
+skill_class: domain
+domain_tags:
+- github-actions
+- expressions
+- contexts
+- ci-cd
+- yaml
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus source after 14B over-fragmented
+raw_prose: |
+  # GitHub Actions Expressions and Contexts
+
+  ## Overview
+
+  Expressions in `${{ }}` blocks reference contexts (data the runner exposes) and apply built-in functions or operators. This is how workflows compute conditions, build dynamic strings, and pass values between steps. This skill covers expressions + contexts together.
+
+  ---
+
+  ## Expression Syntax
+
+  Expressions in GitHub Actions appear inside `${{ }}` and evaluate at workflow-parse time or step-execution time depending on where they appear. The basic shape is operands joined by operators or wrapped in functions.
+
+  ```yaml
+  - name: Conditional step
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    run: ./deploy.sh
+  ```
+
+  Inside `${{ }}` you can use literals (`'string'`, `42`, `true`, `null`), reference contexts (`github.repository`), call functions (`contains(github.event.head_commit.message, '[skip ci]')`), and combine with operators.
+
+  ## Operators
+
+  Logical and comparison operators work as you'd expect:
+
+  - `==` / `!=` — equality (case-insensitive for strings).
+  - `<` / `<=` / `>` / `>=` — ordering.
+  - `&&` / `||` / `!` — logical and/or/not.
+
+  Operator precedence: `!`, then comparisons, then `&&`, then `||`. Use parentheses to make complex expressions explicit:
+
+  ```yaml
+  if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.actor != 'dependabot[bot]' }}
+  ```
+
+  ## The github Context
+
+  The `github` context carries event-payload + workflow metadata. The most-used fields:
+
+  - `github.event_name` — `push`, `pull_request`, `workflow_dispatch`, etc.
+  - `github.ref` — full ref like `refs/heads/main` or `refs/tags/v1.2.3`.
+  - `github.ref_name` — just the branch or tag name.
+  - `github.sha` — commit SHA being run against.
+  - `github.repository` — `owner/repo` string.
+  - `github.actor` — user who triggered the workflow.
+  - `github.event.*` — the full event payload (different shape per event).
+
+  Use `${{ toJSON(github) }}` in a debug step to inspect what's available for a given trigger.
+
+  ## Other Contexts
+
+  - `env` — environment variables defined at workflow, job, or step scope. `${{ env.MY_VAR }}`.
+  - `vars` — repo/org/environment configuration variables. `${{ vars.MY_CONFIG }}`.
+  - `secrets` — encrypted secrets. `${{ secrets.MY_TOKEN }}`. Cannot be logged; reference but don't echo.
+  - `inputs` — workflow_dispatch / workflow_call inputs.
+  - `needs` — outputs of upstream jobs in `needs:` declarations.
+  - `matrix` — current matrix combination inside a `strategy: matrix:` job.
+  - `runner` — `runner.os` (Linux/Windows/macOS), `runner.arch`, `runner.temp` (writable temp dir).
+  - `job` / `steps` — current job / step status and outputs.
+
+  ## Common Functions
+
+  GitHub Actions provides a small set of built-in functions:
+
+  - `contains(haystack, needle)` — substring or array-membership check.
+  - `startsWith(s, prefix)` / `endsWith(s, suffix)` — prefix/suffix match.
+  - `format(template, ...args)` — `format('{0}-{1}', a, b)`.
+  - `fromJSON(s)` / `toJSON(x)` — parse / serialize JSON. Useful for passing structured data via outputs.
+  - `hashFiles('path/**')` — SHA256 of matching files. Standard for cache keys.
+
+  Status check functions (only valid in `if:` expressions):
+
+  - `success()` — true if all previous steps succeeded.
+  - `failure()` — true if any previous step failed.
+  - `cancelled()` — true if the workflow was cancelled.
+  - `always()` — always true (run cleanup regardless).
+
+  ## Conditional Execution Patterns
+
+  ```yaml
+  # Run only on main pushes
+  if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+  # Skip on commit message marker
+  if: "!contains(github.event.head_commit.message, '[skip ci]')"
+
+  # Run on success of upstream job
+  needs: build
+  if: success()
+
+  # Cleanup runs even on failure
+  if: always()
+
+  # Conditional based on matrix value
+  if: matrix.os == 'ubuntu-latest'
+  ```
+
+  When omitted, `if:` defaults to `success()` — the step runs only if no prior step failed.
+
+  ## Cache Keys with hashFiles
+
+  The standard cache pattern uses `hashFiles` over lockfiles to invalidate the cache when dependencies change:
+
+  ```yaml
+  - uses: actions/cache@v4
+    with:
+      path: ~/.npm
+      key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+      restore-keys: |
+        ${{ runner.os }}-npm-
+  ```
+
+  The `restore-keys` provide partial hits — when the exact key misses, Actions falls back to the most recent matching prefix.
+
+  ## Passing Values Between Steps and Jobs
+
+  Within a job, write to `$GITHUB_OUTPUT` from one step and read from `steps.<id>.outputs.<name>` in another:
+
+  ```yaml
+  - id: detect
+    run: echo "version=1.2.3" >> $GITHUB_OUTPUT
+  - run: echo "Building ${{ steps.detect.outputs.version }}"
+  ```
+
+  Across jobs, declare `outputs:` on the producing job and reference `needs.<job>.outputs.<name>` in consumers.
+
+  ## Verification
+
+  - For complex `if:` expressions, run a dry-run by adding `echo` debug steps that show context values: `echo "${{ toJSON(github.event) }}"`.
+  - Test cache keys by changing a lockfile and confirming the new key shows up in the cache hit/miss log.
+  - For matrix expressions, verify behavior across all matrix combinations rather than relying on one-off testing.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Expression Syntax
+
+    Expressions in GitHub Actions appear inside `${{ }}` and evaluate at workflow-parse time or step-execution time depending on where they appear. The basic shape is operands joined by operators or wrapped in functions.
+
+    ```yaml
+    - name: Conditional step
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      run: ./deploy.sh
+    ```
+
+    Inside `${{ }}` you can use literals (`'string'`, `42`, `true`, `null`), reference contexts (`github.repository`), call functions (`contains(github.event.head_commit.message, '[skip ci]')`), and combine with operators.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Operators
+
+    Logical and comparison operators work as you'd expect:
+
+    - `==` / `!=` — equality (case-insensitive for strings).
+    - `<` / `<=` / `>` / `>=` — ordering.
+    - `&&` / `||` / `!` — logical and/or/not.
+
+    Operator precedence: `!`, then comparisons, then `&&`, then `||`. Use parentheses to make complex expressions explicit:
+
+    ```yaml
+    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.actor != 'dependabot[bot]' }}
+    ```
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## The github Context
+
+    The `github` context carries event-payload + workflow metadata. The most-used fields:
+
+    - `github.event_name` — `push`, `pull_request`, `workflow_dispatch`, etc.
+    - `github.ref` — full ref like `refs/heads/main` or `refs/tags/v1.2.3`.
+    - `github.ref_name` — just the branch or tag name.
+    - `github.sha` — commit SHA being run against.
+    - `github.repository` — `owner/repo` string.
+    - `github.actor` — user who triggered the workflow.
+    - `github.event.*` — the full event payload (different shape per event).
+
+    Use `${{ toJSON(github) }}` in a debug step to inspect what's available for a given trigger.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Other Contexts
+
+    - `env` — environment variables defined at workflow, job, or step scope. `${{ env.MY_VAR }}`.
+    - `vars` — repo/org/environment configuration variables. `${{ vars.MY_CONFIG }}`.
+    - `secrets` — encrypted secrets. `${{ secrets.MY_TOKEN }}`. Cannot be logged; reference but don't echo.
+    - `inputs` — workflow_dispatch / workflow_call inputs.
+    - `needs` — outputs of upstream jobs in `needs:` declarations.
+    - `matrix` — current matrix combination inside a `strategy: matrix:` job.
+    - `runner` — `runner.os` (Linux/Windows/macOS), `runner.arch`, `runner.temp` (writable temp dir).
+    - `job` / `steps` — current job / step status and outputs.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Common Functions
+
+    GitHub Actions provides a small set of built-in functions:
+
+    - `contains(haystack, needle)` — substring or array-membership check.
+    - `startsWith(s, prefix)` / `endsWith(s, suffix)` — prefix/suffix match.
+    - `format(template, ...args)` — `format('{0}-{1}', a, b)`.
+    - `fromJSON(s)` / `toJSON(x)` — parse / serialize JSON. Useful for passing structured data via outputs.
+    - `hashFiles('path/**')` — SHA256 of matching files. Standard for cache keys.
+
+    Status check functions (only valid in `if:` expressions):
+
+    - `success()` — true if all previous steps succeeded.
+    - `failure()` — true if any previous step failed.
+    - `cancelled()` — true if the workflow was cancelled.
+    - `always()` — always true (run cleanup regardless).
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Conditional Execution Patterns
+
+    ```yaml
+    # Run only on main pushes
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    # Skip on commit message marker
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+
+    # Run on success of upstream job
+    needs: build
+    if: success()
+
+    # Cleanup runs even on failure
+    if: always()
+
+    # Conditional based on matrix value
+    if: matrix.os == 'ubuntu-latest'
+    ```
+
+    When omitted, `if:` defaults to `success()` — the step runs only if no prior step failed.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Cache Keys with hashFiles
+
+    The standard cache pattern uses `hashFiles` over lockfiles to invalidate the cache when dependencies change:
+
+    ```yaml
+    - uses: actions/cache@v4
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-npm-
+    ```
+
+    The `restore-keys` provide partial hits — when the exact key misses, Actions falls back to the most recent matching prefix.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Passing Values Between Steps and Jobs
+
+    Within a job, write to `$GITHUB_OUTPUT` from one step and read from `steps.<id>.outputs.<name>` in another:
+
+    ```yaml
+    - id: detect
+      run: echo "version=1.2.3" >> $GITHUB_OUTPUT
+    - run: echo "Building ${{ steps.detect.outputs.version }}"
+    ```
+
+    Across jobs, declare `outputs:` on the producing job and reference `needs.<job>.outputs.<name>` in consumers.
+- fragment_type: verification
+  sequence: 9
+  content: |-
+    ## Verification
+
+    - For complex `if:` expressions, run a dry-run by adding `echo` debug steps that show context values: `echo "${{ toJSON(github.event) }}"`.
+    - Test cache keys by changing a lockfile and confirming the new key shows up in the cache hit/miss log.
+    - For matrix expressions, verify behavior across all matrix combinations rather than relying on one-off testing.

@@ -25,3 +25,6 @@ skills:
 - skill_id: github-actions-workflow-syntax
   file: github-actions-workflow-syntax.yaml
   fragment_count: 9
+- skill_id: github-actions-expressions-and-contexts
+  file: github-actions-expressions-and-contexts.yaml
+  fragment_count: 9

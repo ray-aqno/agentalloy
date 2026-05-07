@@ -16,3 +16,6 @@ skills:
 - skill_id: code-review-debugging-and-defects
   file: code-review-debugging-and-defects.yaml
   fragment_count: 12
+- skill_id: code-simplification
+  file: code-simplification.yaml
+  fragment_count: 8

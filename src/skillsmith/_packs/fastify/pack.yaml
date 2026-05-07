@@ -27,3 +27,6 @@ skills:
 - skill_id: fastify-validation-and-serialization
   file: fastify-validation-and-serialization.yaml
   fragment_count: 10
+- skill_id: fastify-error-handling
+  file: fastify-error-handling.yaml
+  fragment_count: 3
