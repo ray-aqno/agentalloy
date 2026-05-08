@@ -298,6 +298,206 @@ class TestMcpCleanup:
 # ---------------------------------------------------------------------------
 
 
+class TestDataDirCleanup:
+    def test_outputs_dir_removed_by_default(self, repo_root: Path) -> None:
+        outputs = install_state.outputs_dir()
+        outputs.mkdir(parents=True, exist_ok=True)
+        (outputs / "preflight-early.json").write_text("{}")
+        uninstall(root=repo_root)
+        assert not outputs.exists()
+
+    def test_server_log_removed_by_default(self, repo_root: Path) -> None:
+        from skillsmith.install import server_proc
+
+        log = server_proc.server_log_path()
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text("hello\n")
+        uninstall(root=repo_root)
+        assert not log.exists()
+
+    def test_remove_data_wipes_user_data_dir(self, repo_root: Path) -> None:
+        _setup_installed(repo_root)
+        outputs = install_state.outputs_dir()
+        outputs.mkdir(parents=True, exist_ok=True)
+        (outputs / "x.json").write_text("{}")
+        udd = install_state.user_data_dir()
+        uninstall(remove_data=True, root=repo_root)
+        assert not udd.exists()
+
+    def test_unwire_path_leaves_data_intact(self, repo_root: Path) -> None:
+        """The unwire callsite (remove_user_state=False) must not touch
+        outputs/, server.log, or corpus/."""
+        from skillsmith.install import server_proc
+
+        outputs = install_state.outputs_dir()
+        outputs.mkdir(parents=True, exist_ok=True)
+        (outputs / "x.json").write_text("{}")
+        log = server_proc.server_log_path()
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text("hi\n")
+        corpus = install_state.corpus_dir()
+        corpus.mkdir(parents=True, exist_ok=True)
+        (corpus / "skills.duck").write_text("fake")
+
+        uninstall(
+            root=repo_root,
+            remove_user_state=False,
+            remove_env=False,
+            all_repos=False,
+        )
+        assert outputs.exists()
+        assert log.exists()
+        assert corpus.exists()
+
+
+class TestCrossRepoCleanup:
+    def _wire_two_repos(self, tmp_path: Path) -> tuple[Path, Path, str]:
+        import hashlib
+
+        inner = "Skill API content"
+        sha = hashlib.sha256(inner.encode()).hexdigest()
+        repo_a = tmp_path / "repo_a"
+        repo_b = tmp_path / "repo_b"
+        for r in (repo_a, repo_b):
+            r.mkdir()
+            (r / "pyproject.toml").write_text("")
+            (r / "CLAUDE.md").write_text(
+                f"# {r.name}\n\n{SENTINEL_BEGIN}\n{inner}\n{SENTINEL_END}\n"
+            )
+        st = install_state.load_state(repo_a)
+        st["harness_files_written"] = [
+            {
+                "path": str(repo_a / "CLAUDE.md"),
+                "harness": "claude-code",
+                "repo_root": str(repo_a),
+                "action": "injected_block",
+                "sentinel_begin": SENTINEL_BEGIN,
+                "sentinel_end": SENTINEL_END,
+                "content_sha256": sha,
+            },
+            {
+                "path": str(repo_b / "CLAUDE.md"),
+                "harness": "claude-code",
+                "repo_root": str(repo_b),
+                "action": "injected_block",
+                "sentinel_begin": SENTINEL_BEGIN,
+                "sentinel_end": SENTINEL_END,
+                "content_sha256": sha,
+            },
+        ]
+        install_state.save_state(st, repo_a)
+        return repo_a, repo_b, sha
+
+    def test_cross_repo_sentinel_removed_with_all_repos(self, tmp_path: Path) -> None:
+        repo_a, repo_b, _ = self._wire_two_repos(tmp_path)
+        uninstall(root=repo_a, all_repos=True)
+        for repo in (repo_a, repo_b):
+            content = (repo / "CLAUDE.md").read_text() if (repo / "CLAUDE.md").exists() else ""
+            assert SENTINEL_BEGIN not in content
+
+    def test_cross_repo_skipped_when_all_repos_false(self, tmp_path: Path) -> None:
+        repo_a, repo_b, _ = self._wire_two_repos(tmp_path)
+        result = uninstall(
+            root=repo_a,
+            remove_user_state=False,
+            remove_env=False,
+            all_repos=False,
+        )
+        assert (
+            SENTINEL_BEGIN not in (repo_a / "CLAUDE.md").read_text()
+            or not (repo_a / "CLAUDE.md").exists()
+        )
+        assert SENTINEL_BEGIN in (repo_b / "CLAUDE.md").read_text()
+        assert any("different repo" in w for w in result["warnings"])
+
+    def test_cross_repo_tamper_detection_still_applies(self, tmp_path: Path) -> None:
+        repo_a, repo_b, _ = self._wire_two_repos(tmp_path)
+        # Tamper with repo_b's inner content — sha256 will mismatch.
+        (repo_b / "CLAUDE.md").write_text(
+            f"# repo_b\n\n{SENTINEL_BEGIN}\nMY EDITS\n{SENTINEL_END}\n"
+        )
+        result = uninstall(root=repo_a, all_repos=True, force=False)
+        # repo_a cleaned, repo_b skipped with tamper warning
+        assert (
+            SENTINEL_BEGIN not in (repo_a / "CLAUDE.md").read_text()
+            or not (repo_a / "CLAUDE.md").exists()
+        )
+        assert SENTINEL_BEGIN in (repo_b / "CLAUDE.md").read_text()
+        assert any("Tampered" in w for w in result["warnings"])
+
+
+class TestManualServerStop:
+    def test_stops_listening_server(self, repo_root: Path) -> None:
+        from unittest.mock import patch
+
+        with (
+            patch(
+                "skillsmith.install.server_proc.find_listening_pid",
+                return_value=12345,
+            ),
+            patch("skillsmith.install.server_proc.stop", return_value="SIGTERM") as mock_stop,
+        ):
+            result = uninstall(root=repo_root)
+        mock_stop.assert_called_once_with(12345)
+        assert any("stopped_manual_server" in f.get("action", "") for f in result["files_removed"])
+
+    def test_no_op_when_port_unbound(self, repo_root: Path) -> None:
+        from unittest.mock import patch
+
+        with (
+            patch("skillsmith.install.server_proc.find_listening_pid", return_value=None),
+            patch("skillsmith.install.server_proc.stop") as mock_stop,
+        ):
+            uninstall(root=repo_root)
+        mock_stop.assert_not_called()
+
+
+class TestOllamaUnitCleanup:
+    def test_ollama_unit_removed_when_present(
+        self, repo_root: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from unittest.mock import MagicMock, patch
+
+        # Stand up a fake systemd user dir with both units.
+        unit_dir = repo_root / "fake-systemd"
+        unit_dir.mkdir()
+        skillsmith_unit = unit_dir / "skillsmith.service"
+        ollama_unit = unit_dir / "ollama.service"
+        skillsmith_unit.write_text("[Unit]\n")
+        ollama_unit.write_text("[Unit]\n")
+        # Sanitized env file the parent helper also tries to remove.
+        (unit_dir / "skillsmith.env").write_text("X=1\n")
+
+        st = install_state.load_state(repo_root)
+        st["service_mode"] = "native"
+        st["service_unit_path"] = str(skillsmith_unit)
+        install_state.save_state(st, repo_root)
+
+        monkeypatch.setattr("skillsmith.install.subcommands.uninstall.sys.platform", "linux")
+        run_calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], **_kw: Any) -> MagicMock:
+            run_calls.append(cmd)
+            m = MagicMock()
+            m.returncode = 0
+            m.stderr = ""
+            return m
+
+        with patch(
+            "skillsmith.install.subcommands.uninstall.subprocess.run",
+            side_effect=fake_run,
+        ):
+            uninstall(root=repo_root)
+
+        assert not ollama_unit.exists()
+        assert any("ollama.service" in " ".join(c) and "disable" in c for c in run_calls)
+
+
+# ---------------------------------------------------------------------------
+# Output schema
+# ---------------------------------------------------------------------------
+
+
 class TestOutputSchema:
     def test_required_keys(self, repo_root: Path) -> None:
         result = uninstall(root=repo_root)

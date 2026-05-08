@@ -43,6 +43,7 @@ def _run(args: argparse.Namespace) -> int:
         force=args.force,
         remove_user_state=False,
         remove_env=False,
+        all_repos=False,
     )
     json.dump(result, sys.stdout, indent=2)
     sys.stdout.write("\n")

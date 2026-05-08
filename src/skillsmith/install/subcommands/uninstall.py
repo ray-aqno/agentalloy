@@ -1,8 +1,24 @@
 """``uninstall`` subcommand.
 
-Removes harness wiring (sentinel-bounded), ``.env``, ``install-state.json``,
-the native service unit / plist (if any), and the uv tool installation.
-Preserves ``data/`` by default.
+Full teardown for a skillsmith install. By default removes:
+
+- Harness wiring (sentinel-bounded blocks) in every repo recorded in
+  ``install-state.json#harness_files_written`` — not just cwd. Each
+  entry is validated against its own recorded ``repo_root`` plus the
+  suffix allowlist + sha256 tamper check, so a tampered state file
+  can't redirect deletion. Pass ``--no-all-repos`` to limit cleanup
+  to cwd (matching the legacy behavior).
+- Native systemd / launchd service units (skillsmith + the optional
+  ollama unit installed alongside on Linux).
+- A manual-mode skillsmith server still listening on the configured
+  port.
+- User-scope ``.env`` and ``install-state.json``.
+- Outputs directory (``${XDG_DATA_HOME}/skillsmith/outputs/``) and
+  ``server.log`` — derivable artifacts that hold no user content.
+- The ``uv tool`` installation of skillsmith.
+
+Preserves the corpus DB (``${XDG_DATA_HOME}/skillsmith/corpus/``) by
+default — pass ``--remove-data`` to wipe the entire user_data_dir.
 """
 
 from __future__ import annotations
@@ -87,6 +103,24 @@ def _stop_native_service(st: dict[str, Any]) -> list[dict[str, Any]]:
             sanitized.unlink()
             actions.append({"path": str(sanitized), "action": "deleted_systemd_env"})
 
+        # The companion ollama.service that enable_service writes when
+        # Ollama is the chosen runner. It lives in the same user-scope
+        # systemd dir as the skillsmith unit; we own it, so we clean it
+        # up. Skip silently if the user has a system-wide ollama unit at
+        # /etc/systemd/system/ollama.service — touching that is out of
+        # our lane (and we don't have permission anyway).
+        ollama_unit = unit_path.parent / "ollama.service"
+        if ollama_unit.exists():
+            for cmd in (
+                ["systemctl", "--user", "disable", "--now", "ollama.service"],
+                ["systemctl", "--user", "daemon-reload"],
+            ):
+                with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+                    subprocess.run(cmd, capture_output=True, timeout=10)
+            with contextlib.suppress(OSError):
+                ollama_unit.unlink()
+                actions.append({"path": str(ollama_unit), "action": "deleted_ollama_unit"})
+
     elif os_name == "darwin" and unit_path.suffix == ".plist":
         with contextlib.suppress(OSError, subprocess.TimeoutExpired):
             subprocess.run(
@@ -128,6 +162,7 @@ def uninstall(
     *,
     remove_user_state: bool = True,
     remove_env: bool = True,
+    all_repos: bool = True,
 ) -> dict[str, Any]:
     """Remove harness wiring, .env, and state. Returns contract-shaped result.
 
@@ -136,6 +171,12 @@ def uninstall(
     leave the user-scope `${XDG_CONFIG_HOME}/skillsmith/` directory alone.
     Default True preserves the original full-teardown behavior of
     `uninstall` so existing callers don't change semantics.
+
+    ``all_repos`` controls whether the ``harness_files_written`` walk
+    cleans entries outside cwd. Default True for ``uninstall`` (full
+    teardown — once the CLI is gone the user can no longer ``cd && unwire``
+    into other repos). The ``unwire`` callsite passes ``all_repos=False``
+    to preserve cwd-only semantics.
     """
     from skillsmith.install.state import _repo_root  # pyright: ignore[reportPrivateUsage]
 
@@ -190,21 +231,32 @@ def uninstall(
                 f"Skipping harness entry with non-harness path (state may be tampered): {raw_path}"
             )
             continue
-        # Containment is checked against the trusted cwd-derived root, NOT
-        # the entry's recorded repo_root (which is itself in the state file).
+        # Containment: the path must live under one of three trusted roots:
+        # (a) cwd-derived `root` (always allowed),
+        # (b) a known user-scope harness prefix (~/.claude, etc.),
+        # (c) when `all_repos=True`, the entry's own recorded `repo_root` —
+        #     but only after we revalidate the path is inside that root and
+        #     ends in the suffix allowlist (already checked above). The
+        #     suffix allowlist is the trust anchor that prevents a tampered
+        #     `{path: "/etc/shadow", repo_root: "/etc"}` from passing.
         path_inside_cwd_repo = install_state.is_inside_root(path, root)
         path_inside_user = any(
             install_state.is_inside_root(path, p) for p in allowed_user_prefixes if p.exists()
         )
-        if not (path_inside_cwd_repo or path_inside_user):
-            # Entry belongs to a different repo. Skip silently — running
-            # uninstall in this cwd shouldn't touch other repos. Track
-            # the skip so the user can see why state still has entries.
-            entry_repo_root = entry.get("repo_root")
+        path_inside_entry_repo = False
+        entry_repo_root_str = entry.get("repo_root")
+        entry_repo_root: Path | None = None
+        if all_repos and isinstance(entry_repo_root_str, str) and entry_repo_root_str:
+            entry_repo_root = Path(entry_repo_root_str)
+            path_inside_entry_repo = install_state.is_inside_root(path, entry_repo_root)
+        if not (path_inside_cwd_repo or path_inside_user or path_inside_entry_repo):
+            # Entry belongs to a different repo and we're not authorized to
+            # cross repos (all_repos=False) — or the recorded repo_root
+            # doesn't actually contain the path. Track the skip so the user
+            # can see why state still has entries.
             warnings.append(
                 f"Skipping harness entry from a different repo "
-                f"(repo_root={entry_repo_root!r}, run uninstall there to clean it up): "
-                f"{raw_path}"
+                f"(repo_root={entry_repo_root_str!r}): {raw_path}"
             )
             continue
         # Defense in depth: even when path passes containment, refuse to
@@ -216,6 +268,13 @@ def uninstall(
                     f"Skipping harness entry that escapes repo root via symlink: {raw_path}"
                 )
                 continue
+            if path_inside_entry_repo and entry_repo_root is not None:
+                entry_root_resolved = entry_repo_root.resolve()
+                if not str(resolved).startswith(str(entry_root_resolved)):
+                    warnings.append(
+                        f"Skipping harness entry that escapes its repo root via symlink: {raw_path}"
+                    )
+                    continue
         except OSError:
             warnings.append(f"Cannot resolve harness path: {raw_path}")
             continue
@@ -388,14 +447,69 @@ def uninstall(
             env_path.unlink()
             files_removed.append({"path": str(env_path), "action": "deleted"})
 
-    # 5. Handle the user corpus dir
+    # 5. Handle user-data dir contents. Three sub-cases:
+    #    - corpus_dir: kept by default (user data); removed only with --remove-data.
+    #    - outputs_dir: derivable artifacts (per-step JSON dumps); always
+    #      removed when remove_user_state is True so the dir doesn't outlive
+    #      the install state that produced it.
+    #    - server.log: same — derivable, removed unconditionally on full
+    #      teardown.
+    # On --remove-data we also wipe the user_data_dir() itself so an empty
+    # ${XDG_DATA_HOME}/skillsmith doesn't linger.
     data_kept: list[str] = []
-    data_dir = install_state.corpus_dir()
-    if remove_data and data_dir.exists():
-        shutil.rmtree(data_dir)
-        files_removed.append({"path": str(data_dir), "action": "deleted_data_directory"})
-    elif data_dir.exists():
-        data_kept.append(str(data_dir))
+    if remove_user_state:
+        from skillsmith.install import server_proc
+
+        outputs = install_state.outputs_dir()
+        if outputs.exists():
+            shutil.rmtree(outputs)
+            files_removed.append({"path": str(outputs), "action": "deleted_outputs_dir"})
+
+        server_log = server_proc.server_log_path()
+        if server_log.exists():
+            with contextlib.suppress(OSError):
+                server_log.unlink()
+                files_removed.append({"path": str(server_log), "action": "deleted_server_log"})
+
+    corpus = install_state.corpus_dir()
+    if remove_data:
+        if corpus.exists():
+            shutil.rmtree(corpus)
+            files_removed.append({"path": str(corpus), "action": "deleted_data_directory"})
+        # Wipe the (now-empty-of-skillsmith-content) user_data_dir too. Use
+        # rmtree so any unexpected nesting is handled, but only when the
+        # caller asked for --remove-data — the default keeps the dir intact
+        # for the corpus.
+        udd = install_state.user_data_dir()
+        if udd.exists():
+            shutil.rmtree(udd)
+            files_removed.append({"path": str(udd), "action": "deleted_user_data_dir"})
+    elif corpus.exists():
+        data_kept.append(str(corpus))
+
+    # 5b. Stop a manual-mode skillsmith server still listening on the port.
+    # Native systemd/launchd modes are handled in step 6; this catches the
+    # case where the user ran `skillsmith server-start` directly.
+    if remove_user_state:
+        from skillsmith.install import server_proc
+
+        port = int(st.get("port", 47950) or 47950)
+        try:
+            pid = server_proc.find_listening_pid(port)
+        except Exception as exc:  # noqa: BLE001 — defensive; never block uninstall
+            warnings.append(f"Could not check port {port}: {exc}")
+            pid = None
+        if pid:
+            try:
+                signal_used = server_proc.stop(pid)
+                files_removed.append(
+                    {
+                        "path": f"pid://{pid}",
+                        "action": f"stopped_manual_server ({signal_used})",
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(f"Could not stop server pid {pid} on port {port}: {exc}")
 
     # 6. Stop and remove native service unit / plist (skipped by `unwire`)
     service_actions: list[dict[str, Any]] = []
@@ -455,10 +569,27 @@ def add_parser(
         default=False,
         help="Force removal even when sentinel blocks are missing or modified.",
     )
+    p.add_argument(
+        "--all-repos",
+        dest="all_repos",
+        action="store_true",
+        default=True,
+        help=(
+            "Walk every repo recorded in install-state.json and clean its "
+            "sentinel blocks (default). The CLI is removed at the end of "
+            "uninstall, so cross-repo cleanup must happen now or never."
+        ),
+    )
+    p.add_argument(
+        "--no-all-repos",
+        dest="all_repos",
+        action="store_false",
+        help="Limit cleanup to the current repo (legacy behavior).",
+    )
     p.set_defaults(func=_run)
 
 
 def _run(args: argparse.Namespace) -> int:
-    result = uninstall(remove_data=args.remove_data, force=args.force)
+    result = uninstall(remove_data=args.remove_data, force=args.force, all_repos=args.all_repos)
     print(json.dumps(result, indent=2))
     return 0
