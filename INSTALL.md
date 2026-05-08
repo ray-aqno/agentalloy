@@ -398,7 +398,32 @@ Operator commands the user can run later (these are NOT part of this runbook —
 | `skillsmith update` | Migrate corpus in place after a version bump |
 | `skillsmith install-pack <name>` | Add a published skill pack to the user corpus |
 | `skillsmith reset-step <name>` | Clear a specific install step (escape hatch for changing config without full uninstall) |
-| `skillsmith uninstall` | Full teardown — removes user state, `.env`, corpus, AND sentinels in cwd repo |
+| `skillsmith uninstall` | Full teardown — see below for exactly what's removed |
+
+### Uninstall — what it removes
+
+`skillsmith uninstall` is the one-shot teardown. By default:
+
+- **Sentinel-bounded harness blocks** in *every* repo recorded in install-state.json (CLAUDE.md, GEMINI.md, .clinerules, .cursorrules, .cursor/rules/skillsmith.mdc, .opencode/system-prompt.md, .aider.conf.yml, etc.). The cross-repo walk happens before the CLI is removed; pass `--no-all-repos` to limit to cwd. Tampered blocks (sha256 mismatch — the user edited inside the sentinels) are skipped without `--force`.
+- **MCP entries** for `skillsmith` from `~/.claude/mcp_servers.json`, the cwd repo's `.cursor/mcp.json`, and `.continuerc.json`. The files are deleted if `skillsmith` was their only entry.
+- **Native service unit + companion ollama unit** on Linux (`~/.config/systemd/user/skillsmith.service`, `~/.config/systemd/user/ollama.service`, sanitized `skillsmith.env`). On macOS the launchd plist at `~/Library/LaunchAgents/ai.skillsmith.plist`.
+- **Manual-mode skillsmith server** if it's still listening on the configured port (SIGTERM, escalating to SIGKILL after 10s).
+- **User-scope state**: `${XDG_CONFIG_HOME}/skillsmith/.env`, `install-state.json`, the entire state directory.
+- **Derivable artifacts**: `${XDG_DATA_HOME}/skillsmith/outputs/` (per-step JSON dumps including preflight) and `server.log`.
+- **`uv tool uninstall skillsmith`** — removes the `skillsmith` CLI from `~/.local/bin`.
+
+**Preserved by default**: the corpus DB at `${XDG_DATA_HOME}/skillsmith/corpus/`, pulled Ollama / FastFlowLM models (shared with other projects), the user's own non-skillsmith config.
+
+**Flags**:
+- `--remove-data` — also wipes the entire `${XDG_DATA_HOME}/skillsmith/` (corpus included). The post-test "get rid of everything" command.
+- `--force` — remove sentinel blocks even when the inner content has been edited.
+- `--no-all-repos` — only clean sentinels in cwd (legacy behavior; useful for partial cleanup).
+
+**Full wipe one-liner** (for testers ready to reinstall from scratch):
+```bash
+skillsmith uninstall --remove-data
+```
+This used to require a manual `rm -rf ~/.local/share/skillsmith` afterwards — no longer.
 
 ---
 
