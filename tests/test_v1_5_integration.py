@@ -25,15 +25,15 @@ from typing import Any
 import httpx
 import pytest
 
-from skillsmith.lm_client import (
-    LMClientError,
-    LMModelNotLoaded,
-    OpenAICompatClient,
-)
 from skillsmith.ingest import (
     _insert,  # pyright: ignore[reportPrivateUsage]
     _load_yaml,  # pyright: ignore[reportPrivateUsage]
     _validate,  # pyright: ignore[reportPrivateUsage]
+)
+from skillsmith.lm_client import (
+    LMClientError,
+    LMModelNotLoaded,
+    OpenAICompatClient,
 )
 from skillsmith.reembed import discover_unembedded_fragments, reembed_fragments
 from skillsmith.storage.ladybug import LadybugStore
