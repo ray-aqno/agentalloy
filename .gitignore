@@ -71,7 +71,10 @@ eval/runs/
 /vercel-labs-agent-skills/
 /agent-skills/
 /.claude/
-.gitnexus
+.gitnexus/
+.nanocoder/
+AGENTS.md
+CLAUDE.md
 docs/*.patch
 experiments/skill-tax/
 docs/superpowers/
