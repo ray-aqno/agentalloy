@@ -3,9 +3,11 @@
 Validate + write ``.env`` from a preset template.
 
 Preset templates live in ``src/skillsmith/install/presets/<name>.yaml``.
-Each preset has fixed runner URLs (Ollama 11434, LM Studio 1234,
-FastFlowLM 52625).  The ``--port`` flag records the skillsmith
-service port (default 47950) for use by ``wire-harness``.
+All presets bind the embedding runner to port 11436 regardless of runner
+(Ollama, LM Studio, or llama-server). Port 11434 is reserved for the
+reasoning model and 11435 for the coder model.
+The ``--port`` flag records the skillsmith service port (default 47950)
+for use by ``wire-harness``.
 """
 
 from __future__ import annotations
