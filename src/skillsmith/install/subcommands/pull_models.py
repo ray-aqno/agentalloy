@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
 import time
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -108,10 +110,344 @@ def _is_model_present_fastflowlm(model: str) -> bool:
     return False
 
 
+def _is_model_present_llama_server(model: str) -> bool:
+    """Check if a GGUF model file exists on disk for llama-server."""
+    model_path = install_state.user_data_dir() / "models" / model
+    return model_path.exists()
+
+
 _PRESENCE_CHECKS: dict[str, Any] = {
     "ollama": _is_model_present_ollama,
     "fastflowlm": _is_model_present_fastflowlm,
+    "llama-server": _is_model_present_llama_server,
 }
+
+
+# ---------------------------------------------------------------------------
+# llama-server: build and GGUF download helpers
+# ---------------------------------------------------------------------------
+
+# Permanent directories — survive reinstalls and allow incremental updates.
+_LLAMA_CPP_BUILD_ROOT = install_state.user_data_dir() / "build" / "llama.cpp"
+_LLAMA_SERVER_BIN_DIR = Path.home() / ".local" / "bin"
+
+# Hugging Face GGUF download map: model filename → raw download URL.
+# HF repo: https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF
+_GGUF_URL_MAP: dict[str, str] = {
+    "Qwen3-Embedding-0.6B-Q8_0.gguf": (
+        "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF"
+        "/resolve/main/Qwen3-Embedding-0.6B-Q8_0.gguf"
+    ),
+}
+
+
+def _check_build_prereqs() -> list[str]:
+    """Return a list of missing build prerequisites (empty = all present)."""
+    missing: list[str] = []
+    for tool in ("git", "cmake"):
+        if not shutil.which(tool):
+            missing.append(tool)
+    # Need a C++ compiler: try c++ / g++ / clang++
+    if not any(shutil.which(cc) for cc in ("c++", "g++", "clang++")):
+        missing.append("C++ compiler (g++, clang++, or c++)")
+    return missing
+
+
+def _build_llama_server() -> dict[str, Any]:
+    """Clone llama.cpp and build llama-server, installing to ~/.local/bin.
+
+    The source tree is kept in a permanent directory so incremental ``git
+    pull`` + rebuild is cheap on subsequent calls.
+
+    Returns a result dict with keys: success, binary_path, error, duration_ms.
+    """
+    # Fast path: binary already on PATH.
+    existing = shutil.which("llama-server")
+    if existing:
+        return {"success": True, "binary_path": existing, "error": None, "duration_ms": 0}
+
+    # Check prereqs before doing anything expensive.
+    missing = _check_build_prereqs()
+    if missing:
+        tools = ", ".join(missing)
+        return {
+            "success": False,
+            "binary_path": None,
+            "error": f"Missing build prerequisites: {tools}",
+            "hint": (
+                f"Install the following tools then re-run pull-models: {tools}. "
+                "On Debian/Ubuntu: `sudo apt install git cmake build-essential`. "
+                "On macOS: `xcode-select --install && brew install cmake`."
+            ),
+        }
+
+    _LLAMA_CPP_BUILD_ROOT.parent.mkdir(parents=True, exist_ok=True)
+    _LLAMA_SERVER_BIN_DIR.mkdir(parents=True, exist_ok=True)
+    t0 = time.monotonic()
+
+    print(
+        f"  llama-server: building from source in {_LLAMA_CPP_BUILD_ROOT} ...",
+        file=sys.stderr,
+    )
+
+    try:
+        # 1. Clone or update the source tree.
+        if not _LLAMA_CPP_BUILD_ROOT.exists():
+            print("  llama-server: cloning llama.cpp (this may take a minute) ...", file=sys.stderr)
+            subprocess.run(
+                [
+                    "git",
+                    "clone",
+                    "--depth",
+                    "1",
+                    "https://github.com/ggerganov/llama.cpp",
+                    str(_LLAMA_CPP_BUILD_ROOT),
+                ],
+                check=True,
+                capture_output=True,
+                timeout=300,
+            )
+        else:
+            print("  llama-server: updating existing source tree ...", file=sys.stderr)
+            subprocess.run(
+                ["git", "-C", str(_LLAMA_CPP_BUILD_ROOT), "pull", "--ff-only"],
+                check=True,
+                capture_output=True,
+                timeout=120,
+            )
+
+        # 2. CMake configure.
+        build_dir = _LLAMA_CPP_BUILD_ROOT / "build"
+        build_dir.mkdir(exist_ok=True)
+        print("  llama-server: cmake configure ...", file=sys.stderr)
+        subprocess.run(
+            [
+                "cmake",
+                "-S",
+                str(_LLAMA_CPP_BUILD_ROOT),
+                "-B",
+                str(build_dir),
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DLLAMA_BUILD_SERVER=ON",
+            ],
+            check=True,
+            capture_output=True,
+            timeout=120,
+        )
+
+        # 3. CMake build (-j uses all available cores).
+        print("  llama-server: cmake build (this may take several minutes) ...", file=sys.stderr)
+        subprocess.run(
+            ["cmake", "--build", str(build_dir), "--config", "Release", "-j"],
+            check=True,
+            capture_output=True,
+            timeout=900,  # 15 min upper bound
+        )
+
+        # 4. Locate the built binary.
+        candidate = build_dir / "bin" / "llama-server"
+        if not candidate.exists():
+            return {
+                "success": False,
+                "binary_path": None,
+                "error": f"Build completed but binary not found at expected path: {candidate}",
+            }
+
+        # 5. Install to ~/.local/bin.
+        dest = _LLAMA_SERVER_BIN_DIR / "llama-server"
+        shutil.copy2(str(candidate), str(dest))
+        dest.chmod(0o755)
+
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        print(
+            f"  llama-server: installed to {dest} ({duration_ms} ms)",
+            file=sys.stderr,
+        )
+
+        # Warn if the install dir is not on PATH.
+        if str(_LLAMA_SERVER_BIN_DIR) not in os.environ.get("PATH", ""):
+            print(
+                f"  WARNING: {_LLAMA_SERVER_BIN_DIR} is not in your PATH. "
+                "Add it to your shell profile so `llama-server` can be found at runtime.",
+                file=sys.stderr,
+            )
+
+        return {
+            "success": True,
+            "binary_path": str(dest),
+            "error": None,
+            "duration_ms": duration_ms,
+        }
+
+    except subprocess.CalledProcessError as exc:
+        stderr_snippet = (exc.stderr or b"").decode(errors="replace").strip()[-500:]
+        return {
+            "success": False,
+            "binary_path": None,
+            "error": f"Build failed (exit {exc.returncode}): {stderr_snippet}",
+            "hint": (
+                "Check build output above. You can also build manually:\n"
+                "  git clone https://github.com/ggerganov/llama.cpp\n"
+                "  cd llama.cpp && cmake -B build -DLLAMA_BUILD_SERVER=ON\n"
+                "  cmake --build build --config Release -j\n"
+                "  cp build/bin/llama-server ~/.local/bin/"
+            ),
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "success": False,
+            "binary_path": None,
+            "error": "Build timed out",
+            "hint": "Run the build manually in a terminal to see what's blocking.",
+        }
+    except OSError as exc:
+        return {"success": False, "binary_path": None, "error": str(exc)}
+
+
+def _download_gguf(model_name: str) -> dict[str, Any]:
+    """Download a GGUF model from Hugging Face into the persistent models dir.
+
+    Shows a simple byte-counter progress indicator on stderr.
+    Returns a result dict with keys: success, path, error, duration_ms.
+    """
+    url = _GGUF_URL_MAP.get(model_name)
+    if not url:
+        return {
+            "success": False,
+            "error": (
+                f"No Hugging Face download URL defined for model '{model_name}'. "
+                "Add it to _GGUF_URL_MAP or download the GGUF manually."
+            ),
+        }
+
+    dest_dir = install_state.user_data_dir() / "models"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = dest_dir / model_name
+
+    print(
+        f"  llama-server: downloading {model_name} from Hugging Face ...",
+        file=sys.stderr,
+    )
+    t0 = time.monotonic()
+    try:
+        with urllib.request.urlopen(url, timeout=60) as resp:
+            total = int(resp.headers.get("Content-Length", 0))
+            downloaded = 0
+            chunk = 1 << 20  # 1 MiB chunks
+            with open(dest_path, "wb") as out_f:
+                while True:
+                    buf = resp.read(chunk)
+                    if not buf:
+                        break
+                    out_f.write(buf)
+                    downloaded += len(buf)
+                    if total:
+                        pct = downloaded * 100 // total
+                        mb = downloaded / (1 << 20)
+                        total_mb = total / (1 << 20)
+                        print(
+                            f"\r  llama-server: {mb:.1f}/{total_mb:.1f} MiB ({pct}%)",
+                            end="",
+                            file=sys.stderr,
+                        )
+            print("", file=sys.stderr)  # newline after progress
+
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        return {"success": True, "path": str(dest_path), "error": None, "duration_ms": duration_ms}
+
+    except Exception as exc:  # noqa: BLE001
+        # Remove a partial download so a retry starts clean.
+        with __import__("contextlib").suppress(OSError):
+            dest_path.unlink()
+        return {"success": False, "error": str(exc)}
+
+
+def _handle_llama_server(
+    model: str, interactive: bool
+) -> tuple[
+    list[dict[str, Any]],  # auto_pulled entries
+    list[dict[str, Any]],  # error entries
+]:
+    """Orchestrate binary build + GGUF download for llama-server.
+
+    Returns (auto_pulled, errors) tuples to be merged into the main lists.
+    """
+    auto_pulled: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+
+    # ---- 1. Binary ----------------------------------------------------------
+    if not shutil.which("llama-server"):
+        if interactive:
+            try:
+                choice = (
+                    input("  llama-server binary not found. Build from source? [y/N]: ")
+                    .strip()
+                    .lower()
+                )
+            except (EOFError, KeyboardInterrupt):
+                choice = "n"
+        else:
+            # Non-interactive: skip the build; surface an actionable error.
+            choice = "n"
+
+        if choice != "y":
+            errors.append(
+                {
+                    "runner": "llama-server",
+                    "model": model,
+                    "success": False,
+                    "error": "llama-server binary not found and build was skipped.",
+                    "hint": (
+                        "To build manually:\n"
+                        "  git clone https://github.com/ggerganov/llama.cpp\n"
+                        "  cd llama.cpp && cmake -B build -DLLAMA_BUILD_SERVER=ON\n"
+                        "  cmake --build build --config Release -j\n"
+                        "  cp build/bin/llama-server ~/.local/bin/\n"
+                        "Then re-run `pull-models`."
+                    ),
+                }
+            )
+            return auto_pulled, errors
+
+        build_result = _build_llama_server()
+        if not build_result["success"]:
+            errors.append(
+                {
+                    "runner": "llama-server",
+                    "model": model,
+                    "success": False,
+                    "error": build_result.get("error", "unknown build error"),
+                    "hint": build_result.get("hint"),
+                }
+            )
+            return auto_pulled, errors
+
+    # ---- 2. GGUF model file -------------------------------------------------
+    if _is_model_present_llama_server(model):
+        # Already downloaded from a previous run.
+        return auto_pulled, errors
+
+    download_result = _download_gguf(model)
+    if not download_result["success"]:
+        errors.append(
+            {
+                "runner": "llama-server",
+                "model": model,
+                "success": False,
+                "error": download_result.get("error", "unknown download error"),
+            }
+        )
+        return auto_pulled, errors
+
+    auto_pulled.append(
+        {
+            "runner": "llama-server",
+            "model": model,
+            "duration_ms": download_result.get("duration_ms", 0),
+            "path": download_result.get("path"),
+        }
+    )
+    return auto_pulled, errors
 
 
 # ---------------------------------------------------------------------------
@@ -249,14 +585,22 @@ def pull_models(
     skipped: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
 
+    # Detect interactivity once for the whole pull loop.
+    interactive = sys.stdin.isatty()
+
     for model, runner in pairs:
-        # Check presence for auto-pull runners
+        # Check presence — includes GGUF file check for llama-server.
         presence_fn = _PRESENCE_CHECKS.get(runner)
         if presence_fn and presence_fn(model):
             skipped.append({"runner": runner, "model": model})
             continue
 
-        if runner in _AUTO_PULL_RUNNERS:
+        if runner == "llama-server":
+            # llama-server has its own build + download flow.
+            ls_pulled, ls_errors = _handle_llama_server(model, interactive)
+            auto_pulled.extend(ls_pulled)
+            errors.extend(ls_errors)
+        elif runner in _AUTO_PULL_RUNNERS:
             result = _auto_pull(runner, model)
             if result.get("success"):
                 auto_pulled.append(

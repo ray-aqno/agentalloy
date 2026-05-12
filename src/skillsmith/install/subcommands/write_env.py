@@ -3,9 +3,11 @@
 Validate + write ``.env`` from a preset template.
 
 Preset templates live in ``src/skillsmith/install/presets/<name>.yaml``.
-Each preset has fixed runner URLs (Ollama 11434, LM Studio 1234,
-FastFlowLM 52625).  The ``--port`` flag records the skillsmith
-service port (default 47950) for use by ``wire-harness``.
+Base presets use Ollama (port 11434) or LM Studio (port 1234).
+llama-server variants (``<preset>-llama-server``) also use port 11434
+so the runtime URL is identical regardless of which runner was chosen.
+The ``--port`` flag records the skillsmith service port (default 47950)
+for use by ``wire-harness``.
 """
 
 from __future__ import annotations
@@ -23,7 +25,20 @@ from skillsmith.install import state as install_state
 SCHEMA_VERSION = 1
 DEFAULT_PORT = 47950
 
-VALID_PRESETS = frozenset({"cpu", "apple-silicon", "nvidia", "radeon"})
+VALID_PRESETS = frozenset(
+    {
+        # Ollama-backed presets (original)
+        "cpu",
+        "apple-silicon",
+        "nvidia",
+        "radeon",
+        # llama-server (llama.cpp) backed presets
+        "cpu-llama-server",
+        "apple-silicon-llama-server",
+        "nvidia-llama-server",
+        "radeon-llama-server",
+    }
+)
 
 # Keys the user is allowed to override via --overrides.
 _KNOWN_KEYS = frozenset(
