@@ -256,16 +256,15 @@ def _prompt_for_packs(
         file=sys.stderr,
     )
     print(
-        "\nEnter pack names (comma-separated), 'all', or blank for defaults only.",
+        "\nEnter pack names or numbers (comma-separated), 'all', 'defaults', or blank for always-on packs only.",
         file=sys.stderr,
     )
-    print("Defaults install always-on packs only.\n", file=sys.stderr)
     try:
         raw = input("Packs to install: ").strip()
     except (EOFError, KeyboardInterrupt):
         return []
 
-    if not raw:
+    if not raw or raw.lower() == "defaults":
         return []
     if raw.lower() == "all":
         return list(items)
