@@ -553,8 +553,13 @@ def _auto_pull(runner: str, model: str) -> dict[str, Any]:
 def pull_models(
     models_json: dict[str, Any],
     root: Path | None = None,
+    runner_override: str | None = None,
 ) -> dict[str, Any]:
     """Pull models based on recommend-models output.
+
+    ``runner_override`` selects a specific runner from the options list,
+    bypassing the ``default`` flag. Use when the agent captured the user's
+    runner choice after ``recommend-models`` already ran non-interactively.
 
     Returns contract-shaped JSON with auto_pulled, manual_steps_required,
     and skipped_already_present arrays.
@@ -571,13 +576,28 @@ def pull_models(
         sys.stdout.write("\n")
         raise SystemExit(4)
 
-    # Extract the default option (or first option)
+    # Extract the option to use: explicit runner override > default flag > first.
     options = models_json.get("options", [])
     if not options:
         print("ERROR: No model options in recommend-models output", file=sys.stderr)
         raise SystemExit(1)
 
-    option = next((o for o in options if o.get("default")), options[0])
+    if runner_override:
+        option = next(
+            (o for o in options if o.get("embed_runner") == runner_override),
+            None,
+        )
+        if option is None:
+            available = [o.get("embed_runner") for o in options]
+            print(
+                f"ERROR: Runner '{runner_override}' not found in recommend-models options.",
+                file=sys.stderr,
+            )
+            print(f"CAUSE: Available runners: {available}", file=sys.stderr)
+            print("FIX:   Pass one of the above runners, or omit --runner to use the default.", file=sys.stderr)
+            raise SystemExit(1)
+    else:
+        option = next((o for o in options if o.get("default")), options[0])
     pairs = _collect_model_runner_pairs(option)
 
     auto_pulled: list[dict[str, Any]] = []
@@ -678,6 +698,15 @@ def add_parser(
         required=True,
         help="Path to the recommend-models JSON output file.",
     )
+    p.add_argument(
+        "--runner",
+        default=None,
+        help=(
+            "Override the runner selected by recommend-models "
+            "(e.g. ollama, llama-server). Use when the agent captured "
+            "the user's choice after recommend-models ran non-interactively."
+        ),
+    )
     p.set_defaults(func=_run)
 
 
@@ -690,7 +719,7 @@ def _run(args: argparse.Namespace) -> int:
         return 1
 
     models_json = json.loads(models_path.read_text())
-    result = pull_models(models_json)
+    result = pull_models(models_json, runner_override=getattr(args, "runner", None))
     json.dump(result, sys.stdout, indent=2)
     sys.stdout.write("\n")
 
