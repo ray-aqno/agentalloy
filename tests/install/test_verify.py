@@ -136,6 +136,15 @@ class TestHarnessConfigPresent:
         result = _check_harness_config_present(st)
         assert result["passed"] is False
 
+    def test_pass_when_manual_harness(self) -> None:
+        st: dict[str, Any] = {
+            "integration_vector": "manual",
+            "harness_files_written": [],
+        }
+        result = _check_harness_config_present(st)
+        assert result["passed"] is True
+        assert "manual" in result["detail"]
+
     def test_pass_when_dedicated_file_has_null_sentinel(self, tmp_path: Path) -> None:
         """Dedicated files (we own the whole file) record sentinel_begin=None.
 
@@ -166,6 +175,16 @@ class TestHarnessConfigURL:
         }
         result = _check_harness_config_url(st)
         assert result["passed"] is True
+
+    def test_pass_when_manual_harness(self) -> None:
+        st: dict[str, Any] = {
+            "integration_vector": "manual",
+            "port": 8000,
+            "harness_files_written": [],
+        }
+        result = _check_harness_config_url(st)
+        assert result["passed"] is True
+        assert "manual" in result["detail"]
 
     def test_fail_when_url_missing(self, tmp_path: Path) -> None:
         f = tmp_path / "CLAUDE.md"

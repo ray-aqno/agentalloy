@@ -242,13 +242,15 @@ def validate_port(value: Any) -> int:
 def _repo_root() -> Path:
     """Locate the current repo root.
 
-    Used by ``wire-harness`` to find the user's repo (the only subcommand
-    that still operates on cwd). Walks up from cwd looking for a marker
-    that indicates the user is inside a project (pyproject.toml,
-    package.json, .git, etc.). Falls back to cwd.
+    Used by subcommands that need cwd-relative paths: ``wire-harness``
+    (for sentinel injection target), and as a back-compat ``root`` value
+    passed to state functions that ignore it (``doctor``, ``update``,
+    ``reset-step``, ``pull-models``, ``uninstall``). Walks up from cwd
+    looking for a project marker (pyproject.toml, package.json, .git,
+    etc.). Falls back to cwd.
 
     Note: this is *not* used to locate skillsmith state — state is
-    user-scoped. It's only for wire-harness's "where to inject sentinels".
+    user-scoped (see ``state_dir``, ``pack_source_dir``).
     """
     cwd = Path.cwd().resolve()
     markers = ("pyproject.toml", "package.json", ".git", "Cargo.toml", "go.mod")
@@ -267,6 +269,15 @@ def _repo_root() -> Path:
 def state_dir(root: Path | None = None) -> Path:  # noqa: ARG001 — kept for back-compat
     """Return the user-scoped state directory."""
     return user_config_dir()
+
+
+def pack_source_dir() -> Path:
+    """Return the user-scoped directory holding installed pack YAML drafts.
+
+    Co-located with LadybugDB and other install state. Replaces the
+    previous cwd-dependent ``<_repo_root()>/skill-source/`` location.
+    """
+    return user_config_dir() / "skill-source"
 
 
 def state_path(root: Path | None = None) -> Path:  # noqa: ARG001

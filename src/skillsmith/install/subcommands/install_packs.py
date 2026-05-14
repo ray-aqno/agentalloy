@@ -70,9 +70,10 @@ def _packs_dir() -> Path:
 
 
 def _run(args: argparse.Namespace) -> int:
-    from skillsmith.install.state import _repo_root  # pyright: ignore[reportPrivateUsage]
+    from skillsmith.install.state import pack_source_dir
 
-    root = _repo_root()
+    root = pack_source_dir()
+    root.mkdir(parents=True, exist_ok=True)
     packs_root = _packs_dir()
 
     available = _discover_packs(packs_root)
