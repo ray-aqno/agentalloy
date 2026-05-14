@@ -397,9 +397,10 @@ def install_pack(
       2. A pack name (resolved via manifest URL pattern) → remote tarball install.
       3. A pack name + --manifest-url override → remote tarball install.
     """
-    from skillsmith.install.state import _repo_root  # pyright: ignore[reportPrivateUsage]
+    from skillsmith.install.state import pack_source_dir
 
-    root = root or _repo_root()
+    root = root or pack_source_dir()
+    root.mkdir(parents=True, exist_ok=True)
 
     # Branch: local directory? (Path-like and exists as a dir on disk.)
     candidate = Path(name_or_path)

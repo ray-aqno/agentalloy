@@ -354,6 +354,13 @@ def _check_skill_count(ladybug_path: str, diag: dict[str, Any] | None = None) ->
 def _check_harness_config_present(st: dict[str, Any]) -> dict[str, Any]:
     """Check 6: Harness config file contains the sentinel block."""
     t0 = time.monotonic()
+    if st.get("integration_vector") == "manual":
+        return {
+            "name": "harness_config_present",
+            "passed": True,
+            "duration_ms": 0,
+            "detail": "manual harness — user-owned config, no files to verify",
+        }
     files_written = st.get("harness_files_written", [])
     if not files_written:
         duration = int((time.monotonic() - t0) * 1000)
@@ -402,6 +409,13 @@ def _check_harness_config_present(st: dict[str, Any]) -> dict[str, Any]:
 def _check_harness_config_url(st: dict[str, Any]) -> dict[str, Any]:
     """Check 7: Injected URL matches the configured port."""
     t0 = time.monotonic()
+    if st.get("integration_vector") == "manual":
+        return {
+            "name": "harness_config_url_matches",
+            "passed": True,
+            "duration_ms": 0,
+            "detail": "manual harness — user-owned config, URL not verified",
+        }
     port = install_state.validate_port(st.get("port", 47950))
     expected_url = f"http://localhost:{port}"
     files_written = st.get("harness_files_written", [])
