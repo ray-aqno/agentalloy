@@ -25,7 +25,20 @@ from skillsmith.install import state as install_state
 SCHEMA_VERSION = 1
 DEFAULT_PORT = 47950
 
-VALID_PRESETS = frozenset({"cpu", "apple-silicon", "nvidia", "radeon"})
+VALID_PRESETS = frozenset(
+    {
+        # Ollama-backed presets (original)
+        "cpu",
+        "apple-silicon",
+        "nvidia",
+        "radeon",
+        # llama-server (llama.cpp) backed presets
+        "cpu-llama-server",
+        "apple-silicon-llama-server",
+        "nvidia-llama-server",
+        "radeon-llama-server",
+    }
+)
 
 # Keys the user is allowed to override via --overrides.
 _KNOWN_KEYS = frozenset(

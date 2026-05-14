@@ -49,6 +49,11 @@ def add_parser(
             "don't exist (default: fail with the available pack list)."
         ),
     )
+    p.add_argument(
+        "--list",
+        action="store_true",
+        help="Print available pack names (one per line) and exit.",
+    )
     p.set_defaults(func=_run)
 
 
@@ -71,6 +76,14 @@ def _run(args: argparse.Namespace) -> int:
     packs_root = _packs_dir()
 
     available = _discover_packs(packs_root)
+
+    if getattr(args, "list", False):
+        for name in sorted(available):
+            meta = available[name]
+            always = " [always-on]" if meta.get("always_install") else ""
+            print(f"{name}{always}")
+        return 0
+
     if not available:
         print("install-packs: no packs found under seeds/packs/", file=sys.stderr)
         result = {
@@ -243,16 +256,15 @@ def _prompt_for_packs(
         file=sys.stderr,
     )
     print(
-        "\nEnter pack names (comma-separated), 'all', or blank for defaults only.",
+        "\nEnter pack names or numbers (comma-separated), 'all', 'defaults', or blank for always-on packs only.",
         file=sys.stderr,
     )
-    print("Defaults install always-on packs only.\n", file=sys.stderr)
     try:
         raw = input("Packs to install: ").strip()
     except (EOFError, KeyboardInterrupt):
         return []
 
-    if not raw:
+    if not raw or raw.lower() == "defaults":
         return []
     if raw.lower() == "all":
         return list(items)

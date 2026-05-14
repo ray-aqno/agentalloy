@@ -28,6 +28,7 @@ from skillsmith.install.subcommands import (
     pull_models,
     recommend_host_targets,
     recommend_models,
+    reembed,
     reset_step,
     seed_corpus,
     serve,
@@ -36,7 +37,9 @@ from skillsmith.install.subcommands import (
     server_status,
     server_stop,
     setup,
+    start_embed_server,
     status,
+    telemetry,
     uninstall,
     unwire,
     update,
@@ -72,6 +75,7 @@ _SUBCOMMANDS = [
     recommend_models,
     seed_corpus,
     pull_models,
+    start_embed_server,
     write_env,
     wire_harness,
     verify,
@@ -81,6 +85,8 @@ _SUBCOMMANDS = [
     update,
     install_pack,
     install_packs,
+    reembed,
+    telemetry,
 ]
 
 
