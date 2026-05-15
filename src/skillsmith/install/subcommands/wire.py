@@ -86,6 +86,7 @@ _HARNESS_MARKERS: list[tuple[str, list[str]]] = [
     ("gemini-cli", ["GEMINI.md"]),
     ("github-copilot", [".github/copilot-instructions.md"]),
     ("claude-code", ["CLAUDE.md"]),
+    ("hermes-agent", [".hermes", "AGENTS.md"]),
 ]
 
 
