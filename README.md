@@ -45,6 +45,7 @@ Things your agent can ask for instead of you pasting them into the prompt:
 - [Packs shipping in-tree](#packs-shipping-in-tree)
 - [How packs get authored](#how-packs-get-authored)
 - [Architecture](#architecture)
+- [Telemetry](#telemetry)
 - [Configuration](#configuration)
 - [Development](#development)
 - [Empirical results](#empirical-results)
@@ -171,10 +172,11 @@ Each subcommand emits structured JSON on stdout; pair with `jq` for scripting.
 | `POST` | `/compose` | Hybrid retrieve + assemble. Returns JSON: `{output, source_skills, tokens_returned, compose_ms}`. |
 | `POST` | `/compose/text` | Same as `/compose` but returns `text/plain` — paste-ready for harnesses that take freeform context. |
 | `POST` | `/retrieve` | Retrieve only (no assembly). Returns ranked fragment IDs + scores + provenance. |
-| `GET` | `/skill/{id}` | Look up a single skill by id. |
-| `GET` | `/telemetry/traces` | Paginated composition trace history (phase, prompt, selected fragments, latencies). |
+| `GET` | `/retrieve/{skill_id}` | Look up a single skill's retrievable fragments by id. |
+| `GET` | `/skills/{skill_id}` | Inspect a skill — versions, fragments, applicability rules. |
+| `GET` | `/telemetry/traces` | Composition trace history. See [Telemetry](#telemetry). |
 | `GET` | `/health` | `{"status":"ok"}` liveness probe. |
-| `GET` | `/diagnostics` | Backend / model / DB state for debugging. |
+| `GET` | `/diagnostics/runtime` | Backend / model / DB state for debugging. |
 
 Request body for `/compose`:
 
@@ -285,9 +287,29 @@ The bounce loop iterates author↔critic up to `bounce_budget=5` times per skill
 - **Embedding** — `qwen3-embedding:0.6b` (1024-dim). Backend-agnostic via OpenAI-compatible `/v1/embeddings`.
 - **Retrieval** — hybrid BM25 + dense cosine fused via Reciprocal Rank Fusion with phase-specific leg weighting. Token-literal queries hit BM25; semantic queries hit dense.
 - **Applicability filter** — pure-rule predicates on `ActiveSkill` records (always_apply, phase_scope, category_scope). No LLM parsing; governance rules are strictly deterministic.
+- **Telemetry** — every `/compose` and `/retrieve` call writes a structured trace to DuckDB inline-before-response. See [Telemetry](#telemetry).
 - **No generative LLM in the runtime path.** The agent owns generation; skillsmith owns retrieval.
 
 For a deeper look at the dual-DB design (and why it's the right shape for code intelligence too), see `docs/code-indexer-architecture-1pager.md`.
+
+---
+
+## Telemetry
+
+Every `/compose` and `/retrieve` call writes a structured trace to DuckDB **before the response returns** — no async backlog, no dropped traces. Trace-write failures are logged but never propagate; the response always succeeds regardless of telemetry state.
+
+Each trace captures: `trace_id`, `phase`, `task_prompt`, `status`, `selected_fragment_ids`, `source_skill_ids`, `system_skill_ids`, `workflow_skill_ids`, `retrieval_latency_ms`, `assembly_latency_ms`, `total_latency_ms`, `response_size_chars`, and (on failure) `error_code`.
+
+Query via `GET /telemetry/traces` with optional filters:
+
+| Filter | Type | Purpose |
+|---|---|---|
+| `phase` | string | `spec` / `design` / `build` / `qa` / `ops` |
+| `status` | string | success / error / degraded result type |
+| `since`, `until` | epoch ms | time-range window |
+| `limit`, `offset` | int | pagination (1 ≤ limit ≤ 500, default 50) |
+
+Use it to inspect which skills got composed for a task, profile retrieval latency across phases, or audit governance-rule applicability over time. Traces live in the same DuckDB file as the vector index (`DUCKDB_PATH`).
 
 ---
 
