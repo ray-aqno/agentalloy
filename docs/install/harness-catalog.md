@@ -151,6 +151,23 @@ Health check: `curl -s http://localhost:{port}/health` returns `{"status":"ok"}`
 
 ---
 
+## Hermes Agent
+
+**File path (user scope, default):** `~/.hermes/SOUL.md`. Hermes always loads this file regardless of cwd, so the injection is reachable from every project.
+
+**File path (repo scope):** `<repo-root>/AGENTS.md`. Hermes loads this when run from the project directory (same convention as Claude Code's `CLAUDE.md`). Use `--scope repo` to target this instead.
+
+**Why user scope is the default:** Hermes is typically configured once per user. A single `wire-harness --harness hermes-agent` call makes Skillsmith reachable from any repo without re-wiring. The template includes a `curl -fs .../health` gate so Hermes ignores the block in projects where Skillsmith isn't running.
+
+**Edge cases:**
+- Both files are shared with the user's own content (persona/identity in `SOUL.md`, project rules in `AGENTS.md`) → sentinel-bounded injection in both cases.
+- `~/.hermes/` is auto-created if absent.
+- `AGENTS.md` is also read by other agents (Codex, etc.); the sentinel block is markdown-comment-bounded so it's inert to those tools.
+
+**Injected content:** rendered from `harness_templates/hermes-agent.md`. Unlike repo-scoped harness templates, this one opens with an explicit health check (`curl -fs http://localhost:{port}/health`) so Hermes can safely skip the instructions when running in a non-skillsmith project.
+
+---
+
 ## Continue.dev (closed model)
 
 **File path:** `<repo-root>/.continuerc.json` (project-scoped Continue config) OR `~/.continue/config.json` (user-scoped). Default: project-scoped.
@@ -346,7 +363,8 @@ The runbook asks the user: "What harness are you using?" and presents this list:
 3. **Cursor** → `.cursor/rules/skillsmith.mdc` or `.cursorrules`
 4. **Windsurf** → `.windsurf/rules/skillsmith.md` or `.windsurfrules`
 5. **GitHub Copilot (VS Code)** → `.github/copilot-instructions.md`
-6. **Continue.dev (with Anthropic / OpenAI / other cloud model)** → `.continuerc.json` system message + custom command
+6. **Hermes Agent** → `~/.hermes/SOUL.md` (user scope, default) or `AGENTS.md` (repo scope)
+7. **Continue.dev (with Anthropic / OpenAI / other cloud model)** → `.continuerc.json` system message + custom command
 7. **Continue.dev (with a local LLM)** → `.continuerc.json` custom command only
 8. **OpenCode** → `.opencode/system-prompt.md` snippet (pending OpenCode docs)
 9. **Aider** → `.aider.conf.yml` + `.skillsmith-aider-instructions.md`
@@ -354,7 +372,7 @@ The runbook asks the user: "What harness are you using?" and presents this list:
 11. **Other / I'll wire it manually** → emit a generic snippet to stdout, no file injection
 12. **Use MCP server instead** → MCP fallback for whichever harness in 1–10 the user picks (compound choice)
 
-The CLI flag `--harness <name>` takes one of: `claude-code`, `gemini-cli`, `cursor`, `windsurf`, `github-copilot`, `continue-closed`, `continue-local`, `opencode`, `aider`, `cline`, `manual`. For the strict-tools MCP fallback, pass `--mcp-fallback` with one of the supported harnesses (claude-code, cursor, continue-closed, continue-local).
+The CLI flag `--harness <name>` takes one of: `claude-code`, `gemini-cli`, `cursor`, `windsurf`, `github-copilot`, `hermes-agent`, `continue-closed`, `continue-local`, `opencode`, `aider`, `cline`, `manual`. For the strict-tools MCP fallback, pass `--mcp-fallback` with one of the supported harnesses (claude-code, cursor, continue-closed, continue-local).
 
 ---
 

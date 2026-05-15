@@ -184,6 +184,46 @@ class TestWindsurf:
 
 
 # ---------------------------------------------------------------------------
+# Hermes Agent
+# ---------------------------------------------------------------------------
+
+
+class TestHermesAgent:
+    def test_user_scope_writes_soul_md(self, tmp_path: Path) -> None:
+        """User scope wires ~/.hermes/SOUL.md, sentinel-bounded."""
+        result = wire_harness("hermes-agent", port=8000, root=tmp_path, scope="user")
+        assert result["integration_vector"] == "markdown_injection"
+        soul = tmp_path / ".hermes" / "SOUL.md"
+        assert soul.exists()
+        content = soul.read_text()
+        assert SENTINEL_BEGIN in content
+        assert "localhost:8000" in content
+        # Health-gate must be present so Hermes skips in non-skillsmith projects
+        assert "/health" in content
+
+    def test_repo_scope_writes_agents_md(self, repo_root: Path) -> None:
+        """Repo scope wires <repo>/AGENTS.md, sentinel-bounded."""
+        result = wire_harness("hermes-agent", port=8000, root=repo_root, scope="repo")
+        assert result["integration_vector"] == "markdown_injection"
+        agents = repo_root / "AGENTS.md"
+        assert agents.exists()
+        content = agents.read_text()
+        assert SENTINEL_BEGIN in content
+        assert "localhost:8000" in content
+
+    def test_preserves_existing_soul_content(self, tmp_path: Path) -> None:
+        """User-authored persona content in SOUL.md survives wiring."""
+        soul = tmp_path / ".hermes" / "SOUL.md"
+        soul.parent.mkdir(parents=True)
+        soul.write_text("# My persona\n\nBe terse.\n")
+        wire_harness("hermes-agent", port=8000, root=tmp_path, scope="user")
+        content = soul.read_text()
+        assert "# My persona" in content
+        assert "Be terse." in content
+        assert SENTINEL_BEGIN in content
+
+
+# ---------------------------------------------------------------------------
 # GitHub Copilot
 # ---------------------------------------------------------------------------
 

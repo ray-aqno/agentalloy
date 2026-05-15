@@ -10,6 +10,7 @@ Closed harnesses (markdown injection):
   cursor          → .cursor/rules/skillsmith.mdc   (or .cursorrules fallback)
   windsurf        → .windsurf/rules/skillsmith.md  (or .windsurfrules fallback)
   github-copilot  → .github/copilot-instructions.md
+  hermes-agent    → ~/.hermes/SOUL.md (user scope) or AGENTS.md (repo scope)
 
 Open harnesses (system-prompt snippet):
   opencode     → .opencode/system-prompt.md
@@ -84,6 +85,15 @@ _HARNESS_REGISTRY: dict[str, dict[str, Any]] = {
         "target": ".github/copilot-instructions.md",
         "template": "github-copilot.md",
         "dedicated": False,
+        "vector": "markdown_injection",
+    },
+    "hermes-agent": {
+        # Resolved at runtime by scope:
+        #   user → .hermes/SOUL.md (under $HOME)
+        #   repo → AGENTS.md       (under repo root)
+        "target": None,
+        "template": "hermes-agent.md",
+        "dedicated": False,  # both targets are shared files → sentinel-bounded
         "vector": "markdown_injection",
     },
     "opencode": {
@@ -223,6 +233,19 @@ def _resolve_cursor_path(root: Path) -> tuple[str, bool]:
     if (root / ".cursor").is_dir():
         return ".cursor/rules/skillsmith.mdc", True
     return ".cursorrules", False
+
+
+def _resolve_hermes_path(scope: str) -> tuple[str, bool]:
+    """Resolve Hermes Agent target path.
+
+    Returns (relative_path, is_dedicated_file).
+      user scope → .hermes/SOUL.md   (resolved against $HOME)
+      repo scope → AGENTS.md         (resolved against repo root)
+    Both files are shared with user content → sentinel-bounded.
+    """
+    if scope == "user":
+        return ".hermes/SOUL.md", False
+    return "AGENTS.md", False
 
 
 def _resolve_windsurf_path(root: Path) -> tuple[str, bool]:
@@ -408,6 +431,8 @@ def wire_harness(
         rel_path, dedicated = _resolve_cursor_path(root)
     elif harness == "windsurf":
         rel_path, dedicated = _resolve_windsurf_path(root)
+    elif harness == "hermes-agent":
+        rel_path, dedicated = _resolve_hermes_path(scope)
     else:
         rel_path = reg["target"]
         dedicated = reg["dedicated"]
