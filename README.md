@@ -15,9 +15,9 @@
   &nbsp;
   <img src="https://img.shields.io/badge/runtime-no--LLM-success" alt="no LLM in runtime" />
   &nbsp;
-  <img src="https://img.shields.io/badge/packs-22-orange" alt="22 packs" />
+  <img src="https://img.shields.io/badge/packs-37-orange" alt="37 packs" />
   &nbsp;
-  <img src="https://img.shields.io/badge/skills-110+-orange" alt="110+ skills" />
+  <img src="https://img.shields.io/badge/skills-324-orange" alt="324 declared skills" />
 </p>
 
 `skillsmith` is a FastAPI gateway and CLI that serves a curated corpus of engineering skills — testing, error handling, deployment, observability, security, framework patterns — composed dynamically per task and handed to your coding agent over HTTP. The runtime is a hybrid BM25 + dense retriever over [LadybugDB](https://docs.ladybugdb.com/) (an embedded [kuzu](https://kuzudb.com/) fork — no Docker) and DuckDB. **No generative LLM in the hot path** — your agent owns generation, skillsmith owns retrieval.
@@ -27,9 +27,9 @@ Use it standalone from your shell, or wire it into your coding harness — the s
 Things your agent can ask for instead of you pasting them into the prompt:
 
 - "How do I write a failing pytest before the implementation?" — TDD + framework idioms, composed from `pytest` + `testing` packs.
-- "What's the safe way to add a NOT NULL column to a 50M-row table?" — migration safety, composed from `postgres` + `engineering` packs.
-- "Wire OpenTelemetry into this FastAPI app." — observability + framework patterns, composed from `fastapi` + `observability` packs.
-- "I'm reviewing this PR — what should I check?" — review heuristics, composed phase-aware from `review` + `quality` packs.
+- "What's the safe way to add a NOT NULL column to a 50M-row table?" — migration safety, composed from `redis` + `engineering` packs.
+- "Wire OpenTelemetry into this FastAPI app." — observability + framework patterns, composed from `fastapi` + `analytics` packs.
+- "I'm reviewing this PR — what should I check?" — review heuristics, composed phase-aware from `code-review` packs.
 
 ---
 
@@ -67,7 +67,7 @@ The setup wizard detects your hardware, pulls the embedding model, seeds the cor
 
 `install-packs --packs` accepts `all` or a comma-separated list. Unknown names fail fast in non-interactive mode; pass `--ignore-unknown` to skip them. List available packs with `skillsmith install-packs --list`.
 
-**Agent-driven install.** If you'd rather have your coding harness (Claude Code, Cursor, Windsurf, Continue.dev, Aider, Cline, GitHub Copilot, Gemini CLI, OpenCode) drive the install for you, clone the repo and tell it:
+**Agent-driven install.** If you'd rather have your coding harness (Claude Code, Cursor, Windsurf, Continue.dev, Aider, Cline, GitHub Copilot, Gemini CLI, Hermes Agent, OpenCode) drive the install for you, clone the repo and tell it:
 
 ```bash
 git clone https://github.com/nrmeyers/skillsmith.git && cd skillsmith
@@ -144,7 +144,7 @@ Use the bundled `wire-harness` subcommand to drop sentinel-bounded skill-access 
 uv run python -m skillsmith.install wire-harness --harness <name>
 ```
 
-Supported harnesses: `claude-code`, `gemini-cli`, `cursor`, `windsurf`, `github-copilot`, `continue-closed`, `continue-local`, `opencode`, `aider`, `cline`, and `manual` (paste-it-yourself). Add `--mcp-fallback` to wire via MCP server config instead of markdown injection (Claude Code, Cursor, Continue). Full catalog in [`docs/install/harness-catalog.md`](docs/install/harness-catalog.md).
+Supported harnesses: `claude-code`, `gemini-cli`, `cursor`, `windsurf`, `github-copilot`, `continue-closed`, `continue-local`, `hermes-agent`, `opencode`, `aider`, `cline`, and `manual` (paste-it-yourself). Add `--mcp-fallback` to wire via MCP server config instead of markdown injection (Claude Code, Cursor, Continue). Full catalog in [`docs/install/harness-catalog.md`](docs/install/harness-catalog.md).
 
 ---
 
@@ -157,8 +157,11 @@ The `skillsmith.install` module exposes a single CLI with subcommands. All write
 | `setup` | End-to-end interactive install (calls every step below in order). |
 | `preflight` | Gate prereqs (Python, runtimes, ports) before any state changes. |
 | `pull-models` | Pull / verify the embedding model is loaded into your backend. |
+| `start-embed-server` | Start the embedding backend (llama-server or Ollama) before pack install. |
 | `seed-corpus` | One-shot pack ingestion into LadybugDB + DuckDB. |
 | `install-packs [--packs <names>] [--list]` | Install/refresh specific pack(s), or `--list` to see what's available. |
+| `install-pack [--pack <name>]` | Install a single pack by name. |
+| `reembed` | Recompute embeddings for unembedded or updated LadybugDB fragments. |
 | `wire [--harness <name>]` | Auto-detect the harness in the current repo and inject sentinels (or pass `--harness` to force). |
 | `wire-harness --harness <name>` | Lower-level: explicit harness wiring with full flag control. |
 | `unwire` | Remove skillsmith sentinels from the current repo (keeps user state). |
@@ -227,16 +230,19 @@ ollama pull qwen3-embedding:0.6b
 
 ## Packs shipping in-tree
 
-The corpus is **packs** — opt-in groups of related skills. As of 2026-05-06, `main` ships **22 packs / ~110 skills**:
+The corpus is **packs** — opt-in groups of related skills. As of 2026-05-16, `main` ships **37 packs / 324 declared skills** organized across 9 tiers:
 
 <table>
 <tr><th>Tier</th><th>Packs</th></tr>
-<tr><td><b>system</b></td><td><code>meta</code> · <code>conventions</code></td></tr>
-<tr><td><b>foundation</b></td><td><code>core</code> · <code>engineering</code> · <code>documentation</code> · <code>refactoring</code> · <code>performance</code></td></tr>
-<tr><td><b>language</b></td><td><code>python</code> · <code>typescript</code> · <code>nodejs</code> · <code>go</code> · <code>rust</code> · <code>csharp-dotnet</code> · <code>java</code></td></tr>
-<tr><td><b>framework</b></td><td><code>react</code> · <code>nextjs</code> · <code>fastapi</code> · <code>vue</code> · <code>nestjs</code> · <code>fastify</code></td></tr>
-<tr><td><b>store</b></td><td><code>temporal</code></td></tr>
-<tr><td><b>tooling</b></td><td><code>linting</code> · <code>pytest</code></td></tr>
+<tr><td><b>foundation</b></td><td><code>core</code> · <code>documentation</code> · <code>engineering</code> · <code>performance</code> · <code>refactoring</code></td></tr>
+<tr><td><b>language</b></td><td><code>csharp-dotnet</code> · <code>go</code> · <code>java</code> · <code>nodejs</code> · <code>python</code> · <code>rust</code> · <code>typescript</code></td></tr>
+<tr><td><b>framework</b></td><td><code>fastapi</code> · <code>fastify</code> · <code>nestjs</code> · <code>nextjs</code> · <code>react</code> · <code>vue</code></td></tr>
+<tr><td><b>tooling</b></td><td><code>linting</code> · <code>pytest</code> · <code>testing</code></td></tr>
+<tr><td><b>workflow</b></td><td><code>code-review</code> · <code>design-review</code> · <code>intake</code> · <code>sdd</code></td></tr>
+<tr><td><b>domain</b></td><td><code>analytics</code> · <code>data-engineering</code> · <code>ui-design</code></td></tr>
+<tr><td><b>platform</b></td><td><code>github-actions</code></td></tr>
+<tr><td><b>protocol</b></td><td><code>rest</code> · <code>webhooks</code></td></tr>
+<tr><td><b>store</b></td><td><code>redis</code> · <code>redshift</code> · <code>snowflake</code> · <code>temporal</code></td></tr>
 </table>
 
 Every skill is sourced from authoritative upstream docs and validated against the **R1–R8 quality contract** in `src/skillsmith/_packs/meta/sys-skill-authoring-rules.md`. Each pack ships with `.qa.md` reports under `docs/skill-review-history/` documenting independent Critic verdicts.
