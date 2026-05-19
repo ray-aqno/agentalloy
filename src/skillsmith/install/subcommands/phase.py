@@ -52,7 +52,7 @@ def _write_phase(data: dict[str, Any], root: Path) -> None:
     for key, value in data.items():
         if isinstance(value, str) and "T" in value:
             # ISO timestamp — quote it so YAML parsers read it as string
-            lines.append(f"{key}: \"{value}\"")
+            lines.append(f'{key}: "{value}"')
         else:
             lines.append(f"{key}: {value}")
     p.write_text("\n".join(lines) + "\n")

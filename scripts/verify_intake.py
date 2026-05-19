@@ -1,4 +1,5 @@
 """Verify intake skills in LadybugDB and run reembed."""
+
 import subprocess
 import sys
 
@@ -28,7 +29,9 @@ def main():
         print("\nNow running reembed...")
         result = subprocess.run(
             [sys.executable, "-m", "skillsmith.install", "reembed"],
-            capture_output=True, text=True, timeout=120
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         print(result.stdout)
         if result.stderr:
@@ -36,6 +39,7 @@ def main():
         return result.returncode
     finally:
         store.close()
+
 
 if __name__ == "__main__":
     sys.exit(main())
