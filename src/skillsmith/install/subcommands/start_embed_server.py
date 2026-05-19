@@ -167,6 +167,15 @@ def _start_llama_server(model: str, timeout: float) -> int:
             f"Check {log_path} for details.",
             file=sys.stderr,
         )
+        try:
+            lines = log_path.read_text(errors="replace").splitlines()
+            tail = lines[-20:] if len(lines) > 20 else lines
+            if tail:
+                print(f"\n--- last {len(tail)} lines of {log_path} ---", file=sys.stderr)
+                print("\n".join(tail), file=sys.stderr)
+                print("--- end log ---", file=sys.stderr)
+        except OSError:
+            pass
         return 1
 
     print(f"start-embed-server: llama-server ready on port {EMBED_PORT}", file=sys.stderr)

@@ -361,7 +361,7 @@ def _runner_from_models_output() -> str | None:
         data = json.loads(fp.read_text())
     except (json.JSONDecodeError, OSError):
         return None
-    return data.get("embed_runner") or data.get("runner")
+    return data.get("selected_runner") or data.get("embed_runner") or data.get("runner")
 
 
 def run_preflight(
@@ -404,7 +404,8 @@ def run_preflight(
             checks.append(_check_ollama_reachable())
         elif chosen == "llama-server":
             checks.append(_check_llama_server_present())
-            checks.append(_check_llama_server_reachable())
+            # _check_llama_server_reachable omitted: llama-server is started by
+            # start-embed-server (later in the pipeline), not pre-running like ollama.
         elif chosen == "fastflowlm":
             checks.append(_check_fastflowlm_present())
         else:
