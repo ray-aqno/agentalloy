@@ -26,6 +26,14 @@ ENV/
 
 .pytest_cache/
 pytest-of-*/
+.aider.chat.history.md
+.aider.input.history
+README.backup.md
+_check_*.py
+_verify_*.py
+uv-*.lock
+.hermes/contracts/
+.hermes/plans/
 .ruff_cache/
 .pyright/
 .coverage
