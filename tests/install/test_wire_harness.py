@@ -509,3 +509,57 @@ class TestScopeFlag:
     def test_scope_invalid_raises(self) -> None:
         with pytest.raises(SystemExit):
             wire_harness("aider", port=8000, scope="global")
+
+
+# ---------------------------------------------------------------------------
+# Intake activation markers
+# ---------------------------------------------------------------------------
+
+
+class TestIntakeActivationMarkers:
+    """Verify wired templates contain intake activation markers.
+
+    Maps to plan: intake activation workflow — harness templates must include
+    health-gate, phase lock file reference, and skip-if-non-SDD guidance.
+    """
+
+    _INTAKE_MARKERS = [
+        ".skillsmith/phase",
+        "Health-gate",
+        "non-SDD",
+    ]
+
+    def test_hermes_agent_has_intake_markers(self, tmp_path: Path) -> None:
+        result = wire_harness("hermes-agent", port=8000, root=tmp_path, scope="user")
+        content = (tmp_path / ".hermes" / "SOUL.md").read_text()
+        for marker in self._INTAKE_MARKERS:
+            assert marker in content, f"Missing marker: {marker}"
+
+    def test_claude_code_has_intake_markers(self, repo_root: Path) -> None:
+        wire_harness("claude-code", port=8000, root=repo_root)
+        content = (repo_root / "CLAUDE.md").read_text()
+        for marker in self._INTAKE_MARKERS:
+            assert marker in content, f"Missing marker: {marker}"
+
+    def test_all_harnesses_have_phase_reference(self, repo_root: Path) -> None:
+        """Smoke test: every instruction-bearing harness file references .skillsmith/phase.
+
+        Only checks .md and .mdc files — structured config files (.json, .yml, .toml)
+        may encode phase references differently and are not required to contain the
+        literal string.
+        """
+        INSTRUCTION_EXTENSIONS = {".md", ".mdc"}
+        for harness in VALID_HARNESSES:
+            state_file = repo_root / ".skillsmith" / "install-state.json"
+            if state_file.exists():
+                state_file.unlink()
+            if harness == "mcp-only":
+                continue
+            result = wire_harness(harness, port=8000, root=repo_root)
+            for entry in result["files_written"]:
+                path = Path(entry["path"])
+                if path.exists() and path.suffix.lower() in INSTRUCTION_EXTENSIONS:
+                    content = path.read_text()
+                    assert ".skillsmith/phase" in content, (
+                        f"Harness {harness} at {path} missing phase reference"
+                    )
