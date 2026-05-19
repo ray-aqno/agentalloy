@@ -294,7 +294,9 @@ def _check_llama_server_present() -> dict[str, Any]:
     t0 = time.monotonic()
     binary = shutil.which("llama-server")
     if binary:
-        return _check("llama_server_present", passed=True, started=t0, detail=f"llama-server at {binary}")
+        return _check(
+            "llama_server_present", passed=True, started=t0, detail=f"llama-server at {binary}"
+        )
     return _check(
         "llama_server_present",
         passed=False,
