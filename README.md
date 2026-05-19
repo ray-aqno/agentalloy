@@ -56,7 +56,7 @@ Things your agent can ask for instead of you pasting them into the prompt:
 ## Quickstart
 
 ```bash
-pipx install git+https://github.com/nrmeyers/skillsmith.git
+uv tool install --editable .
 skillsmith setup                                # one-time interactive install wizard
 skillsmith install-packs --packs all            # or: --packs core,engineering,python
 skillsmith server-start                         # background daemon on :47950

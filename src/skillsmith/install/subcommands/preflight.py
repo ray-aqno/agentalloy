@@ -6,7 +6,7 @@ Two phases:
   install: Python version, ``uv`` on PATH, the ``skillsmith`` CLI on
   PATH (so the runbook LLM doesn't sail past a missing ``~/.local/bin``
   entry), XDG dirs writable, network reachable, default port free.
-- ``runner``: runner-specific checks (currently Ollama). Run after
+- ``runner``: runner-specific checks (Ollama, llama-server, FastFlowLM). Run after
   ``recommend-models`` so we know which runner was selected.
 
 Exit codes follow the project contract (see
@@ -273,7 +273,7 @@ def _check_ollama_reachable() -> dict[str, Any]:
     url = "http://localhost:11436/api/tags"
     try:
         req = Request(url, method="GET")
-        with urlopen(req, timeout=2) as resp:  # noqa: S310 — fixed URL
+        with urlopen(req, timeout=2) as resp:
             _ = resp.read(1)
     except (URLError, OSError) as exc:
         return _check(
@@ -288,6 +288,47 @@ def _check_ollama_reachable() -> dict[str, Any]:
             ),
         )
     return _check("ollama_reachable", passed=True, started=t0, detail=f"GET {url} ok")
+
+
+def _check_llama_server_present() -> dict[str, Any]:
+    t0 = time.monotonic()
+    binary = shutil.which("llama-server")
+    if binary:
+        return _check("llama_server_present", passed=True, started=t0, detail=f"llama-server at {binary}")
+    return _check(
+        "llama_server_present",
+        passed=False,
+        started=t0,
+        error="llama-server not found on PATH",
+        remediation=(
+            "Install llama-server (llama.cpp): see "
+            "https://github.com/ggerganov/llama.cpp/blob/master/examples/server/README.md"
+            "You can also build it from source or use a pre-built binary.\\n"
+            "Do not auto-execute — confirm with the user first."
+        ),
+    )
+
+
+def _check_llama_server_reachable() -> dict[str, Any]:
+    t0 = time.monotonic()
+    url = "http://localhost:11436/api/tags"
+    try:
+        req = Request(url, method="GET")
+        with urlopen(req, timeout=2) as resp:
+            _ = resp.read(1)
+    except (URLError, OSError) as exc:
+        return _check(
+            "llama_server_reachable",
+            passed=False,
+            started=t0,
+            error=f"GET {url} failed: {exc}",
+            remediation=(
+                "Start the llama-server daemon: `llama-server --embeddings --port 11436` "
+                "or ensure it's running. Re-run preflight once "
+                "`curl -s http://localhost:11436/api/tags` returns JSON."
+            ),
+        )
+    return _check("llama_server_reachable", passed=True, started=t0, detail=f"GET {url} ok")
 
 
 def _check_fastflowlm_present() -> dict[str, Any]:
@@ -352,13 +393,16 @@ def run_preflight(
                     ),
                     remediation=(
                         "Run `skillsmith recommend-models` first, or pass "
-                        "`--runner <ollama|fastflowlm>` explicitly."
+                        "`--runner <ollama|llama-server|fastflowlm>` explicitly."
                     ),
                 )
             )
         elif chosen == "ollama":
             checks.append(_check_ollama_present())
             checks.append(_check_ollama_reachable())
+        elif chosen == "llama-server":
+            checks.append(_check_llama_server_present())
+            checks.append(_check_llama_server_reachable())
         elif chosen == "fastflowlm":
             checks.append(_check_fastflowlm_present())
         else:
