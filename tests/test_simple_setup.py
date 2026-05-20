@@ -13,6 +13,7 @@ import pytest
 # Private member imports for pyright strict mode testing (I001 excluded — private names)
 # ruff: noqa: I001
 from skillsmith.install.subcommands.simple_setup import (
+    _derive_host_target as _derive_host_target,  # type: ignore[attr-defined]
     _prompt as _prompt,  # type: ignore[attr-defined]
     _prompt_context as _prompt_context,  # type: ignore[attr-defined]
     _resolve_preset as _resolve_preset,  # type: ignore[attr-defined]
@@ -147,6 +148,52 @@ class TestSimpleSetupPrompts:
         cfg = SetupConfig(runner="ollama", hardware_target="unknown-gpu")
         preset = _resolve_preset(cfg)
         assert preset == "cpu"  # fallback
+
+
+class TestDeriveHostTarget:
+    """Test _derive_host_target helper."""
+
+    def test_nvidia_discrete(self):
+        data = {"gpu": {"discrete": [{"vendor": "nvidia", "model": "RTX 3060", "vram_gb": 12}]}}
+        assert _derive_host_target(data) == "nvidia"
+
+    def test_amd_discrete(self):
+        data = {"gpu": {"discrete": [{"vendor": "amd", "model": "RX 7900 XTX", "vram_gb": 24}]}}
+        assert _derive_host_target(data) == "radeon"
+
+    def test_amd_before_nvidia_amd_wins(self):
+        """NVIDIA discrete takes priority over AMD discrete."""
+        data = {
+            "gpu": {
+                "discrete": [
+                    {"vendor": "amd", "model": "RX 7900"},
+                    {"vendor": "nvidia", "model": "RTX 3060"},
+                ]
+            }
+        }
+        assert _derive_host_target(data) == "nvidia"
+
+    def test_no_discrete_but_integrated_apple(self):
+        data = {"gpu": {"discrete": [], "integrated": [{"vendor": "apple", "model": "M2"}]}}
+        assert _derive_host_target(data) == "apple-silicon"
+
+    def test_empty_gpu_fallback_cpu(self):
+        data: dict[str, Any] = {"gpu": {"discrete": [], "integrated": []}}
+        assert _derive_host_target(data) == "cpu"
+
+    def test_no_gpu_key_fallback_cpu(self):
+        data: dict[str, Any] = {}
+        assert _derive_host_target(data) == "cpu"
+
+    def test_integrated_amd_not_discrete(self):
+        """AMD integrated (APU) stays as CPU, not radeon."""
+        data = {
+            "gpu": {
+                "discrete": [],
+                "integrated": [{"vendor": "amd", "model": "Radeon Graphics"}],
+            }
+        }
+        assert _derive_host_target(data) == "cpu"
 
 
 # ---------------------------------------------------------------------------

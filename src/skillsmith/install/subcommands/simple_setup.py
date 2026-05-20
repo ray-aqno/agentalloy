@@ -156,6 +156,33 @@ def _prompt_context(text: str, context: str, default: Any = None) -> str:
     return _prompt(text, default=default)
 
 
+def _derive_host_target(detect_data: dict[str, Any]) -> str:
+    """Derive a hardware target string from detect.json output.
+
+    Priority (regardless of list order):
+      1. NVIDIA discrete GPU  →  "nvidia"
+      2. AMD discrete GPU     →  "radeon"
+      3. Apple integrated GPU →  "apple-silicon"
+      4. Fallback             →  "cpu"
+    """
+    gpu = detect_data.get("gpu", {})
+    discrete = gpu.get("discrete", [])
+    integrated = gpu.get("integrated", [])
+
+    # NVIDIA takes priority over AMD
+    for card in discrete:
+        if card.get("vendor", "").lower() == "nvidia":
+            return "nvidia"
+    for card in discrete:
+        if card.get("vendor", "").lower() == "amd":
+            return "radeon"
+    # Apple Silicon (integrated on Mac)
+    for card in integrated:
+        if card.get("vendor", "").lower() == "apple":
+            return "apple-silicon"
+    return "cpu"
+
+
 def run_setup(cfg: SetupConfig) -> int:
     """Execute the simple interactive setup flow.
 
@@ -171,7 +198,17 @@ def run_setup(cfg: SetupConfig) -> int:
     # -- Phase 0: Auto-detect hardware --
 
     _print("\n[dim]Detecting hardware...[/dim]")
-    detect_result = detect.run(_build_namespace(cfg))
+
+    # Suppress detect's raw JSON dump (goes to detect.json file instead)
+    import io as _io
+
+    _stdout = sys.stdout
+    sys.stdout = _io.StringIO()
+    try:
+        detect_result = detect.run(_build_namespace(cfg))
+    finally:
+        sys.stdout = _stdout
+
     if detect_result not in (0, 4):
         _print("  [red]Hardware detection failed. Continuing with defaults.[/red]")
 
@@ -180,11 +217,21 @@ def run_setup(cfg: SetupConfig) -> int:
     if detect_fp.exists():
         detect_data = json.loads(detect_fp.read_text())
         cfg.detected_runner = detect_data.get("runner")
-        cfg.recommended_host = detect_data.get("recommended_host")
+        cfg.recommended_host = _derive_host_target(detect_data)
+        # Print a concise summary instead of raw JSON
+        gpu_info = detect_data.get("gpu", {})
+        discrete = gpu_info.get("discrete", [])
+        integrated = gpu_info.get("integrated", [])
+        if discrete:
+            gpus = ", ".join(f"{c.get('vendor', '')} {c.get('model', '')}" for c in discrete)
+            _print(f"  GPUs: {gpus}")
+        if integrated:
+            igpus = ", ".join(f"{c.get('vendor', '')} {c.get('model', '')}" for c in integrated)
+            _print(f"  Integrated: {igpus}")
     else:
         cfg.recommended_host = "cpu"
 
-    _print(f"  Detected: {cfg.recommended_host or 'cpu'}")
+    _print(f"  Host target: {cfg.recommended_host}")
 
     # -- Phase 1: Gather config --
 
