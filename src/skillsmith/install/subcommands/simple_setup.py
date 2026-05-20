@@ -568,11 +568,20 @@ def run_setup(cfg: SetupConfig) -> int:
 
     # Step d: Pull model
     _print("  [dim]-> Pulling model[/dim]")
-    # Build a minimal recommend-models.json for pull_models to consume
+    # Build a minimal recommend-models.json for pull_models to consume.
+    # pull_models.pull_models() reads models_json["options"], where each entry
+    # must have "embed_model" and "embed_runner" keys (not "models"/"name").
     models_json = {
+        "schema_version": 1,
         "preset": preset,
-        "models": [{"name": cfg.model, "runner": cfg.runner}],
         "selected_runner": cfg.runner,
+        "options": [
+            {
+                "default": True,
+                "embed_model": cfg.model,
+                "embed_runner": cfg.runner,
+            }
+        ],
     }
     models_fp = install_state.outputs_dir() / "recommend-models.json"
     models_fp.write_text(json.dumps(models_json))
