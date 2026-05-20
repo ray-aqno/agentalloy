@@ -55,8 +55,25 @@ Things your agent can ask for instead of you pasting them into the prompt:
 
 ## Quickstart
 
+Install the CLI. Choose the path that fits you:
+
+**Production** — standalone install, no repo needed:
+
 ```bash
+pipx install git+https://github.com/nrmeyers/skillsmith.git
+```
+
+**Local development** — editable install, reflects source changes instantly:
+
+```bash
+git clone https://github.com/nrmeyers/skillsmith.git && cd skillsmith
+uv sync
 uv tool install --editable .
+```
+
+Then run the setup wizard and you're ready to use it:
+
+```bash
 skillsmith setup                                # one-time interactive install wizard
 skillsmith install-packs --packs all            # or: --packs core,engineering,python
 skillsmith server-start                         # background daemon on :47950
@@ -83,14 +100,6 @@ curl http://localhost:47950/health
 ```
 
 Brings up `skillsmith` on port 47950 (pre-seeded corpus baked in) plus `ollama` on port 11436 with `qwen3-embedding:0.6b` auto-pulled. Bind-mounts `./data` for persistence.
-
-**Developer / contributor install** (editable + dev deps):
-
-```bash
-git clone https://github.com/nrmeyers/skillsmith.git && cd skillsmith
-uv sync
-uv run python -m skillsmith.install setup
-```
 
 ---
 
