@@ -14,7 +14,7 @@ A local **Skillsmith** service that gives your coding agent (this LLM, or anothe
 
 The runtime is a small FastAPI service backed by:
 - An embedding model (`qwen3-embedding:0.6b`, 1024-dim) — runs on any hardware via Ollama or LM Studio
-- A skill corpus split into **packs** that the user opts into at install time (default: `core` + `engineering`; opt-in: `nodejs`, `typescript`, `nestjs`, `react`, `vue`, `agents`, `auth`, `observability`, etc.). Pack source YAMLs ship in the wheel; the binary corpus (LadybugDB + DuckDB) is generated locally on first install.
+- A skill corpus split into **packs** that the user opts into at install time (default: 5 always-on packs — `core`, `engineering`, `documentation`, `performance`, `refactoring`; opt-in: `nodejs`, `typescript`, `nestjs`, `react`, `vue`, `agents`, `auth`, `observability`, etc.). Pack source YAMLs ship in the wheel; the binary corpus (LadybugDB + DuckDB) is generated locally on first install.
 - Your handoff harness (Claude Code / Cursor / Continue.dev / etc.) — wired so it can query the API
 
 **Skillsmith is user-scoped, not per-repo.** You install once; every project the user opens can wire to the same service. State lives at `${XDG_CONFIG_HOME:-~/.config}/skillsmith/`; corpus at `${XDG_DATA_HOME:-~/.local/share}/skillsmith/corpus/`. Repos contain only sentinel-bounded blocks injected into agent config files (`CLAUDE.md`, `.cursor/rules/skillsmith.mdc`, etc.).
@@ -229,28 +229,48 @@ The step is idempotent: if port 11436 is already listening it exits 0 immediatel
 
 ## Step 8: Pick and install skill packs
 
-First, preview available packs:
-
-> RUN
-> ```bash
-> skillsmith install-packs --list
-> ```
-
-Then install selected packs:
+Run the interactive pack selection:
 
 > RUN
 > ```bash
 > skillsmith install-packs
 > ```
 
-The user is shown a numbered list of available packs (each with description + skill count) and asked to pick which ones to install. Two packs (`core`, `engineering`) are always installed automatically.
+The user is presented with a **tier-grouped pack listing** — packs are organized under labeled tiers (Foundation, Languages, Frameworks, Tooling, Workflows, Domain, Platform, Protocol, Store). Each pack shows its description and skill count. Always-on packs are marked with `[always-on]`.
+
+Example output:
+
+```
+ Foundation:
+   [1] core            [always-on] — 42 skills
+   [2] documentation   [always-on] — 8 skills
+   [3] engineering     [always-on] — 55 skills
+   ...
+ Languages:
+   [4] nodejs          — 18 skills
+   [5] typescript      — 15 skills
+   [6] python          — 22 skills
+   ...
+ Frameworks:
+   [7] fastapi         — 14 skills
+   [8] react           — 12 skills
+   ...
+```
+
+The prompt accepts:
+- **Pack names** (comma-separated): `nodejs,typescript,fastapi`
+- **Tier names**: `languages,frameworks` installs all packs in those tiers
+- **`all`**: installs every pack
+- **Blank**: installs only the always-on packs (`core`, `engineering`, `documentation`, `performance`, `refactoring`)
+
+Always-on packs (`core`, `documentation`, `engineering`, `performance`, `refactoring`) are always included regardless of selection.
 
 > ASK
 >
 > Tell the user:
-> > "Skillsmith's corpus is split into packs. You opt in to the ones that match your stack. `core` and `engineering` install automatically. The most common picks for backend work: `nodejs`, `typescript`, plus your framework (e.g., `nestjs`, `fastify`). For agentic dev, add `agents`. Pick now or type `defaults` to go with always-on packs only — you can install more packs later with `skillsmith install-pack <name>`."
->
-> Read the available packs from the CLI's interactive prompt. Wait for the user's selection. The prompt accepts: pack names (comma-separated), pack numbers (e.g. `1,3,5`), `all`, `defaults`, or blank — all install only the always-on packs.
+> > "Skillsmith's corpus is split into packs. You opt in to the ones that match your stack. Five packs install automatically (marked [always-on]): `core`, `engineering`, `documentation`, `performance`, `refactoring`. Pick any additional packs by name or tier — e.g. `nodejs,typescript` or `languages,frameworks`, or `all`. Leave blank for always-on only. You can always add more packs later with `skillsmith install-pack <name>`."
+
+> Read the available packs from the CLI's interactive prompt. Wait for the user's selection.
 
 The command ingests each chosen pack and runs one bulk re-embed pass at the end. **Expect 5–10 minutes** on a warm-cache iGPU for a moderate selection (e.g., core + engineering + nodejs + typescript = ~115 skills, ~700 fragments).
 

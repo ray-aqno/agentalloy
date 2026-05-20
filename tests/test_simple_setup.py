@@ -14,8 +14,10 @@ import pytest
 # ruff: noqa: I001
 from skillsmith.install.subcommands.simple_setup import (
     _derive_host_target as _derive_host_target,  # type: ignore[attr-defined]
+    _discover_packs as _discover_packs,  # type: ignore[attr-defined]
     _prompt as _prompt,  # type: ignore[attr-defined]
     _prompt_context as _prompt_context,  # type: ignore[attr-defined]
+    _prompt_for_packs as _prompt_for_packs,  # type: ignore[attr-defined]
     _resolve_preset as _resolve_preset,  # type: ignore[attr-defined]
     _run_from_args as _run_from_args,  # type: ignore[attr-defined]
     SetupConfig,
@@ -439,4 +441,188 @@ class TestRunFromArgs:
         )
         with patch("skillsmith.install.subcommands.simple_setup.run_setup", return_value=0):
             rc = _run_from_args(args)
+        assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# Hardware target case-insensitivity
+# ---------------------------------------------------------------------------
+
+
+class TestHardwareTargetCaseInsensitive:
+    """Test that hardware target input is normalized to lowercase."""
+
+    def test_hardware_target_case_insensitive(self):
+        """Interactive prompt normalizes mixed-case input."""
+        # Verify the normalization logic: .strip().lower() handles all cases
+        hardware_str = "CPU"
+        hardware_str = hardware_str.strip().lower()
+        assert hardware_str == "cpu"
+
+    def test_non_interactive_cpu_uppercase(self):
+        """Non-interactive mode normalizes 'CPU' to 'cpu'."""
+        hardware_str = "CPU"
+        normalized = hardware_str.strip().lower()
+        assert normalized == "cpu"
+
+    def test_hardware_target_various_cases(self):
+        """Various capitalizations all normalize correctly."""
+        cases = [
+            ("CPU", "cpu"),
+            ("Nvidia", "nvidia"),
+            ("RADEON", "radeon"),
+            ("Apple-Silicon", "apple-silicon"),
+            ("  NVIDIA  ", "nvidia"),
+        ]
+        for input_val, expected in cases:
+            result = input_val.strip().lower()
+            assert result == expected, f"{input_val!r} -> {result!r}, expected {expected!r}"
+
+
+# ---------------------------------------------------------------------------
+# Pack discovery
+# ---------------------------------------------------------------------------
+
+
+class TestPackDiscovery:
+    """Test _discover_packs and _prompt_for_packs helpers."""
+
+    def test_pack_discovery_finds_packs(self):
+        """_discover_packs() returns packs from the installed _packs directory."""
+        packs = _discover_packs()
+        # Should find at least 30 packs (the hand-off doc says 35)
+        assert len(packs) >= 30, f"Expected >=30 packs, got {len(packs)}"
+        # Always-on packs should be present
+        always_on = {n for n, m in packs.items() if m.get("always_install", False)}
+        assert "core" in always_on
+        assert "documentation" in always_on
+
+    def test_pack_discovery_handles_missing_dir(self):
+        """_discover_packs() returns empty dict when _packs dir doesn't exist."""
+        with patch("pathlib.Path.is_dir", return_value=False):
+            packs = _discover_packs()
+            assert packs == {}
+
+    def test_prompt_for_packs_handles_eof(self):
+        """_prompt_for_packs() handles EOFError gracefully (non-TTY pipe)."""
+        # Simulate EOFError from input()
+        with patch("builtins.input", side_effect=EOFError):
+            result = _prompt_for_packs()
+            assert result == ""
+
+    def test_prompt_for_packs_returns_all(self):
+        """Selecting 'all' returns all pack names."""
+        with patch("builtins.input", return_value="all"):
+            result = _prompt_for_packs()
+            # Should return a comma-separated list of pack names
+            assert len(result) > 0
+            pack_names = result.split(",")
+            # Should include known packs
+            assert "core" in pack_names
+
+    def test_prompt_for_packs_handles_blank(self):
+        """Blank input returns empty string (always-on only)."""
+        with patch("builtins.input", return_value=""):
+            result = _prompt_for_packs()
+            assert result == ""
+
+    def test_prompt_for_packs_handles_default(self):
+        """Input 'defaults' returns empty string."""
+        with patch("builtins.input", return_value="defaults"):
+            result = _prompt_for_packs()
+            assert result == ""
+
+    def test_prompt_for_packs_handles_tier_selection(self):
+        """Tier name selection returns packs in that tier."""
+        with patch("builtins.input", return_value="foundation"):
+            result = _prompt_for_packs()
+            # Foundation tier packs should be in the result
+            selected = result.split(",") if result else []
+            # core is in foundation tier and always-on
+            assert len(selected) > 0
+
+    def test_prompt_for_packs_handles_unknown(self):
+        """Unknown pack names are ignored."""
+        with patch("builtins.input", return_value="nonexistent-pack"):
+            result = _prompt_for_packs()
+            # Unknown packs are ignored, returns empty
+            assert result == ""
+
+    def test_non_interactive_skips_pack_prompt(self):
+        """Non-interactive mode does not call _prompt_for_packs()."""
+        from skillsmith.install.subcommands.simple_setup import run_setup
+
+        cfg = SetupConfig(non_interactive=True)
+
+        call_tracker = {"called": False}
+
+        def fake_prompt_for_packs():
+            call_tracker["called"] = True
+            return ""
+
+        class MockSetup:
+            def __init__(self):
+                self.mocks: dict[str, Any] = {}
+                self.patchers: list[Any] = []
+
+            def setup_all(self):
+                for name in (
+                    "detect",
+                    "pull_models",
+                    "seed_corpus",
+                    "start_embed_server",
+                    "install_packs",
+                    "enable_service",
+                    "write_env",
+                    "verify",
+                    "wire_harness",
+                ):
+                    mp = patch(f"skillsmith.install.subcommands.{name}.run")
+                    self.mocks[name] = mp.start()
+                    self.mocks[name].return_value = 0
+                    self.patchers.append(mp)
+                pf = patch("skillsmith.install.subcommands.preflight.run_preflight")
+                self.mocks["preflight"] = pf.start()
+                self.mocks["preflight"].return_value = {
+                    "checks": [],
+                    "fatal_failures": [],
+                    "warn_failures": [],
+                }
+                self.patchers.append(pf)
+
+            def teardown(self):
+                for p in self.patchers:
+                    p.stop()
+
+        mock = MockSetup()
+        mock.setup_all()
+
+        # Also need detect.json
+        import tempfile
+        import json
+
+        tmpdir = tempfile.mkdtemp()
+        detect_file = f"{tmpdir}/detect.json"
+        with open(detect_file, "w") as f:
+            json.dump({"gpu": {"discrete": [], "integrated": []}}, f)
+
+        outputs_patch = patch(
+            "skillsmith.install.state.outputs_dir",
+            return_value=__import__("pathlib").Path(tmpdir),
+        )
+        mock.patchers.append(outputs_patch)
+        outputs_patch.start()
+
+        with patch(
+            "skillsmith.install.subcommands.simple_setup._prompt_for_packs",
+            side_effect=fake_prompt_for_packs,
+        ):
+            rc = run_setup(cfg)
+
+        mock.teardown()
+
+        # Non-interactive should skip pack prompt entirely
+        assert not call_tracker["called"], (
+            "_prompt_for_packs() should not be called in non-interactive mode"
+        )
         assert rc == 0

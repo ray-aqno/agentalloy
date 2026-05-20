@@ -75,14 +75,18 @@ Then run the setup wizard and you're ready to use it:
 
 ```bash
 skillsmith setup                                # one-time interactive install wizard
-skillsmith install-packs --packs all            # or: --packs core,engineering,python
-skillsmith server-start                         # background daemon on :47950
 cd ~/your-project && skillsmith wire            # wire harness in this repo
 ```
 
-The setup wizard detects your hardware, pulls the embedding model, seeds the corpus, and writes your config. **3–5 minutes** on a warm machine.
+The setup wizard walks you through everything: hardware detection, runner selection (`ollama` or `llama-server`), model and port, service mode, **skill pack selection** (with tier-grouped listing), IDE harness wiring, and hardware target. It then executes all install steps and validates the result. **3–5 minutes** on a warm machine.
 
-`install-packs --packs` accepts `all` or a comma-separated list. Unknown names fail fast in non-interactive mode; pass `--ignore-unknown` to skip them. List available packs with `skillsmith install-packs --list`.
+The pack selection screen groups packs by tier (Foundation, Languages, Frameworks, Tooling, etc.) and marks always-on packs. Select by pack name, tier name (e.g., `foundation`, `languages`), `all`, or leave blank for always-on packs only. You can always add more packs later with `skillsmith install-pack <name>`.
+
+Non-interactive / scripted installs: pass flags directly:
+
+```bash
+skillsmith setup -n --runner ollama --hardware nvidia --packs all --harness cursor
+```
 
 **Agent-driven install.** If you'd rather have your coding harness (Claude Code, Cursor, Windsurf, Continue.dev, Aider, Cline, GitHub Copilot, Gemini CLI, Hermes Agent, OpenCode) drive the install for you, clone the repo and tell it:
 

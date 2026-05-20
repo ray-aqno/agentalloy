@@ -41,7 +41,7 @@ from skillsmith.install.subcommands import (
 try:
     from rich.console import Console  # type: ignore[import-untyped]
 
-    console: Console | None = Console()  # type: ignore[assignment]
+    console: Console | None = Console(force_terminal=True, soft_wrap=True)  # type: ignore[assignment]
 except ImportError:
     console = None  # type: ignore[assignment]
 
@@ -156,6 +156,139 @@ def _prompt_context(text: str, context: str, default: Any = None) -> str:
     return _prompt(text, default=default)
 
 
+def _discover_packs() -> dict[str, dict[str, Any]]:
+    """Discover available packs from the _packs directory."""
+    try:
+        from pathlib import Path
+
+        import yaml as _yaml
+
+        import skillsmith
+
+        packs_root = Path(skillsmith.__file__).resolve().parent / "_packs"
+    except (ImportError, AttributeError):
+        return {}
+
+    out: dict[str, dict[str, Any]] = {}
+    if not packs_root.is_dir():
+        return out
+    for pack_dir in sorted(packs_root.iterdir()):
+        if not pack_dir.is_dir():
+            continue
+        manifest_path = pack_dir / "pack.yaml"
+        if not manifest_path.is_file():
+            continue
+        try:
+            manifest: dict[str, Any] = (
+                _yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+            )
+        except Exception:
+            continue
+        name = str(manifest.get("name") or pack_dir.name)
+        out[name] = manifest
+    return out
+
+
+def _prompt_for_packs() -> str:
+    """Interactive pack selection. Returns comma-separated pack names or empty string."""
+    available = _discover_packs()
+    if not available:
+        _print("  [yellow]No packs found. Skipping pack selection.[/yellow]")
+        return ""
+
+    # Group by tier
+    tiers: dict[str, list[tuple[str, int, bool]]] = {}
+    always_on: list[str] = []
+    for name, m in available.items():
+        tier = m.get("tier", "other")
+        always = m.get("always_install", False)
+        skills = len(m.get("skills", []))
+        tiers.setdefault(tier, []).append((name, skills, always))
+        if always:
+            always_on.append(name)
+
+    # Tier display order
+    tier_order = [
+        "foundation",
+        "language",
+        "framework",
+        "tooling",
+        "protocol",
+        "store",
+        "platform",
+        "domain",
+        "workflow",
+        "other",
+    ]
+    tier_labels = {
+        "foundation": "Foundation",
+        "language": "Languages",
+        "framework": "Frameworks",
+        "tooling": "Tooling",
+        "protocol": "Protocols",
+        "store": "Data Stores",
+        "platform": "Platforms",
+        "domain": "Domain",
+        "workflow": "Workflows",
+        "other": "Other",
+    }
+
+    # Build numbered list for reference
+    _print("\n  [bold]Available skill packs[/bold]\n")
+    pack_index: list[str] = []  # flat list for numeric selection
+    for tier in tier_order:
+        packs = tiers.get(tier)
+        if not packs:
+            continue
+        label = tier_labels.get(tier, tier.title())
+        _print(f"  [{label}]")
+        for name, skills, always in sorted(packs, key=lambda x: x[0]):
+            marker = " (always-on)" if always else ""
+            _print(f"    - {name:22} {skills:2} skills{marker}")
+            pack_index.append(name)
+        _print()
+
+    _print(f"  Always-on (auto-installed): {', '.join(sorted(always_on)) or '(none)'}")
+    _print("\n  Tip: You can also use tiers (comma-separated):")
+    _print(f"    {', '.join(tier_labels.get(t, t) for t in tier_order if t in tiers)}")
+    _print("\n  Enter pack/tier names (comma-separated), 'all', or blank for always-on only.")
+
+    try:
+        raw = input("  Skill packs: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        return ""
+
+    if not raw or raw.lower() == "defaults":
+        return ""
+    if raw.lower() == "all":
+        return ",".join(pack_index)
+
+    chosen: list[str] = []
+    for token in raw.split(","):
+        t = token.strip()
+        if not t:
+            continue
+        # Tier-based selection
+        if t in tiers:
+            chosen.extend(name for name, _, _ in tiers[t])
+        elif t in available:
+            chosen.append(t)
+        elif t.isdigit() and 1 <= int(t) <= len(pack_index):
+            chosen.append(pack_index[int(t) - 1])
+        else:
+            _print(f"  [yellow]Ignoring unknown: {t}[/yellow]")
+
+    # Deduplicate preserving order
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for name in chosen:
+        if name not in seen:
+            seen.add(name)
+            deduped.append(name)
+
+    return ",".join(deduped) if deduped else ""
+
+
 def _derive_host_target(detect_data: dict[str, Any]) -> str:
     """Derive a hardware target string from detect.json output.
 
@@ -241,7 +374,9 @@ def run_setup(cfg: SetupConfig) -> int:
     if cfg.runner == "ollama" and not cfg.non_interactive:
         cfg.runner = _prompt_context(
             "  Embedding runner",
-            "  This determines how you want to execute the small LLM for skills retrieval.",
+            "  How to run the embedding model for skills retrieval:\n"
+            "    ollama       - Ollama (recommended for most users)\n"
+            "    llama-server - llama.cpp server (for GGUF models)",
             default="ollama",
         )
     if cfg.runner not in ("ollama", "llama-server"):
@@ -288,18 +423,18 @@ def run_setup(cfg: SetupConfig) -> int:
 
     # 5. Packs
     if not cfg.non_interactive:
-        cfg.packs = _prompt_context(
-            "  Skill packs",
-            "  Optional skill collections (comma-separated names, 'all', or blank for always-on).",
-            default="",
-        )
+        cfg.packs = _prompt_for_packs()
     _print(f"  Packs: {cfg.packs or '(always-on only)'}")
 
     # 6. Harness
     if not cfg.non_interactive:
         cfg.harness = _prompt_context(
             "  IDE harness",
-            "  Your coding assistant — claude-code, cursor, continue, or manual (skip).",
+            "  Wire SkillsSmith into your coding assistant:\n"
+            "    claude-code  - Claude Code CLI (Anthropic)\n"
+            "    cursor       - Cursor IDE\n"
+            "    continue     - Continue.dev extension\n"
+            "    manual       - Skip (configure later)",
             default="manual",
         )
     _print(f"  Harness: {cfg.harness}")
@@ -314,6 +449,7 @@ def run_setup(cfg: SetupConfig) -> int:
             "  dGPU (nvidia/radeon) uses CUDA/ROCm acceleration. CPU uses RAM-only inference.",
             default=detected,
         )
+        hardware_str = hardware_str.strip().lower()
         if hardware_str not in ("nvidia", "radeon", "apple-silicon", "cpu"):
             _print(
                 f"  [red]Invalid hardware: {hardware_str}. "
@@ -323,6 +459,7 @@ def run_setup(cfg: SetupConfig) -> int:
         cfg.hardware_target = hardware_str
     else:
         if cfg.hardware_target:
+            cfg.hardware_target = cfg.hardware_target.strip().lower()
             if cfg.hardware_target not in ("nvidia", "radeon", "apple-silicon", "cpu"):
                 _print(f"  [red]Invalid hardware: {cfg.hardware_target}.[/red]")
                 return 1
