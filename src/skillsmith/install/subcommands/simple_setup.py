@@ -77,6 +77,7 @@ class SetupConfig:
 
 _MODEL_DEFAULTS: dict[str, str] = {
     "ollama": "qwen3-embedding:0.6b",
+    "lm-studio": "qwen3-embedding:0.6b",
     "llama-server": "Qwen3-Embedding-0.6B-Q8_0.gguf",
 }
 
@@ -87,6 +88,10 @@ _PRESET_MAP: dict[tuple[str, str], str] = {
     ("ollama", "apple-silicon"): "apple-silicon",
     ("ollama", "nvidia"): "nvidia",
     ("ollama", "radeon"): "radeon",
+    ("lm-studio", "cpu"): "cpu-lm-studio",
+    ("lm-studio", "apple-silicon"): "apple-silicon-lm-studio",
+    ("lm-studio", "nvidia"): "nvidia-lm-studio",
+    ("lm-studio", "radeon"): "radeon-lm-studio",
     ("llama-server", "cpu"): "cpu-llama-server",
     ("llama-server", "apple-silicon"): "apple-silicon-llama-server",
     ("llama-server", "nvidia"): "nvidia-llama-server",
@@ -107,7 +112,7 @@ def _resolve_preset(cfg: SetupConfig) -> str:
     preset = _PRESET_MAP.get(key)
     if preset is None:
         _print(f"  [dim]Warning: no preset for ({runner}, {hw}), falling back to cpu.[/dim]")
-        preset = "cpu" if runner == "ollama" else "cpu-llama-server"
+        preset = {"ollama": "cpu", "lm-studio": "cpu-lm-studio"}.get(runner, "cpu-llama-server")
     cfg.preset = preset
     return preset
 
@@ -424,11 +429,14 @@ def run_setup(cfg: SetupConfig) -> int:
             "  Embedding runner",
             "  How to run the embedding model for skills retrieval:\n"
             "    ollama       - Ollama (recommended for most users)\n"
+            "    lm-studio    - LM Studio (GUI app with Vulkan/Metal/CUDA backends)\n"
             "    llama-server - llama.cpp server (for GGUF models)",
             default="ollama",
         )
-    if cfg.runner not in ("ollama", "llama-server"):
-        _print(f"  [red]Invalid runner: {cfg.runner}. Choose ollama or llama-server.[/red]")
+    if cfg.runner not in ("ollama", "lm-studio", "llama-server"):
+        _print(
+            f"  [red]Invalid runner: {cfg.runner}. Choose ollama, lm-studio, or llama-server.[/red]"
+        )
         return 1
     _print(f"  Runner: {cfg.runner}")
 

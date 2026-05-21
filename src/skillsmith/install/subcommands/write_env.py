@@ -32,6 +32,11 @@ VALID_PRESETS = frozenset(
         "apple-silicon",
         "nvidia",
         "radeon",
+        # lm-studio backed presets
+        "cpu-lm-studio",
+        "apple-silicon-lm-studio",
+        "nvidia-lm-studio",
+        "radeon-lm-studio",
         # llama-server (llama.cpp) backed presets
         "cpu-llama-server",
         "apple-silicon-llama-server",

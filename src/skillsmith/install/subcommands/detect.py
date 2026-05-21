@@ -471,7 +471,7 @@ def run(args: argparse.Namespace) -> int:
     )
     install_state.save_state(st)
 
-    # Emit to stdout for the runbook LLM
-    json.dump(result, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    if not getattr(args, "quiet", False):
+        json.dump(result, sys.stdout, indent=2)
+        sys.stdout.write("\n")
     return 0
