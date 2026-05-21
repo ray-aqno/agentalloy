@@ -554,6 +554,7 @@ def pull_models(
     models_json: dict[str, Any],
     root: Path | None = None,
     runner_override: str | None = None,
+    quiet: bool = False,
 ) -> dict[str, Any]:
     """Pull models based on recommend-models output.
 
@@ -572,8 +573,9 @@ def pull_models(
     st = install_state.load_state(root)
     if install_state.is_step_completed(st, STEP_NAME):
         prev = install_state.get_step_output(st, STEP_NAME)
-        json.dump(prev.get("output", {}) if prev else {}, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        if not quiet:
+            json.dump(prev.get("output", {}) if prev else {}, sys.stdout, indent=2)
+            sys.stdout.write("\n")
         raise SystemExit(4)
 
     # Extract the option to use: explicit runner override > default flag > first.
@@ -722,9 +724,14 @@ def _run(args: argparse.Namespace) -> int:
         return 1
 
     models_json = json.loads(models_path.read_text())
-    result = pull_models(models_json, runner_override=getattr(args, "runner", None))
-    json.dump(result, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    result = pull_models(
+        models_json,
+        runner_override=getattr(args, "runner", None),
+        quiet=getattr(args, "quiet", False),
+    )
+    if not getattr(args, "quiet", False):
+        json.dump(result, sys.stdout, indent=2)
+        sys.stdout.write("\n")
 
     # Non-zero exit if there were pull errors
     if result.get("errors"):

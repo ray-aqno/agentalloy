@@ -139,6 +139,7 @@ def _build_namespace(cfg: SetupConfig, **overrides: Any) -> argparse.Namespace: 
         "overrides": None,  # write_env overrides
         "scope": "user",  # wire_harness scope
         "mcp_fallback": False,  # wire_harness mcp_fallback
+        "quiet": True,  # suppress JSON stdout when called from wizard
     }
     attrs.update(overrides)  # type: ignore[arg-type]
     return argparse.Namespace(**attrs)
@@ -324,6 +325,53 @@ def _derive_host_target(detect_data: dict[str, Any]) -> str:
     return "cpu"
 
 
+def _test_embed_endpoint(cfg: SetupConfig) -> None:
+    """Smoke test: send a real embedding request and show the curl equivalent."""
+    import urllib.request as _urllib_request
+
+    # Read .env values for the embed endpoint
+    env_path = install_state.env_path()
+    embed_url = None
+    embed_model = None
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            if line.startswith("RUNTIME_EMBED_BASE_URL="):
+                embed_url = line.split("=", 1)[1].strip()
+            elif line.startswith("RUNTIME_EMBEDDING_MODEL="):
+                embed_model = line.split("=", 1)[1].strip()
+
+    if not embed_url or not embed_model:
+        _print("  [yellow]Could not read embed URL/model from .env -- skipping test.[/yellow]")
+        return
+
+    test_text = "test embedding for setup verification"
+    payload = json.dumps({"model": embed_model, "input": test_text}).encode()
+    req = _urllib_request.Request(
+        f"{embed_url}/v1/embeddings",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with _urllib_request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+            dim = len(data["data"][0]["embedding"])
+            _print(f"  Embedding test: [green]OK[/green] -- {dim}-dim vector returned")
+            # Show curl command for user reference
+            _print("")
+            _print("  Verify manually:")
+            _print(f"  curl -s {embed_url}/v1/embeddings \\")
+            _print("    -H 'Content-Type: application/json' \\")
+            _print(f'    -d \'{{"model":"{embed_model}","input":"hello"}}\'')
+    except Exception as exc:
+        _print(f"  [yellow]Embedding test failed: {exc}[/yellow]")
+        _print(
+            f"  [dim]The embed server may still start up; "
+            f"check {install_state.user_data_dir() / 'logs' / 'embed-server.log'}[/dim]"
+        )
+
+
 def run_setup(cfg: SetupConfig) -> int:
     """Execute the simple interactive setup flow.
 
@@ -340,15 +388,7 @@ def run_setup(cfg: SetupConfig) -> int:
 
     _print("\n[dim]Detecting hardware...[/dim]")
 
-    # Suppress detect's raw JSON dump (goes to detect.json file instead)
-    import io as _io
-
-    _stdout = sys.stdout
-    sys.stdout = _io.StringIO()
-    try:
-        detect_result = detect.run(_build_namespace(cfg))
-    finally:
-        sys.stdout = _stdout
+    detect_result = detect.run(_build_namespace(cfg))
 
     if detect_result not in (0, 4):
         _print("  [red]Hardware detection failed. Continuing with defaults.[/red]")
@@ -635,10 +675,10 @@ def run_setup(cfg: SetupConfig) -> int:
     if cfg.harness and cfg.harness != "manual":
         _print(f"  [dim]-> Wiring harness ({cfg.harness})[/dim]")
         rc = wire_harness.run(_build_namespace(cfg, harness=cfg.harness, force=False))
-        if rc not in (0, 4):
-            _print(f"  [red]  wire-harness failed (exit {rc}).[/red]")
-            return rc
-        _print("  [green]  Done.[/green]")
+    if rc not in (0, 4):
+        _print(f"  [red]  wire-harness failed (exit {rc}).[/red]")
+        return rc
+    _print("  [green]  Done.[/green]")
 
     # -- Phase 4: Validate --
 
@@ -648,6 +688,10 @@ def run_setup(cfg: SetupConfig) -> int:
         _print("  [red]Validation failed.[/red]")
         return rc
     _print("  [green]All checks passed.[/green]")
+
+    # Embedding endpoint smoke test
+    _print("\n[dim]Testing embed endpoint...[/dim]")
+    _test_embed_endpoint(cfg)
 
     # -- Done --
 

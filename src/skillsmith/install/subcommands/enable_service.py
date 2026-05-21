@@ -536,8 +536,9 @@ def run(args: argparse.Namespace) -> int:
     st["service_unit_path"] = result["unit_path"]
     install_state.save_state(st)
 
-    json.dump(result, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    if not getattr(args, "quiet", False):
+        json.dump(result, sys.stdout, indent=2)
+        sys.stdout.write("\n")
     return 0
 
 

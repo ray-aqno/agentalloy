@@ -827,7 +827,8 @@ def _run(args: argparse.Namespace) -> int:
         mcp_fallback=args.mcp_fallback,
         scope=args.scope,
     )
-    print(json.dumps(result, indent=2))
+    if not getattr(args, "quiet", False):
+        print(json.dumps(result, indent=2))
     return 0
 
 

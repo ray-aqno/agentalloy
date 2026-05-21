@@ -232,6 +232,7 @@ def run(args: argparse.Namespace) -> int:
     st["port"] = result["port"]
     install_state.save_state(st)
 
-    json.dump(result, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    if not getattr(args, "quiet", False):
+        json.dump(result, sys.stdout, indent=2)
+        sys.stdout.write("\n")
     return 0

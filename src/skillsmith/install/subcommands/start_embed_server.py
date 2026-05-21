@@ -95,19 +95,20 @@ def _run(args: argparse.Namespace) -> int:
             "port": EMBED_PORT,
         }
         _save(result)
-        json.dump(result, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        if not getattr(args, "quiet", False):
+            json.dump(result, sys.stdout, indent=2)
+            sys.stdout.write("\n")
         return 0
 
     if runner == "llama-server":
-        return _start_llama_server(model, args.timeout)
+        return _start_llama_server(model, args.timeout, getattr(args, "quiet", False))
     if runner == "ollama":
-        return _start_ollama(model)
+        return _start_ollama(model, getattr(args, "quiet", False))
     # lm-studio and other GUI-based runners — can't automate
-    return _manual_instruction(runner, model)
+    return _manual_instruction(runner, model, getattr(args, "quiet", False))
 
 
-def _start_llama_server(model: str, timeout: float) -> int:
+def _start_llama_server(model: str, timeout: float, quiet: bool = False) -> int:
     model_path = install_state.user_data_dir() / "models" / model
     if not model_path.exists():
         print(
@@ -190,12 +191,13 @@ def _start_llama_server(model: str, timeout: float) -> int:
         "log_path": str(log_path),
     }
     _save(result)
-    json.dump(result, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    if not quiet:
+        json.dump(result, sys.stdout, indent=2)
+        sys.stdout.write("\n")
     return 0
 
 
-def _start_ollama(model: str) -> int:
+def _start_ollama(model: str, quiet: bool = False) -> int:
     """Ensure ollama serve is running. ollama is idempotent — safe to call twice."""
     import shutil
 
@@ -238,12 +240,13 @@ def _start_ollama(model: str) -> int:
         "port": EMBED_PORT,
     }
     _save(result)
-    json.dump(result, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    if not quiet:
+        json.dump(result, sys.stdout, indent=2)
+        sys.stdout.write("\n")
     return 0
 
 
-def _manual_instruction(runner: str, model: str) -> int:
+def _manual_instruction(runner: str, model: str, quiet: bool = False) -> int:
     instructions = {
         "lm-studio": (
             f"Start LM Studio and load model '{model}', then enable the local server "
@@ -262,8 +265,9 @@ def _manual_instruction(runner: str, model: str) -> int:
         "instruction": msg,
     }
     _save(result)
-    json.dump(result, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    if not quiet:
+        json.dump(result, sys.stdout, indent=2)
+        sys.stdout.write("\n")
     # Exit 0 — setup can continue; if the server isn't up, install-packs will
     # fail with a clear connection-refused error.
     return 0

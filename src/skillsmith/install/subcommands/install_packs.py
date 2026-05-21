@@ -92,8 +92,9 @@ def _run(args: argparse.Namespace) -> int:
             "action": "no_packs_available",
             "packs_root": str(packs_root),
         }
-        json.dump(result, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        if not getattr(args, "quiet", False):
+            json.dump(result, sys.stdout, indent=2)
+            sys.stdout.write("\n")
         return 1
 
     interactive = sys.stdin.isatty() and not args.non_interactive
@@ -106,8 +107,9 @@ def _run(args: argparse.Namespace) -> int:
             "unknown": sorted(unknown),
             "available": sorted(available),
         }
-        json.dump(result, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        if not getattr(args, "quiet", False):
+            json.dump(result, sys.stdout, indent=2)
+            sys.stdout.write("\n")
         print(
             f"install-packs: unknown pack(s): {sorted(unknown)}",
             file=sys.stderr,
@@ -162,8 +164,9 @@ def _run(args: argparse.Namespace) -> int:
         "duration_ms": duration_ms,
     }
     install_state.save_output_file(summary, "install-packs.json")
-    json.dump(summary, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    if not getattr(args, "quiet", False):
+        json.dump(summary, sys.stdout, indent=2)
+        sys.stdout.write("\n")
 
     if reembed_rc != 0:
         print(

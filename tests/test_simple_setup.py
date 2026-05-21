@@ -20,6 +20,8 @@ from skillsmith.install.subcommands.simple_setup import (
     _prompt_for_packs as _prompt_for_packs,  # type: ignore[attr-defined]
     _resolve_preset as _resolve_preset,  # type: ignore[attr-defined]
     _run_from_args as _run_from_args,  # type: ignore[attr-defined]
+    _build_namespace as _build_namespace,  # type: ignore[attr-defined]
+    _test_embed_endpoint as _test_embed_endpoint,  # type: ignore[attr-defined]
     SetupConfig,
 )
 # ruff: noqa: I001
@@ -727,3 +729,80 @@ class TestHarnessValidation:
 
         importlib.reload(mod)
         return mod.SetupConfig, mod.run_setup
+
+
+# ---------------------------------------------------------------------------
+# Quiet flag and embed endpoint tests
+# ---------------------------------------------------------------------------
+
+
+class TestQuietFlag:
+    """Tests for the quiet flag in _build_namespace."""
+
+    def test_build_namespace_includes_quiet(self):
+        cfg = SetupConfig()
+        ns = _build_namespace(cfg)
+        assert ns.quiet is True
+
+    def test_quiet_can_be_overridden(self):
+        cfg = SetupConfig()
+        ns = _build_namespace(cfg, quiet=False)
+        assert ns.quiet is False
+
+
+class TestEmbedEndpoint:
+    """Tests for _test_embed_endpoint function."""
+
+    def test_embed_endpoint_success(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        import json as _json
+
+        env_content = (
+            "RUNTIME_EMBED_BASE_URL=http://localhost:11436\nRUNTIME_EMBEDDING_MODEL=test-model\n"
+        )
+
+        class _MockResp:
+            def read(self):
+                return _json.dumps({"data": [{"embedding": [0.1] * 1024}]}).encode()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a: Any) -> None:
+                pass
+
+        cfg = SetupConfig()
+        with patch("skillsmith.install.state.env_path", return_value=tmp_path / ".env"):
+            (tmp_path / ".env").write_text(env_content)
+            with patch("urllib.request.urlopen", return_value=_MockResp()):
+                _test_embed_endpoint(cfg)
+
+        captured = capsys.readouterr()
+        assert "1024-dim vector" in captured.out or "OK" in captured.out
+
+    def test_embed_endpoint_missing_env(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        cfg = SetupConfig()
+        with patch("skillsmith.install.state.env_path", return_value=tmp_path / ".env"):
+            # .env doesn't exist
+            _test_embed_endpoint(cfg)
+
+        captured = capsys.readouterr()
+        assert "skip" in captured.out.lower() or "could not" in captured.out
+
+    def test_embed_endpoint_failure(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        import urllib.error as _urllib_error
+
+        env_content = (
+            "RUNTIME_EMBED_BASE_URL=http://localhost:11436\nRUNTIME_EMBEDDING_MODEL=test-model\n"
+        )
+
+        cfg = SetupConfig()
+        with patch("skillsmith.install.state.env_path", return_value=tmp_path / ".env"):
+            (tmp_path / ".env").write_text(env_content)
+            with patch(
+                "urllib.request.urlopen",
+                side_effect=_urllib_error.URLError("Connection refused"),
+            ):
+                _test_embed_endpoint(cfg)
+
+        captured = capsys.readouterr()
+        assert "fail" in captured.out.lower()

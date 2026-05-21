@@ -297,13 +297,15 @@ def run(args: argparse.Namespace) -> int:
             },
         )
         install_state.save_state(st)
-        json.dump(result, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        if not getattr(args, "quiet", False):
+            json.dump(result, sys.stdout, indent=2)
+            sys.stdout.write("\n")
         return 0
 
     # Failure cases — emit but don't record as completed
-    json.dump(result, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    if not getattr(args, "quiet", False):
+        json.dump(result, sys.stdout, indent=2)
+        sys.stdout.write("\n")
 
     remediation = result.get("remediation", "")
     error = result.get("error", "")

@@ -642,8 +642,9 @@ def run(args: argparse.Namespace) -> int:
         st["last_verify_passed_at"] = datetime.now(UTC).isoformat()
         install_state.save_state(st)
 
-    json.dump(result, sys.stdout, indent=2)
-    sys.stdout.write("\n")
+    if not getattr(args, "quiet", False):
+        json.dump(result, sys.stdout, indent=2)
+        sys.stdout.write("\n")
 
     if not result["all_checks_passed"]:
         failed = [c for c in result["checks"] if not c["passed"]]
