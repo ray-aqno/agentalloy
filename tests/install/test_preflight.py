@@ -116,6 +116,18 @@ class TestOllamaReachable:
         assert result["passed"] is False
         assert "ollama serve" in result["remediation"]
 
+    def test_uses_default_ollama_port(self) -> None:
+        """Ollama's default port is 11434, not 11436 (that's llama-server's)."""
+        with patch(
+            "skillsmith.install.subcommands.preflight.urlopen",
+            side_effect=URLError("connection refused"),
+        ):
+            result = _check_ollama_reachable()
+        assert "11434" in result["error"]
+        assert "11434" in result["remediation"]
+        assert "11436" not in result["error"]
+        assert "11436" not in result["remediation"]
+
 
 # ---------------------------------------------------------------------------
 # Phase orchestration

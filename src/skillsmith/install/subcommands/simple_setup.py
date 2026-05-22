@@ -427,14 +427,14 @@ def _derive_host_target(detect_data: dict[str, Any]) -> str:
 
     # NVIDIA takes priority over AMD
     for card in discrete:
-        if card.get("vendor", "").lower() == "nvidia":
+        if str(card.get("vendor") or "").lower() == "nvidia":
             return "nvidia"
     for card in discrete:
-        if card.get("vendor", "").lower() == "amd":
+        if str(card.get("vendor") or "").lower() == "amd":
             return "radeon"
     # Apple Silicon (integrated on Mac)
     for card in integrated:
-        if card.get("vendor", "").lower() == "apple":
+        if str(card.get("vendor") or "").lower() == "apple":
             return "apple-silicon"
     return "cpu"
 
