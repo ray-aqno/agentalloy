@@ -85,5 +85,12 @@ eval/runs/
 AGENTS.md
 CLAUDE.md
 docs/*.patch
-experiments/skill-tax/
+experiments/
 docs/superpowers/
+
+# Local agent/dev workspace configs
+.cgr/
+.cgr-hash-cache.json
+.cgr-stat-cache.json
+memory/
+.claude/settings.local.json
