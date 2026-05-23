@@ -136,7 +136,7 @@ def create_app(*, use_default_lifespan: bool = True) -> FastAPI:
     """
     app = FastAPI(
         title="agentalloy",
-        version="0.1.0",
+        version="1.0.0",
         description="Runtime skill composition service.",
         lifespan=lifespan if use_default_lifespan else None,
     )
