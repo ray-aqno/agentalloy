@@ -400,19 +400,35 @@ class VectorStore:
     def rebuild_fts_index(self) -> None:
         """Drop (if present) and recreate the FTS index on the prose column.
 
-        Note: DuckDB's FTS extension hits a DDL dependency race on alternating
-        drop+create cycles across separate processes ("subject 'stopwords' has
-        been deleted"). The CHECKPOINT helps within a single session but does
-        not fully eliminate the cross-process race. Callers should treat
-        rebuild failures as non-fatal — vector search continues to work and
-        the BM25 leg silently returns empty until the next successful rebuild.
+        DuckDB's FTS extension hits a DDL dependency race on alternating
+        drop+create cycles ("subject 'stopwords' has been deleted"). The race
+        is transient — a CHECKPOINT + small sleep before a second create
+        attempt clears it nearly every time. We retry once on that specific
+        error class and surface anything else immediately.
+
+        Callers should still treat a final failure as non-fatal: vector search
+        keeps working; the BM25 leg silently returns empty until the next
+        successful rebuild.
         """
         import contextlib
+        import time
 
         with contextlib.suppress(Exception):
             self._conn.execute("PRAGMA drop_fts_index('fragment_embeddings');")
         self._conn.execute("CHECKPOINT;")
-        self._conn.execute(_FTS_CREATE_SQL)
+        try:
+            self._conn.execute(_FTS_CREATE_SQL)
+        except Exception as exc:  # noqa: BLE001 — narrow check below
+            # Only retry the known transient catalog-dependency race. Surface
+            # everything else (e.g. extension not loaded, disk full) on the
+            # first attempt — retrying those would only delay the real signal.
+            msg = str(exc)
+            if "stopwords" not in msg or "has been deleted" not in msg:
+                raise
+            time.sleep(0.25)
+            self._conn.execute("CHECKPOINT;")
+            # Second attempt. Any exception here propagates — caller handles it.
+            self._conn.execute(_FTS_CREATE_SQL)
 
     def count_embeddings(self) -> int:
         row = self._conn.execute("SELECT COUNT(*) FROM fragment_embeddings").fetchone()

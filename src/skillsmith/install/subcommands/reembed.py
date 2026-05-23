@@ -50,6 +50,14 @@ def add_parser(
         action="store_true",
         help="Report what would be embedded without calling LM Studio or writing DuckDB",
     )
+    p.add_argument(
+        "--rebuild-fts",
+        action="store_true",
+        help=(
+            "Force rebuild of the BM25 FTS index even when nothing needs "
+            "re-embedding. Use to recover from an install-time FTS warning."
+        ),
+    )
     p.set_defaults(func=_run)
 
 
@@ -67,4 +75,6 @@ def _run(args: argparse.Namespace) -> int:
         forwarded += ["--model", args.model]
     if args.dry_run:
         forwarded.append("--dry-run")
+    if args.rebuild_fts:
+        forwarded.append("--rebuild-fts")
     return reembed_main(forwarded)

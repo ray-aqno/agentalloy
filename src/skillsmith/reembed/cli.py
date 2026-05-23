@@ -291,6 +291,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Report what would be embedded without calling LM Studio or writing DuckDB",
     )
+    parser.add_argument(
+        "--rebuild-fts",
+        action="store_true",
+        help=(
+            "Force rebuild of the BM25 FTS index after the embed pass, "
+            "even when no fragments needed embedding. Use to recover from a "
+            "previous install where the FTS rebuild warning fired."
+        ),
+    )
     args = parser.parse_args(argv)
 
     settings = get_settings()
@@ -333,35 +342,48 @@ def main(argv: list[str] | None = None) -> int:
                 logger.info("  ... and %d more", len(fragments) - 20)
             return EXIT_OK
 
-        if not fragments:
+        if not fragments and not args.rebuild_fts:
             logger.info("nothing to do — all fragments already embedded")
             return EXIT_OK
 
-        with OpenAICompatClient(settings.runtime_embed_base_url) as client:
+        stats: ReembedStats
+        if fragments:
+            with OpenAICompatClient(settings.runtime_embed_base_url) as client:
 
-            def _embed(text: str) -> list[float]:
-                vectors = client.embed(model=model_id, texts=[text])
-                return vectors[0]
+                def _embed(text: str) -> list[float]:
+                    vectors = client.embed(model=model_id, texts=[text])
+                    return vectors[0]
 
-            stats = reembed_fragments(
-                fragments,
-                embed_fn=_embed,
-                vector_store=vs,
-                embedding_model=model_id,
-            )
+                stats = reembed_fragments(
+                    fragments,
+                    embed_fn=_embed,
+                    vector_store=vs,
+                    embedding_model=model_id,
+                )
+            stats.log_summary()
+        else:
+            # --rebuild-fts with no fragments to embed
+            logger.info("no fragments to embed; running --rebuild-fts only")
+            stats = ReembedStats()
 
-        stats.log_summary()
-        if stats.embedded > 0:
-            logger.info("rebuilding BM25 FTS index after embedding %d fragment(s)", stats.embedded)
+        if stats.embedded > 0 or args.rebuild_fts:
+            if stats.embedded > 0:
+                logger.info(
+                    "rebuilding BM25 FTS index after embedding %d fragment(s)", stats.embedded
+                )
+            else:
+                logger.info("rebuilding BM25 FTS index (--rebuild-fts requested)")
             try:
                 vs.rebuild_fts_index()
             except Exception as exc:  # noqa: BLE001 — FTS rebuild is best-effort
-                # DuckDB FTS extension occasionally hits a DDL dependency race
-                # on alternating drop/create cycles ("subject 'stopwords' has
-                # been deleted"). Vector search continues to work; BM25 leg
-                # silently degrades to empty results until the next successful
-                # rebuild. Log and continue rather than crashing the CLI.
-                logger.warning("FTS index rebuild failed (BM25 leg degraded): %s", exc)
+                # Even with the in-method retry, the catalog race can persist if a
+                # second process holds the DB open. Surface remediation context.
+                logger.warning(
+                    "FTS index rebuild failed (BM25 leg degraded): %s. "
+                    "If this is the DuckDB stopwords race, stop any process "
+                    "holding the DB open and re-run `skillsmith reembed --rebuild-fts`.",
+                    exc,
+                )
         return EXIT_OK if stats.failed == 0 else EXIT_LLM
 
 
