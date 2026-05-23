@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from skillsmith.applicability import filter_applicable_system_skills
-from skillsmith.reads.models import ActiveSkill
+from agentalloy.applicability import filter_applicable_system_skills
+from agentalloy.reads.models import ActiveSkill
 
 
 def _skill(

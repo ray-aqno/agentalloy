@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from skillsmith.install.subcommands.recommend_models import (
+from agentalloy.install.subcommands.recommend_models import (
     PRESET_RESOLUTION_TABLE,
     _classify_hardware,  # pyright: ignore[reportPrivateUsage]
     _resolve_preset,  # pyright: ignore[reportPrivateUsage]

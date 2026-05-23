@@ -11,14 +11,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from skillsmith.api.compose_models import ComposeRequest
-from skillsmith.lm_client import (
+from agentalloy.api.compose_models import ComposeRequest
+from agentalloy.lm_client import (
     LMModelNotLoaded,
     LMTimeout,
     LMUnavailable,
     OpenAICompatClient,
 )
-from skillsmith.orchestration.compose import (
+from agentalloy.orchestration.compose import (
     ComposeOrchestrator,
     RetrievalStageError,
 )
@@ -30,7 +30,7 @@ def req() -> ComposeRequest:
 
 
 def _orchestrator() -> ComposeOrchestrator:
-    from skillsmith.telemetry.writer import NullTelemetryWriter
+    from agentalloy.telemetry.writer import NullTelemetryWriter
 
     return ComposeOrchestrator(
         MagicMock(),
@@ -46,7 +46,7 @@ async def test_retrieve_embedding_model_unavailable(req: ComposeRequest) -> None
     orch = _orchestrator()
     with (
         patch(
-            "skillsmith.orchestration.compose.retrieve_domain_candidates",
+            "agentalloy.orchestration.compose.retrieve_domain_candidates",
             side_effect=LMModelNotLoaded("fake-embed", []),
         ),
         pytest.raises(RetrievalStageError) as ei,
@@ -60,7 +60,7 @@ async def test_retrieve_embedding_failed_on_generic_lm_error(req: ComposeRequest
     orch = _orchestrator()
     with (
         patch(
-            "skillsmith.orchestration.compose.retrieve_domain_candidates",
+            "agentalloy.orchestration.compose.retrieve_domain_candidates",
             side_effect=LMUnavailable("connection refused"),
         ),
         pytest.raises(RetrievalStageError) as ei,
@@ -74,7 +74,7 @@ async def test_retrieve_timeout_maps_to_embedding_failed(req: ComposeRequest) ->
     orch = _orchestrator()
     with (
         patch(
-            "skillsmith.orchestration.compose.retrieve_domain_candidates",
+            "agentalloy.orchestration.compose.retrieve_domain_candidates",
             side_effect=LMTimeout("read timed out"),
         ),
         pytest.raises(RetrievalStageError) as ei,
@@ -88,7 +88,7 @@ async def test_retrieve_unexpected_error_maps_to_store_unavailable(req: ComposeR
     orch = _orchestrator()
     with (
         patch(
-            "skillsmith.orchestration.compose.retrieve_domain_candidates",
+            "agentalloy.orchestration.compose.retrieve_domain_candidates",
             side_effect=RuntimeError("ladybug crashed"),
         ),
         pytest.raises(RetrievalStageError) as ei,

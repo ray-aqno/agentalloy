@@ -1,17 +1,17 @@
-# Compose stack for Skillsmith (cpu / apple-silicon / nvidia presets).
+# Compose stack for AgentAlloy (cpu / apple-silicon / nvidia presets).
 # Works with both `podman compose up` (project preference) and `docker compose up`.
 #
 # For AMD Radeon dGPU or iGPU (LM Studio Vulkan backend), use compose.radeon.yaml instead.
 #
 # What this gives you:
-#   - skillsmith service on http://localhost:47950 with the pre-seeded corpus
+#   - agentalloy service on http://localhost:47950 with the pre-seeded corpus
 #   - Ollama running qwen3-embedding:0.6b on http://localhost:11434
 #   - The model is auto-pulled on first start by the `ollama-pull` init service
 #   - Persistent volumes for the corpus (./data on host) and Ollama models
 #
 # Usage:
 #   podman compose up -d
-#   podman compose logs -f skillsmith
+#   podman compose logs -f agentalloy
 #   curl http://localhost:47950/health
 #
 # To run on Docker:  docker compose up -d  (drop-in compatible)
@@ -19,7 +19,7 @@
 services:
   ollama:
     image: docker.io/ollama/ollama:latest
-    container_name: skillsmith-ollama
+    container_name: agentalloy-ollama
     volumes:
       - ollama-models:/root/.ollama
     ports:
@@ -36,7 +36,7 @@ services:
     # One-shot init service: pulls the embedding model then exits.
     # Skipped on subsequent runs because the model is cached in the ollama-models volume.
     image: docker.io/ollama/ollama:latest
-    container_name: skillsmith-ollama-pull
+    container_name: agentalloy-ollama-pull
     depends_on:
       ollama:
         condition: service_healthy
@@ -45,12 +45,12 @@ services:
     entrypoint: ["sh", "-c", "ollama pull qwen3-embedding:0.6b"]
     restart: "no"
 
-  skillsmith:
+  agentalloy:
     build:
       context: .
       dockerfile: Containerfile
-    image: skillsmith:local
-    container_name: skillsmith
+    image: agentalloy:local
+    container_name: agentalloy
     depends_on:
       ollama-pull:
         condition: service_completed_successfully
@@ -74,4 +74,4 @@ services:
 
 volumes:
   ollama-models:
-    name: skillsmith-ollama-models
+    name: agentalloy-ollama-models

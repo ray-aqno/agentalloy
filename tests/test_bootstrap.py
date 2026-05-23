@@ -11,8 +11,8 @@ from unittest.mock import patch
 
 import pytest
 
-from skillsmith.bootstrap import EXIT_OK, EXIT_USAGE, EXIT_VALIDATION, main
-from skillsmith.storage.ladybug import LadybugStore
+from agentalloy.bootstrap import EXIT_OK, EXIT_USAGE, EXIT_VALIDATION, main
+from agentalloy.storage.ladybug import LadybugStore
 
 _SAMPLE_MD = textwrap.dedent("""\
     # Sample Governance Rule
@@ -70,7 +70,7 @@ def test_insert_new_skill(tmp_path: Path, md_file: Path) -> None:
     store.migrate()
     store.close()
 
-    with patch("skillsmith.bootstrap.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.bootstrap.get_settings", return_value=_make_settings(db_path)):
         code = main([str(md_file), "--yes"])
 
     assert code == EXIT_OK
@@ -102,7 +102,7 @@ def test_insert_new_skill(tmp_path: Path, md_file: Path) -> None:
 def test_init_schema_flag(tmp_path: Path, md_file: Path) -> None:
     db_path = str(tmp_path / "ladybug_new")
     # DB doesn't exist yet — --init-schema must create schema first
-    with patch("skillsmith.bootstrap.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.bootstrap.get_settings", return_value=_make_settings(db_path)):
         code = main([str(md_file), "--init-schema", "--yes"])
 
     assert code == EXIT_OK
@@ -121,7 +121,7 @@ def test_duplicate_without_force_fails(tmp_path: Path, md_file: Path) -> None:
     store.migrate()
     store.close()
 
-    with patch("skillsmith.bootstrap.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.bootstrap.get_settings", return_value=_make_settings(db_path)):
         main([str(md_file), "--yes"])
         code = main([str(md_file), "--yes"])
 
@@ -135,7 +135,7 @@ def test_force_overwrites(tmp_path: Path, md_file: Path) -> None:
     store.migrate()
     store.close()
 
-    with patch("skillsmith.bootstrap.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.bootstrap.get_settings", return_value=_make_settings(db_path)):
         main([str(md_file), "--yes"])
         code = main([str(md_file), "--force", "--yes"])
 
@@ -178,7 +178,7 @@ def test_non_sys_prefix_returns_validation_error(tmp_path: Path) -> None:
     """)
     )
 
-    with patch("skillsmith.bootstrap.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.bootstrap.get_settings", return_value=_make_settings(db_path)):
         code = main([str(bad_id), "--yes"])
 
     assert code == EXIT_VALIDATION
@@ -194,7 +194,7 @@ def test_phase_scoped_skill_inserted(tmp_path: Path) -> None:
     md = tmp_path / "phase.md"
     md.write_text(_PHASE_MD)
 
-    with patch("skillsmith.bootstrap.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.bootstrap.get_settings", return_value=_make_settings(db_path)):
         code = main([str(md), "--yes"])
 
     assert code == EXIT_OK
@@ -229,7 +229,7 @@ def test_always_apply_with_phase_scope_is_validation_error(tmp_path: Path) -> No
     """)
     )
 
-    with patch("skillsmith.bootstrap.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.bootstrap.get_settings", return_value=_make_settings(db_path)):
         code = main([str(bad), "--yes"])
 
     assert code == EXIT_VALIDATION
@@ -267,7 +267,7 @@ def test_canonical_name_collision_without_force_fails(tmp_path: Path) -> None:
     """)
     )
 
-    with patch("skillsmith.bootstrap.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.bootstrap.get_settings", return_value=_make_settings(db_path)):
         assert main([str(skill_a), "--yes"]) == EXIT_OK
         code = main([str(skill_b), "--yes"])
 
@@ -294,7 +294,7 @@ def test_invalid_category_returns_validation_error(tmp_path: Path) -> None:
     """)
     )
 
-    with patch("skillsmith.bootstrap.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.bootstrap.get_settings", return_value=_make_settings(db_path)):
         code = main([str(bad), "--yes"])
 
     assert code == EXIT_VALIDATION
@@ -318,7 +318,7 @@ def test_empty_prose_is_validation_error(tmp_path: Path) -> None:
     """)
     )
 
-    with patch("skillsmith.bootstrap.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.bootstrap.get_settings", return_value=_make_settings(db_path)):
         code = main([str(empty), "--yes"])
 
     assert code == EXIT_VALIDATION

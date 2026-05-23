@@ -15,8 +15,8 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from skillsmith.install.subcommands import install_pack as ip
-from skillsmith.install.subcommands import install_packs as ips
+from agentalloy.install.subcommands import install_pack as ip
+from agentalloy.install.subcommands import install_packs as ips
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -260,7 +260,7 @@ class TestInstallLocalPack:
         """Same dim, different model → warn but don't block."""
         from unittest.mock import MagicMock
 
-        from skillsmith.install.subcommands import install_pack as _ip
+        from agentalloy.install.subcommands import install_pack as _ip
 
         manifest = {"embedding_dim": 1024, "embed_model": "pack-model"}
         fake_vs = MagicMock()
@@ -270,9 +270,9 @@ class TestInstallLocalPack:
         fake_settings.runtime_embedding_model = "corpus-model"
 
         with (
-            patch("skillsmith.config.get_settings", return_value=fake_settings),
+            patch("agentalloy.config.get_settings", return_value=fake_settings),
             patch(
-                "skillsmith.storage.vector_store.open_or_create",
+                "agentalloy.storage.vector_store.open_or_create",
                 return_value=MagicMock(__enter__=lambda s: fake_vs, __exit__=lambda *a: None),
             ),
         ):

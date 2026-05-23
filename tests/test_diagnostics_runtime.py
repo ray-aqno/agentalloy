@@ -9,16 +9,16 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from skillsmith.api.diagnostics_router import (
+from agentalloy.api.diagnostics_router import (
     DiagnosticsChecker,
     SkillVersionEntry,
     compute_consistency,
 )
-from skillsmith.api.health_router import DependencyStatus, HealthChecker, HealthResponse
-from skillsmith.fixtures.loader import load_fixtures
-from skillsmith.reads.models import ActiveSkill
-from skillsmith.runtime_state import RuntimeCache, VersionDetail, load_runtime_cache
-from skillsmith.storage.ladybug import LadybugStore
+from agentalloy.api.health_router import DependencyStatus, HealthChecker, HealthResponse
+from agentalloy.fixtures.loader import load_fixtures
+from agentalloy.reads.models import ActiveSkill
+from agentalloy.runtime_state import RuntimeCache, VersionDetail, load_runtime_cache
+from agentalloy.storage.ladybug import LadybugStore
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -8,9 +8,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from skillsmith.api.skill_router import get_skill_store
-from skillsmith.fixtures.loader import load_fixtures
-from skillsmith.storage.ladybug import LadybugStore
+from agentalloy.api.skill_router import get_skill_store
+from agentalloy.fixtures.loader import load_fixtures
+from agentalloy.storage.ladybug import LadybugStore
 
 
 @pytest.fixture

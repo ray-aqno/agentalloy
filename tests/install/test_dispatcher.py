@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from skillsmith.install.__main__ import EXIT_USER, build_parser, main
+from agentalloy.install.__main__ import EXIT_USER, build_parser, main
 
 
 class TestDispatcher:

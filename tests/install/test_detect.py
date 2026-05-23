@@ -12,8 +12,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from skillsmith.install.state import state_path
-from skillsmith.install.subcommands.detect import (
+from agentalloy.install.state import state_path
+from agentalloy.install.subcommands.detect import (
     _detect_cpu_linux,  # pyright: ignore[reportPrivateUsage]
     _detect_cuda,  # pyright: ignore[reportPrivateUsage]
     _detect_gpu_linux,  # pyright: ignore[reportPrivateUsage]
@@ -143,7 +143,7 @@ class TestDetectCLI:
 
         args = argparse.Namespace()
         with patch(
-            "skillsmith.install.subcommands.detect.install_state._repo_root", return_value=repo_root
+            "agentalloy.install.subcommands.detect.install_state._repo_root", return_value=repo_root
         ):
             rc = run(args)
         assert rc == 0
@@ -153,7 +153,7 @@ class TestDetectCLI:
 
         args = argparse.Namespace()
         with patch(
-            "skillsmith.install.subcommands.detect.install_state._repo_root", return_value=repo_root
+            "agentalloy.install.subcommands.detect.install_state._repo_root", return_value=repo_root
         ):
             run(args)
         fp = state_path(repo_root)
@@ -164,11 +164,11 @@ class TestDetectCLI:
     def test_run_writes_output_file(self, repo_root: Path) -> None:
         import argparse
 
-        from skillsmith.install import state as install_state
+        from agentalloy.install import state as install_state
 
         args = argparse.Namespace()
         with patch(
-            "skillsmith.install.subcommands.detect.install_state._repo_root", return_value=repo_root
+            "agentalloy.install.subcommands.detect.install_state._repo_root", return_value=repo_root
         ):
             run(args)
         # Output now lives under XDG_DATA_HOME (the conftest redirects it).
@@ -184,7 +184,7 @@ class TestDetectCLI:
 
         args = argparse.Namespace()
         with patch(
-            "skillsmith.install.subcommands.detect.install_state._repo_root", return_value=repo_root
+            "agentalloy.install.subcommands.detect.install_state._repo_root", return_value=repo_root
         ):
             run(args)
         captured = capsys.readouterr()
@@ -226,9 +226,9 @@ CPU max MHz:             5100.0000"""
 
     MEMINFO = "MemTotal:       65536000 kB\nMemFree:        32000000 kB\n"
 
-    @patch("skillsmith.install.subcommands.detect.platform")
-    @patch("skillsmith.install.subcommands.detect._run")
-    @patch("skillsmith.install.subcommands.detect._read_file")
+    @patch("agentalloy.install.subcommands.detect.platform")
+    @patch("agentalloy.install.subcommands.detect._run")
+    @patch("agentalloy.install.subcommands.detect._read_file")
     def test_linux_cpu_detection(
         self, mock_read: MagicMock, mock_run: MagicMock, mock_platform: MagicMock
     ) -> None:
@@ -250,16 +250,16 @@ CPU max MHz:             5100.0000"""
         assert cpu["cores_logical"] == 24
         assert cpu["max_freq_mhz"] == 5100
 
-    @patch("skillsmith.install.subcommands.detect._read_file")
+    @patch("agentalloy.install.subcommands.detect._read_file")
     def test_linux_memory_from_meminfo(self, mock_read: MagicMock) -> None:
         mock_read.return_value = self.MEMINFO
 
-        with patch("skillsmith.install.subcommands.detect.platform") as mock_platform:
+        with patch("agentalloy.install.subcommands.detect.platform") as mock_platform:
             mock_platform.system.return_value = "Linux"
             mem = _detect_memory_gb()  # pyright: ignore[reportPrivateUsage]
         assert mem == 62  # 65536000 kB ≈ 62 GB
 
-    @patch("skillsmith.install.subcommands.detect._run")
+    @patch("agentalloy.install.subcommands.detect._run")
     def test_nvidia_gpu_detection(self, mock_run: MagicMock) -> None:
         def side_effect(cmd: list[str], **kw: Any) -> str | None:
             if cmd == ["nvidia-smi", "-L"]:
@@ -278,33 +278,33 @@ CPU max MHz:             5100.0000"""
         assert discrete[0]["model"] == "NVIDIA GeForce RTX 4090"
         assert discrete[0]["vram_gb"] == 24
 
-    @patch("skillsmith.install.subcommands.detect._run")
+    @patch("agentalloy.install.subcommands.detect._run")
     def test_missing_nvidia_smi_returns_null_cuda(self, mock_run: MagicMock) -> None:
         mock_run.return_value = None
 
         assert _detect_cuda() is None  # pyright: ignore[reportPrivateUsage]
 
-    @patch("skillsmith.install.subcommands.detect._run")
+    @patch("agentalloy.install.subcommands.detect._run")
     def test_missing_rocm_smi_returns_false(self, mock_run: MagicMock) -> None:
         mock_run.return_value = None
 
         assert _detect_rocm() is False  # pyright: ignore[reportPrivateUsage]
 
-    @patch("skillsmith.install.subcommands.detect._read_file")
+    @patch("agentalloy.install.subcommands.detect._read_file")
     def test_os_release_parsing(self, mock_read: MagicMock) -> None:
         mock_read.return_value = 'ID=ubuntu\nVERSION_ID="24.04"\n'
 
-        with patch("skillsmith.install.subcommands.detect.platform") as mock_platform:
+        with patch("agentalloy.install.subcommands.detect.platform") as mock_platform:
             mock_platform.system.return_value = "Linux"
             mock_platform.machine.return_value = "x86_64"
-            with patch("skillsmith.install.subcommands.detect._run") as mock_run:
+            with patch("agentalloy.install.subcommands.detect._run") as mock_run:
                 mock_run.return_value = "6.17.0-1017-oem"
                 os_info = _detect_os()  # pyright: ignore[reportPrivateUsage]
         assert os_info["kind"] == "linux"
         assert os_info["distro"] == "ubuntu"
         assert os_info["version"] == "24.04"
 
-    @patch("skillsmith.install.subcommands.detect.Path")
+    @patch("agentalloy.install.subcommands.detect.Path")
     def test_npu_from_sys_accel(self, mock_path_cls: MagicMock) -> None:
         """NPU detected via /sys/class/accel."""
 
@@ -315,8 +315,8 @@ CPU max MHz:             5100.0000"""
         mock_accel.iterdir.return_value = [mock_dev]
 
         with (
-            patch("skillsmith.install.subcommands.detect._read_file", return_value="AMD XDNA NPU"),
-            patch("skillsmith.install.subcommands.detect.platform") as mock_platform,
+            patch("agentalloy.install.subcommands.detect._read_file", return_value="AMD XDNA NPU"),
+            patch("agentalloy.install.subcommands.detect.platform") as mock_platform,
         ):
             mock_platform.system.return_value = "Linux"
             npu = _detect_npu()  # pyright: ignore[reportPrivateUsage]

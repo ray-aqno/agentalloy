@@ -26,12 +26,12 @@ from typing import Any
 # Add src to path so we can import the classifier module
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from skillsmith.config import get_settings
-from skillsmith.lm_client import OpenAICompatClient
-from skillsmith.signals.classifier import (
+from agentalloy.config import get_settings
+from agentalloy.lm_client import OpenAICompatClient
+from agentalloy.signals.classifier import (
     _INTENT_REFERENCES,  # pyright: ignore[reportPrivateUsage]
 )
-from skillsmith.signals.predicates import PredicateContext
+from agentalloy.signals.predicates import PredicateContext
 
 
 def load_fixture(path: Path) -> list[dict[str, Any]]:
@@ -87,7 +87,7 @@ def compute_metrics(
     threshold: float,
 ) -> dict[str, Any]:
     """Compute precision, recall, F1, false_met_rate for a given threshold."""
-    from skillsmith.signals.classifier import (  # noqa: PLC2701
+    from agentalloy.signals.classifier import (  # noqa: PLC2701
         _MAX_INPUT_CHARS,  # pyright: ignore[reportPrivateUsage]
         _cosine,  # pyright: ignore[reportPrivateUsage]
     )

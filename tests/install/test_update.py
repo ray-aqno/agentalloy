@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 import pytest
 
-from skillsmith.install import state as install_state
-from skillsmith.install.subcommands import update as upd
+from agentalloy.install import state as install_state
+from agentalloy.install.subcommands import update as upd
 
 
 @pytest.fixture()
@@ -40,10 +40,10 @@ class TestCorpusPresence:
 
 class TestSchemaDrift:
     def _setup(self, root: Path) -> None:
-        # Corpus is now user-scoped (XDG_DATA_HOME/skillsmith/corpus/).
+        # Corpus is now user-scoped (XDG_DATA_HOME/agentalloy/corpus/).
         # The conftest fixture redirects XDG dirs into tmp; this helper
         # populates fake files at the user-scoped corpus location.
-        from skillsmith.install import state as install_state
+        from agentalloy.install import state as install_state
 
         user_corpus = install_state.corpus_dir()
         user_corpus.mkdir(parents=True, exist_ok=True)

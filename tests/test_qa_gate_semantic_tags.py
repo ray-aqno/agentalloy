@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from skillsmith.authoring.prompt_loader import load_prompt
-from skillsmith.authoring.qa_gate import CriticVerdict
-from skillsmith.lint_tags_semantic import parse_semantic_verdicts
+from agentalloy.authoring.prompt_loader import load_prompt
+from agentalloy.authoring.qa_gate import CriticVerdict
+from agentalloy.lint_tags_semantic import parse_semantic_verdicts
 
 
 class TestCriticVerdictTagVerdicts:

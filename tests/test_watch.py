@@ -8,9 +8,9 @@ from unittest.mock import patch
 
 import pytest
 
-from skillsmith.watch.regenerators import (
+from agentalloy.watch.regenerators import (
     REGENERATORS,
-    SKILLSMITH_MARKER,
+    AGENTALLOY_MARKER,
     regenerate_aider,
     regenerate_cline,
     regenerate_copilot,
@@ -28,7 +28,7 @@ from skillsmith.watch.regenerators import (
 def test_update_block_appends_on_first_call(tmp_path: Path):
     f = tmp_path / "test.md"
     f.write_text("# My file\n\nExisting content.\n")
-    update_block(f, SKILLSMITH_MARKER, "new body")
+    update_block(f, AGENTALLOY_MARKER, "new body")
     content = f.read_text()
     assert "new body" in content
     assert "Existing content." in content
@@ -36,8 +36,8 @@ def test_update_block_appends_on_first_call(tmp_path: Path):
 
 def test_update_block_replaces_on_second_call(tmp_path: Path):
     f = tmp_path / "test.md"
-    update_block(f, SKILLSMITH_MARKER, "first body")
-    update_block(f, SKILLSMITH_MARKER, "second body")
+    update_block(f, AGENTALLOY_MARKER, "first body")
+    update_block(f, AGENTALLOY_MARKER, "second body")
     content = f.read_text()
     assert "second body" in content
     assert "first body" not in content
@@ -46,16 +46,16 @@ def test_update_block_replaces_on_second_call(tmp_path: Path):
 def test_update_block_preserves_user_content(tmp_path: Path):
     f = tmp_path / "test.md"
     f.write_text("# Header\n\nUser content here.\n\n## Footer\n\nMore user content.\n")
-    update_block(f, SKILLSMITH_MARKER, "skillsmith block")
+    update_block(f, AGENTALLOY_MARKER, "agentalloy block")
     content = f.read_text()
     assert "User content here." in content
     assert "More user content." in content
-    assert "skillsmith block" in content
+    assert "agentalloy block" in content
 
 
 def test_update_block_creates_parent_dirs(tmp_path: Path):
     f = tmp_path / "deep" / "nested" / "file.md"
-    update_block(f, SKILLSMITH_MARKER, "hello")
+    update_block(f, AGENTALLOY_MARKER, "hello")
     assert f.exists()
 
 
@@ -66,7 +66,7 @@ def test_update_block_creates_parent_dirs(tmp_path: Path):
 
 def test_regenerate_cursor_writes_valid_mdc(tmp_path: Path):
     regenerate_cursor("Some workflow prose", tmp_path)
-    mdc = tmp_path / ".cursor" / "rules" / "skillsmith-context.mdc"
+    mdc = tmp_path / ".cursor" / "rules" / "agentalloy-context.mdc"
     assert mdc.exists()
     content = mdc.read_text()
     assert "alwaysApply: true" in content
@@ -104,7 +104,7 @@ def test_regenerate_gemini(tmp_path: Path):
 
 def test_regenerate_aider(tmp_path: Path):
     regenerate_aider("aider prose", tmp_path)
-    f = tmp_path / ".aider" / "skillsmith-context.txt"
+    f = tmp_path / ".aider" / "agentalloy-context.txt"
     assert f.exists()
     assert "aider prose" in f.read_text()
 
@@ -126,10 +126,10 @@ def test_all_regenerators_registered():
 
 
 def test_phase_change_triggers_regenerate(tmp_path: Path):
-    """Writing .skillsmith/phase triggers the regenerator."""
-    from skillsmith.watch.watcher import (
+    """Writing .agentalloy/phase triggers the regenerator."""
+    from agentalloy.watch.watcher import (
         WatchConfig,
-        _SkillsmithHandler,  # pyright: ignore[reportPrivateUsage]
+        _AgentAlloyHandler,  # pyright: ignore[reportPrivateUsage]
     )
 
     regen_calls: list[tuple[str, Path]] = []
@@ -143,14 +143,14 @@ def test_phase_change_triggers_regenerate(tmp_path: Path):
         harness="cursor",
         debounce_ms=50,
     )
-    handler = _SkillsmithHandler(config, mock_regen)
+    handler = _AgentAlloyHandler(config, mock_regen)
 
-    skillsmith_dir = tmp_path / ".skillsmith"
-    skillsmith_dir.mkdir(parents=True)
-    phase_file = skillsmith_dir / "phase"
+    agentalloy_dir = tmp_path / ".agentalloy"
+    agentalloy_dir.mkdir(parents=True)
+    phase_file = agentalloy_dir / "phase"
     phase_file.write_text("phase: build\n")
 
-    with patch("skillsmith.install.subcommands.signal._load_workflow_skill_for_phase") as mock_load:
+    with patch("agentalloy.install.subcommands.signal._load_workflow_skill_for_phase") as mock_load:
         mock_load.return_value = {"skill_id": "sdd-build", "raw_prose": "BUILD PROSE"}
 
         # Simulate the file event
@@ -163,9 +163,9 @@ def test_phase_change_triggers_regenerate(tmp_path: Path):
 
 def test_contract_write_triggers_compose(tmp_path: Path):
     """Writing a contract triggers compose and regeneration."""
-    from skillsmith.watch.watcher import (
+    from agentalloy.watch.watcher import (
         WatchConfig,
-        _SkillsmithHandler,  # pyright: ignore[reportPrivateUsage]
+        _AgentAlloyHandler,  # pyright: ignore[reportPrivateUsage]
     )
 
     regen_calls: list[str] = []
@@ -179,13 +179,13 @@ def test_contract_write_triggers_compose(tmp_path: Path):
         harness="cursor",
         debounce_ms=50,
     )
-    handler = _SkillsmithHandler(config, mock_regen)
+    handler = _AgentAlloyHandler(config, mock_regen)
 
-    contract_path = tmp_path / ".skillsmith" / "contracts" / "build" / "task.md"
+    contract_path = tmp_path / ".agentalloy" / "contracts" / "build" / "task.md"
     contract_path.parent.mkdir(parents=True)
     contract_path.write_text("---\nphase: build\ntask_slug: t\ndomain_tags: [A]\n---\n\nbody\n")
 
-    with patch("skillsmith.watch.watcher._compose_from_contract", return_value="COMPOSED CONTENT"):
+    with patch("agentalloy.watch.watcher._compose_from_contract", return_value="COMPOSED CONTENT"):
         handler._schedule("created", str(contract_path))  # pyright: ignore[reportPrivateUsage]
         time.sleep(0.2)
 
@@ -195,9 +195,9 @@ def test_contract_write_triggers_compose(tmp_path: Path):
 
 def test_debounce_coalesces_burst_writes(tmp_path: Path):
     """10 rapid writes → 1 regeneration call."""
-    from skillsmith.watch.watcher import (
+    from agentalloy.watch.watcher import (
         WatchConfig,
-        _SkillsmithHandler,  # pyright: ignore[reportPrivateUsage]
+        _AgentAlloyHandler,  # pyright: ignore[reportPrivateUsage]
     )
 
     regen_calls: list[int] = []
@@ -211,13 +211,13 @@ def test_debounce_coalesces_burst_writes(tmp_path: Path):
         harness="cursor",
         debounce_ms=200,
     )
-    handler = _SkillsmithHandler(config, mock_regen)
+    handler = _AgentAlloyHandler(config, mock_regen)
 
-    phase_file = tmp_path / ".skillsmith" / "phase"
-    (tmp_path / ".skillsmith").mkdir()
+    phase_file = tmp_path / ".agentalloy" / "phase"
+    (tmp_path / ".agentalloy").mkdir()
     phase_file.write_text("phase: build\n")
 
-    with patch("skillsmith.watch.watcher._load_workflow_skill_prose", return_value="prose"):
+    with patch("agentalloy.watch.watcher._load_workflow_skill_prose", return_value="prose"):
         for _ in range(10):
             handler._schedule("modified", str(phase_file))  # pyright: ignore[reportPrivateUsage]
 
@@ -237,9 +237,9 @@ def test_watch_status_reports_not_running(tmp_path: Path, monkeypatch: pytest.Mo
     import json
     import sys
 
-    from skillsmith.install.subcommands.watch import _status  # pyright: ignore[reportPrivateUsage]
+    from agentalloy.install.subcommands.watch import _status  # pyright: ignore[reportPrivateUsage]
 
-    monkeypatch.setattr("skillsmith.install.subcommands.watch._watch_dir", lambda: tmp_path)
+    monkeypatch.setattr("agentalloy.install.subcommands.watch._watch_dir", lambda: tmp_path)
 
     captured = io.StringIO()
     args = argparse.Namespace(profile="default")

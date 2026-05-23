@@ -1,7 +1,7 @@
-# Skillsmith container stack for AMD Radeon dGPU or iGPU (LM Studio Vulkan backend).
+# AgentAlloy container stack for AMD Radeon dGPU or iGPU (LM Studio Vulkan backend).
 #
 # LM Studio runs on the HOST — it cannot run inside a container because it
-# requires direct Vulkan GPU access. Skillsmith reaches it via the
+# requires direct Vulkan GPU access. AgentAlloy reaches it via the
 # host.containers.internal alias that podman/docker inject automatically.
 #
 # Prerequisites:
@@ -12,15 +12,15 @@
 # Usage:
 #   podman compose -f compose.radeon.yaml up -d    # start
 #   podman compose -f compose.radeon.yaml down     # stop
-#   podman compose -f compose.radeon.yaml logs -f skillsmith
+#   podman compose -f compose.radeon.yaml logs -f agentalloy
 
 services:
-  skillsmith:
+  agentalloy:
     build:
       context: .
       dockerfile: Containerfile
-    image: skillsmith:local
-    container_name: skillsmith
+    image: agentalloy:local
+    container_name: agentalloy
     environment:
       RUNTIME_EMBED_BASE_URL: "http://host.containers.internal:1234"
       RUNTIME_EMBEDDING_MODEL: "qwen3-embedding:0.6b"

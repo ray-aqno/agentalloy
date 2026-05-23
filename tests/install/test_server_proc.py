@@ -21,9 +21,9 @@ from unittest.mock import patch
 
 import pytest
 
-from skillsmith.install import server_proc
-from skillsmith.install.__main__ import build_parser
-from skillsmith.install.subcommands import server_stop
+from agentalloy.install import server_proc
+from agentalloy.install.__main__ import build_parser
+from agentalloy.install.subcommands import server_stop
 
 # ---------------------------------------------------------------------------
 # find_listening_pid — output-parsing
@@ -166,7 +166,7 @@ class TestStartBackgroundEnvLoading:
     ) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text('# comment line\nFOO=bar\nexport QUOTED="hello world"\nBLANK=\n')
-        monkeypatch.setattr("skillsmith.install.state.env_path", lambda: env_file)
+        monkeypatch.setattr("agentalloy.install.state.env_path", lambda: env_file)
         # Ensure these aren't already in os.environ (so they get picked up).
         monkeypatch.delenv("FOO", raising=False)
         monkeypatch.delenv("QUOTED", raising=False)
@@ -194,7 +194,7 @@ class TestStartBackgroundEnvLoading:
     ) -> None:
         env_file = tmp_path / ".env"
         env_file.write_text("FOO=from_file\n")
-        monkeypatch.setattr("skillsmith.install.state.env_path", lambda: env_file)
+        monkeypatch.setattr("agentalloy.install.state.env_path", lambda: env_file)
         monkeypatch.setenv("FOO", "from_process")
 
         captured: dict[str, Any] = {}

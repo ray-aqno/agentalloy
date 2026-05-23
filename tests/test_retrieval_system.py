@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from skillsmith.fixtures.loader import load_fixtures
-from skillsmith.retrieval.system import SystemRetrievalResult, retrieve_system_fragments
-from skillsmith.storage.ladybug import LadybugStore
+from agentalloy.fixtures.loader import load_fixtures
+from agentalloy.retrieval.system import SystemRetrievalResult, retrieve_system_fragments
+from agentalloy.storage.ladybug import LadybugStore
 
 
 @pytest.fixture

@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from skillsmith.install.subcommands.seed_corpus import (
+from agentalloy.install.subcommands.seed_corpus import (
     SCHEMA_VERSION,
     check_corpus,
     run,
@@ -32,7 +32,7 @@ def no_bundled_corpus(monkeypatch: pytest.MonkeyPatch) -> None:
     Without this, `check_corpus` would auto-copy the real bundled corpus
     out of the wheel into the test's XDG data dir on every call.
     """
-    from skillsmith.install import state as install_state
+    from agentalloy.install import state as install_state
 
     monkeypatch.setattr(install_state, "bundled_corpus_dir", lambda: None)
 
@@ -40,7 +40,7 @@ def no_bundled_corpus(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture()
 def user_corpus(tmp_path: Path) -> Path:
     """Path to the (test-isolated) user corpus dir created on demand."""
-    from skillsmith.install import state as install_state
+    from agentalloy.install import state as install_state
 
     p = install_state.corpus_dir()
     p.mkdir(parents=True, exist_ok=True)
@@ -74,7 +74,7 @@ class TestMissingFiles:
 
 
 class TestVerifiedPresent:
-    @patch("skillsmith.install.subcommands.seed_corpus._check_duckdb")
+    @patch("agentalloy.install.subcommands.seed_corpus._check_duckdb")
     def test_verified_when_above_minimum(
         self, mock_duck: MagicMock, repo_root: Path, user_corpus: Path
     ) -> None:
@@ -96,7 +96,7 @@ class TestVerifiedPresent:
 
 
 class TestUnderMinimumSkillCount:
-    @patch("skillsmith.install.subcommands.seed_corpus._check_duckdb")
+    @patch("agentalloy.install.subcommands.seed_corpus._check_duckdb")
     def test_under_minimum_still_flagged(
         self, mock_duck: MagicMock, repo_root: Path, user_corpus: Path
     ) -> None:
@@ -118,7 +118,7 @@ class TestUnderMinimumSkillCount:
 
 
 class TestNoNetworkCalls:
-    @patch("skillsmith.install.subcommands.seed_corpus._check_duckdb")
+    @patch("agentalloy.install.subcommands.seed_corpus._check_duckdb")
     def test_no_http_imports(
         self, mock_duck: MagicMock, repo_root: Path, user_corpus: Path
     ) -> None:
@@ -147,7 +147,7 @@ class TestRunEntrypoint:
     def test_initialized_empty_exits_zero(
         self, repo_root: Path, no_bundled_corpus: None, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        from skillsmith.install import state as install_state
+        from agentalloy.install import state as install_state
 
         rc = run(argparse.Namespace())
         captured = capsys.readouterr()
@@ -160,7 +160,7 @@ class TestRunEntrypoint:
 
 
 class TestDurationTracking:
-    @patch("skillsmith.install.subcommands.seed_corpus._check_duckdb")
+    @patch("agentalloy.install.subcommands.seed_corpus._check_duckdb")
     def test_duration_ms_present(
         self, mock_duck: MagicMock, repo_root: Path, user_corpus: Path
     ) -> None:

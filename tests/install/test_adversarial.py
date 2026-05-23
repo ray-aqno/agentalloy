@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from skillsmith.install import state as install_state
+from agentalloy.install import state as install_state
 
 
 @pytest.fixture()
@@ -34,7 +34,7 @@ class TestStateContainment:
     def test_uninstall_skips_path_outside_repo(self, repo_root: Path) -> None:
         """A tampered state file pointing harness_files_written outside the
         repo (e.g. /etc/cron.d/evil) must be skipped, never unlinked."""
-        from skillsmith.install.subcommands.uninstall import uninstall
+        from agentalloy.install.subcommands.uninstall import uninstall
 
         evil = Path("/etc/cron.d/evil")  # we only assert non-deletion
         st = install_state.load_state(repo_root)
@@ -59,7 +59,7 @@ class TestStateContainment:
         """Even when an entry's `path` is inside its own claimed `repo_root`,
         if both fields come from the (untrusted) state file, the trusted
         cwd-derived bound must reject `/etc/shadow`-style attacks."""
-        from skillsmith.install.subcommands.uninstall import uninstall
+        from agentalloy.install.subcommands.uninstall import uninstall
 
         st = install_state.load_state(repo_root)
         st["harness_files_written"] = [
@@ -85,7 +85,7 @@ class TestStateContainment:
 
     def test_harness_target_basename_required(self, repo_root: Path) -> None:
         """Even an in-repo path is rejected if it's not a known harness target."""
-        from skillsmith.install.subcommands.uninstall import uninstall
+        from agentalloy.install.subcommands.uninstall import uninstall
 
         target = repo_root / "subdir" / "evil.txt"
         target.parent.mkdir(parents=True)
@@ -108,7 +108,7 @@ class TestCorpusSeedAtomicity:
     def test_partial_seed_recovers(self, tmp_path: Path) -> None:
         """A half-written ladybug from an interrupted prior run must not
         block re-seeding: the next call wipes the .part sibling and retries."""
-        from skillsmith.install import state as install_state
+        from agentalloy.install import state as install_state
 
         # Simulate the post-failure state: a `.part` sibling from a
         # previous interrupted copy still on disk.
@@ -133,7 +133,7 @@ class TestBundledCorpusSentinel:
     def test_empty_dir_not_treated_as_corpus(self, tmp_path: Path) -> None:
         """A `_corpus/` dir that exists but lacks `skills.duck` must NOT be
         used (defends against shadow packages on PYTHONPATH)."""
-        from skillsmith.install import state as install_state
+        from agentalloy.install import state as install_state
 
         empty = tmp_path / "_corpus"
         empty.mkdir()
@@ -148,7 +148,7 @@ class TestSchemaMigrationPreservesHarness:
     def test_v1_state_migrates_with_correct_harness(self, repo_root: Path) -> None:
         """v1 state with `harness: 'gemini-cli'` must stamp entries with that
         value, not the fallback `'claude-code'`."""
-        from skillsmith.install import state as install_state
+        from agentalloy.install import state as install_state
 
         fp = install_state.state_path()
         fp.parent.mkdir(parents=True, exist_ok=True)
@@ -164,7 +164,7 @@ class TestSchemaMigrationPreservesHarness:
         assert data["harness_files_written"][0]["harness"] == "gemini-cli"
 
     def test_uninstall_skips_non_string_path(self, repo_root: Path) -> None:
-        from skillsmith.install.subcommands.uninstall import uninstall
+        from agentalloy.install.subcommands.uninstall import uninstall
 
         st = install_state.load_state(repo_root)
         st["harness_files_written"] = [
@@ -244,7 +244,7 @@ class TestAtomicWriteSymlink:
 
 class TestDuplicateSentinels:
     def test_duplicate_sentinels_rejected(self, repo_root: Path) -> None:
-        from skillsmith.install.subcommands.wire_harness import (
+        from agentalloy.install.subcommands.wire_harness import (
             SENTINEL_BEGIN,
             SENTINEL_END,
             wire_harness,
@@ -269,13 +269,13 @@ class TestPullModelsOptionInjection:
     def test_dash_dash_separator_in_argv(self) -> None:
         from unittest.mock import MagicMock
 
-        from skillsmith.install.subcommands.pull_models import _auto_pull
+        from agentalloy.install.subcommands.pull_models import _auto_pull
 
         with (
             # Skip the new daemon-start probe so we exercise only the
             # pull-command path the test is asserting on.
             patch(
-                "skillsmith.install.subcommands.pull_models._ollama_daemon_running",
+                "agentalloy.install.subcommands.pull_models._ollama_daemon_running",
                 return_value=True,
             ),
             patch("shutil.which", return_value="/usr/bin/ollama"),
@@ -288,14 +288,14 @@ class TestPullModelsOptionInjection:
         assert args.index("--") < args.index("valid-model")
 
     def test_leading_dash_model_rejected(self) -> None:
-        from skillsmith.install.subcommands.pull_models import _auto_pull
+        from agentalloy.install.subcommands.pull_models import _auto_pull
 
         result = _auto_pull("ollama", "--insecure-flag")
         assert result["success"] is False
         assert "disallowed" in result["error"]
 
     def test_shell_metachar_model_rejected(self) -> None:
-        from skillsmith.install.subcommands.pull_models import _auto_pull
+        from agentalloy.install.subcommands.pull_models import _auto_pull
 
         for hostile in ("model;rm -rf", "model$(whoami)", "model`id`", "model\nls"):
             result = _auto_pull("ollama", hostile)
@@ -309,14 +309,14 @@ class TestPullModelsOptionInjection:
 
 class TestVerifyUrlAllowlist:
     def test_file_scheme_blocked(self) -> None:
-        from skillsmith.install.subcommands.verify import _check_embedding_endpoint_reachable
+        from agentalloy.install.subcommands.verify import _check_embedding_endpoint_reachable
 
         result = _check_embedding_endpoint_reachable("file:///etc/passwd")
         assert result["passed"] is False
         assert "scheme" in result["error"]
 
     def test_javascript_scheme_blocked(self) -> None:
-        from skillsmith.install.subcommands.verify import _check_embedding_1024_dim
+        from agentalloy.install.subcommands.verify import _check_embedding_1024_dim
 
         result = _check_embedding_1024_dim("javascript:alert(1)", "m")
         assert result["passed"] is False
@@ -329,7 +329,7 @@ class TestVerifyUrlAllowlist:
 
 class TestMcpHostileInput:
     def test_non_dict_params_does_not_crash(self) -> None:
-        from skillsmith.install import mcp_server
+        from agentalloy.install import mcp_server
 
         msg = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": [1, 2, 3]}
         resp = mcp_server._process_message(msg, port=8000)  # pyright: ignore[reportPrivateUsage]
@@ -338,7 +338,7 @@ class TestMcpHostileInput:
         assert "result" in resp or "error" in resp
 
     def test_handler_exception_returns_internal_error(self) -> None:
-        from skillsmith.install import mcp_server
+        from agentalloy.install import mcp_server
 
         with patch.object(
             mcp_server,

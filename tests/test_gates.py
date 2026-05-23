@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from skillsmith.signals.gates import (
+from agentalloy.signals.gates import (
     aggregate,
     decide_transition,
     evaluate_gates,
     evaluate_node,
 )
-from skillsmith.signals.predicates import PredicateContext, PredicateResult
+from agentalloy.signals.predicates import PredicateContext, PredicateResult
 
 MET = PredicateResult.MET
 NOT_MET = PredicateResult.NOT_MET
@@ -134,7 +134,7 @@ def test_decide_transition_writes_phase_atomically(tmp_path: Path):
     assert decision.from_phase == "spec"
 
     # Atomic write
-    phase_file = tmp_path / ".skillsmith" / "phase"
+    phase_file = tmp_path / ".agentalloy" / "phase"
     phase_file.parent.mkdir(parents=True, exist_ok=True)
     tmp_phase = phase_file.with_suffix(".tmp")
     tmp_phase.write_text("phase: design\n")
@@ -201,7 +201,7 @@ def test_artifact_completeness_advisory_populated(tmp_path: Path):
     gate_spec = {"artifact_completeness": {"path": "spec.md", "criteria": "all ACs testable"}}
     _, evals = evaluate_node(gate_spec, ctx, None, [0])
     assert evals[0].advisory is not None
-    assert "skillsmith-eval" in evals[0].advisory
+    assert "agentalloy-eval" in evals[0].advisory
     assert "all ACs testable" in evals[0].advisory
 
 
@@ -220,7 +220,7 @@ def test_decide_transition_collects_advisories(tmp_path: Path):
     gate_spec = {"artifact_completeness": {"path": "spec.md", "criteria": "complete"}}
     decision = decide_transition("build", gate_spec, ctx)
     assert len(decision.advisories) == 1
-    assert "skillsmith-eval" in decision.advisories[0]
+    assert "agentalloy-eval" in decision.advisories[0]
 
 
 def test_non_completeness_gate_has_no_advisory(tmp_path: Path):

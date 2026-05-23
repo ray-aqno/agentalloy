@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from skillsmith.fixtures.loader import load_fixtures
-from skillsmith.reads import get_active_skill_by_id, get_active_skills
-from skillsmith.storage.ladybug import LadybugStore
+from agentalloy.fixtures.loader import load_fixtures
+from agentalloy.reads import get_active_skill_by_id, get_active_skills
+from agentalloy.storage.ladybug import LadybugStore
 
 
 @pytest.fixture

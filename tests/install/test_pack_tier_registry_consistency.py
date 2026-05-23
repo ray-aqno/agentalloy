@@ -11,7 +11,7 @@ import importlib.util
 from pathlib import Path
 from typing import Any
 
-from skillsmith.install.subcommands.install_pack import (
+from agentalloy.install.subcommands.install_pack import (
     _VALID_PACK_TIERS,  # type: ignore[reportPrivateUsage]
 )
 

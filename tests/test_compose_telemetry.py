@@ -8,15 +8,15 @@ from __future__ import annotations
 
 import pytest
 
-from skillsmith.api.compose_models import ComposeRequest, Phase
-from skillsmith.orchestration.compose import (
+from agentalloy.api.compose_models import ComposeRequest, Phase
+from agentalloy.orchestration.compose import (
     ASSEMBLY_TIER,
     ComposeOrchestrator,
 )
-from skillsmith.retrieval.domain import RetrievalResult
-from skillsmith.retrieval.system import SystemRetrievalResult
-from skillsmith.telemetry import TelemetryRecord
-from skillsmith.telemetry.writer import NullTelemetryWriter
+from agentalloy.retrieval.domain import RetrievalResult
+from agentalloy.retrieval.system import SystemRetrievalResult
+from agentalloy.telemetry import TelemetryRecord
+from agentalloy.telemetry.writer import NullTelemetryWriter
 from tests.support import fake_fragment
 
 

@@ -15,10 +15,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from skillsmith.api.health_router import HealthChecker, HealthResponse
-from skillsmith.fixtures.loader import load_fixtures
-from skillsmith.runtime_state import load_runtime_cache
-from skillsmith.storage.ladybug import LadybugStore
+from agentalloy.api.health_router import HealthChecker, HealthResponse
+from agentalloy.fixtures.loader import load_fixtures
+from agentalloy.runtime_state import load_runtime_cache
+from agentalloy.storage.ladybug import LadybugStore
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -183,7 +183,7 @@ def _mock_healthy_checker(*, runtime_load_error: str | None = None) -> MagicMock
     checker = MagicMock(spec=HealthChecker)
 
     async def _check() -> HealthResponse:
-        from skillsmith.api.health_router import DependencyStatus
+        from agentalloy.api.health_router import DependencyStatus
 
         cache_ok = runtime_load_error is None
         deps = {

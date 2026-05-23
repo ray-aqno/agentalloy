@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
-from skillsmith.install.subcommands import install_pack as ip
+from agentalloy.install.subcommands import install_pack as ip
 
 
 @pytest.fixture()

@@ -1,8 +1,8 @@
-# Containerfile for the Skillsmith service.
+# Containerfile for the AgentAlloy service.
 # Compatible with Podman (project preference) and Docker (works as Dockerfile via --file Containerfile).
 #
-# Build:  podman build -t skillsmith -f Containerfile .
-# Run:    via compose.yaml (recommended) or `podman run --rm -p 47950:47950 -v ./data:/app/data skillsmith`
+# Build:  podman build -t agentalloy -f Containerfile .
+# Run:    via compose.yaml (recommended) or `podman run --rm -p 47950:47950 -v ./data:/app/data agentalloy`
 
 FROM python:3.12-slim AS base
 
@@ -45,4 +45,4 @@ EXPOSE 47950
 # Podman's default OCI image format does not honor inline HEALTHCHECK directives;
 # the compose-level healthcheck works on both Podman and Docker.
 
-CMD ["uv", "run", "uvicorn", "skillsmith.app:app", "--host", "0.0.0.0", "--port", "47950"]
+CMD ["uv", "run", "uvicorn", "agentalloy.app:app", "--host", "0.0.0.0", "--port", "47950"]

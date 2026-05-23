@@ -56,15 +56,15 @@ jobs:
       - name: Verify packs bundled in wheel
         run: |
           set -e
-          count=$(unzip -l dist/skillsmith-*.whl | grep -c '_packs/' || true)
+          count=$(unzip -l dist/agentalloy-*.whl | grep -c '_packs/' || true)
           echo "pack files in wheel: $count"
           test "$count" -ge 50
 
       - name: Install wheel into isolated tool env
-        run: uv tool install dist/skillsmith-*.whl
+        run: uv tool install dist/agentalloy-*.whl
 
       - name: Smoke — entry point resolves
-        run: skillsmith --help
+        run: agentalloy --help
 
       - name: Smoke — wheel-bundled packs discoverable
-        run: skillsmith install-packs --list
+        run: agentalloy install-packs --list

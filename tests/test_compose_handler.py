@@ -15,15 +15,15 @@ from collections.abc import Callable
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from skillsmith.api.compose_models import ComposeRequest
-from skillsmith.api.compose_router import get_orchestrator
-from skillsmith.orchestration.compose import (
+from agentalloy.api.compose_models import ComposeRequest
+from agentalloy.api.compose_router import get_orchestrator
+from agentalloy.orchestration.compose import (
     ComposeOrchestrator,
     RetrievalStageError,
 )
-from skillsmith.reads.models import ActiveFragment
-from skillsmith.retrieval.domain import RetrievalResult
-from skillsmith.retrieval.system import SystemRetrievalResult
+from agentalloy.reads.models import ActiveFragment
+from agentalloy.retrieval.domain import RetrievalResult
+from agentalloy.retrieval.system import SystemRetrievalResult
 
 _EMPTY_SYSTEM = SystemRetrievalResult(candidates=[], applied_skill_ids=[], retrieval_ms=0)
 
@@ -54,7 +54,7 @@ class _FakeOrchestrator(ComposeOrchestrator):
         retrieve_fn: RetrieveFn,
         system_result: SystemRetrievalResult = _EMPTY_SYSTEM,
     ) -> None:
-        from skillsmith.telemetry.writer import NullTelemetryWriter
+        from agentalloy.telemetry.writer import NullTelemetryWriter
 
         self._retrieve_fn = retrieve_fn
         self._system_result = system_result

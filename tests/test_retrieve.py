@@ -8,13 +8,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from skillsmith.api.compose_router import get_orchestrator
-from skillsmith.api.retrieve_router import get_retrieve_orchestrator
-from skillsmith.fixtures.loader import load_fixtures
-from skillsmith.orchestration.retrieve import RetrieveOrchestrator
-from skillsmith.storage.ladybug import LadybugStore
-from skillsmith.storage.vector_store import VectorStore
-from skillsmith.telemetry import NullTelemetryWriter, TelemetryRecord, TelemetryWriter
+from agentalloy.api.compose_router import get_orchestrator
+from agentalloy.api.retrieve_router import get_retrieve_orchestrator
+from agentalloy.fixtures.loader import load_fixtures
+from agentalloy.orchestration.retrieve import RetrieveOrchestrator
+from agentalloy.storage.ladybug import LadybugStore
+from agentalloy.storage.vector_store import VectorStore
+from agentalloy.telemetry import NullTelemetryWriter, TelemetryRecord, TelemetryWriter
 from tests.support import StubLMClient
 
 

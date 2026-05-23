@@ -41,8 +41,8 @@ def existing_skill_ids() -> set[str]:
 
 def main() -> int:
     sys.path.insert(0, str(REPO_ROOT / "src"))
-    from skillsmith.config import get_settings  # noqa: E402
-    from skillsmith.storage.ladybug import LadybugStore  # noqa: E402
+    from agentalloy.config import get_settings  # noqa: E402
+    from agentalloy.storage.ladybug import LadybugStore  # noqa: E402
 
     settings = get_settings()
     have = existing_skill_ids()

@@ -12,8 +12,8 @@ from typing import Any
 
 import pytest
 
-from skillsmith.authoring.paths import PipelinePaths
-from skillsmith.authoring.qa_gate import (
+from agentalloy.authoring.paths import PipelinePaths
+from agentalloy.authoring.qa_gate import (
     CriticVerdict,
     DedupHit,
     load_bounces,
@@ -252,7 +252,7 @@ def test_pipeline_paths_ensure_all(tmp_path: Path) -> None:
 
 
 def test_author_strip_yaml_fence() -> None:
-    from skillsmith.authoring.driver import _strip_code_fence  # pyright: ignore[reportPrivateUsage]
+    from agentalloy.authoring.driver import _strip_code_fence  # pyright: ignore[reportPrivateUsage]
 
     fenced = "```yaml\nskill_id: foo\n```"
     assert _strip_code_fence(fenced) == "skill_id: foo"

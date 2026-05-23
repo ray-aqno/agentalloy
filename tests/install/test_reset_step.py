@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from skillsmith.install import state as install_state
-from skillsmith.install.subcommands.reset_step import (
+from agentalloy.install import state as install_state
+from agentalloy.install.subcommands.reset_step import (
     _dependents_of,  # pyright: ignore[reportPrivateUsage]
     reset_step,
 )

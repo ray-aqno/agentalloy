@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from skillsmith.skill_md.parser import ParseError, parse_file, parse_text
+from agentalloy.skill_md.parser import ParseError, parse_file, parse_text
 
 _FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 

@@ -1,4 +1,4 @@
-"""Tests for skillsmith.skill_tier.resolve_skill_tier."""
+"""Tests for agentalloy.skill_tier.resolve_skill_tier."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 
-from skillsmith.skill_tier import resolve_skill_tier
+from agentalloy.skill_tier import resolve_skill_tier
 
 
 def _write_pack_yaml(directory: Path, content: dict[str, Any]) -> None:

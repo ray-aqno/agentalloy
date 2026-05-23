@@ -21,14 +21,14 @@ from unittest.mock import patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from skillsmith.api.skill_router import get_skill_store
-from skillsmith.authoring.driver import load_authoring_prompt
-from skillsmith.bootstrap import EXIT_OK as BOOTSTRAP_OK
-from skillsmith.bootstrap import main as bootstrap_main
-from skillsmith.ingest import EXIT_OK as INGEST_OK
-from skillsmith.ingest import EXIT_VALIDATION as INGEST_VALIDATION
-from skillsmith.ingest import main as ingest_main
-from skillsmith.storage.ladybug import LadybugStore
+from agentalloy.api.skill_router import get_skill_store
+from agentalloy.authoring.driver import load_authoring_prompt
+from agentalloy.bootstrap import EXIT_OK as BOOTSTRAP_OK
+from agentalloy.bootstrap import main as bootstrap_main
+from agentalloy.ingest import EXIT_OK as INGEST_OK
+from agentalloy.ingest import EXIT_VALIDATION as INGEST_VALIDATION
+from agentalloy.ingest import main as ingest_main
+from agentalloy.storage.ladybug import LadybugStore
 
 _FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -140,7 +140,7 @@ def test_bootstrap_loads_skill_authoring_agent(tmp_path: Path) -> None:
     agent_md = _FIXTURES_DIR / "skill-authoring-agent.md"
     assert agent_md.exists(), "Skill Authoring Agent fixture missing"
 
-    with patch("skillsmith.bootstrap.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.bootstrap.get_settings", return_value=_make_settings(db_path)):
         code = bootstrap_main([str(agent_md), "--yes"])
 
     assert code == BOOTSTRAP_OK
@@ -160,7 +160,7 @@ def test_system_review_yaml_loads_and_retrieves(tmp_path: Path, app: FastAPI) ->
     yaml_file = tmp_path / "system.yaml"
     yaml_file.write_text(_SYSTEM_REVIEW_YAML)
 
-    with patch("skillsmith.ingest.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.ingest.get_settings", return_value=_make_settings(db_path)):
         code = ingest_main([str(yaml_file), "--yes"])
 
     assert code == INGEST_OK
@@ -181,7 +181,7 @@ def test_domain_review_yaml_loads_and_retrieves(tmp_path: Path, app: FastAPI) ->
     yaml_file = tmp_path / "domain.yaml"
     yaml_file.write_text(_DOMAIN_REVIEW_YAML)
 
-    with patch("skillsmith.ingest.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.ingest.get_settings", return_value=_make_settings(db_path)):
         code = ingest_main([str(yaml_file), "--yes"])
 
     assert code == INGEST_OK
@@ -216,7 +216,7 @@ def test_both_ingested_skills_are_retrievable(tmp_path: Path, app: FastAPI) -> N
     ):
         f = tmp_path / name
         f.write_text(content)
-        with patch("skillsmith.ingest.get_settings", return_value=_make_settings(db_path)):
+        with patch("agentalloy.ingest.get_settings", return_value=_make_settings(db_path)):
             ingest_main([str(f), "--yes"])
 
     with _api_client(app, db_path) as client:

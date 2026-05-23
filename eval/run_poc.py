@@ -1,6 +1,6 @@
 """POC harness: composed vs flat across the 5 pre-registered tasks.
 
-Composed arm: POST /compose to a running skillsmith (uvicorn at $SKILLSMITH_URL,
+Composed arm: POST /compose to a running agentalloy (uvicorn at $AGENTALLOY_URL,
 default http://localhost:47950), then call the agent model with /compose's
 ``output`` field as a system prompt + the task spec as user prompt.
 
@@ -33,7 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_SOURCE_ROOT = REPO_ROOT / "skill-source" / "agent-skills" / "skills"
 RUNS_ROOT = REPO_ROOT / "eval" / "runs"
 
-SKILLSMITH_URL = os.environ.get("SKILLSMITH_URL", "http://localhost:47950")
+AGENTALLOY_URL = os.environ.get("AGENTALLOY_URL", "http://localhost:47950")
 LM_STUDIO_URL = os.environ.get("LM_STUDIO_URL", "http://localhost:1234")
 AGENT_MODEL = os.environ.get("AGENT_MODEL", "qwen/qwen2.5-coder-14b")
 
@@ -70,7 +70,7 @@ def call_compose(client: httpx.Client, task: Task, k: int) -> tuple[str, str, in
     """Returns (assembled_text, result_type, compose_latency_ms, source_skills)."""
     start_ns = time.perf_counter_ns()
     resp = client.post(
-        f"{SKILLSMITH_URL}/compose",
+        f"{AGENTALLOY_URL}/compose",
         json={"task": task.spec, "phase": task.phase, "k": k},
         timeout=httpx.Timeout(connect=5.0, read=600.0, write=10.0, pool=5.0),
     )
@@ -135,7 +135,7 @@ def run_one(
             assembled = "(compose returned empty result — no domain fragments matched)"
         system_prompt = (
             "You are an experienced software engineer. Apply the following "
-            "task-specific guidance assembled by the Skillsmith service:\n\n" + assembled
+            "task-specific guidance assembled by the AgentAlloy service:\n\n" + assembled
         )
     elif condition == "flat":
         system_prompt = load_flat_prompt(task)
@@ -299,7 +299,7 @@ def main(argv: list[str] | None = None) -> int:
         "label": args.label,
         "k": args.k,
         "agent_model": AGENT_MODEL,
-        "skillsmith_url": SKILLSMITH_URL,
+        "agentalloy_url": AGENTALLOY_URL,
         "lm_studio_url": LM_STUDIO_URL,
         "diversity_selection": os.environ.get("RUNTIME_DIVERSITY_SELECTION", "on"),
         "tasks": [t.task_id for t in selected_tasks],

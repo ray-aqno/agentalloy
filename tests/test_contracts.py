@@ -1,4 +1,4 @@
-"""Tests for skillsmith.contracts — parsing, validation, and file discovery."""
+"""Tests for agentalloy.contracts — parsing, validation, and file discovery."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def _write_contract(
 
 
 def test_parse_contract_minimal_valid(tmp_path: Path):
-    from skillsmith.contracts import parse_contract
+    from agentalloy.contracts import parse_contract
 
     f = _write_contract(tmp_path / "c.md")
     contract = parse_contract(f)
@@ -60,7 +60,7 @@ def test_parse_contract_minimal_valid(tmp_path: Path):
 
 
 def test_parse_contract_full_fields(tmp_path: Path):
-    from skillsmith.contracts import parse_contract
+    from agentalloy.contracts import parse_contract
 
     f = _write_contract(
         tmp_path / "c.md",
@@ -79,7 +79,7 @@ def test_parse_contract_full_fields(tmp_path: Path):
 
 
 def test_parse_contract_related_contracts_resolved(tmp_path: Path):
-    from skillsmith.contracts import parse_contract
+    from agentalloy.contracts import parse_contract
 
     related = tmp_path / "related.md"
     _write_contract(related)
@@ -95,7 +95,7 @@ def test_parse_contract_related_contracts_resolved(tmp_path: Path):
 
 
 def test_parse_contract_missing_frontmatter(tmp_path: Path):
-    from skillsmith.contracts import ContractMalformed, parse_contract
+    from agentalloy.contracts import ContractMalformed, parse_contract
 
     f = tmp_path / "bad.md"
     f.write_text("No frontmatter here.\n")
@@ -104,7 +104,7 @@ def test_parse_contract_missing_frontmatter(tmp_path: Path):
 
 
 def test_parse_contract_empty_domain_tags(tmp_path: Path):
-    from skillsmith.contracts import ContractMalformed, parse_contract
+    from agentalloy.contracts import ContractMalformed, parse_contract
 
     f = tmp_path / "bad.md"
     f.write_text("---\nphase: build\ntask_slug: t\ndomain_tags: []\n---\n\nbody\n")
@@ -113,7 +113,7 @@ def test_parse_contract_empty_domain_tags(tmp_path: Path):
 
 
 def test_parse_contract_missing_required_fields(tmp_path: Path):
-    from skillsmith.contracts import ContractMalformed, parse_contract
+    from agentalloy.contracts import ContractMalformed, parse_contract
 
     f = tmp_path / "bad.md"
     f.write_text("---\ntask_slug: t\ndomain_tags: [tag]\n---\n\nbody\n")
@@ -127,10 +127,10 @@ def test_parse_contract_missing_required_fields(tmp_path: Path):
 
 
 def test_validate_contract_phase_mismatch(tmp_path: Path):
-    from skillsmith.contracts import parse_contract, validate_contract
+    from agentalloy.contracts import parse_contract, validate_contract
 
     # Write a phase file saying 'design'
-    phase_file = tmp_path / ".skillsmith" / "phase"
+    phase_file = tmp_path / ".agentalloy" / "phase"
     phase_file.parent.mkdir(parents=True)
     phase_file.write_text("phase: design\n")
 
@@ -141,7 +141,7 @@ def test_validate_contract_phase_mismatch(tmp_path: Path):
 
 
 def test_validate_contract_related_contracts_missing(tmp_path: Path):
-    from skillsmith.contracts import parse_contract, validate_contract
+    from agentalloy.contracts import parse_contract, validate_contract
 
     f = _write_contract(tmp_path / "c.md", related_contracts=["nonexistent.md"])
     c = parse_contract(f)
@@ -150,7 +150,7 @@ def test_validate_contract_related_contracts_missing(tmp_path: Path):
 
 
 def test_validate_contract_valid(tmp_path: Path):
-    from skillsmith.contracts import parse_contract, validate_contract
+    from agentalloy.contracts import parse_contract, validate_contract
 
     f = _write_contract(tmp_path / "c.md")
     c = parse_contract(f)
@@ -166,11 +166,11 @@ def test_validate_contract_valid(tmp_path: Path):
 def test_list_contracts_for_phase_mtime_order(tmp_path: Path):
     import time
 
-    from skillsmith.contracts import list_contracts_for_phase
+    from agentalloy.contracts import list_contracts_for_phase
 
-    _write_contract(tmp_path / ".skillsmith" / "contracts" / "build" / "old.md")
+    _write_contract(tmp_path / ".agentalloy" / "contracts" / "build" / "old.md")
     time.sleep(0.01)
-    _write_contract(tmp_path / ".skillsmith" / "contracts" / "build" / "new.md")
+    _write_contract(tmp_path / ".agentalloy" / "contracts" / "build" / "new.md")
 
     files = list_contracts_for_phase(tmp_path, "build")
     assert len(files) == 2
@@ -178,7 +178,7 @@ def test_list_contracts_for_phase_mtime_order(tmp_path: Path):
 
 
 def test_list_contracts_for_phase_missing_dir(tmp_path: Path):
-    from skillsmith.contracts import list_contracts_for_phase
+    from agentalloy.contracts import list_contracts_for_phase
 
     files = list_contracts_for_phase(tmp_path, "nonexistent-phase")
     assert files == []
@@ -187,11 +187,11 @@ def test_list_contracts_for_phase_missing_dir(tmp_path: Path):
 def test_latest_contract_no_phase_filter(tmp_path: Path):
     import time
 
-    from skillsmith.contracts import latest_contract
+    from agentalloy.contracts import latest_contract
 
-    _write_contract(tmp_path / ".skillsmith" / "contracts" / "build" / "build.md")
+    _write_contract(tmp_path / ".agentalloy" / "contracts" / "build" / "build.md")
     time.sleep(0.01)
-    _write_contract(tmp_path / ".skillsmith" / "contracts" / "spec" / "spec.md")
+    _write_contract(tmp_path / ".agentalloy" / "contracts" / "spec" / "spec.md")
 
     latest = latest_contract(tmp_path)
     assert latest is not None
@@ -204,9 +204,9 @@ def test_latest_contract_no_phase_filter(tmp_path: Path):
 
 
 def test_safe_contract_path_accepts_valid_contract(tmp_path: Path):
-    from skillsmith.contracts import safe_contract_path
+    from agentalloy.contracts import safe_contract_path
 
-    f = _write_contract(tmp_path / ".skillsmith" / "contracts" / "build" / "task.md")
+    f = _write_contract(tmp_path / ".agentalloy" / "contracts" / "build" / "task.md")
     safe, project = safe_contract_path(str(f))
     assert safe is not None
     assert project is not None
@@ -214,8 +214,8 @@ def test_safe_contract_path_accepts_valid_contract(tmp_path: Path):
     assert project == tmp_path.resolve()
 
 
-def test_safe_contract_path_rejects_path_outside_skillsmith(tmp_path: Path):
-    from skillsmith.contracts import safe_contract_path
+def test_safe_contract_path_rejects_path_outside_agentalloy(tmp_path: Path):
+    from agentalloy.contracts import safe_contract_path
 
     f = _write_contract(tmp_path / "loose.md")
     safe, project = safe_contract_path(str(f))
@@ -224,32 +224,32 @@ def test_safe_contract_path_rejects_path_outside_skillsmith(tmp_path: Path):
 
 
 def test_safe_contract_path_rejects_nonexistent_path(tmp_path: Path):
-    from skillsmith.contracts import safe_contract_path
+    from agentalloy.contracts import safe_contract_path
 
-    safe, _ = safe_contract_path(str(tmp_path / ".skillsmith" / "contracts" / "build" / "nope.md"))
+    safe, _ = safe_contract_path(str(tmp_path / ".agentalloy" / "contracts" / "build" / "nope.md"))
     assert safe is None
 
 
 def test_safe_contract_path_rejects_escape_via_parent(tmp_path: Path):
-    """A path containing ``..`` that escapes .skillsmith/contracts/ must be rejected."""
-    from skillsmith.contracts import safe_contract_path
+    """A path containing ``..`` that escapes .agentalloy/contracts/ must be rejected."""
+    from agentalloy.contracts import safe_contract_path
 
     # Write a sibling outside contracts/, then try to reach it via .. from inside.
     outside = tmp_path / "outside.md"
     outside.write_text("---\nphase: build\n---\nbody\n")
-    sneaky = tmp_path / ".skillsmith" / "contracts" / "build" / ".." / ".." / ".." / "outside.md"
+    sneaky = tmp_path / ".agentalloy" / "contracts" / "build" / ".." / ".." / ".." / "outside.md"
     safe, _ = safe_contract_path(str(sneaky))
     assert safe is None
 
 
 def test_safe_contract_path_rejects_path_outside_pinned_root(tmp_path: Path):
     """When project_root is pinned, paths outside that root must be rejected even if
-    they live in a valid .skillsmith/contracts/ tree of a sibling project."""
-    from skillsmith.contracts import safe_contract_path
+    they live in a valid .agentalloy/contracts/ tree of a sibling project."""
+    from agentalloy.contracts import safe_contract_path
 
     other_project = tmp_path / "other"
     other_project.mkdir()
-    f = _write_contract(other_project / ".skillsmith" / "contracts" / "build" / "task.md")
+    f = _write_contract(other_project / ".agentalloy" / "contracts" / "build" / "task.md")
 
     safe, _ = safe_contract_path(str(f), project_root=tmp_path / "this-project")
     assert safe is None

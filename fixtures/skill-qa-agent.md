@@ -105,7 +105,7 @@ reader has seen the prior fragment is not self-contained. Flag it.
 
 ### 2. Fragment-type accuracy
 Each fragment's `fragment_type` must match the content. The canonical set
-(from `src/skillsmith/ingest.py`):
+(from `src/agentalloy/ingest.py`):
 
 - **setup** — prerequisites, configuration, environment
 - **execution** — core task steps

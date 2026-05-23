@@ -1,4 +1,4 @@
-"""Tests for skillsmith customize CLI — three-layer resolution and validation."""
+"""Tests for agentalloy customize CLI — three-layer resolution and validation."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def _make_skill_yaml(
 
 
 def test_validate_rejects_domain_skill():
-    from skillsmith.install.subcommands.customize import (
+    from agentalloy.install.subcommands.customize import (
         _validate_skill_data,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -60,7 +60,7 @@ def test_validate_rejects_domain_skill():
 
 
 def test_validate_rejects_short_prose():
-    from skillsmith.install.subcommands.customize import (
+    from agentalloy.install.subcommands.customize import (
         _validate_skill_data,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -70,7 +70,7 @@ def test_validate_rejects_short_prose():
 
 
 def test_validate_workflow_missing_exit_gates():
-    from skillsmith.install.subcommands.customize import (
+    from agentalloy.install.subcommands.customize import (
         _validate_skill_data,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -81,7 +81,7 @@ def test_validate_workflow_missing_exit_gates():
 
 
 def test_validate_workflow_missing_applies_to_phases():
-    from skillsmith.install.subcommands.customize import (
+    from agentalloy.install.subcommands.customize import (
         _validate_skill_data,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -92,7 +92,7 @@ def test_validate_workflow_missing_applies_to_phases():
 
 
 def test_validate_system_missing_applies_when():
-    from skillsmith.install.subcommands.customize import (
+    from agentalloy.install.subcommands.customize import (
         _validate_skill_data,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -103,7 +103,7 @@ def test_validate_system_missing_applies_when():
 
 
 def test_validate_valid_system_skill():
-    from skillsmith.install.subcommands.customize import (
+    from agentalloy.install.subcommands.customize import (
         _validate_skill_data,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -113,7 +113,7 @@ def test_validate_valid_system_skill():
 
 
 def test_validate_valid_workflow_skill():
-    from skillsmith.install.subcommands.customize import (
+    from agentalloy.install.subcommands.customize import (
         _validate_skill_data,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -128,11 +128,11 @@ def test_validate_valid_workflow_skill():
 
 
 def test_customize_update_ingests_into_profile(profiles_tmp: Path, tmp_path: Path):
-    from skillsmith.install.subcommands.customize import (
+    from agentalloy.install.subcommands.customize import (
         _ingest_skill,  # pyright: ignore[reportPrivateUsage]
         _skill_in_store,  # pyright: ignore[reportPrivateUsage]
     )
-    from skillsmith.profiles import init_profile
+    from agentalloy.profiles import init_profile
 
     init_profile("testprofile")
 
@@ -143,12 +143,12 @@ def test_customize_update_ingests_into_profile(profiles_tmp: Path, tmp_path: Pat
 
 
 def test_customize_update_reverts_to_inherited(profiles_tmp: Path, tmp_path: Path):
-    from skillsmith.install.subcommands.customize import (
+    from agentalloy.install.subcommands.customize import (
         _delete_from_store,  # pyright: ignore[reportPrivateUsage]
         _ingest_skill,  # pyright: ignore[reportPrivateUsage]
         _skill_in_store,  # pyright: ignore[reportPrivateUsage]
     )
-    from skillsmith.profiles import init_profile
+    from agentalloy.profiles import init_profile
 
     init_profile("p2")
     data = _make_skill_yaml(skill_id="rev-skill")
@@ -170,7 +170,7 @@ def test_customize_validate_rejects_domain(
     """validate subcommand returns error for domain-class skill."""
     import argparse
 
-    from skillsmith.install.subcommands.customize import (
+    from agentalloy.install.subcommands.customize import (
         _validate_skill,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -183,7 +183,7 @@ def test_customize_validate_rejects_domain(
     skill_file.write_text(yaml.dump(data))
 
     # Patch _active_layer to return our file
-    from skillsmith.install.subcommands import customize as cmod
+    from agentalloy.install.subcommands import customize as cmod
 
     monkeypatch.setattr(
         cmod,
@@ -215,7 +215,7 @@ def test_customize_list_has_layer_field(profiles_tmp: Path):
     import json
     import sys
 
-    from skillsmith.install.subcommands.customize import (
+    from agentalloy.install.subcommands.customize import (
         _list_skills,  # pyright: ignore[reportPrivateUsage]
     )
 

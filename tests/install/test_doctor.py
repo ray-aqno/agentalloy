@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from skillsmith.install import state as install_state
-from skillsmith.install.subcommands.doctor import (
+from agentalloy.install import state as install_state
+from agentalloy.install.subcommands.doctor import (
     _check_runner_processes,  # pyright: ignore[reportPrivateUsage]
     _check_service_reachable,  # pyright: ignore[reportPrivateUsage]
     _check_state_consistent,  # pyright: ignore[reportPrivateUsage]
@@ -52,7 +52,7 @@ class TestServiceReachable:
         mock_resp.read.return_value = body
         mock_resp.__enter__ = MagicMock(return_value=mock_resp)
         mock_resp.__exit__ = MagicMock(return_value=False)
-        with patch("skillsmith.install.subcommands.doctor.urlopen", return_value=mock_resp):
+        with patch("agentalloy.install.subcommands.doctor.urlopen", return_value=mock_resp):
             result = _check_service_reachable(8000)
         assert result["passed"] is True
 
@@ -60,7 +60,7 @@ class TestServiceReachable:
         from urllib.error import URLError
 
         with patch(
-            "skillsmith.install.subcommands.doctor.urlopen", side_effect=URLError("refused")
+            "agentalloy.install.subcommands.doctor.urlopen", side_effect=URLError("refused")
         ):
             result = _check_service_reachable(8000)
         assert result["passed"] is False
@@ -109,10 +109,10 @@ class TestRunDoctor:
 
         with (
             patch(
-                "skillsmith.install.subcommands.verify.urlopen", side_effect=URLError("no network")
+                "agentalloy.install.subcommands.verify.urlopen", side_effect=URLError("no network")
             ),
             patch(
-                "skillsmith.install.subcommands.doctor.urlopen", side_effect=URLError("no network")
+                "agentalloy.install.subcommands.doctor.urlopen", side_effect=URLError("no network")
             ),
         ):
             result = run_doctor(root=repo_root)
@@ -121,7 +121,7 @@ class TestRunDoctor:
         # checks are added; assert the named ones are all present rather
         # than a brittle total).
         names = [c["name"] for c in result["checks"]]
-        assert "skillsmith_service_reachable" in names
+        assert "agentalloy_service_reachable" in names
         assert "compose_endpoint_works" in names
         assert "state_file_consistent" in names
         assert "runner_processes_present" in names
@@ -135,10 +135,10 @@ class TestRunDoctor:
 
         with (
             patch(
-                "skillsmith.install.subcommands.verify.urlopen", side_effect=URLError("no network")
+                "agentalloy.install.subcommands.verify.urlopen", side_effect=URLError("no network")
             ),
             patch(
-                "skillsmith.install.subcommands.doctor.urlopen", side_effect=URLError("no network")
+                "agentalloy.install.subcommands.doctor.urlopen", side_effect=URLError("no network")
             ),
         ):
             result = run_doctor(root=repo_root)

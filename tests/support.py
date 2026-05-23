@@ -6,9 +6,9 @@ import hashlib
 import struct
 from typing import Any
 
-from skillsmith.lm_client import OpenAICompatClient
-from skillsmith.reads.models import ActiveFragment, SkillClass
-from skillsmith.storage.vector_store import EMBEDDING_DIM
+from agentalloy.lm_client import OpenAICompatClient
+from agentalloy.reads.models import ActiveFragment, SkillClass
+from agentalloy.storage.vector_store import EMBEDDING_DIM
 
 
 def fake_fragment(

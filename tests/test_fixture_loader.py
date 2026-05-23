@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from skillsmith.fixtures.loader import load_fixtures
-from skillsmith.storage.ladybug import LadybugStore
+from agentalloy.fixtures.loader import load_fixtures
+from agentalloy.storage.ladybug import LadybugStore
 
 FIXTURE_TYPES = {"guardrail", "setup", "execution", "verification", "example", "rationale"}
 

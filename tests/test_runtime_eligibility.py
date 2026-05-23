@@ -17,15 +17,15 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from skillsmith.api.compose_router import get_orchestrator
-from skillsmith.api.retrieve_router import get_retrieve_orchestrator
-from skillsmith.api.skill_router import get_skill_store
-from skillsmith.fixtures.loader import load_fixtures
-from skillsmith.orchestration.retrieve import RetrieveOrchestrator
-from skillsmith.reads import InconsistentActiveVersion, get_active_version_by_id
-from skillsmith.storage.ladybug import LadybugStore
-from skillsmith.storage.vector_store import VectorStore
-from skillsmith.telemetry import NullTelemetryWriter
+from agentalloy.api.compose_router import get_orchestrator
+from agentalloy.api.retrieve_router import get_retrieve_orchestrator
+from agentalloy.api.skill_router import get_skill_store
+from agentalloy.fixtures.loader import load_fixtures
+from agentalloy.orchestration.retrieve import RetrieveOrchestrator
+from agentalloy.reads import InconsistentActiveVersion, get_active_version_by_id
+from agentalloy.storage.ladybug import LadybugStore
+from agentalloy.storage.vector_store import VectorStore
+from agentalloy.telemetry import NullTelemetryWriter
 from tests.support import StubLMClient
 
 # -------- shared fixtures --------
@@ -205,8 +205,8 @@ def test_compose_uses_only_active_fragments(
     app: FastAPI, populated_store: LadybugStore, vector_store: VectorStore
 ) -> None:
     """Compose retrieval must only surface active-version fragments."""
-    from skillsmith.orchestration.compose import ComposeOrchestrator
-    from skillsmith.telemetry.writer import NullTelemetryWriter
+    from agentalloy.orchestration.compose import ComposeOrchestrator
+    from agentalloy.telemetry.writer import NullTelemetryWriter
 
     orch = ComposeOrchestrator(
         populated_store,

@@ -1,4 +1,4 @@
-"""Per-predicate unit tests for skillsmith.signals.predicates."""
+"""Per-predicate unit tests for agentalloy.signals.predicates."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from skillsmith.signals.predicates import (
+from agentalloy.signals.predicates import (
     PredicateContext,
     PredicateResult,
     eval_artifact_absent,
@@ -118,7 +118,7 @@ def test_artifact_contains_file_missing(tmp_path: Path):
 
 def test_artifact_contains_returns_unknown_on_io_error(tmp_path: Path):
     ctx = _ctx(tmp_path)
-    with patch("skillsmith.signals.predicates._read_file", return_value=None):
+    with patch("agentalloy.signals.predicates._read_file", return_value=None):
         f = tmp_path / "spec.md"
         f.write_text("hi")
         result = eval_artifact_contains({"path": "spec.md", "sections": ["X"]}, ctx)
@@ -234,7 +234,7 @@ def test_git_state_caching(tmp_path: Path):
             call_count[0] += 1
         return orig(*a, **kw)  # pyright: ignore[reportUnknownVariableType]
 
-    with patch("skillsmith.signals.predicates.subprocess.run", side_effect=patched_run):
+    with patch("agentalloy.signals.predicates.subprocess.run", side_effect=patched_run):
         eval_git_state({"has_staged": False}, ctx)
         eval_git_state({"has_uncommitted": False}, ctx)
 
@@ -244,7 +244,7 @@ def test_git_state_caching(tmp_path: Path):
 
 def test_git_state_returns_unknown_on_failure(tmp_path: Path):
     ctx = _ctx(tmp_path)
-    with patch("skillsmith.signals.predicates.subprocess.run", side_effect=OSError("no git")):
+    with patch("agentalloy.signals.predicates.subprocess.run", side_effect=OSError("no git")):
         result = eval_git_state({"has_staged": True}, ctx)
     assert result == UNKNOWN
 
@@ -255,10 +255,10 @@ def test_git_state_returns_unknown_on_failure(tmp_path: Path):
 
 
 def test_contract_exists_found(tmp_path: Path):
-    cd = tmp_path / ".skillsmith" / "contracts" / "build"
+    cd = tmp_path / ".agentalloy" / "contracts" / "build"
     cd.mkdir(parents=True)
     (cd / "task.md").write_text("---\nphase: build\ntask_slug: t\ndomain_tags: [A]\n---\n\nbody\n")
-    ctx = _ctx(tmp_path, contracts_root=tmp_path / ".skillsmith" / "contracts")
+    ctx = _ctx(tmp_path, contracts_root=tmp_path / ".agentalloy" / "contracts")
     assert eval_contract_exists({"phase": "build", "count_min": 1}, ctx) == MET
 
 
@@ -270,11 +270,11 @@ def test_contract_exists_not_found(tmp_path: Path):
 def test_contract_has_tags(tmp_path: Path):
     import yaml
 
-    cd = tmp_path / ".skillsmith" / "contracts" / "build"
+    cd = tmp_path / ".agentalloy" / "contracts" / "build"
     cd.mkdir(parents=True)
     fm = {"phase": "build", "task_slug": "t", "domain_tags": ["NestJS", "JWT"]}
     (cd / "task.md").write_text(f"---\n{yaml.dump(fm)}---\n\nbody\n")
-    ctx = _ctx(tmp_path, contracts_root=tmp_path / ".skillsmith" / "contracts")
+    ctx = _ctx(tmp_path, contracts_root=tmp_path / ".agentalloy" / "contracts")
     assert eval_contract_has_tags({"phase": "build", "any_of": ["NestJS"]}, ctx) == MET
     assert eval_contract_has_tags({"phase": "build", "any_of": ["React"]}, ctx) == NOT_MET
 
@@ -314,6 +314,6 @@ def test_evaluate_predicate_unknown_name_raises(tmp_path: Path):
 def test_predicate_returns_unknown_on_io_error(tmp_path: Path):
     (tmp_path / "spec.md").write_text("content")
     ctx = _ctx(tmp_path)
-    with patch("skillsmith.signals.predicates._read_file", return_value=None):
+    with patch("agentalloy.signals.predicates._read_file", return_value=None):
         result = eval_artifact_contains({"path": "spec.md", "pattern": "x"}, ctx)
     assert result == UNKNOWN

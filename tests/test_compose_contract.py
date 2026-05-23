@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from skillsmith.api.compose_models import (
+from agentalloy.api.compose_models import (
     ComposedResult,
     ComposeRequest,
     EmptyResult,

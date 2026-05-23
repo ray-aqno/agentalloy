@@ -8,7 +8,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from skillsmith.api.health_router import HealthChecker, HealthResponse
+from agentalloy.api.health_router import HealthChecker, HealthResponse
 
 
 # Backward compat: no health_checker in app.state → returns healthy with no dep details.
@@ -28,7 +28,7 @@ def _mock_checker(
     checker = MagicMock(spec=HealthChecker)
 
     async def _check() -> HealthResponse:
-        from skillsmith.api.health_router import DependencyStatus
+        from agentalloy.api.health_router import DependencyStatus
 
         def dep(ok: bool, impact: str) -> DependencyStatus:
             return DependencyStatus(

@@ -1,4 +1,4 @@
-"""CLI smoke tests for skillsmith signal subcommands."""
+"""CLI smoke tests for agentalloy signal subcommands."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ import yaml
 
 
 def _write_phase(project_root: Path, phase: str) -> None:
-    pf = project_root / ".skillsmith" / "phase"
+    pf = project_root / ".agentalloy" / "phase"
     pf.parent.mkdir(parents=True, exist_ok=True)
     pf.write_text(f"phase: {phase}\n")
 
@@ -45,7 +45,7 @@ def _write_minimal_skill(packs_root: Path, phase: str = "build") -> None:
 
 
 def test_evaluate_phase_no_prefilter_match_exit_0(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from skillsmith.install.subcommands import signal as sig
+    from agentalloy.install.subcommands import signal as sig
 
     _write_phase(tmp_path, "build")
     monkeypatch.chdir(tmp_path)
@@ -90,7 +90,7 @@ def test_evaluate_phase_no_prefilter_match_exit_0(tmp_path: Path, monkeypatch: p
 def test_evaluate_phase_transition_writes_workflow_skill_to_stdout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    from skillsmith.install.subcommands import signal as sig
+    from agentalloy.install.subcommands import signal as sig
 
     _write_phase(tmp_path, "spec")
     monkeypatch.chdir(tmp_path)
@@ -143,10 +143,10 @@ def test_evaluate_phase_transition_writes_workflow_skill_to_stdout(
     assert rc == 0
     output = captured_stdout.getvalue()
     assert "DESIGN WORKFLOW PROSE" in output
-    assert "[skillsmith-workflow]" in output
+    assert "[agentalloy-workflow]" in output
 
     # Phase file should be updated to "design"
-    phase_file = tmp_path / ".skillsmith" / "phase"
+    phase_file = tmp_path / ".agentalloy" / "phase"
     content = yaml.safe_load(phase_file.read_text())
     assert content["phase"] == "design"
 
@@ -159,7 +159,7 @@ def test_evaluate_phase_transition_writes_workflow_skill_to_stdout(
 def test_evaluate_system_emits_matching_skill_bodies(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    from skillsmith.install.subcommands import signal as sig
+    from agentalloy.install.subcommands import signal as sig
 
     monkeypatch.chdir(tmp_path)
 
@@ -170,8 +170,8 @@ def test_evaluate_system_emits_matching_skill_bodies(
 
     # Patch the DuckDB call to simulate a system skill
     with (
-        patch("skillsmith.install.subcommands.signal._read_phase", return_value="build"),
-        patch("skillsmith.install.subcommands.signal._write_telemetry"),
+        patch("agentalloy.install.subcommands.signal._read_phase", return_value="build"),
+        patch("agentalloy.install.subcommands.signal._write_telemetry"),
         patch("duckdb.connect") as mock_conn,
     ):
         # system skill applies_when: tool_use_about_to_fire for git commit
@@ -191,8 +191,8 @@ def test_evaluate_system_emits_matching_skill_bodies(
         db_file.write_text("")
 
         with (
-            patch("skillsmith.profiles.domain_datastore_path", return_value=db_file),
-            patch("skillsmith.profiles.detect_profile", return_value=None),
+            patch("agentalloy.profiles.domain_datastore_path", return_value=db_file),
+            patch("agentalloy.profiles.detect_profile", return_value=None),
         ):
             args = argparse.Namespace(tool="git commit")
             sys.stdout = captured
@@ -204,7 +204,7 @@ def test_evaluate_system_emits_matching_skill_bodies(
     assert rc == 0
     output = captured.getvalue()
     assert "COMMIT SAFETY PROSE" in output
-    assert "[skillsmith-system:commit-safety]" in output
+    assert "[agentalloy-system:commit-safety]" in output
 
 
 # ---------------------------------------------------------------------------
@@ -215,11 +215,11 @@ def test_evaluate_system_emits_matching_skill_bodies(
 def test_watch_contract_invokes_compose(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     import yaml
 
-    from skillsmith.install.subcommands import signal as sig
+    from agentalloy.install.subcommands import signal as sig
 
     monkeypatch.chdir(tmp_path)
 
-    contract_path = tmp_path / ".skillsmith" / "contracts" / "build" / "task.md"
+    contract_path = tmp_path / ".agentalloy" / "contracts" / "build" / "task.md"
     contract_path.parent.mkdir(parents=True, exist_ok=True)
     fm: dict[str, Any] = {
         "phase": "build",
@@ -235,8 +235,8 @@ def test_watch_contract_invokes_compose(tmp_path: Path, monkeypatch: pytest.Monk
 
     with (
         patch("subprocess.run") as mock_run,
-        patch("skillsmith.install.subcommands.signal._write_telemetry"),
-        patch("skillsmith.install.state.load_state", return_value={"port": 47950}),
+        patch("agentalloy.install.subcommands.signal._write_telemetry"),
+        patch("agentalloy.install.state.load_state", return_value={"port": 47950}),
     ):
         mock_run.return_value = MagicMock(returncode=0)
         args = argparse.Namespace(path=str(contract_path))
@@ -261,7 +261,7 @@ def test_watch_contract_invokes_compose(tmp_path: Path, monkeypatch: pytest.Monk
 
 def test_evaluate_phase_emits_advisory_to_stdout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Advisory text from artifact_completeness appears in stdout alongside the transition output."""
-    from skillsmith.install.subcommands import signal as sig
+    from agentalloy.install.subcommands import signal as sig
 
     _write_phase(tmp_path, "spec")
     monkeypatch.chdir(tmp_path)
@@ -303,7 +303,7 @@ def test_evaluate_phase_emits_advisory_to_stdout(tmp_path: Path, monkeypatch: py
         patch.object(sig, "_load_workflow_skill_for_phase", side_effect=mock_load),
         patch.object(sig, "_write_telemetry"),
         patch(
-            "skillsmith.install.subcommands.signal.OpenAICompatClient",
+            "agentalloy.install.subcommands.signal.OpenAICompatClient",
             side_effect=RuntimeError("no server"),
         ),
     ):
@@ -320,7 +320,7 @@ def test_evaluate_phase_emits_advisory_to_stdout(tmp_path: Path, monkeypatch: py
     output = captured_stdout.getvalue()
     # artifact_exists MET → all_of short-circuits at UNKNOWN (from artifact_completeness) → no transition
     # but advisory should still appear
-    assert "[skillsmith-eval]" in output
+    assert "[agentalloy-eval]" in output
     assert "ACs testable" in output
 
 
@@ -328,7 +328,7 @@ def test_evaluate_phase_lm_client_constructed_from_embed_url(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """_evaluate_phase builds an OpenAICompatClient against runtime_embed_base_url."""
-    from skillsmith.install.subcommands import signal as sig
+    from agentalloy.install.subcommands import signal as sig
 
     _write_phase(tmp_path, "build")
     monkeypatch.chdir(tmp_path)
@@ -338,7 +338,7 @@ def test_evaluate_phase_lm_client_constructed_from_embed_url(
         "raw_prose": "prose",
         "applies_to_phases": ["build"],
         "exit_gates": {"artifact_exists": {"path": "nope.md"}},
-        "signal_keywords": ["SKILLSMITH_FORCE_CHECK"],
+        "signal_keywords": ["AGENTALLOY_FORCE_CHECK"],
     }
 
     import io
@@ -356,8 +356,8 @@ def test_evaluate_phase_lm_client_constructed_from_embed_url(
     with (
         patch.object(sig, "_load_workflow_skill_for_phase", return_value=skill),
         patch.object(sig, "_write_telemetry"),
-        patch("skillsmith.install.subcommands.signal.OpenAICompatClient", _FakeClient),
-        patch.dict(os.environ, {"SKILLSMITH_FORCE_CHECK": "1"}),
+        patch("agentalloy.install.subcommands.signal.OpenAICompatClient", _FakeClient),
+        patch.dict(os.environ, {"AGENTALLOY_FORCE_CHECK": "1"}),
     ):
         args = argparse.Namespace(prompt_file=str(prompt_file), tool=None, tool_path=None)
         sys.stdout = io.StringIO()
@@ -378,7 +378,7 @@ def test_evaluate_phase_lm_client_constructed_from_embed_url(
 
 
 def test_check_returns_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from skillsmith.install.subcommands import signal as sig
+    from agentalloy.install.subcommands import signal as sig
 
     monkeypatch.chdir(tmp_path)
     _write_phase(tmp_path, "build")

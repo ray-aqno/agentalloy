@@ -1,4 +1,4 @@
-# Pre-commit hooks for Skillsmith
+# Pre-commit hooks for AgentAlloy
 # Install: pre-commit install
 # Run manually: pre-commit run --all-files
 

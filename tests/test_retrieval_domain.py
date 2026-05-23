@@ -7,17 +7,17 @@ from pathlib import Path
 
 import pytest
 
-from skillsmith.fixtures.loader import load_fixtures
-from skillsmith.reads import get_active_fragments
-from skillsmith.reads.models import ActiveFragment
-from skillsmith.retrieval.domain import (
+from agentalloy.fixtures.loader import load_fixtures
+from agentalloy.reads import get_active_fragments
+from agentalloy.reads.models import ActiveFragment
+from agentalloy.retrieval.domain import (
     _rrf_fuse,  # pyright: ignore[reportPrivateUsage]
     diversity_select,
     phase_to_categories,
     retrieve_domain_candidates,
 )
-from skillsmith.storage.ladybug import LadybugStore
-from skillsmith.storage.vector_store import (
+from agentalloy.storage.ladybug import LadybugStore
+from agentalloy.storage.vector_store import (
     FragmentEmbedding,
     SimilarityHit,
     VectorStore,

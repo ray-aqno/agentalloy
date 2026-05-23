@@ -1,4 +1,4 @@
-"""Tests for skillsmith reset subcommand."""
+"""Tests for agentalloy reset subcommand."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def profiles_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def _make_override(
     profile_name: str, skill_class: str, skill_name: str, content: str = "x" * 120
 ) -> Path:
-    from skillsmith.profiles import profile_skills_dir
+    from agentalloy.profiles import profile_skills_dir
 
     d = profile_skills_dir(profile_name) / skill_class
     d.mkdir(parents=True, exist_ok=True)
@@ -31,8 +31,8 @@ def _make_override(
 
 
 def test_reset_requires_confirmation(profiles_tmp: Path, monkeypatch: pytest.MonkeyPatch):
-    from skillsmith.install.subcommands.reset import reset
-    from skillsmith.profiles import init_profile
+    from agentalloy.install.subcommands.reset import reset
+    from agentalloy.profiles import init_profile
 
     init_profile("testprofile")
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
@@ -43,8 +43,8 @@ def test_reset_requires_confirmation(profiles_tmp: Path, monkeypatch: pytest.Mon
 
 
 def test_reset_clears_profile_overrides(profiles_tmp: Path, monkeypatch: pytest.MonkeyPatch):
-    from skillsmith.install.subcommands.reset import reset
-    from skillsmith.profiles import init_profile
+    from agentalloy.install.subcommands.reset import reset
+    from agentalloy.profiles import init_profile
 
     init_profile("r1")
     override = _make_override("r1", "system", "my-skill")
@@ -56,8 +56,8 @@ def test_reset_clears_profile_overrides(profiles_tmp: Path, monkeypatch: pytest.
 
 
 def test_reset_does_not_touch_domain(profiles_tmp: Path):
-    from skillsmith.install.subcommands.reset import reset
-    from skillsmith.profiles import domain_datastore_path, init_profile
+    from agentalloy.install.subcommands.reset import reset
+    from agentalloy.profiles import domain_datastore_path, init_profile
 
     init_profile("r2")
     domain = domain_datastore_path()
@@ -71,8 +71,8 @@ def test_reset_does_not_touch_domain(profiles_tmp: Path):
 
 
 def test_reset_does_not_touch_other_profiles(profiles_tmp: Path):
-    from skillsmith.install.subcommands.reset import reset
-    from skillsmith.profiles import init_profile
+    from agentalloy.install.subcommands.reset import reset
+    from agentalloy.profiles import init_profile
 
     init_profile("rA")
     init_profile("rB")

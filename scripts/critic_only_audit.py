@@ -8,7 +8,7 @@ Outputs ``<skill_id>.critic.md`` next to each skill's existing ``.qa.md``
 under ``docs/skill-review-history/<batch>/``.
 
 Usage:
-    set -a && source ~/.config/skillsmith/skillsmith.env && set +a
+    set -a && source ~/.config/agentalloy/agentalloy.env && set +a
     uv run python scripts/critic_only_audit.py
 """
 
@@ -18,10 +18,10 @@ import json
 import sys
 from pathlib import Path
 
-from skillsmith.authoring.prompt_loader import load_prompt
-from skillsmith.authoring.qa_gate import run_critic
-from skillsmith.config import get_settings
-from skillsmith.lm_client import OpenAICompatClient
+from agentalloy.authoring.prompt_loader import load_prompt
+from agentalloy.authoring.qa_gate import run_critic
+from agentalloy.config import get_settings
+from agentalloy.lm_client import OpenAICompatClient
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -29,7 +29,7 @@ REPO = Path(__file__).resolve().parents[1]
 TARGETS: list[tuple[Path, Path]] = [
     *[
         (
-            REPO / "src/skillsmith/_packs/go" / f"{stem}.yaml",
+            REPO / "src/agentalloy/_packs/go" / f"{stem}.yaml",
             REPO / "docs/skill-review-history/2026-05-05-go-pack",
         )
         for stem in (
@@ -42,7 +42,7 @@ TARGETS: list[tuple[Path, Path]] = [
     ],
     *[
         (
-            REPO / "src/skillsmith/_packs/rust" / f"{stem}.yaml",
+            REPO / "src/agentalloy/_packs/rust" / f"{stem}.yaml",
             REPO / "docs/skill-review-history/2026-05-05-rust-pack",
         )
         for stem in (

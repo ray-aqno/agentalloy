@@ -9,8 +9,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from skillsmith.app import create_app
-from skillsmith.storage.vector_store import VectorStore, open_or_create
+from agentalloy.app import create_app
+from agentalloy.storage.vector_store import VectorStore, open_or_create
 
 
 @pytest.fixture

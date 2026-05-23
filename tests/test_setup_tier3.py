@@ -10,7 +10,7 @@ import pytest
 
 
 def _make_cfg(harness: str, non_interactive: bool = False, acknowledge_tier3: bool = False):
-    from skillsmith.install.subcommands.simple_setup import SetupConfig
+    from agentalloy.install.subcommands.simple_setup import SetupConfig
 
     return SetupConfig(
         runner="ollama",
@@ -31,7 +31,7 @@ def _make_cfg(harness: str, non_interactive: bool = False, acknowledge_tier3: bo
 
 def test_tier3_non_interactive_requires_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Non-interactive Tier 3 setup exits with rc=1 without --acknowledge-tier3."""
-    from skillsmith.install.subcommands import simple_setup as ss
+    from agentalloy.install.subcommands import simple_setup as ss
 
     monkeypatch.chdir(tmp_path)
     cfg = _make_cfg("cursor", non_interactive=True, acknowledge_tier3=False)
@@ -44,7 +44,7 @@ def test_tier3_non_interactive_requires_flag(tmp_path: Path, monkeypatch: pytest
 
 def test_tier3_interactive_code_path(tmp_path: Path):
     """The Tier 3 interactive code path calls _prompt_context with 'Continue' message."""
-    from skillsmith.install.subcommands import simple_setup as ss
+    from agentalloy.install.subcommands import simple_setup as ss
 
     # Directly test the code block that would fire for Tier 3 interactive
     # by simulating the harness check inline
@@ -87,14 +87,14 @@ def test_tier3_interactive_code_path(tmp_path: Path):
 
 
 def test_tier3_wire_writes_watcher_config_via_watch_dir(tmp_path: Path):
-    """_wire_tier3_watcher_config writes watch config to ~/.skillsmith/watch/."""
+    """_wire_tier3_watcher_config writes watch config to ~/.agentalloy/watch/."""
     import yaml
 
-    from skillsmith.install.subcommands.wire_harness import (
+    from agentalloy.install.subcommands.wire_harness import (
         _wire_tier3_watcher_config,  # pyright: ignore[reportPrivateUsage]
     )
 
-    watch_dir = tmp_path / ".skillsmith" / "watch"
+    watch_dir = tmp_path / ".agentalloy" / "watch"
 
     with patch("pathlib.Path.home", return_value=tmp_path):
         _wire_tier3_watcher_config("cursor", tmp_path)

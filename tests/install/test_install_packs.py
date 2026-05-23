@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from skillsmith.install import state as install_state
-from skillsmith.install.subcommands.install_packs import (
+from agentalloy.install import state as install_state
+from agentalloy.install.subcommands.install_packs import (
     _clear_pending_pack_selection,
     _installed_pack_names,
     _load_pending_pack_selection,

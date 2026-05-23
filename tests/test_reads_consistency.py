@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from skillsmith.reads import InconsistentActiveVersion, get_active_skills
-from skillsmith.storage.ladybug import LadybugStore
+from agentalloy.reads import InconsistentActiveVersion, get_active_skills
+from agentalloy.storage.ladybug import LadybugStore
 
 
 @pytest.fixture

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from skillsmith.storage.vector_store import (
+from agentalloy.storage.vector_store import (
     EMBEDDING_DIM,
     BM25Hit,
     CompositionTrace,

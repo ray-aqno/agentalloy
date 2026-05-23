@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from skillsmith.storage.ladybug import LadybugStore
+from agentalloy.storage.ladybug import LadybugStore
 
 
 @pytest.fixture

@@ -18,7 +18,7 @@ import httpx
 
 from eval.tasks import TASKS
 
-SKILLSMITH_URL = os.environ.get("SKILLSMITH_URL", "http://localhost:47950")
+AGENTALLOY_URL = os.environ.get("AGENTALLOY_URL", "http://localhost:47950")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     with httpx.Client(timeout=30.0) as client:
         for task in TASKS:
             resp = client.post(
-                f"{SKILLSMITH_URL}/compose",
+                f"{AGENTALLOY_URL}/compose",
                 json={"task": task.spec, "phase": task.phase, "k": args.k},
             )
             resp.raise_for_status()

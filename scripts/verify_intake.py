@@ -3,8 +3,8 @@
 import subprocess
 import sys
 
-from skillsmith.config import get_settings
-from skillsmith.storage.ladybug import LadybugStore
+from agentalloy.config import get_settings
+from agentalloy.storage.ladybug import LadybugStore
 
 
 def main():
@@ -28,7 +28,7 @@ def main():
                 print(f"  WARNING: expected skill_class='workflow', got '{skill_class}'")
         print("\nNow running reembed...")
         result = subprocess.run(
-            [sys.executable, "-m", "skillsmith.install", "reembed"],
+            [sys.executable, "-m", "agentalloy.install", "reembed"],
             capture_output=True,
             text=True,
             timeout=120,

@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from skillsmith.install.state import (
+from agentalloy.install.state import (
     CURRENT_SCHEMA_VERSION,
     clear_pending_pack_selection,
     get_pending_pack_selection,
@@ -47,11 +47,11 @@ class TestStateFileCreated:
         parsed = json.loads(fp.read_text())
         assert parsed["schema_version"] == CURRENT_SCHEMA_VERSION
 
-    def test_state_path_is_under_user_skillsmith_dir(self, repo_root: Path) -> None:
-        # State is now user-scoped (XDG_CONFIG_HOME/skillsmith/), not
+    def test_state_path_is_under_user_agentalloy_dir(self, repo_root: Path) -> None:
+        # State is now user-scoped (XDG_CONFIG_HOME/agentalloy/), not
         # per-repo. The conftest redirects XDG dirs to tmp_path subdirs.
         fp = state_path(repo_root)
-        assert "skillsmith" in str(fp)
+        assert "agentalloy" in str(fp)
         assert fp.name == "install-state.json"
         # Path must NOT live inside the repo any more.
         assert str(fp).find(str(repo_root)) == -1 or "_xdg_config" in str(fp)

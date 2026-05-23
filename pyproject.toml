@@ -1,7 +1,7 @@
 [project]
-name = "skillsmith"
+name = "agentalloy"
 version = "0.1.0"
-description = "Runtime skill composition service — assembles task-specific guidance for agents with governance included. Runtime only — see skillsmith-authoring for corpus authoring tooling."
+description = "Runtime skill composition service — assembles task-specific guidance for agents with governance included. Runtime only — see agentalloy-authoring for corpus authoring tooling."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
@@ -33,7 +33,7 @@ dev = [
 ]
 
 [project.scripts]
-skillsmith = "skillsmith.install.__main__:main"
+agentalloy = "agentalloy.install.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -43,13 +43,13 @@ build-backend = "hatchling.build"
 exclude = ["pytest-of-*/", "*.backup.*", "_check_*.py", "_verify_*.py"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/skillsmith"]
-# Pack source YAMLs live INSIDE the package at src/skillsmith/_packs/ so
+packages = ["src/agentalloy"]
+# Pack source YAMLs live INSIDE the package at src/agentalloy/_packs/ so
 # hatchling ships them with the wheel automatically. Binary corpus
 # (LadybugDB + DuckDB) is no longer shipped; it's generated locally on
-# first install when users pick packs via `skillsmith install-packs`.
+# first install when users pick packs via `agentalloy install-packs`.
 artifacts = [
-    "src/skillsmith/_corpus/.gitkeep",
+    "src/agentalloy/_corpus/.gitkeep",
 ]
 
 [tool.ruff]
@@ -78,7 +78,7 @@ include = ["src", "tests"]
 # Authoring subpackage is being redesigned — exclude from strict typecheck
 # until the new approach lands. See the navistone fork divergence note in
 # the 0875b29 merge commit (authoring kept here, removed on nrmeyers).
-exclude = ["src/skillsmith/authoring/**"]
+exclude = ["src/agentalloy/authoring/**"]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
 reportMissingTypeStubs = false

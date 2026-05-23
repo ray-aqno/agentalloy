@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from skillsmith.install.subcommands.recommend_host_targets import (
+from agentalloy.install.subcommands.recommend_host_targets import (
     recommend_targets,
 )
 

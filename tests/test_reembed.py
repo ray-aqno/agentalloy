@@ -8,13 +8,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from skillsmith.reembed.cli import (
+from agentalloy.reembed.cli import (
     EXIT_OK,
 )
-from skillsmith.reembed.cli import (
+from agentalloy.reembed.cli import (
     main as reembed_main,
 )
-from skillsmith.storage.vector_store import VectorStore
+from agentalloy.storage.vector_store import VectorStore
 
 # ---------------------------------------------------------------------------
 # --rebuild-fts flag
@@ -24,10 +24,10 @@ from skillsmith.storage.vector_store import VectorStore
 def test_rebuild_fts_flag_accepted() -> None:
     """--rebuild-fts is accepted as valid CLI (dry-run mode)."""
     with (
-        patch("skillsmith.reembed.cli.get_settings") as mock_settings,
-        patch("skillsmith.reembed.cli.LadybugStore") as mock_store_cls,
-        patch("skillsmith.reembed.cli.open_or_create") as mock_vs_cls,
-        patch("skillsmith.reembed.cli._is_service_running", return_value=False),
+        patch("agentalloy.reembed.cli.get_settings") as mock_settings,
+        patch("agentalloy.reembed.cli.LadybugStore") as mock_store_cls,
+        patch("agentalloy.reembed.cli.open_or_create") as mock_vs_cls,
+        patch("agentalloy.reembed.cli._is_service_running", return_value=False),
     ):
         mock_settings.return_value.ladybug_db_path = "/tmp/test/ladybug.db"
         mock_settings.return_value.runtime_embedding_model = "test-model"
@@ -54,10 +54,10 @@ def test_rebuild_fts_runs_when_zero_fragments(
     """--rebuild-fts triggers rebuild_fts_index when fragments is empty."""
     # Mock the LadybugStore and vector_store so we can control discovery
     with (
-        patch("skillsmith.reembed.cli.LadybugStore") as mock_store_cls,
-        patch("skillsmith.reembed.cli.open_or_create") as mock_vs_cls,
-        patch("skillsmith.reembed.cli.get_settings") as mock_settings,
-        patch("skillsmith.reembed.cli._is_service_running", return_value=False),
+        patch("agentalloy.reembed.cli.LadybugStore") as mock_store_cls,
+        patch("agentalloy.reembed.cli.open_or_create") as mock_vs_cls,
+        patch("agentalloy.reembed.cli.get_settings") as mock_settings,
+        patch("agentalloy.reembed.cli._is_service_running", return_value=False),
     ):
         mock_settings.return_value.ladybug_db_path = str(tmp_path / "ladybug.db")
         mock_settings.return_value.runtime_embedding_model = "test-model"
@@ -88,10 +88,10 @@ def test_no_rebuild_without_flag_when_zero_fragments(
 ) -> None:
     """Without --rebuild-fts, rebuild_fts_index is NOT called when fragments is empty."""
     with (
-        patch("skillsmith.reembed.cli.LadybugStore") as mock_store_cls,
-        patch("skillsmith.reembed.cli.open_or_create") as mock_vs_cls,
-        patch("skillsmith.reembed.cli.get_settings") as mock_settings,
-        patch("skillsmith.reembed.cli._is_service_running", return_value=False),
+        patch("agentalloy.reembed.cli.LadybugStore") as mock_store_cls,
+        patch("agentalloy.reembed.cli.open_or_create") as mock_vs_cls,
+        patch("agentalloy.reembed.cli.get_settings") as mock_settings,
+        patch("agentalloy.reembed.cli._is_service_running", return_value=False),
     ):
         mock_settings.return_value.ladybug_db_path = str(tmp_path / "ladybug.db")
         mock_settings.return_value.runtime_embedding_model = "test-model"
@@ -118,10 +118,10 @@ def test_no_rebuild_without_flag_when_zero_fragments(
 def test_rebuild_fts_exit_ok_on_failure(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     """When rebuild_fts_index raises, exit code is still EXIT_OK."""
     with (
-        patch("skillsmith.reembed.cli.LadybugStore") as mock_store_cls,
-        patch("skillsmith.reembed.cli.open_or_create") as mock_vs_cls,
-        patch("skillsmith.reembed.cli.get_settings") as mock_settings,
-        patch("skillsmith.reembed.cli._is_service_running", return_value=False),
+        patch("agentalloy.reembed.cli.LadybugStore") as mock_store_cls,
+        patch("agentalloy.reembed.cli.open_or_create") as mock_vs_cls,
+        patch("agentalloy.reembed.cli.get_settings") as mock_settings,
+        patch("agentalloy.reembed.cli._is_service_running", return_value=False),
     ):
         mock_settings.return_value.ladybug_db_path = str(tmp_path / "ladybug.db")
         mock_settings.return_value.runtime_embedding_model = "test-model"
@@ -205,7 +205,7 @@ def test_rebuild_fts_no_retry_on_non_transient_error(tmp_path: Path) -> None:
 
 def test_detect_service_manager_linux() -> None:
     """_detect_service_manager returns 'systemd' on Linux with systemctl."""
-    from skillsmith.reembed.cli import (
+    from agentalloy.reembed.cli import (
         _detect_service_manager,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -218,7 +218,7 @@ def test_detect_service_manager_linux() -> None:
 
 def test_detect_service_manager_macos() -> None:
     """_detect_service_manager returns 'launchd' on macOS with launchctl."""
-    from skillsmith.reembed.cli import (
+    from agentalloy.reembed.cli import (
         _detect_service_manager,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -231,7 +231,7 @@ def test_detect_service_manager_macos() -> None:
 
 def test_detect_service_manager_none() -> None:
     """_detect_service_manager returns None when no service manager found."""
-    from skillsmith.reembed.cli import (
+    from agentalloy.reembed.cli import (
         _detect_service_manager,  # pyright: ignore[reportPrivateUsage]
     )
 
@@ -244,7 +244,7 @@ def test_detect_service_manager_none() -> None:
 
 def test_is_service_running_systemd() -> None:
     """_is_service_running returns True when systemd reports active."""
-    from skillsmith.reembed.cli import _is_service_running  # pyright: ignore[reportPrivateUsage]
+    from agentalloy.reembed.cli import _is_service_running  # pyright: ignore[reportPrivateUsage]
 
     mock_result = MagicMock()
     mock_result.stdout = "active\n"
@@ -260,7 +260,7 @@ def test_is_service_running_systemd() -> None:
 
 def test_is_service_running_systemd_inactive() -> None:
     """_is_service_running returns False when systemd reports inactive."""
-    from skillsmith.reembed.cli import _is_service_running  # pyright: ignore[reportPrivateUsage]
+    from agentalloy.reembed.cli import _is_service_running  # pyright: ignore[reportPrivateUsage]
 
     mock_result = MagicMock()
     mock_result.stdout = "inactive\n"
@@ -276,7 +276,7 @@ def test_is_service_running_systemd_inactive() -> None:
 
 def test_is_service_running_no_service_manager() -> None:
     """_is_service_running returns False when no service manager found."""
-    from skillsmith.reembed.cli import _is_service_running  # pyright: ignore[reportPrivateUsage]
+    from agentalloy.reembed.cli import _is_service_running  # pyright: ignore[reportPrivateUsage]
 
     with (
         patch("platform.system", return_value="Linux"),
@@ -287,7 +287,7 @@ def test_is_service_running_no_service_manager() -> None:
 
 def test_stop_service_systemd() -> None:
     """_stop_service stops the systemd service."""
-    from skillsmith.reembed.cli import _stop_service  # pyright: ignore[reportPrivateUsage]
+    from agentalloy.reembed.cli import _stop_service  # pyright: ignore[reportPrivateUsage]
 
     with (
         patch("platform.system", return_value="Linux"),
@@ -304,7 +304,7 @@ def test_stop_service_systemd() -> None:
 
 def test_stop_service_systemd_failure() -> None:
     """_stop_service returns False when systemd stop fails."""
-    from skillsmith.reembed.cli import _stop_service  # pyright: ignore[reportPrivateUsage]
+    from agentalloy.reembed.cli import _stop_service  # pyright: ignore[reportPrivateUsage]
 
     with (
         patch("platform.system", return_value="Linux"),
@@ -317,7 +317,7 @@ def test_stop_service_systemd_failure() -> None:
 
 def test_restart_service_systemd() -> None:
     """_restart_service starts the systemd service."""
-    from skillsmith.reembed.cli import _restart_service  # pyright: ignore[reportPrivateUsage]
+    from agentalloy.reembed.cli import _restart_service  # pyright: ignore[reportPrivateUsage]
 
     with (
         patch("platform.system", return_value="Linux"),
@@ -339,12 +339,12 @@ def test_restart_service_systemd() -> None:
 def test_reembed_stops_and_restarts_service(tmp_path: Path) -> None:
     """reembed stops service before DB access and restarts after (unless --no-restart)."""
     with (
-        patch("skillsmith.reembed.cli.LadybugStore") as mock_store_cls,
-        patch("skillsmith.reembed.cli.open_or_create") as mock_vs_cls,
-        patch("skillsmith.reembed.cli.get_settings") as mock_settings,
-        patch("skillsmith.reembed.cli._is_service_running", return_value=True),
-        patch("skillsmith.reembed.cli._stop_service", return_value=True) as mock_stop,
-        patch("skillsmith.reembed.cli._restart_service") as mock_restart,
+        patch("agentalloy.reembed.cli.LadybugStore") as mock_store_cls,
+        patch("agentalloy.reembed.cli.open_or_create") as mock_vs_cls,
+        patch("agentalloy.reembed.cli.get_settings") as mock_settings,
+        patch("agentalloy.reembed.cli._is_service_running", return_value=True),
+        patch("agentalloy.reembed.cli._stop_service", return_value=True) as mock_stop,
+        patch("agentalloy.reembed.cli._restart_service") as mock_restart,
     ):
         mock_settings.return_value.ladybug_db_path = str(tmp_path / "ladybug.db")
         mock_settings.return_value.runtime_embedding_model = "test-model"
@@ -370,12 +370,12 @@ def test_reembed_stops_and_restarts_service(tmp_path: Path) -> None:
 def test_reembed_no_restart_flag(tmp_path: Path) -> None:
     """--no-restart prevents automatic service restart."""
     with (
-        patch("skillsmith.reembed.cli.LadybugStore") as mock_store_cls,
-        patch("skillsmith.reembed.cli.open_or_create") as mock_vs_cls,
-        patch("skillsmith.reembed.cli.get_settings") as mock_settings,
-        patch("skillsmith.reembed.cli._is_service_running", return_value=True),
-        patch("skillsmith.reembed.cli._stop_service", return_value=True),
-        patch("skillsmith.reembed.cli._restart_service") as mock_restart,
+        patch("agentalloy.reembed.cli.LadybugStore") as mock_store_cls,
+        patch("agentalloy.reembed.cli.open_or_create") as mock_vs_cls,
+        patch("agentalloy.reembed.cli.get_settings") as mock_settings,
+        patch("agentalloy.reembed.cli._is_service_running", return_value=True),
+        patch("agentalloy.reembed.cli._stop_service", return_value=True),
+        patch("agentalloy.reembed.cli._restart_service") as mock_restart,
     ):
         mock_settings.return_value.ladybug_db_path = str(tmp_path / "ladybug.db")
         mock_settings.return_value.runtime_embedding_model = "test-model"
@@ -400,12 +400,12 @@ def test_reembed_no_restart_flag(tmp_path: Path) -> None:
 def test_reembed_no_service_skip_stop(tmp_path: Path) -> None:
     """When service is not running, skip stop and restart steps."""
     with (
-        patch("skillsmith.reembed.cli.LadybugStore") as mock_store_cls,
-        patch("skillsmith.reembed.cli.open_or_create") as mock_vs_cls,
-        patch("skillsmith.reembed.cli.get_settings") as mock_settings,
-        patch("skillsmith.reembed.cli._is_service_running", return_value=False),
-        patch("skillsmith.reembed.cli._stop_service") as mock_stop,
-        patch("skillsmith.reembed.cli._restart_service") as mock_restart,
+        patch("agentalloy.reembed.cli.LadybugStore") as mock_store_cls,
+        patch("agentalloy.reembed.cli.open_or_create") as mock_vs_cls,
+        patch("agentalloy.reembed.cli.get_settings") as mock_settings,
+        patch("agentalloy.reembed.cli._is_service_running", return_value=False),
+        patch("agentalloy.reembed.cli._stop_service") as mock_stop,
+        patch("agentalloy.reembed.cli._restart_service") as mock_restart,
     ):
         mock_settings.return_value.ladybug_db_path = str(tmp_path / "ladybug.db")
         mock_settings.return_value.runtime_embedding_model = "test-model"
@@ -431,12 +431,12 @@ def test_reembed_no_service_skip_stop(tmp_path: Path) -> None:
 def test_reembed_restart_on_error(tmp_path: Path) -> None:
     """Service is restarted even when reembed fails (DB error)."""
     with (
-        patch("skillsmith.reembed.cli.LadybugStore") as mock_store_cls,
-        patch("skillsmith.reembed.cli.open_or_create") as mock_vs_cls,
-        patch("skillsmith.reembed.cli.get_settings") as mock_settings,
-        patch("skillsmith.reembed.cli._is_service_running", return_value=True),
-        patch("skillsmith.reembed.cli._stop_service", return_value=True),
-        patch("skillsmith.reembed.cli._restart_service") as mock_restart,
+        patch("agentalloy.reembed.cli.LadybugStore") as mock_store_cls,
+        patch("agentalloy.reembed.cli.open_or_create") as mock_vs_cls,
+        patch("agentalloy.reembed.cli.get_settings") as mock_settings,
+        patch("agentalloy.reembed.cli._is_service_running", return_value=True),
+        patch("agentalloy.reembed.cli._stop_service", return_value=True),
+        patch("agentalloy.reembed.cli._restart_service") as mock_restart,
     ):
         mock_settings.return_value.ladybug_db_path = str(tmp_path / "ladybug.db")
         mock_settings.return_value.runtime_embedding_model = "test-model"
@@ -469,11 +469,11 @@ def test_reembed_restart_on_error(tmp_path: Path) -> None:
 
 def test_is_service_running_macos_with_pid() -> None:
     """_is_service_running returns True when launchctl list shows a real PID."""
-    from skillsmith.reembed.cli import _is_service_running  # pyright: ignore[reportPrivateUsage]
+    from agentalloy.reembed.cli import _is_service_running  # pyright: ignore[reportPrivateUsage]
 
     mock_result = MagicMock()
     mock_result.returncode = 0
-    mock_result.stdout = "12345\t0\tai.skillsmith\n"
+    mock_result.stdout = "12345\t0\tai.agentalloy\n"
 
     with (
         patch("platform.system", return_value="Darwin"),
@@ -486,11 +486,11 @@ def test_is_service_running_macos_with_pid() -> None:
 
 def test_is_service_running_macos_not_running() -> None:
     """_is_service_running returns False when launchctl list shows PID='-'."""
-    from skillsmith.reembed.cli import _is_service_running  # pyright: ignore[reportPrivateUsage]
+    from agentalloy.reembed.cli import _is_service_running  # pyright: ignore[reportPrivateUsage]
 
     mock_result = MagicMock()
     mock_result.returncode = 0
-    mock_result.stdout = "-\t0\tai.skillsmith\n"
+    mock_result.stdout = "-\t0\tai.agentalloy\n"
 
     with (
         patch("platform.system", return_value="Darwin"),
@@ -509,12 +509,12 @@ def test_is_service_running_macos_not_running() -> None:
 def test_reembed_dry_run_stops_service(tmp_path: Path) -> None:
     """--dry-run still stops the service to avoid DB lock conflicts."""
     with (
-        patch("skillsmith.reembed.cli.LadybugStore") as mock_store_cls,
-        patch("skillsmith.reembed.cli.open_or_create") as mock_vs_cls,
-        patch("skillsmith.reembed.cli.get_settings") as mock_settings,
-        patch("skillsmith.reembed.cli._is_service_running", return_value=True),
-        patch("skillsmith.reembed.cli._stop_service", return_value=True) as mock_stop,
-        patch("skillsmith.reembed.cli._restart_service") as mock_restart,
+        patch("agentalloy.reembed.cli.LadybugStore") as mock_store_cls,
+        patch("agentalloy.reembed.cli.open_or_create") as mock_vs_cls,
+        patch("agentalloy.reembed.cli.get_settings") as mock_settings,
+        patch("agentalloy.reembed.cli._is_service_running", return_value=True),
+        patch("agentalloy.reembed.cli._stop_service", return_value=True) as mock_stop,
+        patch("agentalloy.reembed.cli._restart_service") as mock_restart,
     ):
         mock_settings.return_value.ladybug_db_path = str(tmp_path / "ladybug.db")
         mock_settings.return_value.runtime_embedding_model = "test-model"
@@ -547,10 +547,10 @@ def test_fts_rebuild_warning_includes_hint(
 ) -> None:
     """FTS rebuild failure warning includes actionable remediation hint."""
     with (
-        patch("skillsmith.reembed.cli.LadybugStore") as mock_store_cls,
-        patch("skillsmith.reembed.cli.open_or_create") as mock_vs_cls,
-        patch("skillsmith.reembed.cli.get_settings") as mock_settings,
-        patch("skillsmith.reembed.cli._is_service_running", return_value=False),
+        patch("agentalloy.reembed.cli.LadybugStore") as mock_store_cls,
+        patch("agentalloy.reembed.cli.open_or_create") as mock_vs_cls,
+        patch("agentalloy.reembed.cli.get_settings") as mock_settings,
+        patch("agentalloy.reembed.cli._is_service_running", return_value=False),
     ):
         mock_settings.return_value.ladybug_db_path = str(tmp_path / "ladybug.db")
         mock_settings.return_value.runtime_embedding_model = "test-model"

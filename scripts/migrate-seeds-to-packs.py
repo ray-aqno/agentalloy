@@ -26,7 +26,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SEEDS = REPO_ROOT / "seeds"
 # Packs live INSIDE the package so they ship with the wheel.
-PACKS_DIR = REPO_ROOT / "src" / "skillsmith" / "_packs"
+PACKS_DIR = REPO_ROOT / "src" / "agentalloy" / "_packs"
 
 # Order matters: first match wins.
 # Strategy: framework-specific patterns first, then services, cross-cutting
@@ -364,7 +364,7 @@ def write_pack_manifest(pack: str, entries: list[dict]) -> None:
         "embed_model": EMBED_MODEL,
         "embedding_dim": EMBED_DIM,
         "license": "MIT",
-        "homepage": "https://github.com/nrmeyers/skillsmith",
+        "homepage": "https://github.com/nrmeyers/agentalloy",
         "always_install": meta.get("always_install", False),
         "depends_on": meta.get("depends_on", []),
         "skills": entries,

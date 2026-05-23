@@ -12,7 +12,7 @@ import pytest
 
 # Private member imports for pyright strict mode testing (I001 excluded — private names)
 # ruff: noqa: I001
-from skillsmith.install.subcommands.simple_setup import (
+from agentalloy.install.subcommands.simple_setup import (
     _derive_host_target as _derive_host_target,  # type: ignore[attr-defined]
     _discover_packs as _discover_packs,  # type: ignore[attr-defined]
     _prompt as _prompt,  # type: ignore[attr-defined]
@@ -43,7 +43,7 @@ class MockSetup:
         self.patchers: list[Any] = []  # type: ignore[type-arg]
 
     def _get_patch_path(self, name: str) -> str:
-        return f"skillsmith.install.subcommands.{name}"
+        return f"agentalloy.install.subcommands.{name}"
 
     def setup_all(self):
         # Modules that have a .run() method — preflight uses .run_preflight() instead
@@ -64,7 +64,7 @@ class MockSetup:
             self.patchers.append(mp)
 
         # preflight.run_preflight is a module-level function, not .run()
-        pf = patch("skillsmith.install.subcommands.preflight.run_preflight")
+        pf = patch("agentalloy.install.subcommands.preflight.run_preflight")
         self.mocks["preflight"] = pf.start()
         self.mocks["preflight"].return_value = {
             "checks": [],
@@ -82,8 +82,8 @@ class MockSetup:
 def tmp_state_dir(tmp_path: Path):
     """Set up a temporary XDG state directory.
 
-    XDG_DATA_HOME -> tmp/.local/share (outputs_dir() appends 'skillsmith/outputs')
-    XDG_CONFIG_HOME -> tmp/.config (user_config_dir() appends 'skillsmith')
+    XDG_DATA_HOME -> tmp/.local/share (outputs_dir() appends 'agentalloy/outputs')
+    XDG_CONFIG_HOME -> tmp/.config (user_config_dir() appends 'agentalloy')
     """
     config_dir = tmp_path / ".config"
     data_dir = tmp_path / ".local" / "share"
@@ -120,7 +120,7 @@ class TestSimpleSetupPrompts:
             assert result == "hello"
 
     def test_invalid_runner_rejected(self, tmp_state_dir: tuple[Path, Path]):
-        from skillsmith.install.subcommands.simple_setup import run_setup
+        from agentalloy.install.subcommands.simple_setup import run_setup
 
         cfg = SetupConfig(runner="invalid", non_interactive=True)
         rc = run_setup(cfg)
@@ -215,7 +215,7 @@ class TestSimpleSetupExecution:
         self.tmp_config, self.tmp_data = tmp_state_dir
         # Patch outputs_dir to return a path inside the fixture
         outputs_patch = patch(
-            "skillsmith.install.state.outputs_dir",
+            "agentalloy.install.state.outputs_dir",
             return_value=self.tmp_data / "outputs",
         )
         self.mock.patchers.append(outputs_patch)
@@ -228,7 +228,7 @@ class TestSimpleSetupExecution:
         # Force re-import to pick up mocks
         import importlib
 
-        import skillsmith.install.subcommands.simple_setup as mod
+        import agentalloy.install.subcommands.simple_setup as mod
 
         importlib.reload(mod)
         return mod.SetupConfig, mod.run_setup
@@ -355,7 +355,7 @@ class TestAddParser:
     def test_parser_registers_setup_subcommand(self):
         import argparse
 
-        from skillsmith.install.subcommands.simple_setup import add_parser
+        from agentalloy.install.subcommands.simple_setup import add_parser
 
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="subcommand")
@@ -368,7 +368,7 @@ class TestAddParser:
     def test_parser_accepts_all_flags(self):
         import argparse
 
-        from skillsmith.install.subcommands.simple_setup import add_parser
+        from agentalloy.install.subcommands.simple_setup import add_parser
 
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="subcommand")
@@ -419,7 +419,7 @@ class TestRunFromArgs:
         )
         # Just verify it builds a valid config -- actual run_setup is tested above
         # We'll just check _run_from_args doesn't raise with valid args
-        with patch("skillsmith.install.subcommands.simple_setup.run_setup", return_value=0):
+        with patch("agentalloy.install.subcommands.simple_setup.run_setup", return_value=0):
             rc = _run_from_args(args)
         assert rc == 0
 
@@ -435,7 +435,7 @@ class TestRunFromArgs:
             harness="cursor",
             non_interactive=True,
         )
-        with patch("skillsmith.install.subcommands.simple_setup.run_setup", return_value=0):
+        with patch("agentalloy.install.subcommands.simple_setup.run_setup", return_value=0):
             rc = _run_from_args(args)
         assert rc == 0
 
@@ -564,7 +564,7 @@ class TestPackDiscovery:
 
     def test_non_interactive_skips_pack_prompt(self):
         """Non-interactive mode does not call _prompt_for_packs()."""
-        from skillsmith.install.subcommands.simple_setup import run_setup
+        from agentalloy.install.subcommands.simple_setup import run_setup
 
         cfg = SetupConfig(non_interactive=True)
 
@@ -591,11 +591,11 @@ class TestPackDiscovery:
                     "verify",
                     "wire_harness",
                 ):
-                    mp = patch(f"skillsmith.install.subcommands.{name}.run")
+                    mp = patch(f"agentalloy.install.subcommands.{name}.run")
                     self.mocks[name] = mp.start()
                     self.mocks[name].return_value = 0
                     self.patchers.append(mp)
-                pf = patch("skillsmith.install.subcommands.preflight.run_preflight")
+                pf = patch("agentalloy.install.subcommands.preflight.run_preflight")
                 self.mocks["preflight"] = pf.start()
                 self.mocks["preflight"].return_value = {
                     "checks": [],
@@ -621,14 +621,14 @@ class TestPackDiscovery:
             json.dump({"gpu": {"discrete": [], "integrated": []}}, f)
 
         outputs_patch = patch(
-            "skillsmith.install.state.outputs_dir",
+            "agentalloy.install.state.outputs_dir",
             return_value=__import__("pathlib").Path(tmpdir),
         )
         mock.patchers.append(outputs_patch)
         outputs_patch.start()
 
         with patch(
-            "skillsmith.install.subcommands.simple_setup._prompt_for_packs",
+            "agentalloy.install.subcommands.simple_setup._prompt_for_packs",
             side_effect=fake_prompt_for_packs,
         ):
             rc = run_setup(cfg)
@@ -656,7 +656,7 @@ class TestHarnessValidation:
         self.mock.setup_all()
         self.tmp_config, self.tmp_data = tmp_state_dir
         outputs_patch = patch(
-            "skillsmith.install.state.outputs_dir",
+            "agentalloy.install.state.outputs_dir",
             return_value=self.tmp_data / "outputs",
         )
         self.mock.patchers.append(outputs_patch)
@@ -684,7 +684,7 @@ class TestHarnessValidation:
         try:
             import importlib
 
-            import skillsmith.install.subcommands.simple_setup as mod
+            import agentalloy.install.subcommands.simple_setup as mod
 
             importlib.reload(mod)
             cfg = mod.SetupConfig(harness="continue", non_interactive=True)
@@ -698,7 +698,7 @@ class TestHarnessValidation:
 
     def test_known_harnesses_in_valid_set(self):
         """All harnesses from registry are in VALID_HARNESSES."""
-        from skillsmith.install.subcommands.wire_harness import VALID_HARNESSES
+        from agentalloy.install.subcommands.wire_harness import VALID_HARNESSES
 
         expected = {
             "claude-code",
@@ -719,7 +719,7 @@ class TestHarnessValidation:
     def _import_run_setup(self):
         import importlib
 
-        import skillsmith.install.subcommands.simple_setup as mod
+        import agentalloy.install.subcommands.simple_setup as mod
 
         importlib.reload(mod)
         return mod.SetupConfig, mod.run_setup
@@ -765,7 +765,7 @@ class TestEmbedEndpoint:
                 pass
 
         cfg = SetupConfig()
-        with patch("skillsmith.install.state.env_path", return_value=tmp_path / ".env"):
+        with patch("agentalloy.install.state.env_path", return_value=tmp_path / ".env"):
             (tmp_path / ".env").write_text(env_content)
             with patch("urllib.request.urlopen", return_value=_MockResp()):
                 _test_embed_endpoint(cfg)
@@ -775,7 +775,7 @@ class TestEmbedEndpoint:
 
     def test_embed_endpoint_missing_env(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
         cfg = SetupConfig()
-        with patch("skillsmith.install.state.env_path", return_value=tmp_path / ".env"):
+        with patch("agentalloy.install.state.env_path", return_value=tmp_path / ".env"):
             # .env doesn't exist
             _test_embed_endpoint(cfg)
 
@@ -790,7 +790,7 @@ class TestEmbedEndpoint:
         )
 
         cfg = SetupConfig()
-        with patch("skillsmith.install.state.env_path", return_value=tmp_path / ".env"):
+        with patch("agentalloy.install.state.env_path", return_value=tmp_path / ".env"):
             (tmp_path / ".env").write_text(env_content)
             with patch(
                 "urllib.request.urlopen",
@@ -809,7 +809,7 @@ class TestEmbedEndpoint:
 
 def test_setup_argparse_accepts_lm_studio_runner():
     """B1: --runner lm-studio passes argparse."""
-    from skillsmith.install.subcommands.simple_setup import add_parser
+    from agentalloy.install.subcommands.simple_setup import add_parser
 
     import argparse
 
@@ -829,12 +829,12 @@ def test_setup_explicit_runner_ollama_is_preserved():
     import unittest.mock as mock
 
     with mock.patch(
-        "skillsmith.install.subcommands.simple_setup.run_setup",
+        "agentalloy.install.subcommands.simple_setup.run_setup",
         side_effect=lambda cfg: captured.append(cfg) or 0,  # type: ignore[misc]
     ):
         root = argparse.ArgumentParser()
         sub = root.add_subparsers()
-        from skillsmith.install.subcommands.simple_setup import add_parser  # type: ignore[attr-defined]
+        from agentalloy.install.subcommands.simple_setup import add_parser  # type: ignore[attr-defined]
 
         add_parser(sub)
         args = root.parse_args(["setup", "--runner", "ollama", "--non-interactive"])
@@ -845,7 +845,7 @@ def test_setup_explicit_runner_ollama_is_preserved():
 
 def test_hw_labels_cover_all_valid_targets():
     """B4: Hardware label map covers all valid targets."""
-    from skillsmith.install.subcommands.simple_setup import _HW_LABELS  # type: ignore[attr-defined]
+    from agentalloy.install.subcommands.simple_setup import _HW_LABELS  # type: ignore[attr-defined]
 
     assert set(_HW_LABELS) == {"cpu", "nvidia", "radeon", "apple-silicon"}
     assert _HW_LABELS["cpu"] == "CPU (RAM-only)"
@@ -858,7 +858,7 @@ def test_prompt_numbered_returns_default_on_non_tty(
     """N1-N4: Numbered-menu helper returns default on non-TTY."""
     import sys
 
-    from skillsmith.install.subcommands.simple_setup import _prompt_numbered  # type: ignore[attr-defined]
+    from agentalloy.install.subcommands.simple_setup import _prompt_numbered  # type: ignore[attr-defined]
 
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
     options = [("a", "Alpha"), ("b", "Beta"), ("c", "Gamma")]

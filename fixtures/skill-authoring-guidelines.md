@@ -101,7 +101,7 @@ If `raw_prose` is verbatim from upstream, `change_summary` says
 
 If you authored scaffolding (rationale, examples, guardrails) around upstream
 prose, `change_summary` says
-`scaffold by skillsmith around upstream prose preserved in fragment <N>`.
+`scaffold by agentalloy around upstream prose preserved in fragment <N>`.
 
 Never write "imported" when you authored most of the content. Batch-import of
 mattpocock/skills shipped 4-line sources expanded to 159-line YAMLs labelled

@@ -11,12 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from skillsmith.authoring.dedup import (
+from agentalloy.authoring.dedup import (
     classify_hit,
     dedup_candidates,
     dedup_fragment,
 )
-from skillsmith.storage.vector_store import (
+from agentalloy.storage.vector_store import (
     EMBEDDING_DIM,
     FragmentEmbedding,
     SimilarityHit,
@@ -145,7 +145,7 @@ def test_dedup_fragment_picks_hardest_match(seeded_store: VectorStore) -> None:
     # Add a second fragment in dim 0 with a slight perturbation.
     import time
 
-    from skillsmith.storage.vector_store import FragmentEmbedding
+    from agentalloy.storage.vector_store import FragmentEmbedding
 
     seeded_store.insert_embeddings(
         [

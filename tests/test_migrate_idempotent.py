@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from skillsmith.storage.ladybug import LadybugStore
+from agentalloy.storage.ladybug import LadybugStore
 
 
 def test_ladybug_migrate_twice(tmp_path: Path) -> None:

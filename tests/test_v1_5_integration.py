@@ -25,19 +25,19 @@ from typing import Any, cast
 import httpx
 import pytest
 
-from skillsmith.ingest import (
+from agentalloy.ingest import (
     _insert,  # pyright: ignore[reportPrivateUsage]
     _load_yaml,  # pyright: ignore[reportPrivateUsage]
     _validate,  # pyright: ignore[reportPrivateUsage]
 )
-from skillsmith.lm_client import (
+from agentalloy.lm_client import (
     LMClientError,
     LMModelNotLoaded,
     OpenAICompatClient,
 )
-from skillsmith.reembed import discover_unembedded_fragments, reembed_fragments
-from skillsmith.storage.ladybug import LadybugStore
-from skillsmith.storage.vector_store import EMBEDDING_DIM, VectorStore, open_or_create
+from agentalloy.reembed import discover_unembedded_fragments, reembed_fragments
+from agentalloy.storage.ladybug import LadybugStore
+from agentalloy.storage.vector_store import EMBEDDING_DIM, VectorStore, open_or_create
 
 pytestmark = pytest.mark.integration
 
@@ -55,7 +55,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # fixtures/domain/*.yaml files use a different multi-version export shape
 # that's loaded by fixtures/loader.py, not ingest.py.
 FIXTURE_SKILL = (
-    REPO_ROOT / "src" / "skillsmith" / "_packs" / "core" / "test-driven-development.yaml"
+    REPO_ROOT / "src" / "agentalloy" / "_packs" / "core" / "test-driven-development.yaml"
 )
 
 
@@ -285,11 +285,11 @@ def test_step_6_compose_writes_composition_trace(tmp_path: Path) -> None:
     """End-to-end /compose call writes a composition_traces row to DuckDB."""
     import asyncio
 
-    from skillsmith.api.compose_models import ComposeRequest
-    from skillsmith.orchestration.compose import ComposeOrchestrator
-    from skillsmith.retrieval.domain import RetrievalResult
-    from skillsmith.retrieval.system import SystemRetrievalResult
-    from skillsmith.telemetry import DuckDBTelemetryWriter
+    from agentalloy.api.compose_models import ComposeRequest
+    from agentalloy.orchestration.compose import ComposeOrchestrator
+    from agentalloy.retrieval.domain import RetrievalResult
+    from agentalloy.retrieval.system import SystemRetrievalResult
+    from agentalloy.telemetry import DuckDBTelemetryWriter
     from tests.support import StubLMClient, fake_fragment
 
     duck_path = tmp_path / "skills.duck"
@@ -344,12 +344,12 @@ def test_step_7_embedding_model_not_loaded_returns_structured_503(tmp_path: Path
     """Missing-embed-model requests surface as a structured 503 from the retrieve stage."""
     import asyncio
 
-    from skillsmith.api.compose_models import ComposeRequest
-    from skillsmith.orchestration.compose import (
+    from agentalloy.api.compose_models import ComposeRequest
+    from agentalloy.orchestration.compose import (
         ComposeOrchestrator,
         RetrievalStageError,
     )
-    from skillsmith.telemetry.writer import NullTelemetryWriter
+    from agentalloy.telemetry.writer import NullTelemetryWriter
     from tests.support import StubLMClient
 
     duck_path = tmp_path / "skills.duck"
@@ -386,8 +386,8 @@ def test_step_8_ollama_artifacts_removed() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
     # No ollama package in src/
-    assert not (repo_root / "src" / "skillsmith" / "ollama").exists(), (
-        "src/skillsmith/ollama/ should be deleted"
+    assert not (repo_root / "src" / "agentalloy" / "ollama").exists(), (
+        "src/agentalloy/ollama/ should be deleted"
     )
 
     # No ollama imports in src/
@@ -395,7 +395,7 @@ def test_step_8_ollama_artifacts_removed() -> None:
     offending: list[str] = []
     for py in src_root.rglob("*.py"):
         text = py.read_text()
-        if "skillsmith.ollama" in text or "from ollama" in text or "import ollama" in text:
+        if "agentalloy.ollama" in text or "from ollama" in text or "import ollama" in text:
             offending.append(str(py.relative_to(repo_root)))
     assert not offending, f"unexpected ollama references in src/: {offending}"
 
@@ -405,7 +405,7 @@ def test_step_8_ollama_artifacts_removed() -> None:
         "ollama should not appear in pyproject.toml"
     )
 
-    config_text = (repo_root / "src" / "skillsmith" / "config.py").read_text()
+    config_text = (repo_root / "src" / "agentalloy" / "config.py").read_text()
     assert "ollama_base_url" not in config_text, "ollama_base_url should be removed from config"
 
 

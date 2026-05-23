@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from skillsmith.install.subcommands.write_env import (
+from agentalloy.install.subcommands.write_env import (
     _SENTINEL,  # pyright: ignore[reportPrivateUsage]
     DEFAULT_PORT,
     VALID_PRESETS,
@@ -117,7 +117,7 @@ class TestEnvFileHandling:
 
     def test_refuses_to_overwrite_foreign_env(self, repo_root: Path) -> None:
         # `.env` is now user-scoped under XDG_CONFIG_HOME, not at repo root.
-        from skillsmith.install import state as install_state
+        from agentalloy.install import state as install_state
 
         env_path = install_state.env_path()
         env_path.parent.mkdir(parents=True, exist_ok=True)
@@ -126,7 +126,7 @@ class TestEnvFileHandling:
             write_env("cpu", root=repo_root)
 
     def test_force_overwrites_foreign_env(self, repo_root: Path) -> None:
-        from skillsmith.install import state as install_state
+        from agentalloy.install import state as install_state
 
         env_path = install_state.env_path()
         env_path.parent.mkdir(parents=True, exist_ok=True)

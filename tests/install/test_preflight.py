@@ -12,8 +12,8 @@ from urllib.error import URLError
 
 import pytest
 
-from skillsmith.install.subcommands import preflight
-from skillsmith.install.subcommands.preflight import (
+from agentalloy.install.subcommands import preflight
+from agentalloy.install.subcommands.preflight import (
     _check_cli_on_path,  # pyright: ignore[reportPrivateUsage]
     _check_ollama_present,  # pyright: ignore[reportPrivateUsage]
     _check_ollama_reachable,  # pyright: ignore[reportPrivateUsage]
@@ -55,7 +55,7 @@ class TestCliOnPath:
         local_bin = tmp_path / ".local" / "bin"
         local_bin.mkdir(parents=True)
         monkeypatch.setenv("PATH", f"{local_bin}:/usr/bin")
-        with patch.object(preflight.shutil, "which", return_value=str(local_bin / "skillsmith")):
+        with patch.object(preflight.shutil, "which", return_value=str(local_bin / "agentalloy")):
             result = _check_cli_on_path()
         assert result["passed"] is True
 
@@ -109,7 +109,7 @@ class TestOllamaPresent:
 class TestOllamaReachable:
     def test_fail_when_unreachable(self) -> None:
         with patch(
-            "skillsmith.install.subcommands.preflight.urlopen",
+            "agentalloy.install.subcommands.preflight.urlopen",
             side_effect=URLError("connection refused"),
         ):
             result = _check_ollama_reachable()
@@ -119,7 +119,7 @@ class TestOllamaReachable:
     def test_uses_default_ollama_port(self) -> None:
         """Ollama's default port is 11434, not 11436 (that's llama-server's)."""
         with patch(
-            "skillsmith.install.subcommands.preflight.urlopen",
+            "agentalloy.install.subcommands.preflight.urlopen",
             side_effect=URLError("connection refused"),
         ):
             result = _check_ollama_reachable()
@@ -143,7 +143,7 @@ class TestRunPreflightEarly:
         with (
             patch.object(preflight.shutil, "which", return_value=None),
             patch(
-                "skillsmith.install.subcommands.preflight.urlopen",
+                "agentalloy.install.subcommands.preflight.urlopen",
                 side_effect=URLError("offline"),
             ),
         ):
@@ -163,7 +163,7 @@ class TestRunPreflightRunner:
         with (
             patch.object(preflight.shutil, "which", return_value=None),
             patch(
-                "skillsmith.install.subcommands.preflight.urlopen",
+                "agentalloy.install.subcommands.preflight.urlopen",
                 side_effect=URLError("offline"),
             ),
         ):
@@ -178,7 +178,7 @@ class TestRunPreflightRunner:
     ) -> None:
         # Point outputs_dir at a fresh dir with no recommend-models.json.
         monkeypatch.setattr(
-            "skillsmith.install.subcommands.preflight.install_state.outputs_dir",
+            "agentalloy.install.subcommands.preflight.install_state.outputs_dir",
             lambda: tmp_path,
         )
         result = run_preflight(phase="runner")
@@ -189,12 +189,12 @@ class TestRunPreflightRunner:
     ) -> None:
         (tmp_path / "recommend-models.json").write_text(json.dumps({"embed_runner": "ollama"}))
         monkeypatch.setattr(
-            "skillsmith.install.subcommands.preflight.install_state.outputs_dir",
+            "agentalloy.install.subcommands.preflight.install_state.outputs_dir",
             lambda: tmp_path,
         )
         with (
             patch.object(preflight.shutil, "which", return_value="/usr/bin/ollama"),
-            patch("skillsmith.install.subcommands.preflight.urlopen") as mock_open,
+            patch("agentalloy.install.subcommands.preflight.urlopen") as mock_open,
         ):
             mock_open.return_value.__enter__.return_value.read.return_value = b"{}"
             result = run_preflight(phase="runner")
@@ -225,17 +225,17 @@ class TestCliRun:
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
         monkeypatch.setattr(
-            "skillsmith.install.subcommands.preflight.install_state.outputs_dir",
+            "agentalloy.install.subcommands.preflight.install_state.outputs_dir",
             lambda: tmp_path / "outputs",
         )
         (tmp_path / "outputs").mkdir()
 
         def _which(name: str) -> str | None:
-            return f"/usr/bin/{name}" if name in {"uv", "skillsmith"} else None
+            return f"/usr/bin/{name}" if name in {"uv", "agentalloy"} else None
 
         with (
             patch.object(preflight.shutil, "which", side_effect=_which),
-            patch("skillsmith.install.subcommands.preflight.urlopen") as mock_open,
+            patch("agentalloy.install.subcommands.preflight.urlopen") as mock_open,
         ):
             mock_resp: Any = mock_open.return_value.__enter__.return_value
             mock_resp.status = 200
@@ -255,14 +255,14 @@ class TestCliRun:
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("PATH", "/usr/bin")
         monkeypatch.setattr(
-            "skillsmith.install.subcommands.preflight.install_state.outputs_dir",
+            "agentalloy.install.subcommands.preflight.install_state.outputs_dir",
             lambda: tmp_path / "outputs",
         )
         (tmp_path / "outputs").mkdir()
         with (
             patch.object(preflight.shutil, "which", return_value=None),
             patch(
-                "skillsmith.install.subcommands.preflight.urlopen",
+                "agentalloy.install.subcommands.preflight.urlopen",
                 side_effect=URLError("offline"),
             ),
         ):

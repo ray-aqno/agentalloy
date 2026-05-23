@@ -1,6 +1,6 @@
 # Third-Party Licenses
 
-skillsmith bundles content adapted from third-party open-source projects. This file
+agentalloy bundles content adapted from third-party open-source projects. This file
 records the upstream source, license, and the skill YAML(s) that derive from it.
 
 Per-skill provenance is also stamped in the skill's `change_summary` field.
@@ -16,14 +16,14 @@ Per-skill provenance is also stamped in the skill's `change_summary` field.
 
 ### Derived skills
 
-| skillsmith YAML | Upstream SKILL.md | Adaptation |
+| agentalloy YAML | Upstream SKILL.md | Adaptation |
 |---|---|---|
-| `src/skillsmith/_packs/core/caveman.yaml` | `skills/productivity/caveman/SKILL.md` | Faithful port; partitioned into 5 fragments matching the original section structure. |
-| `src/skillsmith/_packs/core/grill-me.yaml` | `skills/productivity/grill-me/SKILL.md` | Upstream prose (~4 lines) preserved verbatim in fragment 2; rationale, example session, and anti-patterns authored by skillsmith. |
-| `src/skillsmith/_packs/engineering/zoom-out.yaml` | `skills/engineering/zoom-out/SKILL.md` | Upstream prompt (~1 line) preserved verbatim in fragment 2; rationale, schematic example, and anti-patterns authored by skillsmith. Example uses placeholder terms. |
-| `src/skillsmith/_packs/core/test-driven-development.yaml` | `skills/engineering/tdd/SKILL.md` | Existing skill; fragment 8 ("Anti-Pattern: Horizontal Slices" / tracer-bullet rules / per-cycle checklist) and matching `raw_prose` extension adapted from upstream. Fragments 1–7 are pre-existing skillsmith authoring. |
-| `src/skillsmith/_packs/core/debugging-strategies.yaml` | `skills/engineering/diagnose/SKILL.md` | Existing skill; fragments 16 ("Build a Feedback Loop First") and 17 ("Phases After the Loop Exists") plus the matching `raw_prose` extension adapted from upstream. Fragments 1–15 are pre-existing skillsmith authoring. |
-| `src/skillsmith/_packs/core/planning-and-task-breakdown.yaml` | `skills/engineering/to-issues/SKILL.md` | Existing skill; fragment 14 ("Tracer-Bullet Slices and HITL/AFK Tagging") and matching `raw_prose` extension adapted from upstream. Fragments 1–13 are pre-existing skillsmith authoring. |
+| `src/agentalloy/_packs/core/caveman.yaml` | `skills/productivity/caveman/SKILL.md` | Faithful port; partitioned into 5 fragments matching the original section structure. |
+| `src/agentalloy/_packs/core/grill-me.yaml` | `skills/productivity/grill-me/SKILL.md` | Upstream prose (~4 lines) preserved verbatim in fragment 2; rationale, example session, and anti-patterns authored by agentalloy. |
+| `src/agentalloy/_packs/engineering/zoom-out.yaml` | `skills/engineering/zoom-out/SKILL.md` | Upstream prompt (~1 line) preserved verbatim in fragment 2; rationale, schematic example, and anti-patterns authored by agentalloy. Example uses placeholder terms. |
+| `src/agentalloy/_packs/core/test-driven-development.yaml` | `skills/engineering/tdd/SKILL.md` | Existing skill; fragment 8 ("Anti-Pattern: Horizontal Slices" / tracer-bullet rules / per-cycle checklist) and matching `raw_prose` extension adapted from upstream. Fragments 1–7 are pre-existing agentalloy authoring. |
+| `src/agentalloy/_packs/core/debugging-strategies.yaml` | `skills/engineering/diagnose/SKILL.md` | Existing skill; fragments 16 ("Build a Feedback Loop First") and 17 ("Phases After the Loop Exists") plus the matching `raw_prose` extension adapted from upstream. Fragments 1–15 are pre-existing agentalloy authoring. |
+| `src/agentalloy/_packs/core/planning-and-task-breakdown.yaml` | `skills/engineering/to-issues/SKILL.md` | Existing skill; fragment 14 ("Tracer-Bullet Slices and HITL/AFK Tagging") and matching `raw_prose` extension adapted from upstream. Fragments 1–13 are pre-existing agentalloy authoring. |
 
 ### License text
 

@@ -1,5 +1,5 @@
 # pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false
-"""Unit tests for the minimal MCP server (skillsmith.install.mcp_server).
+"""Unit tests for the minimal MCP server (agentalloy.install.mcp_server).
 
 The MCP server is a stdio JSON-RPC 2.0 dispatcher with one tool. These tests
 exercise the dispatcher in-process via ``_process_message`` so we don't need
@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from skillsmith.install import mcp_server
+from agentalloy.install import mcp_server
 
 
 class TestInitialize:
@@ -24,7 +24,7 @@ class TestInitialize:
         assert resp["id"] == 1
         result = resp["result"]
         assert result["protocolVersion"] == mcp_server.PROTOCOL_VERSION
-        assert result["serverInfo"]["name"] == "skillsmith"
+        assert result["serverInfo"]["name"] == "agentalloy"
         assert "capabilities" in result
 
 

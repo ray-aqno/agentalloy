@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from skillsmith.ingest import (
+from agentalloy.ingest import (
     EXIT_DUPLICATE,
     EXIT_OK,
     EXIT_USAGE,
@@ -17,7 +17,7 @@ from skillsmith.ingest import (
     _load_yaml,  # type: ignore[reportPrivateUsage]
     main,
 )
-from skillsmith.storage.ladybug import LadybugStore
+from agentalloy.storage.ladybug import LadybugStore
 
 _DOMAIN_YAML = textwrap.dedent("""\
     skill_type: domain
@@ -95,7 +95,7 @@ def test_insert_domain_skill(tmp_path: Path, seeded_db: tuple[str, LadybugStore]
     yaml_file = tmp_path / "domain.yaml"
     yaml_file.write_text(_DOMAIN_YAML)
 
-    with patch("skillsmith.ingest.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.ingest.get_settings", return_value=_make_settings(db_path)):
         code = main([str(yaml_file), "--yes"])
 
     assert code == EXIT_OK
@@ -122,7 +122,7 @@ def test_insert_system_skill(tmp_path: Path, seeded_db: tuple[str, LadybugStore]
     yaml_file = tmp_path / "system.yaml"
     yaml_file.write_text(_SYSTEM_YAML)
 
-    with patch("skillsmith.ingest.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.ingest.get_settings", return_value=_make_settings(db_path)):
         code = main([str(yaml_file), "--yes"])
 
     assert code == EXIT_OK
@@ -145,7 +145,7 @@ def test_duplicate_skill_id_without_force_fails(
     yaml_file = tmp_path / "domain.yaml"
     yaml_file.write_text(_DOMAIN_YAML)
 
-    with patch("skillsmith.ingest.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.ingest.get_settings", return_value=_make_settings(db_path)):
         main([str(yaml_file), "--yes"])
         code = main([str(yaml_file), "--yes"])
 
@@ -166,7 +166,7 @@ def test_canonical_name_collision_without_force_fails(
     second = tmp_path / "second.yaml"
     second.write_text(_DOMAIN_YAML.replace("test-domain-skill", "test-domain-skill-b"))
 
-    with patch("skillsmith.ingest.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.ingest.get_settings", return_value=_make_settings(db_path)):
         assert main([str(first), "--yes"]) == EXIT_OK
         code = main([str(second), "--yes"])
 
@@ -179,7 +179,7 @@ def test_force_overwrites(tmp_path: Path, seeded_db: tuple[str, LadybugStore]) -
     yaml_file = tmp_path / "domain.yaml"
     yaml_file.write_text(_DOMAIN_YAML)
 
-    with patch("skillsmith.ingest.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.ingest.get_settings", return_value=_make_settings(db_path)):
         main([str(yaml_file), "--yes"])
         code = main([str(yaml_file), "--force", "--yes"])
 
@@ -350,7 +350,7 @@ def test_batch_loads_all_valid_files(tmp_path: Path, seeded_db: tuple[str, Ladyb
     _write_domain(batch_dir / "skill_a.yaml", "batch-skill-a", "Batch Skill A")
     _write_domain(batch_dir / "skill_b.yaml", "batch-skill-b", "Batch Skill B")
 
-    with patch("skillsmith.ingest.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.ingest.get_settings", return_value=_make_settings(db_path)):
         code = main([str(batch_dir), "--yes"])
 
     assert code == EXIT_OK
@@ -394,7 +394,7 @@ def test_batch_skips_invalid_and_loads_valid(
     """)
     )
 
-    with patch("skillsmith.ingest.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.ingest.get_settings", return_value=_make_settings(db_path)):
         code = main([str(batch_dir), "--yes"])
 
     assert code == EXIT_OK
@@ -414,7 +414,7 @@ def test_batch_blocks_duplicates_without_force(
 
     _write_domain(batch_dir / "skill_a.yaml", "batch-dup-a", "Batch Dup A")
 
-    with patch("skillsmith.ingest.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.ingest.get_settings", return_value=_make_settings(db_path)):
         main([str(batch_dir), "--yes"])
         code = main([str(batch_dir), "--yes"])
 
@@ -430,7 +430,7 @@ def test_batch_force_overwrites_duplicates(
 
     _write_domain(batch_dir / "skill_a.yaml", "batch-force-a", "Batch Force A")
 
-    with patch("skillsmith.ingest.get_settings", return_value=_make_settings(db_path)):
+    with patch("agentalloy.ingest.get_settings", return_value=_make_settings(db_path)):
         main([str(batch_dir), "--yes"])
         code = main([str(batch_dir), "--force", "--yes"])
 

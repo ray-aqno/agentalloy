@@ -24,20 +24,20 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from skillsmith.api.compose_router import get_orchestrator
-from skillsmith.api.diagnostics_router import DiagnosticsChecker
-from skillsmith.api.health_router import HealthChecker
-from skillsmith.api.retrieve_router import get_retrieve_orchestrator
-from skillsmith.api.skill_router import get_skill_store
-from skillsmith.app import create_app
-from skillsmith.fixtures.loader import load_fixtures
-from skillsmith.lm_client import OpenAICompatClient
-from skillsmith.orchestration.compose import ComposeOrchestrator
-from skillsmith.orchestration.retrieve import RetrieveOrchestrator
-from skillsmith.runtime_state import load_runtime_cache
-from skillsmith.storage.ladybug import LadybugStore
-from skillsmith.storage.vector_store import open_or_create
-from skillsmith.telemetry.writer import DuckDBTelemetryWriter
+from agentalloy.api.compose_router import get_orchestrator
+from agentalloy.api.diagnostics_router import DiagnosticsChecker
+from agentalloy.api.health_router import HealthChecker
+from agentalloy.api.retrieve_router import get_retrieve_orchestrator
+from agentalloy.api.skill_router import get_skill_store
+from agentalloy.app import create_app
+from agentalloy.fixtures.loader import load_fixtures
+from agentalloy.lm_client import OpenAICompatClient
+from agentalloy.orchestration.compose import ComposeOrchestrator
+from agentalloy.orchestration.retrieve import RetrieveOrchestrator
+from agentalloy.runtime_state import load_runtime_cache
+from agentalloy.storage.ladybug import LadybugStore
+from agentalloy.storage.vector_store import open_or_create
+from agentalloy.telemetry.writer import DuckDBTelemetryWriter
 
 pytestmark = pytest.mark.integration
 
@@ -106,8 +106,8 @@ def golden_app(seeded_store: LadybugStore, tmp_path_factory: pytest.TempPathFact
 
     # Populate DuckDB fragment_embeddings for the loaded corpus so retrieve
     # has something to rank. Mirrors the reembed CLI inline.
-    from skillsmith.reads import get_active_fragments
-    from skillsmith.storage.vector_store import FragmentEmbedding
+    from agentalloy.reads import get_active_fragments
+    from agentalloy.storage.vector_store import FragmentEmbedding
 
     fragments = get_active_fragments(seeded_store)
     if fragments:

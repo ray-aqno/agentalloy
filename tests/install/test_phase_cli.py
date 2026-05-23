@@ -1,6 +1,6 @@
 """Unit tests for the ``phase`` subcommand.
 
-Maps to plan: skillsmith phase CLI — set/get/clear phase lock file.
+Maps to plan: agentalloy phase CLI — set/get/clear phase lock file.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from skillsmith.install.subcommands.phase import (
+from agentalloy.install.subcommands.phase import (
     run_phase_clear,
     run_phase_get,
     run_phase_set,
@@ -44,7 +44,7 @@ class TestPhaseGet:
 class TestPhaseSet:
     def test_creates_phase_file(self, repo_root: Path) -> None:
         result = run_phase_set("build", root=repo_root)
-        phase_file = repo_root / ".skillsmith" / "phase"
+        phase_file = repo_root / ".agentalloy" / "phase"
         assert phase_file.exists()
         assert result["phase"] == "build"
 
@@ -54,7 +54,7 @@ class TestPhaseSet:
 
     def test_valid_phases_accepted(self, repo_root: Path) -> None:
         for phase in ("spec", "design", "build", "qa", "ops"):
-            (repo_root / ".skillsmith" / "phase").unlink(missing_ok=True)
+            (repo_root / ".agentalloy" / "phase").unlink(missing_ok=True)
             result = run_phase_set(phase, root=repo_root)
             assert result["phase"] == phase
 
@@ -67,17 +67,17 @@ class TestPhaseSet:
         assert updated["started_at"] == original["started_at"]
 
     def test_creates_directory(self, repo_root: Path) -> None:
-        assert not (repo_root / ".skillsmith").exists()
+        assert not (repo_root / ".agentalloy").exists()
         run_phase_set("build", root=repo_root)
-        assert (repo_root / ".skillsmith").is_dir()
+        assert (repo_root / ".agentalloy").is_dir()
 
 
 class TestPhaseClear:
     def test_removes_phase_file(self, repo_root: Path) -> None:
         run_phase_set("build", root=repo_root)
-        assert (repo_root / ".skillsmith" / "phase").exists()
+        assert (repo_root / ".agentalloy" / "phase").exists()
         run_phase_clear(root=repo_root)
-        assert not (repo_root / ".skillsmith" / "phase").exists()
+        assert not (repo_root / ".agentalloy" / "phase").exists()
 
     def test_clear_when_no_phase(self, repo_root: Path) -> None:
         result = run_phase_clear(root=repo_root)
@@ -87,7 +87,7 @@ class TestPhaseClear:
 class TestPhaseFileFormat:
     def test_yaml_format(self, repo_root: Path) -> None:
         run_phase_set("build", root=repo_root)
-        content = (repo_root / ".skillsmith" / "phase").read_text()
+        content = (repo_root / ".agentalloy" / "phase").read_text()
         assert "phase: build" in content
         assert "started_at:" in content
         assert "last_updated:" in content

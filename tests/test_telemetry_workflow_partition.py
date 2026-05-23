@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from skillsmith.storage.vector_store import CompositionTrace
-from skillsmith.telemetry.writer import TelemetryRecord
+from agentalloy.storage.vector_store import CompositionTrace
+from agentalloy.telemetry.writer import TelemetryRecord
 
 
 class TestTelemetryRecordWorkflowFields:

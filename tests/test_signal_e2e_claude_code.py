@@ -19,16 +19,16 @@ import yaml
 
 
 def _write_phase(root: Path, phase: str) -> None:
-    pf = root / ".skillsmith" / "phase"
+    pf = root / ".agentalloy" / "phase"
     pf.parent.mkdir(parents=True, exist_ok=True)
     pf.write_text(f"phase: {phase}\n")
 
 
 def _write_skill(root: Path, phase: str, signal_keywords: list[str] | None = None) -> None:
     """Write a minimal workflow skill to _packs so the signal layer can find it."""
-    import skillsmith
+    import agentalloy
 
-    packs_root = Path(skillsmith.__file__).resolve().parent / "_packs" / "sdd"
+    packs_root = Path(agentalloy.__file__).resolve().parent / "_packs" / "sdd"
     for f in packs_root.glob("sdd-*.yaml"):
         data: dict[str, Any] = yaml.safe_load(f.read_text()) or {}
         if phase in (data.get("applies_to_phases") or []):
@@ -43,21 +43,21 @@ def _simulate_hook_event(
     tool_path: str | None = None,
     cwd: Path,
 ) -> tuple[int, str, str]:
-    """Run the skillsmith signal CLI as Claude Code would via a hook."""
+    """Run the agentalloy signal CLI as Claude Code would via a hook."""
     env = os.environ.copy()
-    env["SKILLSMITH_HOOK_EVENT"] = event
+    env["AGENTALLOY_HOOK_EVENT"] = event
     if tool_name:
-        env["SKILLSMITH_TOOL_NAME"] = tool_name
+        env["AGENTALLOY_TOOL_NAME"] = tool_name
     if tool_path:
-        env["SKILLSMITH_TOOL_PATH"] = tool_path
+        env["AGENTALLOY_TOOL_PATH"] = tool_path
 
-    cmd = [sys.executable, "-m", "skillsmith.install", "signal"]
+    cmd = [sys.executable, "-m", "agentalloy.install", "signal"]
 
     if event == "UserPromptSubmit":
         cmd += ["evaluate-phase"]
         if prompt_file:
             cmd += ["--prompt-file", prompt_file]
-    elif event == "PostToolUse" and tool_path and ".skillsmith/contracts/" in tool_path:
+    elif event == "PostToolUse" and tool_path and ".agentalloy/contracts/" in tool_path:
         cmd += ["watch-contract", "--path", tool_path]
     elif event == "PreToolUse":
         cmd += ["evaluate-system", "--tool", tool_name or ""]
@@ -134,10 +134,10 @@ def test_user_prompt_submit_transition(tmp_path: Path, monkeypatch: pytest.Monke
 
 
 def test_post_tool_use_contract_write(tmp_path: Path):
-    """PostToolUse on a .skillsmith/contracts/ path invokes watch-contract."""
+    """PostToolUse on a .agentalloy/contracts/ path invokes watch-contract."""
     _write_phase(tmp_path, "build")
 
-    contract_dir = tmp_path / ".skillsmith" / "contracts" / "build"
+    contract_dir = tmp_path / ".agentalloy" / "contracts" / "build"
     contract_dir.mkdir(parents=True)
     contract_path = contract_dir / "task.md"
 
@@ -151,7 +151,7 @@ def test_post_tool_use_contract_write(tmp_path: Path):
     }
     contract_path.write_text(f"---\n{yaml.dump(fm)}---\n\nTask body.\n")
 
-    # The watch-contract path calls skillsmith compose — mock subprocess.run to prevent
+    # The watch-contract path calls agentalloy compose — mock subprocess.run to prevent
     # actual HTTP calls while verifying the event routing works
     rc, _stdout, _stderr = _simulate_hook_event(
         "PostToolUse",
@@ -183,24 +183,24 @@ def test_pre_tool_use_no_system_skills(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# Hook event routing test (simulates skillsmith-signal.sh logic)
+# Hook event routing test (simulates agentalloy-signal.sh logic)
 # ---------------------------------------------------------------------------
 
 
 def test_hook_routing_ups_calls_evaluate_phase(tmp_path: Path):
-    """SKILLSMITH_HOOK_EVENT=UserPromptSubmit routes to evaluate-phase."""
+    """AGENTALLOY_HOOK_EVENT=UserPromptSubmit routes to evaluate-phase."""
     _write_phase(tmp_path, "build")
 
     with (
-        patch("skillsmith.install.subcommands.signal._evaluate_phase", return_value=0) as mock_ep,
+        patch("agentalloy.install.subcommands.signal._evaluate_phase", return_value=0) as mock_ep,
         patch(
-            "skillsmith.install.subcommands.signal._load_workflow_skill_for_phase",
+            "agentalloy.install.subcommands.signal._load_workflow_skill_for_phase",
             return_value=None,
         ),
     ):
         import argparse
 
-        from skillsmith.install.subcommands.signal import (
+        from agentalloy.install.subcommands.signal import (
             _dispatch,  # pyright: ignore[reportPrivateUsage]
         )
 
@@ -217,11 +217,11 @@ def test_hook_routing_pretool_calls_evaluate_system(tmp_path: Path):
     """signal_cmd=evaluate-system routes to _evaluate_system."""
     import argparse
 
-    from skillsmith.install.subcommands.signal import (
+    from agentalloy.install.subcommands.signal import (
         _dispatch,  # pyright: ignore[reportPrivateUsage]
     )
 
-    with patch("skillsmith.install.subcommands.signal._evaluate_system", return_value=0) as mock_es:
+    with patch("agentalloy.install.subcommands.signal._evaluate_system", return_value=0) as mock_es:
         args = argparse.Namespace(signal_cmd="evaluate-system", tool="Bash")
         rc = _dispatch(args)
 

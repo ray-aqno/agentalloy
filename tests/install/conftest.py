@@ -2,7 +2,7 @@
 
 State (`install-state.json`), `.env`, and the corpus all live under the
 XDG dirs as of schema v2. Without this fixture every test would read and
-write the real `~/.config/skillsmith/` and `~/.local/share/skillsmith/`,
+write the real `~/.config/agentalloy/` and `~/.local/share/agentalloy/`,
 polluting the user's install state and producing flaky tests.
 
 Autouse: every test in `tests/install/` gets fresh XDG dirs pointing at

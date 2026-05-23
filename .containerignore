@@ -46,4 +46,4 @@ tests/
 .idea/
 .vscode/
 .claude/
-.skillsmith/
+.agentalloy/

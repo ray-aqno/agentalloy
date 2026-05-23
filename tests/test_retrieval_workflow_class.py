@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from skillsmith.ingest import (
+from agentalloy.ingest import (
     FragmentRecord,
     ReviewRecord,
     _insert,  # type: ignore[reportPrivateUsage]
 )
-from skillsmith.reads import active as reads_active
-from skillsmith.storage.ladybug import LadybugStore
+from agentalloy.reads import active as reads_active
+from agentalloy.storage.ladybug import LadybugStore
 
 # ---------------------------------------------------------------------------
 # Fixtures

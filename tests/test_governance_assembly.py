@@ -11,12 +11,12 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from skillsmith.api.compose_models import ComposeRequest
-from skillsmith.api.compose_router import get_orchestrator
-from skillsmith.orchestration.compose import ComposeOrchestrator
-from skillsmith.reads.models import ActiveFragment
-from skillsmith.retrieval.domain import RetrievalResult
-from skillsmith.retrieval.system import SystemRetrievalResult
+from agentalloy.api.compose_models import ComposeRequest
+from agentalloy.api.compose_router import get_orchestrator
+from agentalloy.orchestration.compose import ComposeOrchestrator
+from agentalloy.reads.models import ActiveFragment
+from agentalloy.retrieval.domain import RetrievalResult
+from agentalloy.retrieval.system import SystemRetrievalResult
 
 
 def _frag(
@@ -50,7 +50,7 @@ class _FakeOrchestrator(ComposeOrchestrator):
         domain: RetrievalResult,
         system: SystemRetrievalResult,
     ) -> None:
-        from skillsmith.telemetry.writer import NullTelemetryWriter
+        from agentalloy.telemetry.writer import NullTelemetryWriter
 
         self._domain = domain
         self._system = system

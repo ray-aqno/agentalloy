@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from skillsmith.signals.classifier import (
+from agentalloy.signals.classifier import (
     _INTENT_REFERENCES,  # pyright: ignore[reportPrivateUsage]
     _MAX_INPUT_CHARS,  # pyright: ignore[reportPrivateUsage]
     _SIMILARITY_THRESHOLD,  # pyright: ignore[reportPrivateUsage]
@@ -21,7 +21,7 @@ from skillsmith.signals.classifier import (
     eval_prompt_topic_matches,
     eval_user_intent_matches,
 )
-from skillsmith.signals.predicates import PredicateResult
+from agentalloy.signals.predicates import PredicateResult
 
 
 def _mock_client(vecs: list[list[float]]) -> MagicMock:
@@ -116,7 +116,7 @@ def test_unknown_intent_returns_unknown() -> None:
 
 def test_startup_validation_keys_match() -> None:
     """Verify that _INTENT_TASK_DESCRIPTIONS and _INTENT_REFERENCES have matching keys."""
-    from skillsmith.signals.classifier import (  # noqa: PLC2701
+    from agentalloy.signals.classifier import (  # noqa: PLC2701
         _INTENT_REFERENCES,  # pyright: ignore[reportPrivateUsage]
         _INTENT_TASK_DESCRIPTIONS,  # pyright: ignore[reportPrivateUsage]
     )
@@ -166,7 +166,7 @@ def test_intent_similarity_embed_failure_returns_unknown() -> None:
 
 
 def test_artifact_completeness_always_unknown(tmp_path: Path) -> None:
-    from skillsmith.signals.predicates import PredicateContext
+    from agentalloy.signals.predicates import PredicateContext
 
     ctx = PredicateContext(
         project_root=tmp_path,
@@ -185,7 +185,7 @@ def test_artifact_completeness_always_unknown(tmp_path: Path) -> None:
 
 
 def test_artifact_completeness_no_args_unknown(tmp_path: Path) -> None:
-    from skillsmith.signals.predicates import PredicateContext
+    from agentalloy.signals.predicates import PredicateContext
 
     ctx = PredicateContext(
         project_root=tmp_path,
@@ -202,7 +202,7 @@ def test_artifact_completeness_no_args_unknown(tmp_path: Path) -> None:
 
 
 def test_user_intent_matches_met(tmp_path: Path) -> None:
-    from skillsmith.signals.predicates import PredicateContext
+    from agentalloy.signals.predicates import PredicateContext
 
     query = [1.0, 0.0]
     refs = [[0.99, 0.14], [0.0, 1.0]]
@@ -217,7 +217,7 @@ def test_user_intent_matches_met(tmp_path: Path) -> None:
 
 
 def test_user_intent_matches_empty_prompt_unknown(tmp_path: Path) -> None:
-    from skillsmith.signals.predicates import PredicateContext
+    from agentalloy.signals.predicates import PredicateContext
 
     ctx = PredicateContext(
         project_root=tmp_path,
@@ -234,7 +234,7 @@ def test_user_intent_matches_empty_prompt_unknown(tmp_path: Path) -> None:
 
 
 def test_prompt_topic_matches_met(tmp_path: Path) -> None:
-    from skillsmith.signals.predicates import PredicateContext
+    from agentalloy.signals.predicates import PredicateContext
 
     query = [1.0, 0.0]
     refs = [[0.99, 0.14]]
@@ -249,7 +249,7 @@ def test_prompt_topic_matches_met(tmp_path: Path) -> None:
 
 
 def test_prompt_topic_matches_empty_topics_unknown(tmp_path: Path) -> None:
-    from skillsmith.signals.predicates import PredicateContext
+    from agentalloy.signals.predicates import PredicateContext
 
     ctx = PredicateContext(
         project_root=tmp_path,
@@ -267,7 +267,7 @@ def test_prompt_topic_matches_empty_topics_unknown(tmp_path: Path) -> None:
 
 def test_semantic_predicates_no_chat_calls(tmp_path: Path) -> None:
     """Verify none of the semantic predicates use lm_client.chat."""
-    from skillsmith.signals.predicates import PredicateContext
+    from agentalloy.signals.predicates import PredicateContext
 
     ctx = PredicateContext(
         project_root=tmp_path,
@@ -330,8 +330,8 @@ def test_calibration_fixture_valid() -> None:
 @pytest.mark.skip(reason="requires live embed server with specific model loaded")
 def test_classifier_regression_against_live_server() -> None:
     """Regression test: F1 >= 0.85, false_met_rate <= 0.05 at committed threshold."""
-    from skillsmith.config import get_settings
-    from skillsmith.lm_client import OpenAICompatClient
+    from agentalloy.config import get_settings
+    from agentalloy.lm_client import OpenAICompatClient
 
     settings = get_settings()
     embed_url = settings.runtime_embed_base_url

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from skillsmith.install.subcommands.enable_service import (
+from agentalloy.install.subcommands.enable_service import (
     _detect_container_runtimes,  # pyright: ignore[reportPrivateUsage]
     _detect_os,  # pyright: ignore[reportPrivateUsage]
     _native_available,  # pyright: ignore[reportPrivateUsage]
@@ -118,22 +118,22 @@ class TestResolveComposeFile:
 class TestRenderSystemdUnit:
     def test_contains_exec_start(self) -> None:
         content = _render_systemd_unit(
-            "/usr/bin/uv", Path("/app"), 8000, Path("/home/u/.config/skillsmith/.env")
+            "/usr/bin/uv", Path("/app"), 8000, Path("/home/u/.config/agentalloy/.env")
         )
-        assert "ExecStart=/usr/bin/uv run uvicorn skillsmith.app:app" in content
+        assert "ExecStart=/usr/bin/uv run uvicorn agentalloy.app:app" in content
         assert "--port 8000" in content
 
     def test_contains_working_directory(self) -> None:
         content = _render_systemd_unit(
-            "/usr/bin/uv", Path("/app"), 8000, Path("/home/u/.config/skillsmith/.env")
+            "/usr/bin/uv", Path("/app"), 8000, Path("/home/u/.config/agentalloy/.env")
         )
         assert "WorkingDirectory=/app" in content
 
     def test_contains_environment_file(self) -> None:
         content = _render_systemd_unit(
-            "/usr/bin/uv", Path("/app"), 8000, Path("/home/u/.config/skillsmith/.env")
+            "/usr/bin/uv", Path("/app"), 8000, Path("/home/u/.config/agentalloy/.env")
         )
-        assert "EnvironmentFile=/home/u/.config/skillsmith/.env" in content
+        assert "EnvironmentFile=/home/u/.config/agentalloy/.env" in content
 
     def test_has_install_section(self) -> None:
         content = _render_systemd_unit("/usr/bin/uv", Path("/app"), 8000, Path("/env"))
@@ -146,7 +146,7 @@ class TestRenderLaunchdPlist:
         content = _render_launchd_plist("/usr/bin/uv", Path("/app"), 8000, {"LOG_LEVEL": "INFO"})
         assert '<?xml version="1.0"' in content
         assert "<key>Label</key>" in content
-        assert "<string>ai.skillsmith</string>" in content
+        assert "<string>ai.agentalloy</string>" in content
 
     def test_port_injected(self) -> None:
         content = _render_launchd_plist("/usr/bin/uv", Path("/app"), 9000, {})
@@ -208,7 +208,7 @@ class TestPollHealth:
 
         with (
             patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")),
-            patch("skillsmith.install.subcommands.enable_service._HEALTH_TIMEOUT_S", 0),
+            patch("agentalloy.install.subcommands.enable_service._HEALTH_TIMEOUT_S", 0),
         ):
             assert _poll_health(8000) is False
 
@@ -221,7 +221,7 @@ class TestPollHealth:
         with (
             patch("urllib.request.urlopen", return_value=mock_resp),
             patch(
-                "skillsmith.install.subcommands.enable_service._HEALTH_TIMEOUT_S",
+                "agentalloy.install.subcommands.enable_service._HEALTH_TIMEOUT_S",
                 0,
             ),
         ):
@@ -249,7 +249,7 @@ class TestEnableServiceManual:
     ) -> None:
         enable_service(mode="manual", port=8000, repo_root=tmp_path)
         captured = capsys.readouterr()
-        assert "skillsmith serve" in captured.err
+        assert "agentalloy serve" in captured.err
 
 
 class TestEnableServiceInvalidMode:

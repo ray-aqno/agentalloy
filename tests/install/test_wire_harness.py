@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from skillsmith.install import state as install_state
-from skillsmith.install.subcommands.wire_harness import (
+from agentalloy.install import state as install_state
+from agentalloy.install.subcommands.wire_harness import (
     SENTINEL_BEGIN,
     SENTINEL_END,
     STEP_NAME,
@@ -167,11 +167,11 @@ class TestGeminiCli:
 
 class TestCursor:
     def test_modern_cursor_dir(self, repo_root: Path) -> None:
-        """If .cursor/ exists, use .cursor/rules/skillsmith.mdc (dedicated)."""
+        """If .cursor/ exists, use .cursor/rules/agentalloy.mdc (dedicated)."""
         (repo_root / ".cursor").mkdir()
         result = wire_harness("cursor", port=8000, root=repo_root)
         assert len(result["files_written"]) == 1
-        mdc = repo_root / ".cursor" / "rules" / "skillsmith.mdc"
+        mdc = repo_root / ".cursor" / "rules" / "agentalloy.mdc"
         assert mdc.exists()
         content = mdc.read_text()
         # Dedicated file — no sentinels
@@ -196,11 +196,11 @@ class TestCursor:
 
 class TestWindsurf:
     def test_modern_windsurf_dir(self, repo_root: Path) -> None:
-        """If .windsurf/ exists, use .windsurf/rules/skillsmith.md (dedicated)."""
+        """If .windsurf/ exists, use .windsurf/rules/agentalloy.md (dedicated)."""
         (repo_root / ".windsurf").mkdir()
         result = wire_harness("windsurf", port=8000, root=repo_root)
         assert len(result["files_written"]) == 1
-        md = repo_root / ".windsurf" / "rules" / "skillsmith.md"
+        md = repo_root / ".windsurf" / "rules" / "agentalloy.md"
         assert md.exists()
         content = md.read_text()
         # Dedicated file — no sentinels
@@ -268,13 +268,13 @@ class TestOpenHarnesses:
     def test_aider(self, repo_root: Path) -> None:
         result = wire_harness("aider", port=8000, root=repo_root)
         # Instructions file (dedicated)
-        instructions = repo_root / ".skillsmith-aider-instructions.md"
+        instructions = repo_root / ".agentalloy-aider-instructions.md"
         assert instructions.exists()
         # .aider.conf.yml entry
         conf = repo_root / ".aider.conf.yml"
         assert conf.exists()
         content = conf.read_text()
-        assert ".skillsmith-aider-instructions.md" in content
+        assert ".agentalloy-aider-instructions.md" in content
         assert len(result["files_written"]) == 2
 
 
@@ -293,7 +293,7 @@ class TestContinue:
         assert "customCommands" in config
         assert any(c["name"] == "skill" for c in config["customCommands"])
         assert "systemMessage" in config
-        assert "skillsmith:begin" in config["systemMessage"]
+        assert "agentalloy:begin" in config["systemMessage"]
 
     def test_local_no_system_message(self, repo_root: Path) -> None:
         wire_harness("continue-local", port=8000, root=repo_root)
@@ -394,7 +394,7 @@ class TestEdgeCases:
         """
         for harness in VALID_HARNESSES:
             # Reset state for each
-            state_file = repo_root / ".skillsmith" / "install-state.json"
+            state_file = repo_root / ".agentalloy" / "install-state.json"
             if state_file.exists():
                 state_file.unlink()
             if harness == "mcp-only":
@@ -409,7 +409,7 @@ class TestRewireMerge:
     def test_rewire_different_harness_preserves_prior_files(self, repo_root: Path) -> None:
         """Switching harness must merge harness_files_written, not overwrite —
         otherwise uninstall can't clean up the prior harness's sentinel block."""
-        from skillsmith.install.state import load_state
+        from agentalloy.install.state import load_state
 
         # Wire claude-code first
         wire_harness("claude-code", port=8000, root=repo_root)
@@ -429,7 +429,7 @@ class TestRewireMerge:
 
     def test_rewire_same_harness_replaces_entry_in_place(self, repo_root: Path) -> None:
         """Re-wiring the same harness must not duplicate the same path entry."""
-        from skillsmith.install.state import load_state
+        from agentalloy.install.state import load_state
 
         wire_harness("claude-code", port=8000, root=repo_root, force=True)
         wire_harness("claude-code", port=9000, root=repo_root, force=True)
@@ -451,7 +451,7 @@ class TestScopeFlag:
         monkeypatch.setenv("HOME", str(fake_home))
         monkeypatch.setattr(Path, "home", lambda: fake_home)
         # State directory also routes through HOME; force a fresh per-test state.
-        monkeypatch.setenv("SKILLSMITH_STATE_DIR", str(fake_home / ".skillsmith"))
+        monkeypatch.setenv("AGENTALLOY_STATE_DIR", str(fake_home / ".agentalloy"))
 
         result = wire_harness("aider", port=8000, scope="user")
         for entry in result["files_written"]:
@@ -484,7 +484,7 @@ class TestIntakeActivationMarkers:
     """
 
     _INTAKE_MARKERS = [
-        ".skillsmith/phase",
+        ".agentalloy/phase",
         "Health-gate",
         "non-SDD",
     ]
@@ -502,7 +502,7 @@ class TestIntakeActivationMarkers:
             assert marker in content, f"Missing marker: {marker}"
 
     def test_all_harnesses_have_phase_reference(self, repo_root: Path) -> None:
-        """Smoke test: every instruction-bearing harness file references .skillsmith/phase.
+        """Smoke test: every instruction-bearing harness file references .agentalloy/phase.
 
         Only checks .md and .mdc files — structured config files (.json, .yml, .toml)
         may encode phase references differently and are not required to contain the
@@ -510,7 +510,7 @@ class TestIntakeActivationMarkers:
         """
         instruction_extensions = {".md", ".mdc"}
         for harness in VALID_HARNESSES:
-            state_file = repo_root / ".skillsmith" / "install-state.json"
+            state_file = repo_root / ".agentalloy" / "install-state.json"
             if state_file.exists():
                 state_file.unlink()
             if harness == "mcp-only":
@@ -520,6 +520,6 @@ class TestIntakeActivationMarkers:
                 path = Path(entry["path"])
                 if path.exists() and path.suffix.lower() in instruction_extensions:
                     content = path.read_text()
-                    assert ".skillsmith/phase" in content, (
+                    assert ".agentalloy/phase" in content, (
                         f"Harness {harness} at {path} missing phase reference"
                     )
