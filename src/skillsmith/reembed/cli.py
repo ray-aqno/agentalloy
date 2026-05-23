@@ -23,6 +23,10 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
+import platform
+import shutil
+import subprocess
 import sys
 import time
 from collections.abc import Callable
@@ -53,6 +57,166 @@ EXIT_DB = 3
 
 _RETRY_DELAYS = (1.0, 2.0, 4.0)
 _TRANSIENT_ERRORS = (LMTimeout, LMUnavailable)
+
+# ---------------------------------------------------------------------------
+# Service management — stop the background server before reembed so it doesn't
+# hold database locks (LadybugDB/Kuzu + DuckDB).
+# ---------------------------------------------------------------------------
+
+
+def _detect_service_manager() -> str | None:
+    """Return 'systemd', 'launchd', or None."""
+    if platform.system().lower() == "linux" and shutil.which("systemctl") is not None:
+        return "systemd"
+    if platform.system().lower() == "darwin" and shutil.which("launchctl") is not None:
+        return "launchd"
+    return None
+
+
+def _systemd_unit_path() -> Path:
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    return config_home / "systemd" / "user" / "skillsmith.service"
+
+
+def _launchd_plist_path() -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / "ai.skillsmith.plist"
+
+
+def _is_service_running() -> bool:
+    """Check if the skillsmith service is active."""
+    sm = _detect_service_manager()
+    if sm == "systemd":
+        try:
+            result = subprocess.run(
+                [
+                    "systemctl",
+                    "--user",
+                    "is-active",
+                    "skillsmith.service",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                env={
+                    **os.environ,
+                    "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{os.getuid()}/bus",
+                },
+            )
+            return result.stdout.strip() == "active"
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    elif sm == "launchd":
+        plist = _launchd_plist_path()
+        if plist.exists():
+            try:
+                result = subprocess.run(
+                    ["launchctl", "list", "ai.skillsmith"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                # launchctl list returns 0 when the job exists (loaded or running).
+                # Output is tab-separated: PID \t exitcode \t label
+                # PID column is '-' when the job is loaded but not currently running.
+                if result.returncode != 0 or "ai.skillsmith" not in result.stdout:
+                    return False
+                for line in result.stdout.strip().splitlines():
+                    parts = line.split()
+                    if parts and parts[-1] == "ai.skillsmith" and parts[0] != "-":
+                        return True
+                return False
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+    return False
+
+
+def _stop_service() -> bool:
+    """Stop the skillsmith service. Returns True if something was stopped."""
+    sm = _detect_service_manager()
+    if sm == "systemd":
+        try:
+            logger.info("stopping systemd service: skillsmith.service")
+            env = {
+                **os.environ,
+                "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{os.getuid()}/bus",
+            }
+            subprocess.run(
+                ["systemctl", "--user", "stop", "skillsmith.service"],
+                check=True,
+                timeout=15,
+                env=env,
+            )
+            return True
+        except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+            logger.debug("could not stop systemd service: %s", exc)
+    elif sm == "launchd":
+        plist = _launchd_plist_path()
+        if plist.exists():
+            try:
+                logger.info("stopping launchd service: ai.skillsmith")
+                subprocess.run(
+                    ["launchctl", "bootout", "ai.skillsmith"],
+                    check=True,
+                    timeout=15,
+                )
+                # Fallback for older macOS
+                if not _is_service_running():
+                    return True
+            except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError):
+                pass
+            try:
+                subprocess.run(
+                    ["launchctl", "unload", str(plist)],
+                    check=True,
+                    timeout=15,
+                )
+                return True
+            except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+                logger.debug("could not stop launchd service: %s", exc)
+    return False
+
+
+def _restart_service() -> None:
+    """Restart the skillsmith service."""
+    sm = _detect_service_manager()
+    if sm == "systemd":
+        try:
+            env = {
+                **os.environ,
+                "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{os.getuid()}/bus",
+            }
+            subprocess.run(
+                ["systemctl", "--user", "start", "skillsmith.service"],
+                check=True,
+                timeout=15,
+                env=env,
+            )
+            logger.info("restarted systemd service: skillsmith.service")
+        except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+            logger.warning("failed to restart systemd service: %s", exc)
+    elif sm == "launchd":
+        plist = _launchd_plist_path()
+        if plist.exists():
+            try:
+                # Use non-persistent load (no -w) so we don't override user
+                # enablement/disabled state. Prefer modern kickstart when available.
+                subprocess.run(
+                    ["launchctl", "kickstart", "gui/", "ai.skillsmith"],
+                    check=True,
+                    timeout=15,
+                )
+                logger.info("restarted launchd service: ai.skillsmith")
+            except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError):
+                # Fallback: launchctl load without -w (older macOS)
+                try:
+                    subprocess.run(
+                        ["launchctl", "load", str(plist)],
+                        check=True,
+                        timeout=15,
+                    )
+                    logger.info("restarted launchd service: ai.skillsmith")
+                except (OSError, subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+                    logger.warning("failed to restart launchd service: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -300,6 +464,11 @@ def main(argv: list[str] | None = None) -> int:
             "previous install where the FTS rebuild warning fired."
         ),
     )
+    parser.add_argument(
+        "--no-restart",
+        action="store_true",
+        help="Do not restart the skillsmith service after reembed completes",
+    )
     args = parser.parse_args(argv)
 
     settings = get_settings()
@@ -307,84 +476,114 @@ def main(argv: list[str] | None = None) -> int:
     duck_path = _duckdb_path(settings)
     Path(settings.ladybug_db_path).parent.mkdir(parents=True, exist_ok=True)
 
-    with LadybugStore(settings.ladybug_db_path) as store, open_or_create(duck_path) as vs:
-        # --force: clear scope first so the primary-key constraint doesn't trip.
-        if args.force:
-            if args.skill_id:
-                n = vs.delete_skill(args.skill_id)
-                logger.info("--force: deleted %d existing embeddings for %s", n, args.skill_id)
-            else:
-                # Full wipe: required when changing embedding models (dimension change
-                # makes existing vectors incompatible with the new index).
-                n = vs.count_embeddings()
-                vs._conn.execute("DELETE FROM fragment_embeddings")  # pyright: ignore[reportPrivateUsage]
-                logger.info("--force: deleted all %d existing embeddings for full reindex", n)
-
-        fragments = discover_unembedded_fragments(
-            store, vs, skill_id=args.skill_id, force=args.force
-        )
-        if args.limit is not None:
-            fragments = fragments[: args.limit]
-
-        logger.info(
-            "discovered %d fragment(s) to embed (model=%s, target=%s)",
-            len(fragments),
-            model_id,
-            duck_path,
-        )
-
-        if args.dry_run:
-            for f in fragments[:20]:
-                logger.info(
-                    "  would embed: %s (%s, %s)", f.fragment_id, f.skill_id, f.fragment_type
-                )
-            if len(fragments) > 20:
-                logger.info("  ... and %d more", len(fragments) - 20)
-            return EXIT_OK
-
-        if not fragments and not args.rebuild_fts:
-            logger.info("nothing to do — all fragments already embedded")
-            return EXIT_OK
-
-        stats: ReembedStats
-        if fragments:
-            with OpenAICompatClient(settings.runtime_embed_base_url) as client:
-
-                def _embed(text: str) -> list[float]:
-                    vectors = client.embed(model=model_id, texts=[text])
-                    return vectors[0]
-
-                stats = reembed_fragments(
-                    fragments,
-                    embed_fn=_embed,
-                    vector_store=vs,
-                    embedding_model=model_id,
-                )
-            stats.log_summary()
+    # Pre-flight: stop the background service if running — it holds database locks
+    # (LadybugDB/Kuzu + DuckDB) that conflict with our exclusive access.
+    # Even in dry-run mode we must stop the service, otherwise opening the DBs
+    # will fail with the same lock errors we're trying to avoid.
+    service_was_running = False
+    service_was_stopped = False
+    if _is_service_running():
+        service_was_running = True
+        service_was_stopped = _stop_service()
+        if service_was_stopped:
+            logger.info("stopped skillsmith service to release database locks")
         else:
-            # --rebuild-fts with no fragments to embed
-            logger.info("no fragments to embed; running --rebuild-fts only")
-            stats = ReembedStats()
+            logger.warning(
+                "skillsmith service appears active but could not be stopped via "
+                "service manager — reembed may fail with lock errors"
+            )
+    else:
+        logger.debug("skillsmith service is not running")
 
-        if stats.embedded > 0 or args.rebuild_fts:
-            if stats.embedded > 0:
-                logger.info(
-                    "rebuilding BM25 FTS index after embedding %d fragment(s)", stats.embedded
-                )
+    def _maybe_restart() -> None:
+        """Restart the service if we stopped it and --no-restart is not set."""
+        if service_was_stopped and not args.no_restart:
+            _restart_service()
+        elif not args.no_restart and service_was_running:
+            logger.warning(
+                "service was running but could not be stopped; "
+                "it may still need a restart. Run 'skillsmith serve --restart' manually."
+            )
+
+    try:
+        with LadybugStore(settings.ladybug_db_path) as store, open_or_create(duck_path) as vs:
+            # --force: clear scope first so the primary-key constraint doesn't trip.
+            if args.force:
+                if args.skill_id:
+                    n = vs.delete_skill(args.skill_id)
+                    logger.info("--force: deleted %d existing embeddings for %s", n, args.skill_id)
+                else:
+                    # Full wipe: required when changing embedding models (dimension change
+                    # makes existing vectors incompatible with the new index).
+                    n = vs.count_embeddings()
+                    vs._conn.execute("DELETE FROM fragment_embeddings")  # pyright: ignore[reportPrivateUsage]
+                    logger.info("--force: deleted all %d existing embeddings for full reindex", n)
+
+            fragments = discover_unembedded_fragments(
+                store, vs, skill_id=args.skill_id, force=args.force
+            )
+            if args.limit is not None:
+                fragments = fragments[: args.limit]
+
+            logger.info(
+                "discovered %d fragment(s) to embed (model=%s, target=%s)",
+                len(fragments),
+                model_id,
+                duck_path,
+            )
+
+            if args.dry_run:
+                for f in fragments[:20]:
+                    logger.info(
+                        "  would embed: %s (%s, %s)", f.fragment_id, f.skill_id, f.fragment_type
+                    )
+                if len(fragments) > 20:
+                    logger.info("  ... and %d more", len(fragments) - 20)
+                return EXIT_OK
+
+            if not fragments and not args.rebuild_fts:
+                logger.info("nothing to do — all fragments already embedded")
+                return EXIT_OK
+
+            stats: ReembedStats
+            if fragments:
+                with OpenAICompatClient(settings.runtime_embed_base_url) as client:
+
+                    def _embed(text: str) -> list[float]:
+                        vectors = client.embed(model=model_id, texts=[text])
+                        return vectors[0]
+
+                    stats = reembed_fragments(
+                        fragments,
+                        embed_fn=_embed,
+                        vector_store=vs,
+                        embedding_model=model_id,
+                    )
+                stats.log_summary()
             else:
-                logger.info("rebuilding BM25 FTS index (--rebuild-fts requested)")
-            try:
-                vs.rebuild_fts_index()
-            except Exception as exc:  # noqa: BLE001 — FTS rebuild is best-effort
-                # Even with the in-method retry, the catalog race can persist if a
-                # second process holds the DB open. Surface remediation context.
-                logger.warning(
-                    "FTS index rebuild failed (BM25 leg degraded): %s. "
-                    "If this is the DuckDB stopwords race, stop any process "
-                    "holding the DB open and re-run `skillsmith reembed --rebuild-fts`.",
-                    exc,
-                )
-        return EXIT_OK if stats.failed == 0 else EXIT_LLM
+                # --rebuild-fts with no fragments to embed
+                logger.info("no fragments to embed; running --rebuild-fts only")
+                stats = ReembedStats()
+
+            if stats.embedded > 0 or args.rebuild_fts:
+                if stats.embedded > 0:
+                    logger.info(
+                        "rebuilding BM25 FTS index after embedding %d fragment(s)", stats.embedded
+                    )
+                else:
+                    logger.info("rebuilding BM25 FTS index (--rebuild-fts requested)")
+                try:
+                    vs.rebuild_fts_index()
+                except Exception as exc:  # noqa: BLE001 — FTS rebuild is best-effort
+                    logger.warning(
+                        "FTS index rebuild failed (BM25 leg degraded): %s. "
+                        "If the background service was holding the DB, stop it and re-run "
+                        "with `skillsmith reembed --rebuild-fts`.",
+                        exc,
+                    )
+            return EXIT_OK if stats.failed == 0 else EXIT_LLM
+    finally:
+        _maybe_restart()
 
 
 if __name__ == "__main__":

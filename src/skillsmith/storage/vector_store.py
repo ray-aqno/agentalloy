@@ -402,9 +402,10 @@ class VectorStore:
 
         DuckDB's FTS extension hits a DDL dependency race on alternating
         drop+create cycles ("subject 'stopwords' has been deleted"). The race
-        is transient — a CHECKPOINT + small sleep before a second create
-        attempt clears it nearly every time. We retry once on that specific
-        error class and surface anything else immediately.
+        is transient — a CHECKPOINT + small sleep before subsequent create
+        attempts clears it. We retry up to 3 times with exponential backoff
+        (0.25s, 0.5s, 1s) on that specific error class and surface anything
+        else immediately.
 
         Callers should still treat a final failure as non-fatal: vector search
         keeps working; the BM25 leg silently returns empty until the next
@@ -416,19 +417,29 @@ class VectorStore:
         with contextlib.suppress(Exception):
             self._conn.execute("PRAGMA drop_fts_index('fragment_embeddings');")
         self._conn.execute("CHECKPOINT;")
-        try:
-            self._conn.execute(_FTS_CREATE_SQL)
-        except Exception as exc:  # noqa: BLE001 — narrow check below
-            # Only retry the known transient catalog-dependency race. Surface
-            # everything else (e.g. extension not loaded, disk full) on the
-            # first attempt — retrying those would only delay the real signal.
-            msg = str(exc)
-            if "stopwords" not in msg or "has been deleted" not in msg:
-                raise
-            time.sleep(0.25)
-            self._conn.execute("CHECKPOINT;")
-            # Second attempt. Any exception here propagates — caller handles it.
-            self._conn.execute(_FTS_CREATE_SQL)
+
+        _fts_retries = 3
+        _fts_delays = (0.25, 0.5, 1.0)
+        last_exc: Exception | None = None
+
+        for attempt in range(_fts_retries):
+            try:
+                self._conn.execute(_FTS_CREATE_SQL)
+                return  # success
+            except Exception as exc:  # noqa: BLE001 — narrow check below
+                msg = str(exc)
+                # Only retry the known transient catalog-dependency race.
+                # Surface everything else immediately.
+                if "stopwords" not in msg or "has been deleted" not in msg:
+                    raise
+                last_exc = exc
+                delay = _fts_delays[attempt] if attempt < len(_fts_delays) else _fts_delays[-1]
+                time.sleep(delay)
+                self._conn.execute("CHECKPOINT;")
+
+        # All retries exhausted — raise the last transient error.
+        assert last_exc is not None
+        raise last_exc
 
     def count_embeddings(self) -> int:
         row = self._conn.execute("SELECT COUNT(*) FROM fragment_embeddings").fetchone()
