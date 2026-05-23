@@ -16,15 +16,23 @@ import argparse
 import difflib
 import os
 import re
-import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-EXCLUDE_DIRS = {'.git', '.venv', '__pycache__', '.hermes', '.mypy_cache', '.ruff_cache', '.pytest_cache', '.pytype'}
-EXCLUDE_FILES = {'uv.lock', '.cgr-hash-cache.json', '.cgr-stat-cache.json'}
+EXCLUDE_DIRS = {
+    ".git",
+    ".venv",
+    "__pycache__",
+    ".hermes",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".pytest_cache",
+    ".pytype",
+}
+EXCLUDE_FILES = {"uv.lock", ".cgr-hash-cache.json", ".cgr-stat-cache.json"}
 
 # Regex: match "agentalloy" case-insensitively
-PATTERN = re.compile(r'agentalloy', re.IGNORECASE)
+PATTERN = re.compile(r"agentalloy", re.IGNORECASE)
 
 
 def case_preserve_replacement(match: re.Match) -> str:
@@ -33,22 +41,22 @@ def case_preserve_replacement(match: re.Match) -> str:
 
     # Full uppercase -> full uppercase
     if original.isupper():
-        return 'AGENTALLOY'
+        return "AGENTALLOY"
     # Full lowercase -> full lowercase
     if original.islower():
-        return 'agentalloy'
+        return "agentalloy"
     # Title case (first char upper, rest lower) -> title case
     if original[0].isupper() and original[1:].islower():
-        return 'AgentAlloy'
+        return "AgentAlloy"
     # Mixed case: apply proportionally
     result = []
-    target = 'agentalloy'
-    for i, (orig_char, target_char) in enumerate(zip(original, target)):
+    target = "agentalloy"
+    for _, (orig_char, target_char) in enumerate(zip(original, target, strict=False)):
         if orig_char.isupper():
             result.append(target_char.upper())
         else:
             result.append(target_char.lower())
-    return ''.join(result)
+    return "".join(result)
 
 
 def should_skip(path: Path) -> bool:
@@ -59,9 +67,7 @@ def should_skip(path: Path) -> bool:
         if part in EXCLUDE_DIRS:
             return True
     # Skip excluded files
-    if path.name in EXCLUDE_FILES:
-        return True
-    return False
+    return path.name in EXCLUDE_FILES
 
 
 def collect_files() -> list[Path]:
@@ -75,10 +81,21 @@ def collect_files() -> list[Path]:
             if should_skip(fpath):
                 continue
             # Skip binary files
-            if fpath.suffix in {'.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.pdf', '.whl', '.tar', '.gz'}:
+            if fpath.suffix in {
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".gif",
+                ".ico",
+                ".svg",
+                ".pdf",
+                ".whl",
+                ".tar",
+                ".gz",
+            }:
                 continue
             try:
-                content = fpath.read_text(encoding='utf-8')
+                content = fpath.read_text(encoding="utf-8")
             except (UnicodeDecodeError, PermissionError):
                 continue
             files.append((fpath, content))
@@ -91,8 +108,8 @@ def apply_replacements(content: str) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Rename agentalloy to agentalloy')
-    parser.add_argument('--dry-run', action='store_true', help='Show diff without writing')
+    parser = argparse.ArgumentParser(description="Rename agentalloy to agentalloy")
+    parser.add_argument("--dry-run", action="store_true", help="Show diff without writing")
     args = parser.parse_args()
 
     files = collect_files()
@@ -118,18 +135,20 @@ def main():
                 new.splitlines(keepends=True),
                 fromfile=str(rel),
                 tofile=str(rel),
-                lineterm='',
+                lineterm="",
             )
-            print(''.join(diff))
+            print("".join(diff))
         else:
-            (REPO_ROOT / rel).write_text(new, encoding='utf-8')
+            (REPO_ROOT / rel).write_text(new, encoding="utf-8")
             print(f"  {rel}")
 
     if args.dry_run:
-        print(f"\nDry run complete. {len(changes)} files would change. Rerun without --dry-run to apply.")
+        print(
+            f"\nDry run complete. {len(changes)} files would change. Rerun without --dry-run to apply."
+        )
     else:
         print(f"\nApplied changes to {len(changes)} files.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

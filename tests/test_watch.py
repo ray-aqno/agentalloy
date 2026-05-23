@@ -9,8 +9,8 @@ from unittest.mock import patch
 import pytest
 
 from agentalloy.watch.regenerators import (
-    REGENERATORS,
     AGENTALLOY_MARKER,
+    REGENERATORS,
     regenerate_aider,
     regenerate_cline,
     regenerate_copilot,
@@ -155,7 +155,7 @@ def test_phase_change_triggers_regenerate(tmp_path: Path):
 
         # Simulate the file event
         handler._schedule("modified", str(phase_file))  # pyright: ignore[reportPrivateUsage]
-        time.sleep(0.2)  # wait for debounce
+        time.sleep(0.2)  # wait for debounce while patch is active
 
     assert len(regen_calls) == 1
     assert "BUILD PROSE" in regen_calls[0][0]
