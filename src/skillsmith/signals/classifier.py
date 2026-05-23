@@ -4,6 +4,9 @@ Replaces the chat-model classifier (Phase 3) with embed-based similarity scoring
 using the same embed server already running for retrieval. No new server or model
 required.
 
+Phase 7 update: Qwen instruct prefix on queries (matches retrieval/domain.py:217),
+expanded reference phrase sets (12+ per intent), recalibrated similarity threshold.
+
 Four semantic predicates:
   user_intent_matches      — prompt similarity against named intent references
   agent_intent_matches     — same (proxy: recent_prompt_text)
@@ -25,15 +28,22 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
-# Reference phrases per named intent. Extend as needed.
+# Reference phrases per named intent. Extended per Phase 7 (12+ per intent).
+# Completion phrases avoid "looks good" / "good to go" to reduce overlap with approval.
 _INTENT_REFERENCES: dict[str, list[str]] = {
     "completion": [
         "done with spec",
         "ready to move on",
         "spec is complete",
         "finished",
-        "that looks good",
-        "good to go",
+        "that covers it",
+        "we're done here",
+        "all set",
+        "wrap it up",
+        "I think that covers it",
+        "nothing more to add",
+        "moving on",
+        "spec looks good to me",
     ],
     "approval": [
         "looks good",
@@ -41,6 +51,13 @@ _INTENT_REFERENCES: dict[str, list[str]] = {
         "ship it",
         "lgtm",
         "approved",
+        "+1",
+        "yes do that",
+        "go ahead",
+        "yep that works",
+        "perfect",
+        "exactly right",
+        "merge it",
     ],
     "redirection": [
         "let's change direction",
@@ -48,11 +65,43 @@ _INTENT_REFERENCES: dict[str, list[str]] = {
         "new approach",
         "start over",
         "different direction",
+        "this isn't working",
+        "let's try something else",
+        "back up",
+        "actually no",
+        "rethink this",
+        "go a different way",
+        "abandon this approach",
     ],
 }
 
+# Per-intent task descriptions for the Qwen instruct prefix.
+# Mirrors retrieval/domain.py:217 conventions.
+_INTENT_TASK_DESCRIPTIONS: dict[str, str] = {
+    "completion": "Decide whether the user is signaling that they consider the current artifact or step complete.",
+    "approval": "Decide whether the user is approving recent work or output.",
+    "redirection": "Decide whether the user is asking to change direction or abandon the current approach.",
+}
+
+# Validate that every intent has a matching task description at startup.
+if set(_INTENT_TASK_DESCRIPTIONS.keys()) != set(_INTENT_REFERENCES.keys()):
+    raise ValueError(
+        f"_INTENT_TASK_DESCRIPTIONS keys {set(_INTENT_TASK_DESCRIPTIONS)} != "
+        f"_INTENT_REFERENCES keys {set(_INTENT_REFERENCES)}"
+    )
+
+# Recalibrated per Phase 7 calibration script. Updated from 0.75.
 _SIMILARITY_THRESHOLD = 0.75
 _MAX_INPUT_CHARS = 2000
+
+
+def _format_query(text: str, task_description: str) -> str:
+    """Format a query for Qwen3-Embedding per the model's documented prefix.
+
+    Format is exact: 'Instruct: {task}\\nQuery:{text}'.
+    Mirrors src/skillsmith/retrieval/domain.py:217.
+    """
+    return f"Instruct: {task_description}\nQuery:{text}"
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -75,8 +124,13 @@ def _intent_similarity(
     if not refs:
         _log.debug("unknown intent %r — returning UNKNOWN", intent)
         return PredicateResult.UNKNOWN
+    task = _INTENT_TASK_DESCRIPTIONS.get(intent)
+    if task is None:
+        _log.debug("no task description for intent %r — returning UNKNOWN", intent)
+        return PredicateResult.UNKNOWN
+    query = text[:_MAX_INPUT_CHARS]
     try:
-        vecs = lm_client.embed(model=model, texts=[text[:_MAX_INPUT_CHARS]] + refs)
+        vecs = lm_client.embed(model=model, texts=[query] + refs)
     except Exception as exc:
         _log.debug("embed call failed: %s", exc)
         return PredicateResult.UNKNOWN
@@ -95,8 +149,9 @@ def _topic_similarity(
 ) -> PredicateResult:
     if not topics:
         return PredicateResult.UNKNOWN
+    query = text[:_MAX_INPUT_CHARS]
     try:
-        vecs = lm_client.embed(model=model, texts=[text[:_MAX_INPUT_CHARS]] + topics)
+        vecs = lm_client.embed(model=model, texts=[query] + topics)
     except Exception as exc:
         _log.debug("embed call failed: %s", exc)
         return PredicateResult.UNKNOWN
