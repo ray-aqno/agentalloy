@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="AgentAlloy_cover.png" alt="AgentAlloy — Just-in-Time Skill Composer" width="720" />
+  <img src="AgentAlloy_cover.png" alt="AgentAlloy — Just-in-Time Instruction Composer" width="720" />
 </p>
 
 <p align="center">
-  <b>Skills your coding agent doesn't have to memorize.</b>
+  <b>Fuse your base model with the exact governance, workflows, and skills it needs — right now.</b>
 </p>
 
 <p align="center">
@@ -20,18 +20,26 @@
   <img src="https://img.shields.io/badge/skills-300+-orange" alt="300+ skills" />
 </p>
 
-`AGENTS.md` and skill files were a clever first attempt — and they're already breaking. They load once at session start, then suffer context rot as the conversation drags on. Your agent drifts from the script. Reloading them every turn would waste tokens *and miss the point*: over the course of a session, your agent's persona, phase, and the skills it needs change dozens of times. Static files can't keep up.
+`AGENTS.md`, `SKILL.md`, and giant static system prompts were a clever first attempt — and they're already breaking. They load once at session start, then suffer context rot as the conversation drags on and your agent drifts from the script. Reloading them every turn just trades drift for token waste. The real problem is structural: over a single session, the rules your agent must follow and the skills it needs change dozens of times — and static files can't keep up. Leave them out and a smaller model flounders on tasks its training never covered; cram them all in and you pay the token tax on every turn, or pay it again redoing the work it got wrong.
 
-AgentAlloy is a **just-in-time agent and skills composer**. A signal layer — a small local embed model (`qwen3-embedding:0.6b`) plus deterministic Python — wakes when the agent's situation shifts: a phase transition, a new task contract, a meaningful file change. When nothing has changed, nothing is injected — your agent keeps working with the context it already has. When something *has* changed, agentalloy composes a fresh pre-prompt injection tailored to the new situation: the right workflow persona, the right system skills, and a focused slice of a curated 300+ skill corpus (across 35+ packs) retrieved via hybrid BM25 + dense scoring. Phase-aware, intent-aware, and zero paid-LLM tokens spent on routing.
+**AgentAlloy** is a **just-in-time instruction composer**. A signal layer — a small local embed model (`qwen3-embedding:0.6b`) plus deterministic Python — wakes only when your agent's situation shifts: a phase transition, a new task contract, a meaningful file change. When nothing has changed, nothing is injected — your agent keeps working with the context it already has. When something *has* changed, AgentAlloy composes a fresh, highly targeted pre-prompt by fusing three instruction sets into the exact agent persona the moment calls for:
 
-No generative LLM in the hot path. No Docker. No remote calls. The whole loop runs locally on one 0.6B embed model and embedded [LadybugDB](https://docs.ladybugdb.com/) + DuckDB.
+- **System Governance** — hard boundaries and operational rules (Linear issue naming, PR branch conventions, CI/deployment gates).
+- **Workflow Directives** — process constraints (Spec-Driven Development rules, defining success criteria without solution wording).
+- **Domain Skills** — a focused slice of a curated 300+ skill corpus (languages, testing frameworks, discovery techniques) retrieved via hybrid BM25 + dense scoring.
+
+This gives smaller models the leverage to punch above their weight class, and gives larger models a runtime reminder of how they should be operating — both of which mean getting it right the first time, not the third.
+
+Phase-aware, intent-aware, and zero paid-LLM tokens spent on routing. No generative LLM in the hot path. No remote calls. No containers (unless you want them). The whole loop runs locally on one 0.6B embed model plus embedded [LadybugDB](https://docs.ladybugdb.com/) + DuckDB. In our proof-of-concept: **60% smaller prompts, 25% faster runs, same model — and answers improve, not degrade** (see [Empirical results](#empirical-results)).
 
 Things your agent gets composed-and-injected without you pasting them into the prompt:
 
-- "How do I write a failing pytest before the implementation?" — TDD + framework idioms, composed from `pytest` + `testing` packs.
-- "How do I structure an incremental dbt model so it stays correct across re-runs?" — composed from `data-engineering` + `engineering` packs.
-- "Wire OpenTelemetry into this FastAPI app." — observability + framework patterns, composed from `fastapi` + `analytics` packs.
+- "How do I write a failing pytest before the implementation?" — TDD workflow + framework idioms, composed from `pytest` + `testing` packs.
+- "How do I structure an incremental dbt model so it stays correct across re-runs?" — data-engineering governance + domain skills, composed from `data-engineering` + `engineering` packs.
+- "Wire OpenTelemetry into this FastAPI app." — observability rules + framework patterns, composed from `fastapi` + `analytics` packs.
 - "I'm reviewing this PR — what should I check?" — review heuristics, composed phase-aware from `code-review` packs.
+
+**This is what zero-shot agentic development looks like.**
 
 ---
 
@@ -134,6 +142,7 @@ Your agent calls `/compose`, gets back the relevant raw skill prose, and assembl
 ## What makes the composition different
 
 - **Composed per task, not loaded every turn.** A skill that's irrelevant to the current task isn't in the prompt at all — RRF + applicability filtering picks the right subset for each request. 60% smaller prompts on average vs. flat injection (see [Empirical results](#empirical-results)).
+- **Three instruction sets, fused.** Governance, workflow, and domain skills are composed together into one persona — not three files the agent has to reconcile on its own.
 - **Phase-aware.** Build-phase skills weight differently than QA-phase or review-phase skills. The same task gets a different composition at different points in the lifecycle.
 - **Hybrid retrieval, not lexical-only.** Token-literal queries (`"JWT"`, `"Prisma"`) hit BM25; semantic queries ("the auth handler") hit a 1024-dim dense leg. Phase-tuned Reciprocal Rank Fusion picks the better signal per query.
 - **No model variance.** Embeddings + lexical match + deterministic fusion. Same task → same composition, regardless of which agent model you swap in tomorrow.
@@ -143,7 +152,7 @@ Your agent calls `/compose`, gets back the relevant raw skill prose, and assembl
 
 ## How it works: phases, contracts, signal layer
 
-Three small artifacts on disk drive everything agentalloy does. None of them belong to your agent's prompt — they're state files that the signal layer reads.
+Three small artifacts on disk drive everything AgentAlloy does. None of them belong to your agent's prompt — they're state files that the signal layer reads.
 
 ### 1. The phase file
 
@@ -209,7 +218,7 @@ phase transition          system skill fires
                               etc.)
 ```
 
-Everything between the agent and the embed model is deterministic Python. Zero paid-LLM tokens spent on "where am I?", "what should I be doing?", or "should I call agentalloy now?"
+Everything between the agent and the embed model is deterministic Python. Zero paid-LLM tokens spent on "where am I?", "what should I be doing?", or "should I call AgentAlloy now?"
 
 ---
 
@@ -219,7 +228,7 @@ Three paths, depending on how your harness integrates with external tools.
 
 ### Standalone HTTP service
 
-Run agentalloy on its own port; your agent (or your script, or your CI) calls `POST /compose` and reads the response. Zero coupling to a specific harness — works with anything that can hit an HTTP endpoint.
+Run AgentAlloy on its own port; your agent (or your script, or your CI) calls `POST /compose` and reads the response. Zero coupling to a specific harness — works with anything that can hit an HTTP endpoint.
 
 ```bash
 python -m agentalloy                  # default :47950
@@ -228,7 +237,7 @@ curl -s http://localhost:47950/health # {"status":"ok"}
 
 ### Wired into a Tier 1 harness (full integration)
 
-If your harness exposes per-turn hooks, agentalloy installs hook scripts that fire on `UserPromptSubmit`, `PreToolUse`, and `PostToolUse`. Phase transitions, contract retrieval, and system skill enforcement all happen automatically.
+If your harness exposes per-turn hooks, AgentAlloy installs hook scripts that fire on `UserPromptSubmit`, `PreToolUse`, and `PostToolUse`. Phase transitions, contract retrieval, and system skill enforcement all happen automatically.
 
 ```bash
 agentalloy wire --harness <name>
@@ -236,7 +245,7 @@ agentalloy wire --harness <name>
 
 ### Wired into a Tier 3 harness (sidecar)
 
-If your harness only reads static rules files, agentalloy installs a file-watching sidecar that regenerates the rules file within ~1s of a phase or contract change. You start the sidecar once per session:
+If your harness only reads static rules files, AgentAlloy installs a file-watching sidecar that regenerates the rules file within ~1s of a phase or contract change. You start the sidecar once per session:
 
 ```bash
 agentalloy wire --harness <name>
@@ -289,7 +298,7 @@ The `agentalloy.install` module exposes a single CLI with subcommands. All write
 | `reembed` | Recompute embeddings for unembedded or updated LadybugDB fragments. |
 | `wire [--harness <name>]` | Auto-detect the harness in the current repo and inject sentinels (or pass `--harness` to force). |
 | `wire-harness --harness <name>` | Lower-level: explicit harness wiring with full flag control. |
-| `unwire` | Remove agentalloy sentinels from the current repo (keeps user state). |
+| `unwire` | Remove AgentAlloy sentinels from the current repo (keeps user state). |
 | `write-env` | Write `.env` with the resolved backend / model / paths. |
 | `update` | Pull the latest packs and re-seed. |
 | `uninstall` | Cross-repo sentinel cleanup, optional data-dir wipe. |
@@ -301,7 +310,7 @@ The `agentalloy.install` module exposes a single CLI with subcommands. All write
 |---|---|
 | `serve` | Run the service in the foreground (uvicorn). |
 | `server-start` / `server-stop` / `server-restart` / `server-status` | Manage the background FastAPI daemon on :47950. |
-| `enable-service` | Register agentalloy as a persistent background service (systemd-user / launchd). |
+| `enable-service` | Register AgentAlloy as a persistent background service (systemd-user / launchd). |
 | `status` | Show user-scope install state, wired repos, and service reachability. |
 | `verify` | Run post-install integrity checks (corpus count, harness sentinels, port). |
 | `doctor` | Diagnose a partial / broken install. |
@@ -369,7 +378,7 @@ Request body for `/compose`:
 }
 ```
 
-When `contract_path` is provided, agentalloy parses the contract's frontmatter and uses `domain_tags` as the BM25 input — the surgical, intent-aware path. When neither contract field is present, agentalloy rule-extracts keywords from `task` as a fallback.
+When `contract_path` is provided, AgentAlloy parses the contract's frontmatter and uses `domain_tags` as the BM25 input — the surgical, intent-aware path. When neither contract field is present, AgentAlloy rule-extracts keywords from `task` as a fallback.
 
 ---
 
@@ -414,7 +423,7 @@ The corpus is **packs** — opt-in groups of related skills. `main` ships **35+ 
 
 Every skill is sourced from authoritative upstream docs and validated against the **R1–R8 quality contract** in `src/agentalloy/_packs/meta/sys-skill-authoring-rules.md`. Each pack ships with `.qa.md` reports under `docs/skill-review-history/` documenting independent Critic verdicts.
 
-Pack authoring lives in a separate repo and tooling — see [agentalloy-authoring](../agentalloy-authoring). It uses a local-first author-critic pipeline that produces validated YAML packs; nothing about authoring is required to *use* agentalloy at runtime.
+Pack authoring lives in a separate repo and tooling — see [agentalloy-authoring](../agentalloy-authoring). It uses a local-first author-critic pipeline that produces validated YAML packs; nothing about authoring is required to *use* AgentAlloy at runtime.
 
 ---
 
@@ -469,7 +478,7 @@ Pack authoring lives in a separate repo and tooling — see [agentalloy-authorin
 - **Signal layer** — pre-filter (keywords + file-event scope) → exit-gate evaluation (deterministic predicates + cosine-similarity gates) → atomic phase write + workflow-skill prose emission. Soft-fails everywhere; failure never blocks the agent.
 - **Telemetry** — every `/compose`, `/retrieve`, and signal evaluation writes a structured trace to DuckDB inline-before-response. See [Telemetry](#telemetry).
 - **Single-model runtime** — `qwen3-embedding:0.6b` does both retrieval embeddings *and* semantic gate scoring (cosine similarity against reference phrase sets). No second model, no chat classifier, no Docker.
-- **No generative LLM in the runtime path.** The agent owns generation; agentalloy owns retrieval and routing.
+- **No generative LLM in the runtime path.** The agent owns generation; AgentAlloy owns retrieval and routing.
 
 ---
 
@@ -535,7 +544,7 @@ See `docs/experiments/poc-composed-vs-flat.md` §13. Headline:
 
 > **60% smaller prompts. 25% faster runs. Same model — and answers improve, not degrade.**
 
-Reproduce: `AGENT_MODEL=<your-agent-model> uv run python -m eval.run_poc --n 3` (requires running agentalloy + the agent model loaded locally).
+Reproduce: `AGENT_MODEL=<your-agent-model> uv run python -m eval.run_poc --n 3` (requires running AgentAlloy + the agent model loaded locally).
 
 ---
 
