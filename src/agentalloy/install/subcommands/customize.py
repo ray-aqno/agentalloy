@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import yaml
 
-from agentalloy.install.output import add_json_flag, print_rich
+from agentalloy.install.output import add_json_flag, print_rich, write_result
 
 if TYPE_CHECKING:
     from agentalloy.profiles import Profile
@@ -332,14 +332,16 @@ def _list_skills(args: argparse.Namespace) -> int:
             }
         )
 
-    if getattr(args, "json", False):
-        print(json.dumps(rows, indent=2))
-    else:
-        print_rich("\n  [bold]Customize List[/bold]\n")
-        for r in rows:
-            print_rich(f"  {r['name']} ({r['skill_class']}) — {r['layer']}")
-        print_rich()
+    write_result(rows, args, human_fn=_render_skill_list)  # type: ignore[arg-type]
     return 0
+
+
+def _render_skill_list(result: list[dict[str, Any]]) -> None:
+    """Render skill list in human-readable format."""
+    print_rich("\n  [bold]Customize List[/bold]\n")
+    for r in result:
+        print_rich(f"  {r['name']} ({r['skill_class']}) — {r['layer']}")
+    print_rich()
 
 
 def _edit_skill(args: argparse.Namespace) -> int:
@@ -391,6 +393,55 @@ def _edit_skill(args: argparse.Namespace) -> int:
     return 0
 
 
+def _render_validate(result: dict[str, Any]) -> None:
+    """Render validation result in human-readable format."""
+    print_rich("\n  [bold]Validation[/bold]\n")
+    if result["status"] == "failed":
+        print_rich("  Status: [red]Failed[/red]")
+        for err in result["errors"]:
+            print_rich(f"  [red]x[/red] {err}")
+    else:
+        print_rich("  Status: [green]Passed[/green]")
+        print_rich(f"  Skill: {result['skill_id']}")
+        print_rich(f"  Layer: {result['layer']}")
+    print_rich()
+
+
+def _render_update(result: dict[str, Any]) -> None:
+    """Render update result in human-readable format."""
+    print_rich("\n  [bold]Update Skill[/bold]\n")
+    print_rich(f"  Status: [green]{result['status']}[/green]")
+    print_rich(f"  Skill: {result['skill_id']}")
+    if "profile" in result:
+        print_rich(f"  Profile: {result['profile']}")
+    print_rich(f"  Layer: {result['layer']}")
+    print_rich()
+
+
+def _render_update_all(result: dict[str, Any]) -> None:
+    """Render update-all result in human-readable format."""
+    print_rich("\n  [bold]Update All Skills[/bold]\n")
+    print_rich(f"  Profile: {result['profile']}")
+    if result["ingested_count"]:
+        print_rich(f"  Ingested: {result['ingested_count']}")
+    if result["error_count"]:
+        print_rich(f"  Errors: {result['error_count']}")
+        for err in result["errors"]:
+            print_rich(f"    [red]x[/red] {err}")
+    print_rich()
+
+
+def _render_reset(result: dict[str, Any]) -> None:
+    """Render reset result in human-readable format."""
+    print_rich("\n  [bold]Reset Skill[/bold]\n")
+    print_rich(f"  Skill: {result['skill_id']}")
+    if "profile" in result:
+        print_rich(f"  Profile: {result['profile']}")
+    else:
+        print_rich("  Project-level")
+    print_rich()
+
+
 def _validate_skill(args: argparse.Namespace) -> int:
     name: str = args.name
     profile_name = getattr(args, "profile", None)
@@ -419,18 +470,14 @@ def _validate_skill(args: argparse.Namespace) -> int:
         return 1
 
     errors = _validate_skill_data(data, name)
-    if errors:
-        print_rich("\n  [bold]Validation Failed[/bold]\n")
-        for err in errors:
-            print_rich(f"  [red]x[/red] {err}")
-        print_rich()
-        return 1
-
-    print_rich("\n  [bold]Validation Passed[/bold]\n")
-    print_rich(f"  Skill: {data.get('skill_id') or name}")
-    print_rich(f"  Layer: {layer_name}")
-    print_rich()
-    return 0
+    result = {
+        "status": "failed" if errors else "passed",
+        "skill_id": data.get("skill_id") or name,
+        "layer": layer_name,
+        "errors": errors,
+    }
+    write_result(result, args, human_fn=_render_validate)
+    return 1 if errors else 0
 
 
 def _update_skill(args: argparse.Namespace) -> int:
@@ -439,7 +486,7 @@ def _update_skill(args: argparse.Namespace) -> int:
     use_project = getattr(args, "project", False)
 
     if update_all:
-        return _update_all(profile_name)
+        return _update_all(profile_name, args)
 
     name: str = args.name
     layers = _resolve_skill_layers(name, profile_name)
@@ -485,8 +532,13 @@ def _update_skill(args: argparse.Namespace) -> int:
                 print_rich("\n  [bold]Update Skill[/bold]\n")
                 print_rich("  Status: reverted_to_inherited")
                 print_rich(f"  Skill: {skill_id}")
-                print_rich("  Note: Override was identical to default; deleted.")
+                print("  Note: Override was identical to default; deleted.")
                 print_rich()
+                result = {
+                    "status": "reverted_to_inherited",
+                    "skill_id": skill_id,
+                }
+                write_result(result, args, human_fn=_render_update)
                 return 0
         except Exception:
             pass
@@ -501,17 +553,18 @@ def _update_skill(args: argparse.Namespace) -> int:
             return 1
 
     skill_id = data.get("skill_id") or name
-    print_rich("\n  [bold]Update Skill[/bold]\n")
-    print_rich("  Status: ingested")
-    print_rich(f"  Skill: {skill_id}")
+    result = {
+        "status": "ingested",
+        "skill_id": skill_id,
+        "layer": layer_name,
+    }
     if target_profile:
-        print_rich(f"  Profile: {target_profile}")
-    print_rich(f"  Layer: {layer_name}")
-    print_rich()
+        result["profile"] = target_profile
+    write_result(result, args, human_fn=_render_update)
     return 0
 
 
-def _update_all(profile_name: str | None) -> int:
+def _update_all(profile_name: str | None, args: argparse.Namespace) -> int:
     """Re-ingest all overridden skills for a profile."""
     from agentalloy.profiles import detect_profile, get_profile
 
@@ -550,15 +603,14 @@ def _update_all(profile_name: str | None) -> int:
             except Exception as exc:
                 errors.append(f"{name}: ingest error — {exc}")
 
-    print_rich("\n  [bold]Update All Skills[/bold]\n")
-    print_rich(f"  Profile: {profile.name}")
-    if ingested:
-        print_rich(f"  Ingested: {len(ingested)}")
-    if errors:
-        print_rich(f"  Errors: {len(errors)}")
-        for err in errors:
-            print_rich(f"    [red]x[/red] {err}")
-    print_rich()
+    result = {
+        "profile": profile.name,
+        "ingested": ingested,
+        "ingested_count": len(ingested),
+        "errors": errors,
+        "error_count": len(errors),
+    }
+    write_result(result, args, human_fn=_render_update_all)
     return 0 if not errors else 1
 
 
@@ -631,13 +683,12 @@ def _reset_skill(args: argparse.Namespace) -> int:
         except Exception:
             pass
 
-    print_rich("\n  [bold]Reset Skill[/bold]\n")
-    print_rich(f"  Skill: {name}")
+    result = {
+        "skill_id": name,
+    }
     if not use_project:
-        print_rich(f"  Profile: {profile.name}")
-    else:
-        print_rich("  Project-level")
-    print_rich()
+        result["profile"] = profile.name
+    write_result(result, args, human_fn=_render_reset)
     return 0
 
 
@@ -653,7 +704,6 @@ def add_parser(
         "customize",
         help="Manage system and workflow skill overrides.",
     )
-    p.add_argument("--human", action="store_true", help="Human-readable output (default).")
     add_json_flag(p)
     sub = p.add_subparsers(dest="customize_cmd")
 

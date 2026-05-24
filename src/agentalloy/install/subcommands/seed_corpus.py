@@ -262,7 +262,7 @@ def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) 
     p.set_defaults(func=run)
 
 
-def _render_human(result: dict[str, Any]) -> None:
+def _render_seed_corpus(result: dict[str, Any]) -> None:
     """Render seed corpus result in human-readable format."""
     action = result.get("action", "unknown")
     skill_count = result.get("skill_count", 0)
@@ -304,7 +304,10 @@ def run(args: argparse.Namespace) -> int:
         if prev and prev.get("output_path") and duck_present and ladybug_present:
             p = Path(prev["output_path"])
             if p.exists():
-                sys.stdout.write(p.read_text())
+                import json as _json
+
+                cached: dict[str, Any] = _json.loads(p.read_text())
+                write_result(cached, args, human_fn=_render_seed_corpus)
                 return 4  # EXIT_NOOP
 
     result = check_corpus()
@@ -324,10 +327,10 @@ def run(args: argparse.Namespace) -> int:
             },
         )
         install_state.save_state(st)
-        write_result(result, args, human_fn=_render_human)
+        write_result(result, args, human_fn=_render_seed_corpus)
         return 0
 
-    write_result(result, args, human_fn=_render_human)
+    write_result(result, args, human_fn=_render_seed_corpus)
 
     remediation = result.get("remediation", "")
     error = result.get("error", "")

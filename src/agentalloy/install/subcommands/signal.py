@@ -551,7 +551,7 @@ def add_parser(
     ck: argparse.ArgumentParser = sub.add_parser(
         "check", help="Diagnostics: dump current signal state"
     )
-    ck.add_argument("--json", dest="json_out", action="store_true", default=True)
+    ck.add_argument("--json", dest="json_out", action="store_true", default=False)
 
     p.set_defaults(func=_dispatch)
 

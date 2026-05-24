@@ -677,16 +677,16 @@ def pull_models(
     st = install_state.load_state(root)
     if install_state.is_step_completed(st, STEP_NAME):
         prev = install_state.get_step_output(st, STEP_NAME)
+        prev_data: dict[str, Any] = prev.get("output", {}) if prev else {}
         if not quiet:
-            # Show what was already done
-            prev_data: dict[str, Any] = prev.get("output", {}) if prev else {}
             auto_pulled: list[dict[str, Any]] = prev_data.get("auto_pulled", [])
             skipped: list[dict[str, Any]] = prev_data.get("skipped_already_present", [])
             if auto_pulled and not skipped:
                 print(f"  Models already pulled: {len(auto_pulled)}", file=sys.stderr)
             if skipped:
                 print(f"  Already present: {len(skipped)}", file=sys.stderr)
-        raise SystemExit(4)
+        # Return cached result so main() can route through write_result
+        return prev_data
 
     # Extract the option to use: explicit runner override > default flag > first.
     options = models_json.get("options", [])

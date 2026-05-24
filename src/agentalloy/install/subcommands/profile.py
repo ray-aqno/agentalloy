@@ -36,9 +36,7 @@ def _list(args: argparse.Namespace) -> int:
     from agentalloy.profiles import list_profiles
 
     profiles = list_profiles(cwd=Path.cwd())
-    write_result(
-        {"profiles": profiles}, args, human_fn=lambda r: _render_profile_list(r["profiles"])
-    )
+    write_result(profiles, args, human_fn=lambda r: _render_profile_list(r))  # type: ignore[arg-type]
     return 0
 
 

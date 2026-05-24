@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections.abc import Callable
 from typing import Any
@@ -19,7 +20,10 @@ try:
     from rich.console import Console
     from rich.table import Table
 
-    _console = Console(force_terminal=True, soft_wrap=True)
+    # Auto-detect terminal: force only when stdout is a real TTY so piped
+    # output stays clean of ANSI codes while interactive sessions get
+    # full Rich formatting.
+    _console = Console(force_terminal=sys.stdout.isatty(), soft_wrap=True)
     HAS_RICH: bool = True
 except ImportError:
     Console = None  # type: ignore[misc,assignment]
@@ -34,11 +38,31 @@ except ImportError:
 
 
 def print_rich(*args: Any, **kwargs: Any) -> None:
-    """Print with Rich if available, plain stdout otherwise."""
-    if _console is not None:
+    """Print with Rich if available, plain stdout otherwise.
+
+    When Rich is unavailable, Rich markup tags (e.g. [bold], [green])
+    are stripped so the fallback output remains clean.
+    """
+    if HAS_RICH and _console is not None:
         _console.print(*args, **kwargs)
     else:
-        print(*args, **kwargs)
+        # Strip Rich markup tags for clean plain-text fallback
+        stripped = [_strip_markup(str(a)) for a in args]
+        print(*stripped, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Rich markup stripper for non-Rich fallback
+# ---------------------------------------------------------------------------
+
+_markup_re = re.compile(
+    r"\[(/?)?(bold|dim|red|green|yellow|blue|magenta|cyan|white|black|default|link|on\s+\w+|default|link\s+\S+|[a-z_]+)\]"
+)
+
+
+def _strip_markup(text: str) -> str:
+    """Remove Rich markup tags from a string for plain-text output."""
+    return _markup_re.sub("", text)
 
 
 def print_rich_stderr(*args: Any, **kwargs: Any) -> None:
