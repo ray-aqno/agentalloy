@@ -28,6 +28,13 @@ from agentalloy.install.subcommands.simple_setup import (
 )
 # ruff: noqa: I001
 
+
+# Helper to avoid pyright lambda param type issues (ruff reformatting moves ignore comments)
+def _mock_input_accept(prompt: str) -> str:
+    """Mock input that accepts default (returns '1' to accept compose file)."""
+    return "1"
+
+
 # ---------------------------------------------------------------------------
 # Shared mock setup
 # ---------------------------------------------------------------------------
@@ -945,7 +952,7 @@ class TestContainerFlow:
             patch.object(sys.stdin, "isatty", lambda: True),
             patch(
                 "builtins.input",
-                lambda _: "1",  # accept default compose file  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+                _mock_input_accept,
             ),
         ):
             mock_result = MagicMock()
@@ -1036,7 +1043,9 @@ class TestContainerFlow:
         st = state_mod.load_state()
         assert "compose.radeon.yaml" in st["compose_file"]
 
-    def test_compose_binary_missing_exits_1(self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]):
+    def test_compose_binary_missing_exits_1(
+        self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+    ):
         """No podman/docker detected, setup exits with code 1."""
         SetupConfig, run_setup = self._import_run_setup()
 
