@@ -38,7 +38,7 @@ from agentalloy.install.output import add_json_flag, write_result
 SCHEMA_VERSION = 1
 
 _DEFAULT_PORT = 47950
-_PHASES = ("early", "runner")
+_PHASES = ("early", "runner", "container")
 _OLLAMA_PORT = 11434
 
 
@@ -386,6 +386,127 @@ def _check_fastflowlm_present() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Container-phase checks
+# ---------------------------------------------------------------------------
+
+
+def _detect_compose_binary() -> tuple[str | None, str | None]:
+    """Detect a compose-capable binary (podman preferred, docker fallback).
+
+    Returns ``(label, binary_path)`` where:
+      - ``label`` is ``"podman compose"`` or ``"docker compose"`` (for display/state)
+      - ``binary_path`` is the absolute path to the main binary (e.g. ``/usr/bin/podman``)
+
+    Returns ``(None, None)`` if neither found.
+    """
+    for candidate in ("podman", "docker"):
+        binary = shutil.which(candidate)
+        if binary is None:
+            continue
+        try:
+            result = subprocess.run(
+                [binary, "compose", "version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                return f"{candidate} compose", binary
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+    return None, None
+
+
+def _check_compose_binary() -> dict[str, Any]:
+    t0 = time.monotonic()
+    label, binary_path = _detect_compose_binary()
+    if label is not None:
+        return _check(
+            "compose_binary",
+            passed=True,
+            started=t0,
+            detail=f"{label} at {binary_path}",
+        )
+    return _check(
+        "compose_binary",
+        passed=False,
+        started=t0,
+        error="Neither `podman compose` nor `docker compose` found on PATH",
+        remediation=(
+            "Install Podman (recommended) or Docker:\n"
+            "  Linux:   sudo apt install podman (or docker-compose-plugin)\n"
+            "  macOS:   brew install podman (or docker-desktop)\n"
+            "  Verify:  podman compose version (or docker compose version)"
+        ),
+    )
+
+
+def _check_compose_file_present(compose_file: str | None) -> dict[str, Any]:
+    t0 = time.monotonic()
+    if compose_file is None:
+        return _check(
+            "compose_file_present",
+            passed=False,
+            started=t0,
+            error="No compose file specified",
+            remediation="Pass --compose-file <path> or select a compose file interactively.",
+        )
+    fp = Path(compose_file)
+    if fp.exists():
+        return _check(
+            "compose_file_present",
+            passed=True,
+            started=t0,
+            detail=f"compose file at {fp}",
+        )
+    return _check(
+        "compose_file_present",
+        passed=False,
+        started=t0,
+        error=f"Compose file not found: {fp}",
+        remediation="Ensure the compose YAML file exists at the specified path.",
+    )
+
+
+def _check_image_build_deps(compose_file: str | None) -> dict[str, Any]:
+    """Check that a Containerfile exists next to the compose file."""
+    t0 = time.monotonic()
+    if compose_file is None:
+        return _check(
+            "image_build_deps",
+            passed=True,
+            started=t0,
+            severity="warn",
+            detail="No compose file specified — skipping Containerfile check",
+        )
+    compose_dir = Path(compose_file).parent
+    containerfile = compose_dir / "Containerfile"
+    if containerfile.exists():
+        return _check(
+            "image_build_deps",
+            passed=True,
+            started=t0,
+            detail=f"Containerfile at {containerfile}",
+        )
+    # Also check Dockerfile as fallback
+    dockerfile = compose_dir / "Dockerfile"
+    if dockerfile.exists():
+        return _check(
+            "image_build_deps",
+            passed=True,
+            started=t0,
+            detail=f"Dockerfile at {dockerfile}",
+        )
+    return _check(
+        "image_build_deps",
+        passed=False,
+        started=t0,
+        error=f"No Containerfile or Dockerfile found in {compose_dir}",
+        remediation="Place a Containerfile (or Dockerfile) in the same directory as your compose YAML.",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Phase orchestration
 # ---------------------------------------------------------------------------
 
@@ -403,7 +524,11 @@ def _runner_from_models_output() -> str | None:
 
 
 def run_preflight(
-    *, phase: str = "early", runner: str | None = None, port: int = _DEFAULT_PORT
+    *,
+    phase: str = "early",
+    runner: str | None = None,
+    port: int = _DEFAULT_PORT,
+    compose_file: str | None = None,
 ) -> dict[str, Any]:
     if phase not in _PHASES:
         raise ValueError(f"invalid phase {phase!r}; must be one of {_PHASES}")
@@ -418,6 +543,11 @@ def run_preflight(
         checks.append(_check_xdg_dirs_writable())
         checks.append(_check_network_reachable())
         checks.append(_check_port_free(port))
+    elif phase == "container":
+        checks.append(_check_compose_binary())
+        checks.append(_check_compose_file_present(compose_file))
+        checks.append(_check_port_free(port))
+        checks.append(_check_image_build_deps(compose_file))
     else:  # runner
         chosen = runner or _runner_from_models_output()
         if chosen is None:
@@ -518,6 +648,11 @@ def add_parser(
         default=_DEFAULT_PORT,
         help=f"Port to test for availability (default: {_DEFAULT_PORT}).",
     )
+    p.add_argument(
+        "--compose-file",
+        default=None,
+        help="Container phase: path to the compose YAML file.",
+    )
     add_json_flag(p)
     p.set_defaults(func=_run)
 
@@ -539,7 +674,12 @@ def _render_human(result: dict[str, Any]) -> None:
 
 
 def _run(args: argparse.Namespace) -> int:
-    result = run_preflight(phase=args.phase, runner=args.runner, port=args.port)
+    result = run_preflight(
+        phase=args.phase,
+        runner=args.runner,
+        port=args.port,
+        compose_file=getattr(args, "compose_file", None),
+    )
     install_state.save_output_file(result, f"preflight-{args.phase}.json")
     write_result(result, args, human_fn=_render_human)
 

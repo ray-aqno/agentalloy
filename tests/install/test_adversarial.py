@@ -19,6 +19,25 @@ import pytest
 from agentalloy.install import state as install_state
 
 
+@pytest.fixture(autouse=True)
+def _clean_global_state(tmp_path: Path):
+    """Remove global state file after each test to prevent cross-test pollution."""
+    fp = install_state.state_path()
+    existed = fp.exists()
+    original = None
+    if existed:
+        original = fp.read_text()
+    # Start each test with no global state
+    if fp.exists():
+        fp.unlink()
+    yield
+    # Restore or remove global state after test
+    if fp.exists():
+        fp.unlink()
+    if existed and original is not None:
+        fp.write_text(original)
+
+
 @pytest.fixture()
 def repo_root(tmp_path: Path) -> Path:
     (tmp_path / "pyproject.toml").write_text("")
