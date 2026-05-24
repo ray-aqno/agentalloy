@@ -80,7 +80,7 @@ def _run_clear(args: argparse.Namespace) -> int:
     finally:
         vs.close()
 
-    print_rich(f"\n  [bold]Telemetry Clear[/bold]\n")
+    print_rich("\n  [bold]Telemetry Clear[/bold]\n")
     print_rich(f"  Traces deleted: {result['traces_deleted']}")
     print_rich(f"  Prompt loads deleted: {result['prompt_loads_deleted']}")
     print_rich()

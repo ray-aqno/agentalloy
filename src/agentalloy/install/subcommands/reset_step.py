@@ -129,7 +129,7 @@ def _render_human(result: dict[str, Any]) -> None:
     dependents = result.get("dependent_steps_also_cleared", [])
     keys = result.get("state_keys_cleared", [])
 
-    print_rich(f"\n  [bold]Reset Step[/bold]\n")
+    print_rich("\n  [bold]Reset Step[/bold]\n")
     print_rich(f"  Cleared: [bold]{step}[/bold]")
 
     if dependents:

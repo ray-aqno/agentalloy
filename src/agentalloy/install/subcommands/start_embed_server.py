@@ -109,7 +109,7 @@ def _run(args: argparse.Namespace) -> int:
             "port": embed_port,
         }
         _save(result)
-        _render_embed_server(result, args)
+        write_result(result, args, human_fn=_render_embed_server)
         return 0
 
     if runner == "llama-server":
@@ -120,7 +120,7 @@ def _run(args: argparse.Namespace) -> int:
     return _manual_instruction(runner, model, args)
 
 
-def _render_embed_server(result: dict[str, Any], args: argparse.Namespace) -> None:
+def _render_embed_server(result: dict[str, Any]) -> None:
     """Render embed server result in human-readable format."""
     action = result.get("action", "unknown")
     runner = result.get("runner", "unknown")
@@ -134,7 +134,7 @@ def _render_embed_server(result: dict[str, Any], args: argparse.Namespace) -> No
     }
     color = action_colors.get(action, "dim")
 
-    print_rich(f"\n  [bold]Embed Server[/bold]\n")
+    print_rich("\n  [bold]Embed Server[/bold]\n")
     print_rich(f"  Status: [{color}]{action}[/{color}]")
     print_rich(f"  Runner: {runner}")
     print_rich(f"  Port: {port}")
@@ -235,7 +235,7 @@ def _start_llama_server(model: str, timeout: float, args: argparse.Namespace) ->
         "log_path": str(log_path),
     }
     _save(result)
-    _render_embed_server(result, args)
+    write_result(result, args, human_fn=_render_embed_server)
     return 0
 
 
@@ -280,7 +280,7 @@ def _start_ollama(model: str, args: argparse.Namespace) -> int:
         "port": OLLAMA_EMBED_PORT,
     }
     _save(result)
-    _render_embed_server(result, args)
+    write_result(result, args, human_fn=_render_embed_server)
     return 0
 
 
@@ -304,7 +304,7 @@ def _manual_instruction(runner: str, model: str, args: argparse.Namespace) -> in
         "instruction": msg,
     }
     _save(result)
-    _render_embed_server(result, args)
+    write_result(result, args, human_fn=_render_embed_server)
     # Exit 0 — setup can continue; if the server isn't up, install-packs will
     # fail with a clear connection-refused error.
     return 0

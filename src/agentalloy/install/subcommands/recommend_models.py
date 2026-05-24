@@ -367,7 +367,7 @@ def _render_human(result: dict[str, Any]) -> None:
     preset = result.get("preset", "unknown")
     options = result.get("options", [])
 
-    print_rich(f"\n  [bold]Model Recommendations[/bold]\n")
+    print_rich("\n  [bold]Model Recommendations[/bold]\n")
     print_rich(f"  Preset: [bold]{preset}[/bold]\n")
 
     for opt in options:

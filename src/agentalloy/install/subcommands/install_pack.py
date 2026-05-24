@@ -641,7 +641,7 @@ def _render_human(result: dict[str, Any]) -> None:
     skills_ingested = result.get("skills_ingested", 0)
     failures = result.get("ingest_failures", 0)
 
-    print_rich(f"\n  [bold]Install Pack[/bold]\n")
+    print_rich("\n  [bold]Install Pack[/bold]\n")
     print_rich(f"  Pack: {pack_name}")
     print_rich(f"  Status: {action}")
     print_rich(f"  Skills ingested: {skills_ingested}")

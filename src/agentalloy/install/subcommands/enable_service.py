@@ -505,7 +505,7 @@ def _render_human(result: dict[str, Any]) -> None:
     unit_path = result.get("unit_path", "")
     action = result.get("action", "enabled")
 
-    print_rich(f"\n  [bold]Enable Service[/bold]\n")
+    print_rich("\n  [bold]Enable Service[/bold]\n")
     print_rich(f"  Mode: [bold]{mode}[/bold]")
     if runtime:
         print_rich(f"  Runtime: {runtime}")

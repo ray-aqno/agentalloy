@@ -41,7 +41,7 @@ def _render_human(payload: dict) -> None:
     if pid is not None:
         print_rich(f"  PID:  {pid}")
     else:
-        print_rich(f"  PID:  [dim]no process[/dim]")
+        print_rich("  PID:  [dim]no process[/dim]")
 
     # Reachability
     reach_status = "[green]reachable[/green]" if reachable else "[red]not reachable[/red]"

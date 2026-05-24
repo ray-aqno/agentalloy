@@ -52,7 +52,7 @@ def _render_human(result: dict) -> None:
     files_modified = result.get("files_modified", [])
     total = len(files_written) + len(files_modified)
 
-    print_rich(f"\n  [bold]Wire Harness[/bold]\n")
+    print_rich("\n  [bold]Wire Harness[/bold]\n")
     print_rich(f"  Harness: [bold]{harness}[/bold]")
     print_rich(f"  Files: {total}")
 
@@ -62,7 +62,7 @@ def _render_human(result: dict) -> None:
         print_rich(f"    [yellow]~[/yellow] {f}")
 
     if not files_written and not files_modified:
-        print_rich(f"  [dim]No files to wire.[/dim]")
+        print_rich("  [dim]No files to wire.[/dim]")
 
     print_rich()
 

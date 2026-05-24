@@ -833,26 +833,26 @@ def _render_human(result: dict[str, Any]) -> None:
     skipped = result.get("skipped_already_present", [])
     errors = result.get("errors", [])
 
-    print_rich(f"\n  [bold]Pull Models[/bold]\n")
+    print_rich("\n  [bold]Pull Models[/bold]\n")
 
     if auto_pulled:
-        print_rich(f"  [green]Pulled:[/green]")
+        print_rich("  [green]Pulled:[/green]")
         for p in auto_pulled:
             print_rich(f"    {p.get('runner', '?')}:{p.get('model', '?')}")
 
     if skipped:
-        print_rich(f"  [dim]Already present:[/dim]")
+        print_rich("  [dim]Already present:[/dim]")
         for s in skipped:
             print_rich(f"    {s.get('runner', '?')}:{s.get('model', '?')}")
 
     if manual_steps:
-        print_rich(f"  [yellow]Manual steps required:[/yellow]")
+        print_rich("  [yellow]Manual steps required:[/yellow]")
         for m in manual_steps:
             print_rich(f"    {m.get('runner', '?')}:{m.get('model', '?')}")
             print_rich(f"      {m.get('instruction', '')}")
 
     if errors:
-        print_rich(f"  [red]Errors:[/red]")
+        print_rich("  [red]Errors:[/red]")
         for e in errors:
             print_rich(f"    {e.get('runner', '?')}:{e.get('model', '?')} — {e.get('error', '')}")
 

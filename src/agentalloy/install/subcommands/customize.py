@@ -335,7 +335,7 @@ def _list_skills(args: argparse.Namespace) -> int:
     if getattr(args, "json", False):
         print(json.dumps(rows, indent=2))
     else:
-        print_rich(f"\n  [bold]Customize List[/bold]\n")
+        print_rich("\n  [bold]Customize List[/bold]\n")
         for r in rows:
             print_rich(f"  {r['name']} ({r['skill_class']}) — {r['layer']}")
         print_rich()
@@ -420,13 +420,13 @@ def _validate_skill(args: argparse.Namespace) -> int:
 
     errors = _validate_skill_data(data, name)
     if errors:
-        print_rich(f"\n  [bold]Validation Failed[/bold]\n")
+        print_rich("\n  [bold]Validation Failed[/bold]\n")
         for err in errors:
             print_rich(f"  [red]x[/red] {err}")
         print_rich()
         return 1
 
-    print_rich(f"\n  [bold]Validation Passed[/bold]\n")
+    print_rich("\n  [bold]Validation Passed[/bold]\n")
     print_rich(f"  Skill: {data.get('skill_id') or name}")
     print_rich(f"  Layer: {layer_name}")
     print_rich()
@@ -482,10 +482,10 @@ def _update_skill(args: argparse.Namespace) -> int:
                 skill_id = data.get("skill_id") or name
                 if not use_project:
                     _delete_from_store(profile.name, skill_id)
-                print_rich(f"\n  [bold]Update Skill[/bold]\n")
-                print_rich(f"  Status: reverted_to_inherited")
+                print_rich("\n  [bold]Update Skill[/bold]\n")
+                print_rich("  Status: reverted_to_inherited")
                 print_rich(f"  Skill: {skill_id}")
-                print_rich(f"  Note: Override was identical to default; deleted.")
+                print_rich("  Note: Override was identical to default; deleted.")
                 print_rich()
                 return 0
         except Exception:
@@ -501,8 +501,8 @@ def _update_skill(args: argparse.Namespace) -> int:
             return 1
 
     skill_id = data.get("skill_id") or name
-    print_rich(f"\n  [bold]Update Skill[/bold]\n")
-    print_rich(f"  Status: ingested")
+    print_rich("\n  [bold]Update Skill[/bold]\n")
+    print_rich("  Status: ingested")
     print_rich(f"  Skill: {skill_id}")
     if target_profile:
         print_rich(f"  Profile: {target_profile}")
@@ -550,7 +550,7 @@ def _update_all(profile_name: str | None) -> int:
             except Exception as exc:
                 errors.append(f"{name}: ingest error — {exc}")
 
-    print_rich(f"\n  [bold]Update All Skills[/bold]\n")
+    print_rich("\n  [bold]Update All Skills[/bold]\n")
     print_rich(f"  Profile: {profile.name}")
     if ingested:
         print_rich(f"  Ingested: {len(ingested)}")
@@ -631,12 +631,12 @@ def _reset_skill(args: argparse.Namespace) -> int:
         except Exception:
             pass
 
-    print_rich(f"\n  [bold]Reset Skill[/bold]\n")
+    print_rich("\n  [bold]Reset Skill[/bold]\n")
     print_rich(f"  Skill: {name}")
     if not use_project:
         print_rich(f"  Profile: {profile.name}")
     else:
-        print_rich(f"  Project-level")
+        print_rich("  Project-level")
     print_rich()
     return 0
 

@@ -441,7 +441,7 @@ def _check(args: argparse.Namespace) -> int:
     if getattr(args, "json_out", False):
         print(json.dumps(report, indent=2))
     else:
-        print_rich(f"\n  [bold]Signal Report[/bold]\n")
+        print_rich("\n  [bold]Signal Report[/bold]\n")
         print_rich(f"  Phase: {current_phase or 'none'}")
         print_rich(f"  Workflow skill: {report['active_workflow_skill'] or 'none'}")
         print_rich(f"  Signal keywords: {', '.join(report['signal_keywords']) or 'none'}")

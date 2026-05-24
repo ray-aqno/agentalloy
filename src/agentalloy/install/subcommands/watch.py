@@ -154,7 +154,7 @@ def _status(args: argparse.Namespace) -> int:
         print(json.dumps(report, indent=2))
     else:
         status_color = "green" if running else "red"
-        print_rich(f"\n  [bold]Watch Status[/bold]\n")
+        print_rich("\n  [bold]Watch Status[/bold]\n")
         print_rich(f"  Profile: {profile}")
         print_rich(f"  Running: [{status_color}]{running}[/{status_color}]")
         if running and pid:

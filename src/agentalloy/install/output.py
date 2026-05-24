@@ -12,7 +12,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 try:
     from rich.console import Console
@@ -284,10 +285,7 @@ def render_table(
         print(header_line)
         print("  " + "-".join("-" * (w + 2) for w in col_widths))
         for row in rows:
-            print(
-                "  "
-                + "  ".join(str(cell).ljust(col_widths[i]) for i, cell in enumerate(row))
-            )
+            print("  " + "  ".join(str(cell).ljust(col_widths[i]) for i, cell in enumerate(row)))
 
     print_rich()
 
@@ -302,7 +300,7 @@ def render_model_recommendations(result: dict[str, Any]) -> None:
     preset = result.get("preset", "unknown")
     options = result.get("options", [])
 
-    print_rich(f"\n  [bold]Recommended Models[/bold]\n")
+    print_rich("\n  [bold]Recommended Models[/bold]\n")
     print_rich(f"  Preset: {preset}")
 
     for opt in options:

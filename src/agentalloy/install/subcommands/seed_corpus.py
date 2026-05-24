@@ -277,7 +277,7 @@ def _render_human(result: dict[str, Any]) -> None:
     }
     color = action_colors.get(action, "dim")
 
-    print_rich(f"\n  [bold]Seed Corpus[/bold]\n")
+    print_rich("\n  [bold]Seed Corpus[/bold]\n")
     print_rich(f"  Status: [{color}]{action}[/{color}]")
     print_rich(f"  Skills: {skill_count}")
     print_rich(f"  Fragments: {fragment_count}")

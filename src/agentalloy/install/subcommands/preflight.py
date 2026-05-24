@@ -544,5 +544,7 @@ def _run(args: argparse.Namespace) -> int:
     write_result(result, args, human_fn=_render_human)
 
     # Return non-zero if any fatal checks failed
-    fatal = [c for c in result["checks"] if not c["passed"] and c.get("severity", "fatal") == "fatal"]
+    fatal = [
+        c for c in result["checks"] if not c["passed"] and c.get("severity", "fatal") == "fatal"
+    ]
     return 1 if fatal else 0
