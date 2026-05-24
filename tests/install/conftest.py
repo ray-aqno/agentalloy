@@ -8,6 +8,23 @@ from pathlib import Path
 
 import pytest
 
+from agentalloy.install import state as install_state
+
+
+@pytest.fixture(autouse=True)
+def _clean_install_state():
+    """Remove global install state before each test to prevent cross-test pollution.
+
+    Tests that need state should use tmp_state_dir or create their own.
+    """
+    fp = install_state.state_path()
+    existed = fp.exists()
+    if existed:
+        fp.unlink()
+    yield
+    if fp.exists():
+        fp.unlink()
+
 
 @pytest.fixture
 def tmp_state_dir(tmp_path: Path) -> Iterator[tuple[Path, Path]]:
