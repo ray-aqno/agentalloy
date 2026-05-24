@@ -1,7 +1,5 @@
-"""Tests for install state management (schema v3).
-
-ruff: noqa: I001 -- testing private module members intentionally
-"""
+# ruff: noqa: I001 -- testing private module members intentionally
+"""Tests for install state management (schema v3)."""
 
 from __future__ import annotations
 
@@ -115,7 +113,9 @@ class TestV2ToV3Migration:
             v2_state: dict[str, Any] = {
                 "schema_version": 2,
                 "install_started_at": "2025-01-01T00:00:00",
-                "completed_steps": [{"step": "wire-harness", "completed_at": "2025-01-01T00:01:00"}],
+                "completed_steps": [
+                    {"step": "wire-harness", "completed_at": "2025-01-01T00:01:00"}
+                ],
                 "harness_files_written": [],
                 "models_pulled": ["ollama:nomic-embed-text"],
                 "env_path": None,

@@ -1,7 +1,5 @@
-"""Tests for the preflight container phase.
-
-ruff: noqa: I001, PLC0415 -- testing private module members intentionally
-"""
+# ruff: noqa: I001, PLC0415 -- testing private module members intentionally
+"""Tests for the preflight container phase."""
 
 from __future__ import annotations
 
@@ -27,8 +25,9 @@ class TestDetectComposeBinary:
         mock_result = MagicMock()
         mock_result.returncode = 0
 
-        with patch("shutil.which", return_value="/usr/bin/podman"), patch(
-            "subprocess.run", return_value=mock_result
+        with (
+            patch("shutil.which", return_value="/usr/bin/podman"),
+            patch("subprocess.run", return_value=mock_result),
         ):
             label, binary_path = _detect_compose_binary()
         assert label == "podman compose"
@@ -44,8 +43,9 @@ class TestDetectComposeBinary:
                 return None
             return "/usr/bin/docker"
 
-        with patch("shutil.which", side_effect=which_side_effect), patch(
-            "subprocess.run", return_value=mock_result
+        with (
+            patch("shutil.which", side_effect=which_side_effect),
+            patch("subprocess.run", return_value=mock_result),
         ):
             label, binary_path = _detect_compose_binary()
         assert label == "docker compose"
@@ -60,6 +60,7 @@ class TestDetectComposeBinary:
 
     def test_podman_fails_docker_fallback(self):
         """Podman found but compose version fails, docker works."""
+
         def run_side_effect(cmd, **kwargs):
             mock = MagicMock()
             # cmd is a list like ["/usr/bin/podman", "compose", "version"]
@@ -75,8 +76,9 @@ class TestDetectComposeBinary:
                 return "/usr/bin/podman"
             return "/usr/bin/docker"
 
-        with patch("shutil.which", side_effect=which_side_effect), patch(
-            "subprocess.run", side_effect=run_side_effect
+        with (
+            patch("shutil.which", side_effect=which_side_effect),
+            patch("subprocess.run", side_effect=run_side_effect),
         ):
             label, binary_path = _detect_compose_binary()
         assert label == "docker compose"
@@ -89,8 +91,9 @@ class TestComposeBinaryCheck:
     def test_check_passes_when_podman_present(self):
         mock_result = MagicMock()
         mock_result.returncode = 0
-        with patch("shutil.which", return_value="/usr/bin/podman"), patch(
-            "subprocess.run", return_value=mock_result
+        with (
+            patch("shutil.which", return_value="/usr/bin/podman"),
+            patch("subprocess.run", return_value=mock_result),
         ):
             result = _check_compose_binary()
         assert result["passed"] is True
@@ -110,8 +113,9 @@ class TestComposeBinaryCheck:
         def which_side_effect(cmd):
             return None if cmd == "podman" else "/usr/bin/docker"
 
-        with patch("shutil.which", side_effect=which_side_effect), patch(
-            "subprocess.run", return_value=mock_result
+        with (
+            patch("shutil.which", side_effect=which_side_effect),
+            patch("subprocess.run", return_value=mock_result),
         ):
             result = _check_compose_binary()
         assert result["passed"] is True
@@ -188,8 +192,9 @@ class TestContainerPhaseEnvelope:
         def which_side_effect(cmd):
             return str(tmp_path / cmd) if cmd in ("podman",) else None
 
-        with patch("shutil.which", side_effect=which_side_effect), patch(
-            "subprocess.run", return_value=mock_result
+        with (
+            patch("shutil.which", side_effect=which_side_effect),
+            patch("subprocess.run", return_value=mock_result),
         ):
             result = run_preflight(phase="container", compose_file=str(compose_file))
 

@@ -284,16 +284,22 @@ def _stop_container_stack(
         )
         return actions
 
-    # Split label "podman compose" -> ["podman", "compose"]
-    parts = compose_binary_label.split()
-    if len(parts) < 2:
-        warnings.append(
-            f"Invalid compose_binary label in state: {compose_binary_label!r} — "
-            "skipping compose down."
-        )
-        return actions
+    # Use stored absolute path if available; fall back to splitting label
+    compose_binary_path = st.get("compose_binary_path")
+    binary_name: str
 
-    binary_name = parts[0]
+    if compose_binary_path and Path(compose_binary_path).exists():
+        binary_name = compose_binary_path
+    else:
+        # Split label "podman compose" -> ["podman", "compose"]
+        parts = compose_binary_label.split()
+        if len(parts) < 2:
+            warnings.append(
+                f"Invalid compose_binary label in state: {compose_binary_label!r} — "
+                "skipping compose down."
+            )
+            return actions
+        binary_name = parts[0]
 
     try:
         result = subprocess.run(
@@ -306,6 +312,7 @@ def _stop_container_stack(
             actions.append(
                 {
                     "action": "compose_down",
+                    "path": compose_file,
                     "compose_file": compose_file,
                     "compose_binary": compose_binary_label,
                 }
@@ -316,6 +323,7 @@ def _stop_container_stack(
             actions.append(
                 {
                     "action": "compose_down_failed",
+                    "path": compose_file,
                     "compose_file": compose_file,
                     "compose_binary": compose_binary_label,
                     "error": stderr,
@@ -326,6 +334,7 @@ def _stop_container_stack(
         actions.append(
             {
                 "action": "compose_down_skipped",
+                "path": compose_file,
                 "compose_file": compose_file,
                 "compose_binary": compose_binary_label,
                 "error": str(exc),
@@ -336,6 +345,7 @@ def _stop_container_stack(
         actions.append(
             {
                 "action": "compose_down_timeout",
+                "path": compose_file,
                 "compose_file": compose_file,
                 "compose_binary": compose_binary_label,
             }
@@ -544,7 +554,6 @@ def uninstall(
     container_actions: list[dict[str, Any]] = []
     if stop_services:
         container_actions = _stop_container_stack(st, warnings)
-        files_removed.extend(container_actions)
 
     # 1. Remove harness wiring. State is user-scoped and may carry entries
     # from multiple repos, but the containment check MUST use a trusted
@@ -1006,6 +1015,20 @@ def _print_uninstall_summary(result: dict[str, Any]) -> None:
     elif uv.get("action") == "uv_tool_skipped":
         reason = uv.get("reason", "")
         print(f"  uv tool: skipped ({reason})", file=_sys.stderr)
+        print("", file=_sys.stderr)
+
+    # Container actions
+    container_actions = result.get("container_actions", [])
+    if container_actions:
+        print("  Container actions:", file=_sys.stderr)
+        for entry in container_actions:
+            path = entry.get("path", "?")
+            action = entry.get("action", "?")
+            error = entry.get("error")
+            detail = f"    - {path} ({action})"
+            if error:
+                detail += f" - {error}"
+            print(detail, file=_sys.stderr)
         print("", file=_sys.stderr)
 
     # Warnings

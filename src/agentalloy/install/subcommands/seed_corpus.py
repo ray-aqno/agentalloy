@@ -16,6 +16,15 @@ from pathlib import Path
 from typing import Any
 
 from agentalloy.install import state as install_state
+from agentalloy.install.output import (
+    _bold,
+    _dim,
+    _green,
+    _red,
+    _yellow,
+    add_json_flag,
+    write_result,
+)
 
 SCHEMA_VERSION = 1
 
@@ -253,11 +262,58 @@ def check_corpus(root: Path | None = None) -> dict[str, Any]:  # noqa: ARG001 �
 # ---------------------------------------------------------------------------
 
 
+def _render_seed_corpus(result: dict[str, Any]) -> str:
+    """Render seed-corpus result as human-readable output."""
+    action = result.get("action", "unknown")
+    lines: list[str] = []
+
+    # Action status
+    success_actions = {"verified_present", "seeded", "initialized_empty"}
+    if action in success_actions:
+        lines.append(_green(f"  ✓ {action}"))
+    elif action == "init_failed":
+        lines.append(_red(f"  ✗ {action}"))
+    else:
+        lines.append(f"  {action}")
+
+    # Key details
+    if result.get("corpus_path"):
+        lines.append(f"  {_bold('Corpus:')}  {result['corpus_path']}")
+    if result.get("skill_count") is not None:
+        lines.append(f"  {_bold('Skills:')}  {result['skill_count']}")
+    if result.get("fragment_count") is not None:
+        lines.append(f"  {_bold('Fragments:')}  {result['fragment_count']}")
+    if result.get("embedding_model"):
+        lines.append(f"  {_bold('Embedding model:')}  {result['embedding_model']}")
+    if result.get("embedding_dim"):
+        lines.append(f"  {_bold('Embedding dim:')}  {result['embedding_dim']}")
+
+    if result.get("corpus_schema_version") is not None:
+        lines.append(f"  {_bold('Corpus schema:')}  v{result['corpus_schema_version']}")
+
+    # Duration
+    if result.get("duration_ms"):
+        lines.append(_dim(f"  {result['duration_ms']}ms"))
+
+    # Warning
+    if result.get("warning"):
+        lines.append(_yellow(f"  WARNING: {result['warning']}"))
+
+    # Error + remediation
+    if result.get("error"):
+        lines.append(_red(f"  ERROR: {result['error']}"))
+    if result.get("remediation"):
+        lines.append(_dim(f"  FIX:   {result['remediation']}"))
+
+    return "\n".join(lines) + "\n"
+
+
 def add_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:  # pyright: ignore[reportPrivateUsage]
     p: argparse.ArgumentParser = subparsers.add_parser(
         "seed-corpus",
         help="Verify the in-repo seed corpus is present and valid.",
     )
+    add_json_flag(p)
     p.set_defaults(func=run)
 
 
@@ -276,7 +332,8 @@ def run(args: argparse.Namespace) -> int:
         if prev and prev.get("output_path") and duck_present and ladybug_present:
             p = Path(prev["output_path"])
             if p.exists():
-                sys.stdout.write(p.read_text())
+                cached_result = json.loads(p.read_text())
+                write_result(cached_result, args, human_fn=_render_seed_corpus)
                 return 4  # EXIT_NOOP
         # Cache hit but corpus files missing — fall through and re-check.
 
@@ -297,16 +354,13 @@ def run(args: argparse.Namespace) -> int:
             },
         )
         install_state.save_state(st)
-        if not getattr(args, "quiet", False):
-            json.dump(result, sys.stdout, indent=2)
-            sys.stdout.write("\n")
+        write_result(result, args, human_fn=_render_seed_corpus)
         return 0
 
     # Failure cases — emit but don't record as completed
-    if not getattr(args, "quiet", False):
-        json.dump(result, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+    write_result(result, args, human_fn=_render_seed_corpus)
 
+    # Print structured error info on stderr regardless of output mode
     remediation = result.get("remediation", "")
     error = result.get("error", "")
     if action == "missing_files":

@@ -545,7 +545,7 @@ def run_preflight(
     elif phase == "container":
         checks.append(_check_compose_binary())
         checks.append(_check_compose_file_present(compose_file))
-        checks.append(_check_port_free(47950))
+        checks.append(_check_port_free(port))
         checks.append(_check_image_build_deps(compose_file))
     else:  # runner
         chosen = runner or _runner_from_models_output()

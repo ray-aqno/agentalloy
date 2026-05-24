@@ -318,6 +318,10 @@ def _empty_state() -> dict[str, Any]:
         # Compose binary label for display/state: "podman compose" or
         # "docker compose". Used by uninstall to reconstruct the command.
         "compose_binary": None,
+        # Absolute path to the compose binary detected at install time
+        # (e.g. "/usr/bin/podman"). Used by uninstall so PATH changes
+        # between install and uninstall don't break compose down.
+        "compose_binary_path": None,
     }
 
 

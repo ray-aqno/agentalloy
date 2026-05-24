@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from agentalloy.install import state as install_state
+from agentalloy.install.output import _bold, add_json_flag, write_result
 
 SCHEMA_VERSION = 1
 STEP_NAME = "pull-models"
@@ -658,6 +659,7 @@ def pull_models(
     root: Path | None = None,
     runner_override: str | None = None,
     quiet: bool = False,
+    args: argparse.Namespace | None = None,
 ) -> dict[str, Any]:
     """Pull models based on recommend-models output.
 
@@ -676,8 +678,11 @@ def pull_models(
     st = install_state.load_state(root)
     if install_state.is_step_completed(st, STEP_NAME):
         prev = install_state.get_step_output(st, STEP_NAME)
-        if not quiet:
-            json.dump(prev.get("output", {}) if prev else {}, sys.stdout, indent=2)
+        prev_output = prev.get("output", {}) if prev else {}
+        if args is not None:
+            write_result(prev_output, args, human_fn=_render_pull_models)
+        elif not quiet:
+            json.dump(prev_output, sys.stdout, indent=2)
             sys.stdout.write("\n")
         raise SystemExit(4)
 
@@ -794,6 +799,55 @@ def pull_models(
 # ---------------------------------------------------------------------------
 
 
+def _render_pull_models(result: dict[str, Any]) -> str:
+    """Render pull-models result as human-readable output."""
+    lines: list[str] = []
+    lines.append(_bold("  Model Pull Summary"))
+    lines.append("")
+
+    auto_pulled = result.get("auto_pulled", [])
+    skipped = result.get("skipped_already_present", [])
+    manual = result.get("manual_steps_required", [])
+    errors = result.get("errors", [])
+
+    if auto_pulled:
+        lines.append(_bold("  Pulled:"))
+        for p in auto_pulled:
+            runner = p.get("runner", "?")
+            model = p.get("model", "?")
+            lines.append(f"    {runner}: {model}")
+        lines.append("")
+
+    if skipped:
+        lines.append(_bold("  Already present:"))
+        for s in skipped:
+            runner = s.get("runner", "?")
+            model = s.get("model", "?")
+            lines.append(f"    {runner}: {model}")
+        lines.append("")
+
+    if manual:
+        lines.append(_bold("  Manual steps required:"))
+        for m in manual:
+            runner = m.get("runner", "?")
+            model = m.get("model", "?")
+            instruction = m.get("instruction", "")
+            lines.append(f"    {runner}: {model}")
+            if instruction:
+                lines.append(f"      {instruction}")
+        lines.append("")
+
+    if errors:
+        for err in errors:
+            runner = err.get("runner", "?")
+            model = err.get("model", "?")
+            error = err.get("error", "unknown")
+            lines.append(f"    ERROR: {runner}: {model} — {error}")
+        lines.append("")
+
+    return "\n".join(lines) + "\n"
+
+
 def add_parser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],  # pyright: ignore[reportPrivateUsage]
 ) -> None:
@@ -815,6 +869,7 @@ def add_parser(
             "the user's choice after recommend-models ran non-interactively."
         ),
     )
+    add_json_flag(p)
     p.set_defaults(func=_run)
 
 
@@ -831,10 +886,9 @@ def _run(args: argparse.Namespace) -> int:
         models_json,
         runner_override=getattr(args, "runner", None),
         quiet=getattr(args, "quiet", False),
+        args=args,
     )
-    if not getattr(args, "quiet", False):
-        json.dump(result, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+    write_result(result, args, human_fn=_render_pull_models)
 
     # Non-zero exit if there were pull errors
     if result.get("errors"):

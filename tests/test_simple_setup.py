@@ -1,3 +1,4 @@
+# ruff: noqa: I001, N806 -- private member imports; SetupConfig used as local var name
 """Tests for the simple setup flow."""
 
 from __future__ import annotations
@@ -935,11 +936,17 @@ class TestContainerFlow:
         SetupConfig, run_setup = self._import_run_setup()
 
         # Mock compose binary detection
-        with patch(
-            "agentalloy.install.subcommands.preflight._detect_compose_binary",
-            return_value=("podman compose", "/usr/bin/podman"),
-        ), patch("subprocess.run") as mock_run, patch.object(sys.stdin, "isatty", lambda: True), patch(
-            "builtins.input", lambda _: "1"  # accept default compose file
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._detect_compose_binary",
+                return_value=("podman compose", "/usr/bin/podman"),
+            ),
+            patch("subprocess.run") as mock_run,
+            patch.object(sys.stdin, "isatty", lambda: True),
+            patch(
+                "builtins.input",
+                lambda _: "1",  # accept default compose file
+            ),
         ):
             mock_result = MagicMock()
             mock_result.returncode = 0
@@ -956,10 +963,13 @@ class TestContainerFlow:
         """Container setup records deployment, compose_file, compose_binary in state."""
         SetupConfig, run_setup = self._import_run_setup()
 
-        with patch(
-            "agentalloy.install.subcommands.preflight._detect_compose_binary",
-            return_value=("podman compose", "/usr/bin/podman"),
-        ), patch("subprocess.run") as mock_run:
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._detect_compose_binary",
+                return_value=("podman compose", "/usr/bin/podman"),
+            ),
+            patch("subprocess.run") as mock_run,
+        ):
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_run.return_value = mock_result
@@ -990,18 +1000,26 @@ class TestContainerFlow:
         # Create detect.json with AMD GPU data so hardware detection sets radeon
         (self.tmp_data / "outputs").mkdir(parents=True, exist_ok=True)
         detect_json = self.tmp_data / "outputs" / "detect.json"
-        detect_json.write_text(json.dumps({
-            "gpu": {
-                "discrete": [{"vendor": "amd", "model": "RX 7900 XTX", "vram_gb": 24}],
-                "integrated": [],
-            },
-            "runner": "ollama",
-        }))
+        detect_json.write_text(
+            json.dumps(
+                {
+                    "gpu": {
+                        "discrete": [{"vendor": "amd", "model": "RX 7900 XTX", "vram_gb": 24}],
+                        "integrated": [],
+                    },
+                    "runner": "ollama",
+                }
+            )
+        )
 
-        with patch(
-            "agentalloy.install.subcommands.preflight._detect_compose_binary",
-            return_value=("podman compose", "/usr/bin/podman"),
-        ), patch("subprocess.run") as mock_run, patch("pathlib.Path.cwd", return_value=tmp_path):
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._detect_compose_binary",
+                return_value=("podman compose", "/usr/bin/podman"),
+            ),
+            patch("subprocess.run") as mock_run,
+            patch("pathlib.Path.cwd", return_value=tmp_path),
+        ):
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_run.return_value = mock_result
@@ -1042,10 +1060,14 @@ class TestContainerFlow:
         compose_file = tmp_path / "compose.yaml"
         compose_file.write_text("version: '3'\nservices: {}\n")
 
-        with patch(
-            "agentalloy.install.subcommands.preflight._detect_compose_binary",
-            return_value=("podman compose", "/usr/bin/podman"),
-        ), patch("subprocess.run") as mock_run, patch("pathlib.Path.cwd", return_value=tmp_path):
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._detect_compose_binary",
+                return_value=("podman compose", "/usr/bin/podman"),
+            ),
+            patch("subprocess.run") as mock_run,
+            patch("pathlib.Path.cwd", return_value=tmp_path),
+        ):
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_run.return_value = mock_result

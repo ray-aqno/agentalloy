@@ -1,7 +1,5 @@
-"""Tests for the uninstall subcommand (container branch).
-
-ruff: noqa: I001, PLC0415 -- testing private module members intentionally
-"""
+# ruff: noqa: I001, PLC0415 -- testing private module members intentionally
+"""Tests for the uninstall subcommand (container branch)."""
 
 from __future__ import annotations
 
@@ -11,9 +9,9 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from agentalloy.install.subcommands.uninstall import (
-    _remove_sentinel_block,
-    _extract_sentinel_content,
-    _stop_container_stack,
+    _remove_sentinel_block,  # type: ignore[attr-defined]
+    _extract_sentinel_content,  # type: ignore[attr-defined]
+    _stop_container_stack,  # type: ignore[attr-defined]
 )
 
 
@@ -106,9 +104,7 @@ class TestContainerUninstall:
         }
         warnings: list[str] = []
 
-        with patch(
-            "subprocess.run", side_effect=OSError("No such file: podman")
-        ):
+        with patch("subprocess.run", side_effect=OSError("No such file: podman")):
             actions = _stop_container_stack(state, warnings)
 
         assert len(warnings) == 1
@@ -167,7 +163,7 @@ class TestContainerUninstall:
             "compose_file": str(compose_file),
         }
         warnings: list[str] = []
-        actions = _stop_container_stack(state, warnings)
+        _actions = _stop_container_stack(state, warnings)
 
         assert len(warnings) == 1
         assert "Invalid" in warnings[0] or "invalid" in warnings[0].lower()
@@ -207,7 +203,9 @@ class TestContainerUninstall:
         }
         warnings: list[str] = []
 
-        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="timeout", timeout=60)):
+        with patch(
+            "subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="timeout", timeout=60)
+        ):
             actions = _stop_container_stack(state, warnings)
 
         assert len(warnings) == 1
@@ -220,7 +218,9 @@ class TestSentinelHelpers:
 
     def test_extract_sentinel_content_found(self):
         text = "before\n<!-- BEGIN AGENTALLOY -->\nsome content\n<!-- END AGENTALLOY -->\nafter"
-        result = _extract_sentinel_content(text, "<!-- BEGIN AGENTALLOY -->", "<!-- END AGENTALLOY -->")
+        result = _extract_sentinel_content(
+            text, "<!-- BEGIN AGENTALLOY -->", "<!-- END AGENTALLOY -->"
+        )
         assert result == "some content"
 
     def test_extract_sentinel_content_not_found(self):
@@ -238,7 +238,9 @@ class TestSentinelHelpers:
 
     def test_remove_sentinel_block(self):
         text = "before\n\n<!-- BEGIN AGENTALLOY -->\nsome content\n<!-- END AGENTALLOY -->\nafter"
-        result = _remove_sentinel_block(text, "<!-- BEGIN AGENTALLOY -->", "<!-- END AGENTALLOY -->")
+        result = _remove_sentinel_block(
+            text, "<!-- BEGIN AGENTALLOY -->", "<!-- END AGENTALLOY -->"
+        )
         assert "some content" not in result
         assert "before" in result
         assert "after" in result
@@ -259,20 +261,20 @@ class TestRemovePulledModels:
     """Test _remove_pulled_models helper."""
 
     def test_no_models_pulled(self):
-        from agentalloy.install.subcommands.uninstall import _remove_pulled_models
+        from agentalloy.install.subcommands.uninstall import _remove_pulled_models  # type: ignore[attr-defined]
 
         actions = _remove_pulled_models({})
         assert actions == []
 
     def test_malformed_entry_skipped(self):
-        from agentalloy.install.subcommands.uninstall import _remove_pulled_models
+        from agentalloy.install.subcommands.uninstall import _remove_pulled_models  # type: ignore[attr-defined]
 
         actions = _remove_pulled_models({"models_pulled": [123, None, ""]})
         for action in actions:
             assert action["action"] in ("skipped_malformed_entry", "skipped_empty_fields")
 
     def test_unmanaged_runner_skipped(self):
-        from agentalloy.install.subcommands.uninstall import _remove_pulled_models
+        from agentalloy.install.subcommands.uninstall import _remove_pulled_models  # type: ignore[attr-defined]
 
         actions = _remove_pulled_models({"models_pulled": ["lm-studio:some-model"]})
         assert len(actions) == 1

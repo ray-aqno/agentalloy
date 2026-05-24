@@ -558,10 +558,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     _print(f"  Compose binary: {label} at {binary_path}")
 
     # 3. Select compose file
-    if cfg.recommended_host == "radeon":
-        default_compose = "compose.radeon.yaml"
-    else:
-        default_compose = "compose.yaml"
+    default_compose = "compose.radeon.yaml" if cfg.recommended_host == "radeon" else "compose.yaml"
 
     compose_path = Path.cwd() / default_compose
     if not cfg.non_interactive:
@@ -574,9 +571,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
 
     # 4. Run container preflight
     _print("  [dim]-> Preflight (container)[/dim]")
-    container_preflight = preflight.run_preflight(
-        phase="container", compose_file=cfg.compose_file
-    )
+    container_preflight = preflight.run_preflight(phase="container", compose_file=cfg.compose_file)
     container_fatal = [
         c["name"]
         for c in container_preflight.get("checks", [])
@@ -585,9 +580,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     if container_fatal:
         _print("  [red]Container preflight failed:[/red]")
         for name in container_fatal:
-            check = next(
-                c for c in container_preflight["checks"] if c["name"] == name
-            )
+            check = next(c for c in container_preflight["checks"] if c["name"] == name)
             _print(f"    - {name}: {check.get('error', 'unknown')}")
             if check.get("remediation"):
                 _print(f"      FIX: {check['remediation']}")
@@ -602,7 +595,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     # 6. Show summary
     _print("\n[dim]" + "─" * 40)
     _print("\n[bold]Review your container setup:[/bold]")
-    _print(f"  Deployment:   container")
+    _print("  Deployment:   container")
     _print(f"  Compose file: {cfg.compose_file}")
     _print(f"  Compose binary: {cfg.compose_binary}")
     _print(f"  Port:         {cfg.port}")
@@ -641,7 +634,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     while time.monotonic() < deadline:
         try:
             with urllib.request.urlopen(  # noqa: S310
-                "http://localhost:47950/health", timeout=5
+                f"http://localhost:{cfg.port}/health", timeout=5
             ) as resp:
                 if resp.status == 200:
                     healthy = True
@@ -654,20 +647,35 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     else:
         _print("  [green]  Service healthy.[/green]")
 
-    # 9. Run verify
+    # 9. Record state + write .env (before verify so it reads fresh values)
+    st = install_state.load_state()
+    st["deployment"] = "container"
+    st["compose_file"] = cfg.compose_file
+    st["compose_binary"] = cfg.compose_binary
+    st["compose_binary_path"] = binary_path
+    st["port"] = cfg.port
+    install_state.save_state(st)
+
+    # Write minimal .env for container defaults so verify and embed checks work
+    env_dir = install_state.user_config_dir()
+    env_dir.mkdir(parents=True, exist_ok=True)
+    env_fp = install_state.env_path()
+    env_lines = [
+        f"RUNTIME_EMBED_BASE_URL=http://localhost:{cfg.port}",
+        'RUNTIME_EMBEDDING_MODEL=""',
+        f"RUNTIME_PORT={cfg.port}",
+    ]
+    install_state._atomic_write(  # pyright: ignore[reportPrivateUsage]
+        env_fp, "\n".join(env_lines) + "\n"
+    )
+
+    # 10. Run verify
     _print("  [dim]-> Verifying installation[/dim]")
     rc = verify.run(_build_namespace(cfg))
     if rc not in (0, 4):
         _print("  [red]Validation failed.[/red]")
         return rc
     _print("  [green]  All checks passed.[/green]")
-
-    # 10. Record state
-    st = install_state.load_state()
-    st["deployment"] = "container"
-    st["compose_file"] = cfg.compose_file
-    st["compose_binary"] = cfg.compose_binary
-    install_state.save_state(st)
 
     # 11. Wire harness
     if not cfg.non_interactive:
@@ -687,12 +695,16 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         _print("  [green]  Done.[/green]")
 
     # -- Done --
-    _print(f"\n[green]  Container setup complete in {int((time.monotonic() - t0) * 1000)}ms[/green]\n")
+    _print(
+        f"\n[green]  Container setup complete in {int((time.monotonic() - t0) * 1000)}ms[/green]\n"
+    )
     _print(f"  URL:      http://localhost:{cfg.port}")
     _print(f"  Compose:  {cfg.compose_file}")
     _print(f"  Logs:     {cfg.compose_binary.split()[0]} compose -f {cfg.compose_file} logs -f")
 
-    _print("\n  [bold]Stop:[/bold] " f"{cfg.compose_binary.split()[0]} compose -f {cfg.compose_file} down")
+    _print(
+        f"\n  [bold]Stop:[/bold] {cfg.compose_binary.split()[0]} compose -f {cfg.compose_file} down"
+    )
     return 0
 
 
