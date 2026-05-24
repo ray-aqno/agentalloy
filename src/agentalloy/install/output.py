@@ -1,373 +1,359 @@
-"""Human-readable output utilities for install subcommands.
+"""Shared CLI output utilities for human-readable formatting.
 
-Provides a ``--json`` flag, a central ``write_result`` dispatcher,
-and render helpers so subcommands can emit clean terminal output by
-default while still supporting machine-parsable JSON.
+Provides Rich-based rendering with graceful fallback to plain print()
+when Rich is unavailable, plus helpers for common output patterns used
+across install subcommands.
 
-Exports
--------
-add_json_flag, write_result, render_checklist, render_key_value,
-render_action_result, render_table, render_model_recommendations,
-print_rich, print_rich_stderr, should_output_json, should_output_human
+Flag priority: --quiet (suppresses all) > --json (raw JSON) > default (human)
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections.abc import Callable
 from typing import Any
 
-# ---------------------------------------------------------------------------
-# Optional rich import — graceful fallback
-# ---------------------------------------------------------------------------
 try:
-    from rich.console import Console as _Console
+    from rich.console import Console
+    from rich.table import Table
 
-    _rich_available = True
-except ImportError:  # pragma: no cover
-    _Console = None  # type: ignore[assignment,misc]
-    _rich_available = False
-
-
-def print_rich(text: str, *, stderr: bool = False) -> None:
-    """Print *text* to stdout or stderr using rich if available, else plain."""
-    _out = sys.stderr if stderr else sys.stdout
-    if _rich_available and _Console is not None:
-        console = _Console(
-            file=_out, force_terminal=sys.stderr.isatty() if stderr else sys.stdout.isatty()
-        )
-        console.print(text)
-    else:
-        print(text, file=_out)
-
-
-def print_rich_stderr(text: str) -> None:
-    """Shortcut for ``print_rich(text, stderr=True)``."""
-    print_rich(text, stderr=True)
+    # Auto-detect terminal: force only when stdout is a real TTY so piped
+    # output stays clean of ANSI codes while interactive sessions get
+    # full Rich formatting.
+    _console = Console(force_terminal=sys.stdout.isatty(), soft_wrap=True)
+    HAS_RICH: bool = True
+except ImportError:
+    Console = None  # type: ignore[misc,assignment]
+    Table = None  # type: ignore[misc,assignment]
+    _console = None  # type: ignore[assignment]
+    HAS_RICH = False  # type: ignore[possibly-unused-assignment]
 
 
 # ---------------------------------------------------------------------------
-# Flag helpers
+# Core output helpers
 # ---------------------------------------------------------------------------
 
 
-def add_json_flag(p: argparse.ArgumentParser) -> None:
-    """Add a ``--json`` flag to an argument parser.
+def print_rich(*args: Any, **kwargs: Any) -> None:
+    """Print with Rich if available, plain stdout otherwise.
 
-    When set, ``write_result`` / ``should_output_json`` will emit JSON
-    instead of human-readable output regardless of TTY status.
+    When Rich is unavailable, Rich markup tags (e.g. [bold], [green])
+    are stripped so the fallback output remains clean.
     """
-    p.add_argument(
+    if HAS_RICH and _console is not None:
+        _console.print(*args, **kwargs)
+    else:
+        # Strip Rich markup tags for clean plain-text fallback
+        stripped = [_strip_markup(str(a)) for a in args]
+        print(*stripped, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Rich markup stripper for non-Rich fallback
+# ---------------------------------------------------------------------------
+
+_markup_re = re.compile(
+    r"\[(/?)?(bold|dim|red|green|yellow|blue|magenta|cyan|white|black|default|link|on\s+\w+|default|link\s+\S+|[a-z_]+)\]"
+)
+
+
+def _strip_markup(text: str) -> str:
+    """Remove Rich markup tags from a string for plain-text output."""
+    return _markup_re.sub("", text)
+
+
+def print_rich_stderr(*args: Any, **kwargs: Any) -> None:
+    """Print to stderr with Rich if available, plain stderr otherwise."""
+    if HAS_RICH and _console is not None:
+        err_console = Console(force_terminal=True, soft_wrap=True, file=sys.stderr)  # type: ignore[union-attr]
+        err_console.print(*args, **kwargs)
+    else:
+        print(*args, file=sys.stderr, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# --json flag + output dispatcher
+# ---------------------------------------------------------------------------
+
+
+def add_json_flag(parser: argparse.ArgumentParser) -> None:
+    """Add --json flag to a parser for machine-readable output."""
+    parser.add_argument(
         "--json",
-        dest="json_output",
         action="store_true",
         default=False,
-        help="Emit machine-readable JSON instead of human-readable output.",
+        help="Output raw JSON instead of human-readable text.",
     )
 
 
 def should_output_json(args: argparse.Namespace) -> bool:
-    """Return True when JSON output is requested."""
-    return bool(getattr(args, "json_output", False))
+    """Check if --json is set (and --quiet is not)."""
+    return getattr(args, "json", False) and not getattr(args, "quiet", False)
 
 
 def should_output_human(args: argparse.Namespace) -> bool:
-    """Return True when human-readable output is appropriate (not JSON, not quiet)."""
-    return not should_output_json(args) and not getattr(args, "quiet", False)
-
-
-# ---------------------------------------------------------------------------
-# Main dispatcher
-# ---------------------------------------------------------------------------
-
-RenderFn = Callable[[dict[str, Any]], str]
+    """Check if we should emit human-readable output (no --quiet, no --json)."""
+    return not getattr(args, "quiet", False) and not getattr(args, "json", False)
 
 
 def write_result(
-    result: dict[str, Any],
+    result: dict[str, Any] | list[Any],
     args: argparse.Namespace,
-    human_fn: RenderFn | None = None,
+    human_fn: Callable[[dict[str, Any]], None] | None = None,
 ) -> None:
-    """Emit *result* to stdout in the appropriate format.
+    """Write result to stdout respecting --json and --quiet flags.
 
-    Logic:
-    - ``--quiet`` → print nothing
-    - ``--json``  → pretty-printed JSON
-    - default     → human-readable via *human_fn* (falls back to JSON if None)
-
-    This function does **not** handle file persistence or state recording —
-    callers must do ``install_state.save_output_file()`` separately.
+    Priority: --quiet suppresses all stdout, --json forces raw JSON,
+    default calls human_fn for human-readable output.
     """
-    quiet = getattr(args, "quiet", False)
-    if quiet:
+    if getattr(args, "quiet", False):
         return
-
-    if should_output_json(args):
+    if getattr(args, "json", False):
         json.dump(result, sys.stdout, indent=2)
         sys.stdout.write("\n")
-        return
-
-    # Human-readable output
-    if human_fn is not None:
-        sys.stdout.write(human_fn(result))
+    elif human_fn and isinstance(result, dict):
+        human_fn(result)
+    elif human_fn:
+        human_fn(result)  # type: ignore[arg-type]
     else:
-        # Fallback: render as JSON when no human renderer provided
+        # Fallback: raw JSON
         json.dump(result, sys.stdout, indent=2)
         sys.stdout.write("\n")
 
 
 # ---------------------------------------------------------------------------
-# Render helpers — plain text, optionally enriched with ANSI if rich present
-# ---------------------------------------------------------------------------
-
-
-def _green(text: str) -> str:
-    """Wrap text in green ANSI if rich is available, else plain."""
-    if _rich_available:
-        return f"[green]{text}[/green]"
-    return text
-
-
-def _bold(text: str) -> str:
-    if _rich_available:
-        return f"[bold]{text}[/bold]"
-    return text
-
-
-def _dim(text: str) -> str:
-    if _rich_available:
-        return f"[dim]{text}[/dim]"
-    return text
-
-
-def _yellow(text: str) -> str:
-    if _rich_available:
-        return f"[yellow]{text}[/yellow]"
-    return text
-
-
-def _red(text: str) -> str:
-    if _rich_available:
-        return f"[red]{text}[/red]"
-    return text
-
-
-# ---------------------------------------------------------------------------
-# Checklist renderer — list of (label, status) pairs
+# Checklist renderer (doctor / verify / preflight)
 # ---------------------------------------------------------------------------
 
 
 def render_checklist(
-    items: list[tuple[str, str]],
+    result: dict[str, Any],
+    title: str = "Results",
     *,
-    title: str | None = None,
-) -> str:
-    """Render a checklist of items with status indicators.
+    severity_field: str = "severity",
+) -> None:
+    """Render a check result with PASS/FAIL markers.
 
-    Parameters
-    ----------
-    items:
-        ``(label, status)`` tuples. Status values like ``"ok"``,
-        ``"warn"``, ``"error"``, ``"skip"`` control the indicator.
-    title:
-        Optional heading line.
+    Supports optional severity levels: 'fatal' (red), 'warn' (yellow),
+    or no severity (standard green/red).
     """
-    lines: list[str] = []
-    if title:
-        lines.append(_bold(title))
-        lines.append("")
+    checks = result.get("checks", [])
+    all_passed = result.get("all_checks_passed", True)
 
-    for label, status in items:
-        status_lower = status.lower()
-        if status_lower == "ok":
-            indicator = _green("✓")
-        elif status_lower == "warn":
-            indicator = _yellow("⚠")
-        elif status_lower == "error":
-            indicator = _red("✗")
+    print_rich(f"\n  [bold]{title}[/bold]\n")
+
+    passed = sum(1 for c in checks if c.get("passed"))
+    failed = len(checks) - passed
+
+    for check in checks:
+        name = check.get("name", "unknown")
+        severity = check.get(severity_field, "")
+
+        if check.get("passed"):
+            print_rich(f"  [green]PASS[/green] {name}")
+            detail = check.get("detail", "")
+            if detail:
+                print_rich(f"         {detail}")
         else:
-            indicator = _dim("-")
-        lines.append(f"  {indicator} {label}")
+            if severity == "warn":
+                marker = "[yellow]WARN[/yellow]"
+            elif severity == "fatal":
+                marker = "[red]FAIL[/red]"
+            else:
+                marker = "[red]FAIL[/red]"
+            print_rich(f"  {marker} {name}")
+            error = check.get("error", "unknown")
+            print_rich(f"         {error}")
+            remediation = check.get("remediation", "")
+            if remediation:
+                for line in str(remediation).splitlines():
+                    if line.strip():
+                        print_rich(f"         [dim]FIX: {line}[/dim]")
 
-    return "\n".join(lines) + "\n"
+    print_rich()
+    if all_passed:
+        print_rich(f"  [green]All {len(checks)} checks passed.[/green]\n")
+    else:
+        print_rich(f"  [red]{failed} of {len(checks)} checks failed.[/red]\n")
 
 
 # ---------------------------------------------------------------------------
-# Key-value renderer
+# Key-value renderer (status / server-status)
 # ---------------------------------------------------------------------------
 
 
 def render_key_value(
-    pairs: list[tuple[str, str]],
+    result: dict[str, Any],
+    title: str = "Status",
     *,
-    title: str | None = None,
-) -> str:
-    """Render key-value pairs in a two-column layout.
+    skip_keys: set[str] | None = None,
+) -> None:
+    """Render a simple key-value result as a formatted list."""
+    skip = skip_keys or set()
 
-    Parameters
-    ----------
-    pairs:
-        ``(key, value)`` tuples.
-    title:
-        Optional heading line.
-    """
-    lines: list[str] = []
-    if title:
-        lines.append(_bold(title))
-        lines.append("")
+    print_rich(f"\n  [bold]{title}[/bold]\n")
 
-    for key, value in pairs:
-        lines.append(f"  {_bold(key + ':')}  {value}")
-
-    return "\n".join(lines) + "\n"
-
-
-# ---------------------------------------------------------------------------
-# Action result renderer — action + key details
-# ---------------------------------------------------------------------------
-
-
-def render_action_result(result: dict[str, Any]) -> str:
-    """Render a generic action result (action + details).
-
-    Looks for common keys and renders them appropriately.
-    """
-    action = result.get("action", "unknown")
-    lines: list[str] = []
-
-    # Status indicator
-    success_actions = {
-        "verified_present",
-        "seeded",
-        "initialized_empty",
-        "started",
-        "enabled",
-        "wired",
-        "already_running",
-    }
-    if action in success_actions:
-        lines.append(_green(f"  ✓ {action}"))
-    elif action == "manual_required":
-        lines.append(_yellow(f"  ⚠ {action}"))
-    else:
-        lines.append(f"  {action}")
-
-    # Collect detail keys (skip schema_version, action itself)
-    detail_keys: list[tuple[str, str]] = []
-    skip = {"schema_version", "action", "error", "remediation", "warning", "hint"}
     for key, value in result.items():
-        if key in skip or value is None:
+        if key in skip:
             continue
-        if isinstance(value, (list, dict)):
-            continue
-        detail_keys.append((key, str(value)))
+        if isinstance(value, dict):
+            for k, v in value.items():  # type: ignore[reportUnknownVariableType]
+                print_rich(f"  {k}: {v}")
+        elif isinstance(value, list):
+            if value and isinstance(value[0], dict):
+                for item in value:  # type: ignore[reportUnknownVariableType]
+                    print_rich(f"  - {item}")
+            else:
+                print_rich(f"  {key}: {value}")
+        else:
+            print_rich(f"  {key}: {value}")
 
-    if detail_keys:
-        lines.append(render_key_value(detail_keys).rstrip())
-
-    # Warning
-    if result.get("warning"):
-        lines.append(_yellow(f"  WARNING: {result['warning']}"))
-
-    # Error + remediation
-    if result.get("error"):
-        lines.append(_red(f"  ERROR: {result['error']}"))
-    if result.get("remediation"):
-        lines.append(_dim(f"  FIX:   {result['remediation']}"))
-
-    return "\n".join(lines) + "\n"
+    print_rich()
 
 
 # ---------------------------------------------------------------------------
-# Table renderer
+# Action result renderer (server-stop, start-embed-server, etc.)
+# ---------------------------------------------------------------------------
+
+ACTION_COLORS = {
+    "started": "green",
+    "stopped": "yellow",
+    "already_running": "dim",
+    "already_stopped": "dim",
+    "seeded": "green",
+    "verified_present": "dim",
+    "ingested": "green",
+    "wired": "green",
+    "unwired": "yellow",
+    "enabled": "green",
+    "disabled": "yellow",
+    "initialized_empty": "dim",
+}
+
+# Common keys for each category, ordered for consistent output
+SERVER_KEYS = ("runner", "model", "port", "pid", "signal")
+CORPUS_KEYS = ("skill_count", "fragment_count", "action", "duration_ms")
+WIRE_KEYS = ("harness", "files_written", "files_modified")
+SERVICE_KEYS = ("mode", "runtime", "unit")
+
+
+def render_action_result(
+    result: dict[str, Any],
+    title: str = "Result",
+    *,
+    key_groups: tuple[tuple[str, ...], ...] | None = None,
+) -> None:
+    """Render an action result (started/stopped/seeded etc.) with key fields."""
+    action = result.get("action", "unknown")
+    color = ACTION_COLORS.get(action, "white")
+
+    print_rich(f"\n  [bold]{title}[/bold]\n")
+    print_rich(f"  Action: [bold {color}]{action}[/bold {color}]")
+
+    # Render key groups in order
+    all_keys = key_groups or (SERVER_KEYS, CORPUS_KEYS, WIRE_KEYS, SERVICE_KEYS)
+    shown: set[str] = set()
+    for key_tuple in all_keys:
+        for key in key_tuple:
+            if key in result and key not in shown:
+                shown.add(key)
+                val = result[key]
+                if isinstance(val, list) and len(val) == 0:  # type: ignore[arg-type]
+                    continue
+                print_rich(f"  {key}: {val}")
+
+    # Any remaining keys not in predefined groups
+    for key, val in result.items():
+        if key in ("action",) or key in shown:
+            continue
+        if isinstance(val, list) and len(val) == 0:  # type: ignore[arg-type]
+            continue
+        if isinstance(val, dict):
+            for k, v in val.items():  # type: ignore[reportUnknownVariableType]
+                print_rich(f"  {k}: {v}")
+        else:
+            print_rich(f"  {key}: {val}")
+
+    print_rich()
+
+
+# ---------------------------------------------------------------------------
+# Table renderer (customize list, recommend-models)
 # ---------------------------------------------------------------------------
 
 
 def render_table(
     headers: list[str],
     rows: list[list[str]],
-    *,
-    title: str | None = None,
-) -> str:
-    """Render a simple text table.
-
-    Parameters
-    ----------
-    headers:
-        Column header labels.
-    rows:
-        List of row value lists.
-    title:
-        Optional heading line.
-    """
-    if not headers or not rows:
-        text = ""
-        if title:
-            text = _bold(title) + "\n"
-        return text + "\n"
-
-    all_rows = [headers] + rows
-    col_widths = [max(len(str(r[i])) for r in all_rows) for i in range(len(headers))]
-
-    lines: list[str] = []
+    title: str = "",
+) -> None:
+    """Render a table using Rich if available, plain text otherwise."""
     if title:
-        lines.append(_bold(title))
-        lines.append("")
+        print_rich(f"\n  [bold]{title}[/bold]\n")
 
-    def _row(values: list[str], *, bold: bool = False) -> str:
-        cells = []
-        for i, val in enumerate(values):
-            w = col_widths[i]
-            cell = str(val).ljust(w)
-            if bold:
-                cell = _bold(cell)
-            cells.append(cell)
-        return "    " + "  ".join(cells)
+    if HAS_RICH:
+        table = Table(show_header=True, header_style="bold", box=None)  # type: ignore[union-attr]
+        for h in headers:
+            table.add_column(h)
+        for row in rows:
+            table.add_row(*row)
+        _console.print(table)  # type: ignore[union-attr]
+    else:
+        # Plain text alignment
+        col_widths = [len(h) for h in headers]
+        for row in rows:
+            for i, cell in enumerate(row):
+                col_widths[i] = max(col_widths[i], len(str(cell)))
+        header_line = "  " + "  ".join(h.ljust(col_widths[i]) for i, h in enumerate(headers))
+        print(header_line)
+        print("  " + "-".join("-" * (w + 2) for w in col_widths))
+        for row in rows:
+            print("  " + "  ".join(str(cell).ljust(col_widths[i]) for i, cell in enumerate(row)))
 
-    lines.append(_row(headers, bold=True))
-    lines.append("    " + "─" * (sum(col_widths) + 2 * (len(headers) - 1)))
-    for row in rows:
-        lines.append(_row([str(v) for v in row]))
-
-    return "\n".join(lines) + "\n"
+    print_rich()
 
 
 # ---------------------------------------------------------------------------
-# Model recommendations renderer
+# Model recommendation renderer
 # ---------------------------------------------------------------------------
 
 
-def render_model_recommendations(result: dict[str, Any]) -> str:
-    """Render model recommendation results in a human-readable table format."""
-    lines: list[str] = []
-    lines.append(_bold("  Embedding Model Recommendations"))
-    lines.append("")
-
-    host = result.get("host_target", "")
-    preset = result.get("preset", "")
-    base_preset = result.get("base_preset", "")
-
-    lines.append(f"  {_bold('Host target:')} {host}")
-    lines.append(f"  {_bold('Preset:')}      {preset} (base: {base_preset})")
-    lines.append("")
-
+def render_model_recommendations(result: dict[str, Any]) -> None:
+    """Render model recommendations in a compact format."""
+    preset = result.get("preset", "unknown")
     options = result.get("options", [])
-    if not options:
-        lines.append("  No model options available.\n")
-        return "\n".join(lines) + "\n"
 
-    for i, opt in enumerate(options, 1):
-        runner = opt.get("embed_runner", "?")
-        model = opt.get("embed_model", "?")
+    print_rich("\n  [bold]Recommended Models[/bold]\n")
+    print_rich(f"  Preset: {preset}")
+
+    for opt in options:
         is_default = opt.get("default", False)
-        hint = opt.get("embed_runner_install_hint", "")
+        default_tag = "[default] " if is_default else ""
+        model = opt.get("embed_model", "unknown")
+        runner = opt.get("embed_runner", "unknown")
+        print_rich(f"  {default_tag}[bold]{runner}[/bold] / {model}")
 
-        marker = _green(" ← default") if is_default else ""
-        lines.append(f"  {i}. {_bold(runner)} — {model}{marker}")
-        if hint:
-            lines.append(f"     {_dim(hint)}")
+    print_rich()
 
-    lines.append("")
-    return "\n".join(lines) + "\n"
+
+# ---------------------------------------------------------------------------
+# Public exports
+# ---------------------------------------------------------------------------
+
+__all__ = [
+    "HAS_RICH",
+    "add_json_flag",
+    "should_output_json",
+    "should_output_human",
+    "write_result",
+    "print_rich",
+    "print_rich_stderr",
+    "render_checklist",
+    "render_key_value",
+    "render_action_result",
+    "render_table",
+    "render_model_recommendations",
+]
