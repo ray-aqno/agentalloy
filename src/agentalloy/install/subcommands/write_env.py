@@ -121,29 +121,26 @@ def write_env(
     root: Path | None = None,
 ) -> dict[str, Any]:
     """Generate and write the .env file. Returns the contract-shaped result."""
-    # `.env` is now user-scoped (lives in the XDG config dir) so a single
-    # AgentAlloy service can serve every repo the user opens. The legacy
-    # per-repo location is no longer written; if one exists the user must
-    # remove it manually (it's now ignored at runtime).
     env_path = install_state.env_path()
 
+    # Read existing .env once — used for both backup and sentinel check.
+    original_content: str | None = env_path.read_text() if env_path.exists() else None
+
     # Refuse to overwrite hand-edited .env without --force
-    if env_path.exists():
-        existing = env_path.read_text()
-        if _SENTINEL not in existing and not force:
-            print(
-                "ERROR: Cannot write .env: file exists and was not produced by a prior install",
-                file=sys.stderr,
-            )
-            print(
-                f"CAUSE: A hand-edited or third-party .env is present at {env_path}.",
-                file=sys.stderr,
-            )
-            print(
-                "FIX:   Either move the existing file aside, or run `write-env --force` to overwrite",
-                file=sys.stderr,
-            )
-            raise SystemExit(1)
+    if original_content is not None and _SENTINEL not in original_content and not force:
+        print(
+            "ERROR: Cannot write .env: file exists and was not produced by a prior install",
+            file=sys.stderr,
+        )
+        print(
+            f"CAUSE: A hand-edited or third-party .env is present at {env_path}.",
+            file=sys.stderr,
+        )
+        print(
+            "FIX:   Either move the existing file aside, or run `write-env --force` to overwrite",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
     defaults = _load_preset(preset)
 
@@ -156,6 +153,15 @@ def write_env(
 
     content = _render_env(values, preset, port)
     install_state._atomic_write(env_path, content)  # pyright: ignore[reportPrivateUsage]
+
+    # Persist original .env content to state for uninstall restore
+    # Only store on first write (skip if already backed up)
+    if original_content is not None:
+        st = install_state.load_state()
+        if st.get("env_original_content") is None:
+            st["env_original_content"] = original_content
+            install_state.save_state(st)
+
     # `.env` may carry tokens or runtime URLs; restrict to owner-only on
     # POSIX. Windows ignores chmod and falls back to NTFS ACL defaults.
     import os as _os

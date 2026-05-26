@@ -165,6 +165,13 @@ def _sha256(content: str) -> str:
     return hashlib.sha256(content.encode()).hexdigest()
 
 
+def _capture_original(path: Path) -> str | None:
+    """Read and return the file's content if it exists, else None."""
+    if path.exists():
+        return path.read_text()
+    return None
+
+
 def _detect_line_ending(content: str) -> str:
     """Detect whether file uses CRLF or LF."""
     if "\r\n" in content:
@@ -272,6 +279,9 @@ def _wire_continue(
     config_path = root / ".continuerc.json"
     config: dict[str, Any] = {}
 
+    # Capture original for backup/restore
+    original_content = _capture_original(config_path)
+
     if config_path.exists():
         try:
             config = json.loads(config_path.read_text())
@@ -343,6 +353,7 @@ def _wire_continue(
             if variant == "closed"
             else "_agentalloy_install_marker",
             "content_sha256": _sha256(content),
+            **({"original_content": original_content} if original_content is not None else {}),
         }
     ]
 
@@ -468,6 +479,9 @@ def _wire_legacy(
     # Ensure parent directory exists
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Capture original for backup/restore
+    original_content = _capture_original(target_path)
+
     # Tamper detection
     if not force and not dedicated and target_path.exists():
         st = install_state.load_state(root)
@@ -521,6 +535,7 @@ def _wire_legacy(
             "sentinel_begin": SENTINEL_BEGIN if not dedicated else None,
             "sentinel_end": SENTINEL_END if not dedicated else None,
             "content_sha256": content_sha256,
+            **({"original_content": original_content} if original_content is not None else {}),
         }
     )
 
@@ -543,6 +558,7 @@ def _wire_legacy(
 def _wire_aider_conf(root: Path) -> list[dict[str, Any]]:
     """Add our instructions file to .aider.conf.yml's read list."""
     conf_path = root / ".aider.conf.yml"
+    original_content = _capture_original(conf_path)
     sentinel_line_begin = "# <!-- BEGIN agentalloy install -->"
     sentinel_line_end = "# <!-- END agentalloy install -->"
     entry = "  - .agentalloy-aider-instructions.md"
@@ -572,6 +588,7 @@ def _wire_aider_conf(root: Path) -> list[dict[str, Any]]:
             "sentinel_begin": sentinel_line_begin,
             "sentinel_end": sentinel_line_end,
             "content_sha256": _sha256(block),
+            **({"original_content": original_content} if original_content is not None else {}),
         }
     ]
 
@@ -688,6 +705,7 @@ def _wire_mcp_claude_code(port: int) -> list[dict[str, Any]]:
     config_path = Path.home() / ".claude" / "mcp_servers.json"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config: dict[str, Any] = {}
+    original_content = _capture_original(config_path)
     if config_path.exists():
         try:
             config = json.loads(config_path.read_text())
@@ -706,6 +724,7 @@ def _wire_mcp_claude_code(port: int) -> list[dict[str, Any]]:
             "action": "wrote_user_dotfile",
             "marker_key": "mcpServers.agentalloy",
             "content_sha256": _sha256(serialized),
+            **({"original_content": original_content} if original_content is not None else {}),
         }
     ]
 
@@ -715,6 +734,7 @@ def _wire_mcp_cursor(port: int, root: Path) -> list[dict[str, Any]]:
     config_path = root / ".cursor" / "mcp.json"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config: dict[str, Any] = {}
+    original_content = _capture_original(config_path)
     if config_path.exists():
         try:
             config = json.loads(config_path.read_text())
@@ -733,6 +753,7 @@ def _wire_mcp_cursor(port: int, root: Path) -> list[dict[str, Any]]:
             "action": "injected_block",
             "marker_key": "mcpServers.agentalloy",
             "content_sha256": _sha256(serialized),
+            **({"original_content": original_content} if original_content is not None else {}),
         }
     ]
 
@@ -741,6 +762,7 @@ def _wire_mcp_continue(port: int, root: Path, variant: str) -> list[dict[str, An
     """Write the agentalloy MCP entry into .continuerc.json."""
     config_path = root / ".continuerc.json"
     config: dict[str, Any] = {}
+    original_content = _capture_original(config_path)
     if config_path.exists():
         try:
             config = json.loads(config_path.read_text())
@@ -772,6 +794,7 @@ def _wire_mcp_continue(port: int, root: Path, variant: str) -> list[dict[str, An
             "action": "injected_block",
             "marker_key": "mcpServers.agentalloy",
             "content_sha256": _sha256(serialized),
+            **({"original_content": original_content} if original_content is not None else {}),
         }
     ]
 
@@ -846,6 +869,7 @@ def _wire_proxy_continue(
     variant = "closed" if harness == "continue-closed" else "local"
     config_path = root / ".continuerc.json"
     config: dict[str, Any] = {}
+    original_content = _capture_original(config_path)
     if config_path.exists():
         try:
             config = json.loads(config_path.read_text())
@@ -888,6 +912,7 @@ def _wire_proxy_continue(
             "action": "injected_block",
             "marker_key": "models.agentalloy-proxy",
             "content_sha256": _sha256(serialized),
+            **({"original_content": original_content} if original_content is not None else {}),
         }
     ]
 
@@ -900,6 +925,7 @@ def _wire_proxy_aider(port: int, root: Path) -> list[dict[str, Any]]:
     at the proxy.
     """
     conf_path = root / ".aider.conf.yml"
+    original_content = _capture_original(conf_path)
     sentinel_begin = "# <!-- BEGIN agentalloy install -->"
     sentinel_end = "# <!-- END agentalloy install -->"
 
@@ -937,6 +963,7 @@ def _wire_proxy_aider(port: int, root: Path) -> list[dict[str, Any]]:
             "sentinel_begin": sentinel_begin,
             "sentinel_end": sentinel_end,
             "content_sha256": _sha256(block),
+            **({"original_content": original_content} if original_content is not None else {}),
         }
     ]
 
@@ -966,6 +993,7 @@ def _wire_proxy_hermes_agent(port: int, root: Path, scope: str) -> list[dict[str
             sentinel_end,
         ]
         block = "\n".join(proxy_block_lines)
+        original_content = _capture_original(config_path)
 
         if config_path.exists():
             content = config_path.read_text()
@@ -990,11 +1018,13 @@ def _wire_proxy_hermes_agent(port: int, root: Path, scope: str) -> list[dict[str
                 "sentinel_begin": sentinel_begin,
                 "sentinel_end": sentinel_end,
                 "content_sha256": _sha256(block),
+                **({"original_content": original_content} if original_content is not None else {}),
             }
         ]
 
     # Repo scope: write a proxy instruction block to AGENTS.md
     agents_md = root / "AGENTS.md"
+    original_content = _capture_original(agents_md)
     instruction = (
         f"## AgentAlloy proxy\n\n"
         f"An AgentAlloy proxy is running at `http://localhost:{port}/v1`.\n"
@@ -1008,6 +1038,7 @@ def _wire_proxy_hermes_agent(port: int, root: Path, scope: str) -> list[dict[str
             "path": str(agents_md),
             "action": "injected_block",
             "content_sha256": _sha256(instruction.strip()),
+            **({"original_content": original_content} if original_content is not None else {}),
         }
     ]
 
@@ -1035,6 +1066,7 @@ def _wire_proxy_opencode(port: int, root: Path) -> list[dict[str, Any]]:
 
     # Write / update system-prompt.md with sentinel block
     prompt_path = opencode_dir / "system-prompt.md"
+    original_content = _capture_original(prompt_path)
     instruction = (
         "## AgentAlloy proxy\n\n"
         f"An AgentAlloy proxy is active at `http://localhost:{port}/v1`.\n"
@@ -1059,6 +1091,7 @@ def _wire_proxy_opencode(port: int, root: Path) -> list[dict[str, Any]]:
             "path": str(prompt_path),
             "action": "injected_block",
             "content_sha256": _sha256(instruction.strip()),
+            **({"original_content": original_content} if original_content is not None else {}),
         },
     ]
 
@@ -1075,6 +1108,7 @@ def _wire_proxy_claude_code(port: int, root: Path) -> list[dict[str, Any]]:
     agentalloy_dir.mkdir(parents=True, exist_ok=True)
 
     env_path = agentalloy_dir / "claude-code-env.sh"
+    original_content = _capture_original(env_path)
     sentinel_begin = "# <!-- BEGIN agentalloy install -->"
     sentinel_end = "# <!-- END agentalloy install -->"
 
@@ -1110,6 +1144,7 @@ def _wire_proxy_claude_code(port: int, root: Path) -> list[dict[str, Any]]:
             "path": str(env_path),
             "action": "wrote_new_file",
             "content_sha256": _sha256(block),
+            **({"original_content": original_content} if original_content is not None else {}),
         }
     ]
 
@@ -1124,6 +1159,7 @@ def _wire_proxy_cline(port: int, root: Path) -> list[dict[str, Any]]:
     settings_path = root / ".cline" / "settings.json"
     settings_path.parent.mkdir(parents=True, exist_ok=True)
 
+    original_content = _capture_original(settings_path)
     proxy_url = f"http://localhost:{port}/v1"
     proxy_fields = {
         "apiProvider": "openai",
@@ -1151,6 +1187,7 @@ def _wire_proxy_cline(port: int, root: Path) -> list[dict[str, Any]]:
             "path": str(settings_path),
             "action": "injected_block",
             "content_sha256": _sha256(serialized),
+            **({"original_content": original_content} if original_content is not None else {}),
         }
     ]
 
@@ -1179,6 +1216,7 @@ def _wire_proxy_instruction(
         dedicated = reg["dedicated"]
 
     target_path = root / rel_path
+    original_content = _capture_original(target_path)
     template = _load_template("proxy-instruction.md")
     rendered = _render_template(template, port)
 
@@ -1201,6 +1239,7 @@ def _wire_proxy_instruction(
             "path": str(target_path),
             "action": action,
             "content_sha256": content_sha256,
+            **({"original_content": original_content} if original_content is not None else {}),
         }
     ]
 
@@ -1267,6 +1306,13 @@ def _build_result(
     st = install_state.load_state(root)
     prior = st.get("harness_files_written") or []
     new_paths = {f.get("path") for f in files_written}
+    # Preserve original_content from prior entries on re-wire: the new entry
+    # captures the post-first-write state, but we need the true original.
+    prior_by_path = {e.get("path"): e for e in prior}
+    for new_entry in files_written:
+        prior_entry = prior_by_path.get(new_entry.get("path"))
+        if prior_entry and "original_content" in prior_entry:
+            new_entry.setdefault("original_content", prior_entry["original_content"])
     merged = [e for e in prior if e.get("path") not in new_paths] + files_written
     st["harness_files_written"] = merged
     st = install_state.record_step(st, STEP_NAME, extra={"output": output})

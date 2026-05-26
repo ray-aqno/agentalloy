@@ -302,6 +302,7 @@ def _empty_state() -> dict[str, Any]:
         "completed_steps": [],
         "harness_files_written": [],
         "models_pulled": [],
+        "env_original_content": None,  # Backup of original .env content for restore
         "env_path": None,
         "port": 47950,
         "last_verify_passed_at": None,
