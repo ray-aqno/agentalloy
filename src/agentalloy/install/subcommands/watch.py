@@ -1,4 +1,4 @@
-"""``agentalloy watch`` — Tier 3 file-watching sidecar.
+"""``agentalloy watch`` — file-watching sidecar for non-proxy-wired harnesses.
 
 Commands:
     agentalloy watch start [--harness X] [--profile X]   Start the watcher (foreground)
@@ -15,7 +15,14 @@ import signal
 import sys
 from pathlib import Path
 
+from agentalloy.install import PROXY_UNABLE_HARNESSES
 from agentalloy.install.output import print_rich
+
+# All sidecar harnesses that use the file-watching watcher.
+# Proxy-wired harnesses don't need the watcher; these are the ones
+# whose LLM traffic cannot be intercepted, plus the legacy cline/aider
+# regenerators for users running `agentalloy wire --legacy`.
+_SIDECAR_HARNESSES: frozenset[str] = frozenset(PROXY_UNABLE_HARNESSES | {"cline", "aider"})
 
 
 def _watch_dir() -> Path:
@@ -61,7 +68,7 @@ def _detect_harness() -> str | None:
         files = st.get("harness_files_written", [])
         for entry in files:
             h = entry.get("harness", "")
-            if h in ("cursor", "windsurf", "github-copilot", "gemini-cli", "aider"):
+            if h in _SIDECAR_HARNESSES:
                 return h
     except Exception:
         pass
@@ -85,7 +92,7 @@ def _start(args: argparse.Namespace) -> int:
     if harness is None:
         print(
             "ERROR: --harness required (could not detect from state.json).\n"
-            "Use: agentalloy watch start --harness <cursor|windsurf|github-copilot|gemini-cli|aider>",
+            "Use: agentalloy watch start --harness <cursor|windsurf|github-copilot|gemini-cli>",
             file=sys.stderr,
         )
         return 1
@@ -178,12 +185,16 @@ def add_parser(
 ) -> None:
     p: argparse.ArgumentParser = subparsers.add_parser(
         "watch",
-        help="Tier 3 file-watching sidecar — regenerates harness rules files on phase/contract changes",
+        help="File-watching sidecar for non-proxy-wired harnesses — regenerates rules files on phase/contract changes",
     )
     sub: argparse._SubParsersAction[argparse.ArgumentParser] = p.add_subparsers(dest="watch_cmd")  # pyright: ignore[reportPrivateUsage]
 
     start: argparse.ArgumentParser = sub.add_parser("start", help="Start the watcher (foreground)")
-    start.add_argument("--harness", default=None, help="Tier 3 harness name")
+    start.add_argument(
+        "--harness",
+        default=None,
+        help="Sidecar harness name (e.g. cursor, windsurf, github-copilot, gemini-cli)",
+    )
     start.add_argument("--profile", default=None, help="Profile name (default: default)")
 
     stop: argparse.ArgumentParser = sub.add_parser("stop", help="Stop the running watcher")
