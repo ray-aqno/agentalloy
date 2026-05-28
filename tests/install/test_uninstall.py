@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path, Path as _RealPath  # noqa: F811 -- _RealPath used when patching uninstall.Path
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -13,6 +14,36 @@ from agentalloy.install.subcommands.uninstall import (
     _extract_sentinel_content,  # type: ignore[attr-defined]
     _stop_container_stack,  # type: ignore[attr-defined]
 )
+
+# Typed helper for mock_which.side_effect to avoid pyright reportUnknownLambdaType
+WhichSideEffect = Callable[[str], str | None]
+
+
+def _which_map(**mapping: str) -> WhichSideEffect:
+    """Create a typed which side_effect from a mapping."""
+
+    def _which(name: str) -> str | None:
+        return mapping.get(name)
+
+    return _which
+
+
+def _which_single(target: str, path: str) -> WhichSideEffect:
+    """Create a typed which side_effect that returns path only for target."""
+
+    def _which(name: str) -> str | None:
+        return path if name == target else None
+
+    return _which
+
+
+def _which_none() -> WhichSideEffect:
+    """Create a typed which side_effect that always returns None."""
+
+    def _which(name: str) -> str | None:
+        return None
+
+    return _which
 
 
 class TestContainerUninstall:
@@ -288,10 +319,9 @@ class TestDetectInstallMode:
     @patch("agentalloy.install.subcommands.uninstall.subprocess.run")
     def test_uv_tool_mode_detected(self, mock_run: MagicMock, mock_which: MagicMock):
         """uv tool list contains agentalloy -> mode is uv_tool."""
-        mock_which.side_effect = lambda name: {
-            "uv": "/usr/bin/uv",
-            "agentalloy": "/usr/local/bin/agentalloy",
-        }.get(name)
+        mock_which.side_effect = _which_map(
+            uv="/usr/bin/uv", agentalloy="/usr/local/bin/agentalloy"
+        )
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = "agentalloy 1.0.0 /path/to/venv\n"
@@ -314,11 +344,9 @@ class TestDetectInstallMode:
     @patch("agentalloy.install.subcommands.uninstall.subprocess.run")
     def test_pipx_mode_detected(self, mock_run: MagicMock, mock_which: MagicMock):
         """uv tool list does NOT contain agentalloy, pipx does -> mode is pipx."""
-        mock_which.side_effect = lambda name: {
-            "uv": "/usr/bin/uv",
-            "pipx": "/usr/bin/pipx",
-            "agentalloy": "/usr/bin/agentalloy",
-        }.get(name)
+        mock_which.side_effect = _which_map(
+            uv="/usr/bin/uv", pipx="/usr/bin/pipx", agentalloy="/usr/bin/agentalloy"
+        )
 
         # First call: uv tool list — no agentalloy
         uv_result = MagicMock()
@@ -355,7 +383,7 @@ class TestDetectInstallMode:
         pyproject = repo_root / "pyproject.toml"
         pyproject.write_text('[project]\nname = "agentalloy"\n')
 
-        mock_which.side_effect = lambda name: binary_path if name == "agentalloy" else None
+        mock_which.side_effect = _which_single("agentalloy", binary_path)
 
         # uv tool list returns no agentalloy (but uv is not even found)
         # pipx is not found either
@@ -370,7 +398,7 @@ class TestDetectInstallMode:
     @patch("agentalloy.install.subcommands.uninstall.shutil.which")
     def test_unknown_mode_detected(self, mock_which: MagicMock):
         """No detection method matches -> mode is unknown."""
-        mock_which.side_effect = lambda name: None
+        mock_which.side_effect = _which_none()
 
         from agentalloy.install.subcommands.uninstall import _detect_install_mode  # type: ignore[attr-defined]
 
@@ -384,11 +412,9 @@ class TestDetectInstallMode:
     @patch("agentalloy.install.subcommands.uninstall.subprocess.run")
     def test_uv_tool_list_timeout_falls_through(self, mock_run: MagicMock, mock_which: MagicMock):
         """subprocess.TimeoutExpired during uv tool list causes pipx check to run."""
-        mock_which.side_effect = lambda name: {
-            "uv": "/usr/bin/uv",
-            "pipx": "/usr/bin/pipx",
-            "agentalloy": "/usr/bin/agentalloy",
-        }.get(name)
+        mock_which.side_effect = _which_map(
+            uv="/usr/bin/uv", pipx="/usr/bin/pipx", agentalloy="/usr/bin/agentalloy"
+        )
 
         # First call: uv tool list — timeout
         # Second call: pipx list --short — agentalloy found
@@ -416,7 +442,7 @@ class TestRemoveCliInstall:
     @patch("agentalloy.install.subcommands.uninstall.subprocess.run")
     def test_uv_tool_mode_uninstalls(self, mock_run: MagicMock, mock_which: MagicMock):
         """uv_tool mode -> uv tool uninstall succeeds -> action uv_tool_uninstalled."""
-        mock_which.side_effect = lambda name: "/usr/bin/uv" if name == "uv" else None
+        mock_which.side_effect = _which_single("uv", "/usr/bin/uv")
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_run.return_value = mock_result
@@ -438,7 +464,7 @@ class TestRemoveCliInstall:
     @patch("agentalloy.install.subcommands.uninstall.subprocess.run")
     def test_pipx_mode_uninstalls(self, mock_run: MagicMock, mock_which: MagicMock):
         """pipx mode -> pipx uninstall succeeds -> action pipx_uninstalled."""
-        mock_which.side_effect = lambda name: "/usr/bin/pipx" if name == "pipx" else None
+        mock_which.side_effect = _which_single("pipx", "/usr/bin/pipx")
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_run.return_value = mock_result
@@ -485,7 +511,7 @@ class TestRemoveCliInstall:
     @patch("agentalloy.install.subcommands.uninstall.subprocess.run")
     def test_uv_tool_uninstall_fails(self, mock_run: MagicMock, mock_which: MagicMock):
         """uv tool uninstall returns non-zero -> action uv_tool_skipped with reason."""
-        mock_which.side_effect = lambda name: "/usr/bin/uv" if name == "uv" else None
+        mock_which.side_effect = _which_single("uv", "/usr/bin/uv")
         mock_result = MagicMock()
         mock_result.returncode = 1
         mock_result.stderr = "tool 'agentalloy' is not installed"
@@ -514,7 +540,7 @@ class TestResultDictKeys:
         tmp_path: Path,
     ):
         """Result dict has 'cli_install' as primary key and 'uv_tool' as deprecated alias."""
-        mock_which.side_effect = lambda name: None
+        mock_which.side_effect = _which_none()
         mock_detect.return_value = {
             "mode": "unknown",
             "binary_path": None,
@@ -559,7 +585,7 @@ class TestResultDictKeys:
         tmp_path: Path,
     ):
         """cli_install result contains an 'action' field."""
-        mock_which.side_effect = lambda name: None
+        mock_which.side_effect = _which_none()
         mock_detect.return_value = {
             "mode": "unknown",
             "binary_path": None,
@@ -651,7 +677,7 @@ class TestPortConflictDiagnostics:
         mock_path_cls.home = _RealPath.home
 
         # Patch Path to return our mock for cmdline path, real Path otherwise
-        def path_side_effect(*args, **kwargs):
+        def path_side_effect(*args: Any, **kwargs: Any) -> Any:
             if not args:
                 # Called as a classmethod (e.g., Path.home) — fall back to real
                 return _RealPath.home()
@@ -711,7 +737,7 @@ class TestPortConflictDiagnostics:
         mock_path_cls.home = _RealPath.home
 
         # Patch Path to return our mock for cmdline path, real Path otherwise
-        def path_side_effect(*args, **kwargs):
+        def path_side_effect(*args: Any, **kwargs: Any) -> Any:
             if not args:
                 return _RealPath.home()
             if str(args[0]) == cmdline_path_str:

@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 
 from agentalloy.api.compose_models import ErrorResponse
-from agentalloy.api.rate_limiter import limiter
 from agentalloy.api.retrieve_models import (
     RetrieveByIdResponse,
     RetrieveQueryRequest,
@@ -31,9 +30,7 @@ def get_retrieve_orchestrator() -> RetrieveOrchestrator:
     },
     summary="Retrieve active skill by id",
 )
-@limiter.limit("20/second 200/minute")
 async def retrieve_by_id(
-    request: Request,
     skill_id: str,
     orchestrator: RetrieveOrchestrator = Depends(get_retrieve_orchestrator),
 ) -> RetrieveByIdResponse:
@@ -51,9 +48,7 @@ async def retrieve_by_id(
     responses={503: {"model": ErrorResponse}},
     summary="Semantic retrieve — returns active skill versions without assembly",
 )
-@limiter.limit("20/second 200/minute")
 async def retrieve_query(
-    request: Request,
     req: RetrieveQueryRequest,
     orchestrator: RetrieveOrchestrator = Depends(get_retrieve_orchestrator),
 ) -> RetrieveQueryResponse:
