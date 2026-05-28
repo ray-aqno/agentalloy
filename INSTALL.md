@@ -480,10 +480,10 @@ Operator commands the user can run later (these are NOT part of this runbook —
 - **Derivable artifacts**: `${XDG_DATA_HOME}/agentalloy/outputs/` (per-step JSON dumps including preflight) and `server.log`.
 - **CLI uninstall**: removes the `agentalloy` CLI from `~/.local/bin` (via `uv tool uninstall` or `pipx uninstall` depending on how it was installed).
 
-**Preserved by default**: the corpus DB at `${XDG_DATA_HOME}/agentalloy/corpus/`, pulled Ollama / FastFlowLM models (shared with other projects), the user's own non-agentalloy config.
+**Preserved by default**: nothing — the full uninstall preset removes everything, including the corpus DB and pulled models. To keep the corpus and models, choose the **keep-data** preset (`--preset keep-data`), which only removes harness wiring and `.env`.
 
 **Flags**:
-- `--remove-data` — also wipes the entire `${XDG_DATA_HOME}/agentalloy/` (corpus included). The post-test "get rid of everything" command.
+- `--remove-data` — explicit no-op (the default full preset already removes data). Kept for backward compatibility.
 - `--force` — remove sentinel blocks even when the inner content has been edited.
 - `--no-all-repos` — only clean sentinels in cwd (legacy behavior; useful for partial cleanup).
 - `--preset keep-data` — keep corpus, models, and services; only remove wiring and `.env`.

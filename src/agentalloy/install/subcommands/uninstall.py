@@ -518,7 +518,8 @@ def _detect_install_mode() -> dict[str, Any]:
             if result.returncode == 0:
                 for line in result.stdout.splitlines():
                     # uv tool list outputs lines like "agentalloy <version> <path>"
-                    if line.strip().startswith("agentalloy"):
+                    first_token = line.strip().split()[0] if line.strip() else ""
+                    if first_token == "agentalloy":
                         return {
                             "mode": "uv_tool",
                             "binary_path": binary_path,
@@ -541,7 +542,8 @@ def _detect_install_mode() -> dict[str, Any]:
             if result.returncode == 0:
                 for line in result.stdout.splitlines():
                     # pipx list --short outputs "agentalloy <version>"
-                    if line.strip().startswith("agentalloy"):
+                    first_token = line.strip().split()[0] if line.strip() else ""
+                    if first_token == "agentalloy":
                         return {
                             "mode": "pipx",
                             "binary_path": binary_path,
@@ -1146,8 +1148,9 @@ def uninstall(
                         cmdline_str = ps_result.stdout.strip()
                         is_agentalloy = "agentalloy.app:app" in cmdline_str
             except (OSError, subprocess.TimeoutExpired):
-                # Can't determine; assume it might be agentalloy
-                is_agentalloy = True
+                # Can't determine owner — treat as a foreign process to be safe.
+                # Defaulting to True would risk killing an unrelated process.
+                is_agentalloy = False
 
             if not is_agentalloy:
                 # Port is held by a foreign process — warn, don't kill
@@ -1156,7 +1159,8 @@ def uninstall(
                 warnings.append(
                     f"Port {port} is held by pid {pid} running '{cmd_display}' — "
                     f"this is not an agentalloy server. Stop it manually "
-                    f"(e.g. 'pipx uninstall <other-pkg>' or 'kill {pid}')."
+                    f"(e.g. 'kill {pid}') or reconfigure AgentAlloy to use a "
+                    f"different port."
                 )
             else:
                 try:

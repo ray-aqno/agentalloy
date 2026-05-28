@@ -130,6 +130,8 @@ def _is_deprecated(yaml_path: Path) -> tuple[bool, str, str]:
     """Check if a skill YAML is deprecated. Returns (is_deprecated, skill_id, superseded_by).
 
     Reads the YAML without full validation — just checks the deprecated flag.
+    Uses the same boolean parsing semantics as ``ingest._load_yaml()`` so that
+    quoted ``"false"``/``"no"``/``"0"`` values are treated as false, not true.
     """
     try:
         data = _yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
@@ -140,7 +142,16 @@ def _is_deprecated(yaml_path: Path) -> tuple[bool, str, str]:
         return False, "", ""
 
     skill_id = str(data.get("skill_id", ""))
-    deprecated = bool(data.get("deprecated", False))
+
+    def _parse_bool(key: str, default: bool = False) -> bool:
+        v: Any = data.get(key, default)
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            return v.lower() in ("true", "yes", "1")
+        return bool(v)
+
+    deprecated = _parse_bool("deprecated", False)
     superseded_by = str(data.get("superseded_by", ""))
     return deprecated, skill_id, superseded_by
 
