@@ -19,6 +19,7 @@ NODE_TABLES: tuple[str, ...] = (
         skill_class STRING,
         domain_tags STRING[],
         deprecated BOOLEAN DEFAULT false,
+        superseded_by STRING,
         always_apply BOOLEAN DEFAULT false,
         phase_scope STRING[],
         category_scope STRING[],
