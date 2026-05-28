@@ -172,12 +172,29 @@ def create_app(*, use_default_lifespan: bool = True) -> FastAPI:
     LadybugDB and the Ollama client). Tests pass ``False`` and wire their own
     dependency overrides via ``app.dependency_overrides``.
     """
+    from agentalloy.api.rate_limiter import limiter
+
     app = FastAPI(
         title="agentalloy",
         version="1.0.0",
         description="Runtime skill composition service.",
         lifespan=lifespan if use_default_lifespan else None,
     )
+
+    # Register SlowAPI state and rate-limit handler
+    app.state.limiter = limiter
+    from slowapi.errors import RateLimitExceeded
+
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": "rate_limit_exceeded",
+                "message": "Rate limit exceeded. Try again later.",
+                "limit": str(exc.limit) if exc.limit else "unknown",
+            },
+        )
 
     @app.exception_handler(RetrievalStageError)
     async def _retrieval_handler(_req: Request, err: RetrievalStageError) -> JSONResponse:

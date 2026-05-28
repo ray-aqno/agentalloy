@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
@@ -12,6 +12,7 @@ from agentalloy.api.compose_models import (
     EmptyResult,
     ErrorResponse,
 )
+from agentalloy.api.rate_limiter import limiter
 from agentalloy.orchestration.compose import ComposeOrchestrator
 
 router = APIRouter()
@@ -35,7 +36,9 @@ def get_orchestrator() -> ComposeOrchestrator:
         "with NXS-771/NXS-772 in M2."
     ),
 )
+@limiter.limit("10/second 100/minute")
 async def compose(
+    request: Request,
     req: ComposeRequest,
     orchestrator: ComposeOrchestrator = Depends(get_orchestrator),
 ) -> ComposedResult | EmptyResult:
@@ -48,7 +51,9 @@ async def compose(
     summary="Compose task-specific guidance as plain text",
     description="Returns only the assembled skill text — no JSON wrapper. Intended for agent curl calls.",
 )
+@limiter.limit("10/second 100/minute")
 async def compose_text(
+    request: Request,
     req: ComposeRequest,
     orchestrator: ComposeOrchestrator = Depends(get_orchestrator),
 ) -> PlainTextResponse:
@@ -73,7 +78,9 @@ class FromContractRequest(BaseModel):
         "as the task description, and runs the standard compose pipeline."
     ),
 )
+@limiter.limit("10/second 100/minute")
 async def compose_from_contract(
+    request: Request,
     req: FromContractRequest,
     orchestrator: ComposeOrchestrator = Depends(get_orchestrator),
 ) -> ComposedResult | EmptyResult:

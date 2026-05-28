@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import subprocess
-from pathlib import Path
+from pathlib import Path, Path as _RealPath  # noqa: F811 -- _RealPath used when patching uninstall.Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -522,14 +522,16 @@ class TestResultDictKeys:
             "harness_files_written": [],
         }
 
-        with patch("agentalloy.install.state.load_state", return_value=minimal_state):
-            with patch("agentalloy.install.state.user_data_dir", return_value=tmp_path / "data"):
-                with patch("agentalloy.install.state.user_config_dir", return_value=tmp_path / "config"):
-                    result = uninstall(
-                        remove_data=False,
-                        force=True,
-                        stop_services=True,
-                    )
+        with (
+            patch("agentalloy.install.state.load_state", return_value=minimal_state),
+            patch("agentalloy.install.state.user_data_dir", return_value=tmp_path / "data"),
+            patch("agentalloy.install.state.user_config_dir", return_value=tmp_path / "config"),
+        ):
+            result = uninstall(
+                remove_data=False,
+                force=True,
+                stop_services=True,
+            )
 
         # Primary key
         assert "cli_install" in result
@@ -561,14 +563,16 @@ class TestResultDictKeys:
             "harness_files_written": [],
         }
 
-        with patch("agentalloy.install.state.load_state", return_value=minimal_state):
-            with patch("agentalloy.install.state.user_data_dir", return_value=tmp_path / "data"):
-                with patch("agentalloy.install.state.user_config_dir", return_value=tmp_path / "config"):
-                    result = uninstall(
-                        remove_data=False,
-                        force=True,
-                        stop_services=True,
-                    )
+        with (
+            patch("agentalloy.install.state.load_state", return_value=minimal_state),
+            patch("agentalloy.install.state.user_data_dir", return_value=tmp_path / "data"),
+            patch("agentalloy.install.state.user_config_dir", return_value=tmp_path / "config"),
+        ):
+            result = uninstall(
+                remove_data=False,
+                force=True,
+                stop_services=True,
+            )
 
         assert "action" in result["cli_install"]
         assert result["cli_install"]["action"] == "cli_install_skipped"
@@ -608,10 +612,6 @@ class TestPromptUninstallPreset:
         with patch("builtins.input", return_value="3"):
             result = _prompt_uninstall_preset()
         assert result == "custom"
-
-
-# Real Path reference (needed when patching the uninstall module's Path)
-from pathlib import Path as _RealPath
 
 
 class TestPortConflictDiagnostics:
@@ -654,14 +654,16 @@ class TestPortConflictDiagnostics:
             "port": 47950,
         }
 
-        with patch("agentalloy.install.state.load_state", return_value=minimal_state):
-            with patch("agentalloy.install.state.user_data_dir", return_value=tmp_path / "data"):
-                with patch("agentalloy.install.state.user_config_dir", return_value=tmp_path / "config"):
-                    result = uninstall(
-                        remove_data=False,
-                        force=True,
-                        stop_services=True,
-                    )
+        with (
+            patch("agentalloy.install.state.load_state", return_value=minimal_state),
+            patch("agentalloy.install.state.user_data_dir", return_value=tmp_path / "data"),
+            patch("agentalloy.install.state.user_config_dir", return_value=tmp_path / "config"),
+        ):
+            result = uninstall(
+                remove_data=False,
+                force=True,
+                stop_services=True,
+            )
 
         # Verify no attempt to stop the process
         mock_stop.assert_not_called()
@@ -707,15 +709,17 @@ class TestPortConflictDiagnostics:
             "port": 47950,
         }
 
-        with patch("agentalloy.install.state.load_state", return_value=minimal_state):
-            with patch("agentalloy.install.state.user_data_dir", return_value=tmp_path / "data"):
-                with patch("agentalloy.install.state.user_config_dir", return_value=tmp_path / "config"):
-                    mock_stop.return_value = "SIGTERM"
-                    result = uninstall(
-                        remove_data=False,
-                        force=True,
-                        stop_services=True,
-                    )
+        with (
+            patch("agentalloy.install.state.load_state", return_value=minimal_state),
+            patch("agentalloy.install.state.user_data_dir", return_value=tmp_path / "data"),
+            patch("agentalloy.install.state.user_config_dir", return_value=tmp_path / "config"),
+        ):
+            mock_stop.return_value = "SIGTERM"
+            result = uninstall(
+                remove_data=False,
+                force=True,
+                stop_services=True,
+            )
 
         # Verify stop was called with the pid
         mock_stop.assert_called_once_with(12345)

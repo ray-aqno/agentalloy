@@ -509,11 +509,10 @@ def _validate(record: ReviewRecord) -> list[str]:
             "a skill cannot be deprecated without a replacement"
         )
 
-    if record.superseded_by:
-        if not re.match(r"^[a-z0-9-]+$", record.superseded_by):
-            errors.append(
-                f"superseded_by '{record.superseded_by}' must be kebab-case, lowercase ASCII"
-            )
+    if record.superseded_by and not re.match(r"^[a-z0-9-]+$", record.superseded_by):
+        errors.append(
+            f"superseded_by '{record.superseded_by}' must be kebab-case, lowercase ASCII"
+        )
 
     if record.skill_type == "system":
         if not record.skill_id.startswith("sys-"):

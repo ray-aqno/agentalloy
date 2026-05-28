@@ -195,15 +195,14 @@ def _validate(skill: ParsedSystemSkill) -> list[str]:
     # --- deprecation validation ---
     if skill.deprecated and not skill.superseded_by:
         errors.append(
-            f"deprecated: true requires 'superseded_by' to be set — "
-            f"a skill cannot be deprecated without a replacement"
+            "deprecated: true requires 'superseded_by' to be set — "
+            "a skill cannot be deprecated without a replacement"
         )
 
-    if skill.superseded_by:
-        if not re.match(r"^[a-z0-9-]+$", skill.superseded_by):
-            errors.append(
-                f"superseded_by '{skill.superseded_by}' must be kebab-case, lowercase ASCII"
-            )
+    if skill.superseded_by and not re.match(r"^[a-z0-9-]+$", skill.superseded_by):
+        errors.append(
+            f"superseded_by '{skill.superseded_by}' must be kebab-case, lowercase ASCII"
+        )
 
     return errors
 
