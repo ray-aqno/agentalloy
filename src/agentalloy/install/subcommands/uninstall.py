@@ -74,8 +74,7 @@ def _prompt_uninstall_preset() -> str:
     print("", file=sys.stderr)
     print("  What kind of uninstall?", file=sys.stderr)
     print(
-        "    1) Full uninstall            "
-        "— remove everything (default)",
+        "    1) Full uninstall            — remove everything (default)",
         file=sys.stderr,
     )
     print(

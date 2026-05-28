@@ -200,9 +200,7 @@ def _validate(skill: ParsedSystemSkill) -> list[str]:
         )
 
     if skill.superseded_by and not re.match(r"^[a-z0-9-]+$", skill.superseded_by):
-        errors.append(
-            f"superseded_by '{skill.superseded_by}' must be kebab-case, lowercase ASCII"
-        )
+        errors.append(f"superseded_by '{skill.superseded_by}' must be kebab-case, lowercase ASCII")
 
     return errors
 

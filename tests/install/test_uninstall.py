@@ -340,7 +340,9 @@ class TestDetectInstallMode:
 
     @patch("agentalloy.install.subcommands.uninstall.shutil.which")
     @patch("agentalloy.install.subcommands.uninstall.subprocess.run")
-    def test_editable_mode_detected(self, mock_run: MagicMock, mock_which: MagicMock, tmp_path: Path):
+    def test_editable_mode_detected(
+        self, mock_run: MagicMock, mock_which: MagicMock, tmp_path: Path
+    ):
         """Binary under .venv + pyproject.toml with name=agentalloy -> mode is editable."""
         # Set up .venv and pyproject.toml
         venv_dir = tmp_path / ".venv"
@@ -505,7 +507,11 @@ class TestResultDictKeys:
     @patch("agentalloy.install.subcommands.uninstall._detect_install_mode")
     @patch("agentalloy.install.subcommands.uninstall.shutil.which")
     def test_cli_install_key_and_uv_tool_alias(
-        self, mock_which: MagicMock, mock_detect: MagicMock, mock_find_pid: MagicMock, tmp_path: Path
+        self,
+        mock_which: MagicMock,
+        mock_detect: MagicMock,
+        mock_find_pid: MagicMock,
+        tmp_path: Path,
     ):
         """Result dict has 'cli_install' as primary key and 'uv_tool' as deprecated alias."""
         mock_which.side_effect = lambda name: None
@@ -546,7 +552,11 @@ class TestResultDictKeys:
     @patch("agentalloy.install.subcommands.uninstall._detect_install_mode")
     @patch("agentalloy.install.subcommands.uninstall.shutil.which")
     def test_cli_install_key_contains_action(
-        self, mock_which: MagicMock, mock_detect: MagicMock, mock_find_pid: MagicMock, tmp_path: Path
+        self,
+        mock_which: MagicMock,
+        mock_detect: MagicMock,
+        mock_find_pid: MagicMock,
+        tmp_path: Path,
     ):
         """cli_install result contains an 'action' field."""
         mock_which.side_effect = lambda name: None
@@ -621,7 +631,11 @@ class TestPortConflictDiagnostics:
     @patch("agentalloy.install.server_proc.stop")
     @patch("agentalloy.install.subcommands.uninstall.Path")
     def test_foreign_process_warns_no_kill(
-        self, mock_path_cls: MagicMock, mock_stop: MagicMock, mock_find_pid: MagicMock, tmp_path: Path
+        self,
+        mock_path_cls: MagicMock,
+        mock_stop: MagicMock,
+        mock_find_pid: MagicMock,
+        tmp_path: Path,
     ):
         """Foreign process on the port: warning added, no kill attempted."""
         mock_find_pid.return_value = 12345
@@ -677,7 +691,11 @@ class TestPortConflictDiagnostics:
     @patch("agentalloy.install.server_proc.stop")
     @patch("agentalloy.install.subcommands.uninstall.Path")
     def test_agentalloy_process_stopped(
-        self, mock_path_cls: MagicMock, mock_stop: MagicMock, mock_find_pid: MagicMock, tmp_path: Path
+        self,
+        mock_path_cls: MagicMock,
+        mock_stop: MagicMock,
+        mock_find_pid: MagicMock,
+        tmp_path: Path,
     ):
         """Agentalloy process on the port: it is stopped."""
         mock_find_pid.return_value = 12345

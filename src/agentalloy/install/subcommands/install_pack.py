@@ -159,8 +159,7 @@ def _ingest_yaml(yaml_path: Path, repo_root: Path) -> dict[str, Any]:
     is_dep, skill_id, superseded_by = _is_deprecated(yaml_path)
     if is_dep:
         print(
-            f"WARNING: skipping deprecated skill '{skill_id}', "
-            f"superseded by '{superseded_by}'",
+            f"WARNING: skipping deprecated skill '{skill_id}', superseded by '{superseded_by}'",
             file=sys.stderr,
         )
         return {

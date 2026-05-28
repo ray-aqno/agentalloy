@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Quick import check for Sprint 1 changes."""
+
 import sys
 
 sys.path.insert(0, "/home/nmeyers/dev/agentalloy/src")
