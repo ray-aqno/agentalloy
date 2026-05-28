@@ -12,7 +12,6 @@ Sprint 1 additions:
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from dataclasses import dataclass
