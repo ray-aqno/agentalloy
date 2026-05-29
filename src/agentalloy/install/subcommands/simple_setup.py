@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import subprocess
 import sys
 import time
@@ -686,12 +687,34 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     assert binary_path is not None  # _detect_compose_binary returns both or neither
     _print(f"  Compose binary: {label} at {binary_path}")
 
-    # 3. Select compose file
-    default_compose = "compose.radeon.yaml" if cfg.recommended_host == "radeon" else "compose.yaml"
+    # 2b. Apple Silicon container caveat: Docker Desktop / Podman Machine on macOS
+    # run containers inside a Linux VM and cannot pass Metal through. The bundled
+    # Ollama sidecar will run CPU-only inference regardless of host capability.
+    if platform.system() == "Darwin" and platform.machine() == "arm64":
+        _print(
+            "\n  [yellow]Heads up — Apple Silicon + container deployment:[/yellow]\n"
+            "  Docker/Podman on macOS cannot expose Metal to containers, so the\n"
+            "  bundled Ollama will run CPU-only. For an embedding model this is\n"
+            "  functional but noticeably slower than a native install would be.\n"
+            "  If you want Metal acceleration, cancel and re-run setup choosing\n"
+            "  the native deployment instead."
+        )
+        if not cfg.non_interactive:
+            ans = input("  Continue with container (CPU-only)? [Y/n]: ").strip().lower()
+            if ans in ("n", "no"):
+                _print("[yellow]Setup cancelled.[/yellow]")
+                return 1
 
-    compose_path = Path.cwd() / default_compose
+    # 3. Select compose file
+    # Resolve from the agentalloy repo root (parent of the installed package),
+    # not cwd — users may run `agentalloy setup` from anywhere. The Containerfile
+    # build context requires the full repo, so an editable install is required
+    # for container deployment. enable_service.py uses the same parents[4] walk.
+    default_compose = "compose.radeon.yaml" if cfg.recommended_host == "radeon" else "compose.yaml"
+    repo_root = Path(__file__).resolve().parents[4]
+    compose_path = repo_root / default_compose
     if not cfg.non_interactive:
-        _print(f"\n  Detected compose file: {default_compose} — correct? [Y/n]")
+        _print(f"\n  Detected compose file: {compose_path} — correct? [Y/n]")
         ans = input("  ").strip().lower()
         if ans in ("n", "no"):
             custom = input("  Enter compose file path: ").strip()
