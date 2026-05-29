@@ -140,6 +140,23 @@ def _resolve_preset(cfg: SetupConfig) -> str:
     return preset
 
 
+def _container_embed_defaults(cfg: SetupConfig) -> tuple[str, str]:
+    """Return (embed_url, embed_model) for host-side .env in container deployments.
+
+    Values are derived from the compose file the user selected:
+      - compose.radeon.yaml: LM Studio runs on the host at port 1234
+      - compose.yaml (default): ollama sidecar publishes 11434 to the host
+
+    Both stacks use the same embedding model. These values mirror the
+    `environment:` block of each compose service so the host's view and the
+    container's view of the embedder agree.
+    """
+    compose_name = Path(cfg.compose_file).name if cfg.compose_file else "compose.yaml"
+    if "radeon" in compose_name:
+        return "http://localhost:1234", "qwen3-embedding:0.6b"
+    return "http://localhost:11434", "qwen3-embedding:0.6b"
+
+
 def _report_verify_failures() -> None:
     """Surface failing verify checks from the saved verify.json.
 
@@ -869,7 +886,38 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     else:
         _print("  [green]  Service healthy.[/green]")
 
-    # 9. Record state + write .env (before verify so it reads fresh values)
+    # 9. Install skill packs INSIDE the container (corpus generation lives there;
+    # running install-packs on the host would write to a different data dir and
+    # leave the container's /app/data corpus empty, which then trips verify's
+    # skill_count_meets_minimum check). The container's data volume holds the
+    # canonical corpus for the container deployment.
+    _print("  [dim]-> Installing skill packs in container...[/dim]")
+    packs_cmd = [
+        binary_path,
+        "exec",
+        "agentalloy",
+        "uv",
+        "run",
+        "agentalloy",
+        "install-packs",
+    ]
+    try:
+        packs_result = subprocess.run(  # noqa: S603 — argv list, binary_path from shutil.which
+            packs_cmd, capture_output=True, text=True, timeout=300
+        )
+        if packs_result.returncode != 0:
+            _print(
+                "  [yellow]  install-packs in container returned "
+                f"{packs_result.returncode}; verify may report a low skill count.[/yellow]"
+            )
+            if packs_result.stderr:
+                _print(f"  [dim]{packs_result.stderr.strip()[:500]}[/dim]")
+        else:
+            _print("  [green]  Skill packs installed.[/green]")
+    except subprocess.TimeoutExpired:
+        _print("  [yellow]  install-packs timed out after 5 min.[/yellow]")
+
+    # 10. Record state + write .env (before verify so it reads fresh values)
     st = install_state.load_state()
     st["deployment"] = "container"
     st["compose_file"] = cfg.compose_file
@@ -878,7 +926,11 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     st["port"] = cfg.port
     install_state.save_state(st)
 
-    # Write minimal .env for container defaults so verify and embed checks work
+    # Write minimal .env for container defaults so verify and embed checks work.
+    # RUNTIME_EMBED_BASE_URL points the HOST at the embedder, not at the agentalloy
+    # service itself. Per compose stack:
+    #   - compose.yaml (bundled ollama sidecar): ollama publishes 11434 to host
+    #   - compose.radeon.yaml (LM Studio on host): LM Studio listens on 1234
     env_dir = install_state.user_config_dir()
     env_dir.mkdir(parents=True, exist_ok=True)
     env_fp = install_state.env_path()
@@ -888,16 +940,17 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         st["env_original_content"] = env_fp.read_text()
         install_state.save_state(st)
 
+    embed_url, embed_model = _container_embed_defaults(cfg)
     env_lines = [
-        f"RUNTIME_EMBED_BASE_URL=http://localhost:{cfg.port}",
-        'RUNTIME_EMBEDDING_MODEL=""',
+        f"RUNTIME_EMBED_BASE_URL={embed_url}",
+        f"RUNTIME_EMBEDDING_MODEL={embed_model}",
         f"RUNTIME_PORT={cfg.port}",
     ]
     install_state._atomic_write(  # pyright: ignore[reportPrivateUsage]
         env_fp, "\n".join(env_lines) + "\n"
     )
 
-    # 10. Run verify
+    # 11. Run verify
     _print("  [dim]-> Verifying installation[/dim]")
     rc = verify.run(_build_namespace(cfg))
     if rc not in (0, 4):
@@ -906,7 +959,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         return rc
     _print("  [green]  All checks passed.[/green]")
 
-    # 11. Wire harness
+    # 12. Wire harness
     if not cfg.non_interactive:
         cfg.harness = _prompt_harness()
     else:
