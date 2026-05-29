@@ -93,7 +93,10 @@ services:
     ports:
       - "47950:47950"  # To change host port, edit this line.
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:47950/health',timeout=3); sys.exit(0 if r.status==200 else 1)"]
+      # curl is installed in the image (see Containerfile). Avoids the
+      # python -c argv-escaping quirks some podman/docker versions have
+      # with semicolon-separated statements in the JSON array form.
+      test: ["CMD", "curl", "-fsS", "--max-time", "3", "http://127.0.0.1:47950/health"]
       interval: 15s
       timeout: 5s
       start_period: 30s
