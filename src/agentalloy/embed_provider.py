@@ -34,11 +34,9 @@ logger = logging.getLogger(__name__)
 class EmbedClient(Protocol):
     """Minimal embedding interface that both backends implement."""
 
-    def embed(self, *, model: str, texts: list[str]) -> list[list[float]]:
-        ...  # pragma: no cover
+    def embed(self, *, model: str, texts: list[str]) -> list[list[float]]: ...  # pragma: no cover
 
-    def close(self) -> None:
-        ...  # pragma: no cover
+    def close(self) -> None: ...  # pragma: no cover
 
 
 def get_embed_client(settings: Settings) -> EmbedClient:
@@ -66,8 +64,7 @@ def get_embed_client(settings: Settings) -> EmbedClient:
         return _make_openai_compat_client(settings)
 
     raise ValueError(
-        f"Unknown embedding provider {provider!r}. "
-        f"Supported values: openai_compat, ollama"
+        f"Unknown embedding provider {provider!r}. Supported values: openai_compat, ollama"
     )
 
 
@@ -75,8 +72,11 @@ def _make_openai_compat_client(settings: Settings) -> OpenAICompatClient:
     """Create an OpenAI-compatible embedding client."""
     from agentalloy.lm_client import OpenAICompatClient
 
-    logger.debug("embedding provider=openai_compat url=%s model=%s",
-                 settings.runtime_embed_base_url, settings.runtime_embedding_model)
+    logger.debug(
+        "embedding provider=openai_compat url=%s model=%s",
+        settings.runtime_embed_base_url,
+        settings.runtime_embedding_model,
+    )
     return OpenAICompatClient(settings.runtime_embed_base_url)
 
 
@@ -84,8 +84,11 @@ def _make_ollama_client(settings: Settings) -> OllamaEmbedClient:
     """Create an Ollama embedding client."""
     from agentalloy.ollama_embed import OllamaEmbedClient
 
-    logger.debug("embedding provider=ollama url=%s model=%s",
-                 settings.runtime_embed_base_url, settings.runtime_embedding_model)
+    logger.debug(
+        "embedding provider=ollama url=%s model=%s",
+        settings.runtime_embed_base_url,
+        settings.runtime_embedding_model,
+    )
     return OllamaEmbedClient(
         base_url=settings.runtime_embed_base_url,
         model=settings.runtime_embedding_model,

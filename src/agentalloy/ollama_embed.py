@@ -73,8 +73,7 @@ class OllamaEmbedClient:
 
         if len(embeddings) != len(texts):
             logger.warning(
-                "Ollama returned %d embeddings for %d texts — "
-                "truncating / padding to match",
+                "Ollama returned %d embeddings for %d texts — truncating / padding to match",
                 len(embeddings),
                 len(texts),
             )
