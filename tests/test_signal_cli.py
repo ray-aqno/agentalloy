@@ -343,8 +343,8 @@ def test_evaluate_phase_lm_client_constructed_from_embed_url(
 
     constructed_urls: list[str] = []
 
-    class _FakeClient:
-        def __init__(self, settings):
+    class _FakeClient:  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType, reportUnknownMemberType, reportUnknownArgumentType]
+        def __init__(self, settings: Any) -> None:  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
             constructed_urls.append(settings.runtime_embed_base_url)
 
     prompt_file = tmp_path / "prompt.txt"
