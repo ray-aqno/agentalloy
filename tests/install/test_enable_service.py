@@ -88,26 +88,13 @@ class TestDetectContainerRuntimes:
 
 
 class TestResolveComposeFile:
-    def test_radeon_returns_radeon_file(self, tmp_path: Path) -> None:
-        (tmp_path / "compose.radeon.yaml").touch()
-        (tmp_path / "compose.yaml").touch()
-        result = _resolve_compose_file(tmp_path, "radeon")
-        assert result.name == "compose.radeon.yaml"
+    """One stack now. Preset is ignored — every container deployment uses compose.yaml."""
 
-    def test_radeon_fallback_when_file_missing(self, tmp_path: Path) -> None:
+    def test_always_returns_compose_yaml_regardless_of_preset(self, tmp_path: Path) -> None:
         (tmp_path / "compose.yaml").touch()
-        result = _resolve_compose_file(tmp_path, "radeon")
-        assert result.name == "compose.yaml"
-
-    def test_cpu_returns_default_compose(self, tmp_path: Path) -> None:
-        (tmp_path / "compose.yaml").touch()
-        result = _resolve_compose_file(tmp_path, "cpu")
-        assert result.name == "compose.yaml"
-
-    def test_none_preset_returns_default_compose(self, tmp_path: Path) -> None:
-        (tmp_path / "compose.yaml").touch()
-        result = _resolve_compose_file(tmp_path, None)
-        assert result.name == "compose.yaml"
+        for preset in ("radeon", "cpu", "nvidia", "apple-silicon", None):
+            result = _resolve_compose_file(tmp_path, preset)
+            assert result.name == "compose.yaml", f"preset={preset!r} returned {result.name!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -295,9 +282,10 @@ class TestEnableServiceContainer:
         assert cmd[0] == "podman"
         assert "up" in cmd
 
-    def test_radeon_uses_radeon_compose_file(self, tmp_path: Path) -> None:
+    def test_radeon_preset_falls_back_to_compose_yaml(self, tmp_path: Path) -> None:
+        """Post-simplification: every preset (incl. radeon) resolves to compose.yaml."""
         (tmp_path / "compose.yaml").touch()
-        (tmp_path / "compose.radeon.yaml").touch()
+        # No compose.radeon.yaml on disk — it was retired.
 
         mock_resp = MagicMock()
         mock_resp.__enter__ = lambda s: s  # type: ignore[misc]
@@ -317,7 +305,9 @@ class TestEnableServiceContainer:
                 preset="radeon",
             )
 
-        assert "radeon" in result["compose_file"]
+        assert Path(result["compose_file"]).name == "compose.yaml"
+        # Note: not asserting "radeon" absent from the full path string — pytest's
+        # tmp_path includes the test name, which itself contains "radeon".
 
 
 class TestEnableServiceNativeWindows:

@@ -15,10 +15,10 @@ native
     Windows: not implemented (v1.1).
 
 container
-    Runs ``podman compose`` or ``docker compose up -d`` with the appropriate
-    compose file. Radeon preset uses compose.radeon.yaml (agentalloy-only;
-    LM Studio lives on the host at host.containers.internal:11436). All other
-    presets use compose.yaml (agentalloy + Ollama bundled).
+    Runs ``podman compose`` or ``docker compose up -d`` with compose.yaml,
+    which bundles agentalloy + an Ollama sidecar (CPU-only inference; GPU
+    passthrough is intentionally out of scope — users wanting GPU acceleration
+    should pick the native install instead).
 
 manual
     No-op: prints the ``agentalloy serve`` command and exits. Records the
@@ -85,12 +85,13 @@ def _detect_container_runtimes() -> list[str]:
     return runtimes
 
 
-def _resolve_compose_file(repo_root: Path, preset: str | None) -> Path:
-    """Return the correct compose file path for the preset."""
-    if preset == "radeon":
-        candidate = repo_root / "compose.radeon.yaml"
-        if candidate.exists():
-            return candidate
+def _resolve_compose_file(repo_root: Path, preset: str | None) -> Path:  # noqa: ARG001 — preset kept for signature stability across native callers
+    """Return the compose file path.
+
+    All container deployments share compose.yaml (bundled Ollama, CPU-only).
+    The ``preset`` parameter is retained so the function signature matches
+    other native-path resolvers in this module; it is intentionally ignored.
+    """
     return repo_root / "compose.yaml"
 
 

@@ -81,6 +81,49 @@ def _probe_diagnostics(port: int) -> dict[str, Any] | None:
 # ---------------------------------------------------------------------------
 
 
+def _check_embedding_via_diagnostics(
+    diag: dict[str, Any] | None, check_name: str
+) -> dict[str, Any]:
+    """Read embedder status from /diagnostics/runtime.
+
+    Used by container deployments where the host can't reach the embedder
+    directly (Ollama lives on the compose-internal network only). The
+    diagnostics endpoint reports the same embedding_runtime dep status the
+    agentalloy service uses internally — "ok" means the service successfully
+    embedded against the configured backend at startup or last refresh.
+    """
+    t0 = time.monotonic()
+    if diag is None:
+        return {
+            "name": check_name,
+            "passed": False,
+            "duration_ms": int((time.monotonic() - t0) * 1000),
+            "error": "/diagnostics/runtime unreachable",
+            "remediation": (
+                "Container not responding on the configured port. Check "
+                "`<compose binary> compose logs agentalloy` for startup errors."
+            ),
+        }
+    status = (diag.get("dep_readiness") or {}).get("embedding_runtime")
+    if status == "ok":
+        return {
+            "name": check_name,
+            "passed": True,
+            "duration_ms": int((time.monotonic() - t0) * 1000),
+            "detail": "embedding_runtime=ok (via /diagnostics/runtime)",
+        }
+    return {
+        "name": check_name,
+        "passed": False,
+        "duration_ms": int((time.monotonic() - t0) * 1000),
+        "error": f"embedding_runtime status={status!r} (via /diagnostics/runtime)",
+        "remediation": (
+            "Bundled Ollama sidecar isn't healthy yet. Check "
+            "`<compose binary> compose logs ollama` and `... logs agentalloy`."
+        ),
+    }
+
+
 def _check_embedding_endpoint_reachable(embed_url: str) -> dict[str, Any]:
     """Check 1: GET <embed_url>/v1/models returns 200."""
     bad = _validate_probe_url(embed_url, "embedding_endpoint_reachable")
@@ -570,9 +613,25 @@ def run_checks(st: dict[str, Any], root: Path | None = None) -> dict[str, Any]: 
     # Kuzu file lock) and use the diagnostics response instead.
     diag = _probe_diagnostics(port)
 
+    # Container deployments: the host can't reach the embedder directly
+    # (Ollama lives on the compose-internal network). Both embedding checks
+    # collapse to a single source — the embedding_runtime dep status exposed
+    # via /diagnostics/runtime, which the agentalloy service computes from
+    # its actual embed probes inside the container.
+    is_container = st.get("deployment") == "container"
+    if is_container:
+        embed_checks = [
+            _check_embedding_via_diagnostics(diag, "embedding_endpoint_reachable"),
+            _check_embedding_via_diagnostics(diag, "embedding_endpoint_returns_1024_dim"),
+        ]
+    else:
+        embed_checks = [
+            _check_embedding_endpoint_reachable(embed_url),
+            _check_embedding_1024_dim(embed_url, embed_model),
+        ]
+
     checks = [
-        _check_embedding_endpoint_reachable(embed_url),
-        _check_embedding_1024_dim(embed_url, embed_model),
+        *embed_checks,
         _check_duckdb_present(duck_path, diag=diag),
         _check_ladybug_present(ladybug_path, diag=diag),
         _check_skill_count(ladybug_path, diag=diag),

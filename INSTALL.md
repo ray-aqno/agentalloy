@@ -405,7 +405,7 @@ Then based on the answer:
 > agentalloy enable-service --mode manual
 > ```
 
-The subcommand detects the available service manager (systemd/launchd) or container runtime (podman preferred, docker fallback), writes the appropriate unit/plist/compose invocation, starts the service, and polls `/health` for up to 30s to confirm startup. Radeon preset uses `compose.radeon.yaml` (agentalloy-only; LM Studio runs on the host). On success, the mode is recorded in `install-state.json`.
+The subcommand detects the available service manager (systemd/launchd) or container runtime (podman preferred, docker fallback), writes the appropriate unit/plist/compose invocation, starts the service, and polls `/health` for up to 30s to confirm startup. Container deployments always use `compose.yaml`, which bundles agentalloy + an Ollama sidecar (CPU-only inference; GPU acceleration requires the native install). On success, the mode is recorded in `install-state.json`.
 
 ---
 

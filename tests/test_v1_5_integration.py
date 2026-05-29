@@ -380,24 +380,37 @@ def test_step_7_embedding_model_not_loaded_returns_structured_503(tmp_path: Path
 
 
 def test_step_8_ollama_artifacts_removed() -> None:
-    """Post-NXS-801 the Ollama client + dep + config field are all gone."""
+    """Post-NXS-801 the legacy Ollama *package* + dep + config field are all gone.
+
+    Scope note: this test bans the original ``src/agentalloy/ollama/`` package
+    that was removed in NXS-801. The provider abstraction (cd73667) later
+    introduced ``src/agentalloy/ollama_embed.py`` — a thin client used only
+    when the user explicitly selects ``embedding_provider="ollama"``. That
+    file is allowed; the matchers below word-boundary on the legacy package
+    name so they don't false-positive on ``ollama_embed``.
+    """
+    import re
     from pathlib import Path
 
     repo_root = Path(__file__).resolve().parents[1]
 
-    # No ollama package in src/
+    # No legacy ollama package directory.
     assert not (repo_root / "src" / "agentalloy" / "ollama").exists(), (
         "src/agentalloy/ollama/ should be deleted"
     )
 
-    # No ollama imports in src/
+    # No imports from the legacy package or the upstream `ollama` PyPI client.
+    # Word-boundary matchers reject `agentalloy.ollama` but allow
+    # `agentalloy.ollama_embed` (the post-NXS-801 provider client).
     src_root = repo_root / "src"
+    legacy_pkg_re = re.compile(r"\bagentalloy\.ollama\b")
+    upstream_pypi_re = re.compile(r"^\s*(from ollama\b|import ollama\b)", re.MULTILINE)
     offending: list[str] = []
     for py in src_root.rglob("*.py"):
         text = py.read_text()
-        if "agentalloy.ollama" in text or "from ollama" in text or "import ollama" in text:
+        if legacy_pkg_re.search(text) or upstream_pypi_re.search(text):
             offending.append(str(py.relative_to(repo_root)))
-    assert not offending, f"unexpected ollama references in src/: {offending}"
+    assert not offending, f"unexpected legacy-ollama references in src/: {offending}"
 
     # No ollama dep + no ollama_base_url in pyproject/config
     pyproject = (repo_root / "pyproject.toml").read_text()

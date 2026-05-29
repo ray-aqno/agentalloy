@@ -102,7 +102,7 @@ git clone https://github.com/nrmeyers/agentalloy.git && cd agentalloy
 
 Works in any of the [supported harnesses](#harness-support).
 
-**Container alternative.** Build and run via your container tooling — see [INSTALL.md](INSTALL.md) for container setup details.
+**Container alternative.** `agentalloy setup` → choose container. The default `compose.yaml` runs agentalloy + a bundled Ollama sidecar on the compose-internal network with `qwen3-embedding:0.6b` auto-pulled on first start. Port 47950 is the only external surface. Container inference is CPU-only on every host; for GPU acceleration (NVIDIA/AMD/Metal) pick the native install instead.
 
 ---
 
