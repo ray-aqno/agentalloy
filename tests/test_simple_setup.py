@@ -1461,6 +1461,60 @@ class TestContainerFlow:
         out = capsys.readouterr().out.lower()
         assert "apple silicon" not in out
 
+    def test_verify_failures_surfaced_inline(
+        self,
+        tmp_state_dir: tuple[Path, Path],
+        capsys: pytest.CaptureFixture[str],
+    ):
+        """When verify fails, failing checks + remediations + report path are printed."""
+        SetupConfig, run_setup = self._import_run_setup()
+
+        # Write a failing verify.json into the outputs dir the wizard will read.
+        import agentalloy.install.state as state_mod
+
+        out_dir = state_mod.outputs_dir()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "verify.json").write_text(
+            json.dumps(
+                {
+                    "all_checks_passed": False,
+                    "checks": [
+                        {
+                            "name": "embedding_endpoint_reachable",
+                            "passed": False,
+                            "error": "HTTP 404",
+                            "remediation": "Start ollama",
+                        },
+                        {"name": "duckdb_present", "passed": True, "detail": "ok"},
+                    ],
+                }
+            )
+        )
+
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._detect_compose_binary",
+                return_value=("podman compose", "/usr/bin/podman"),
+            ),
+            patch("subprocess.run") as mock_run,
+            patch("agentalloy.install.subcommands.verify.run", return_value=1),
+        ):
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_run.return_value = mock_result
+
+            rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
+
+        assert rc == 1
+        import re
+
+        out = re.sub(r"\x1b\[[0-9;]*m", "", capsys.readouterr().out)
+        assert "embedding_endpoint_reachable" in out
+        assert "HTTP 404" in out
+        assert "FIX: Start ollama" in out
+        assert "duckdb_present" not in out  # passing checks are not noisy
+        assert "verify.json" in out  # path to full report
+
     def test_native_deployment_records_state(self, tmp_state_dir: tuple[Path, Path]):
         """Native deployment records deployment='native' in state on success."""
         SetupConfig, run_setup = self._import_run_setup()

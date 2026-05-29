@@ -140,6 +140,33 @@ def _resolve_preset(cfg: SetupConfig) -> str:
     return preset
 
 
+def _report_verify_failures() -> None:
+    """Surface failing verify checks from the saved verify.json.
+
+    The wizard invokes verify with quiet=True (to suppress JSON spam in the
+    success path), which also swallows the human checklist on failure. When
+    verify returns non-zero, re-load the saved output and print each failing
+    check's error + remediation so the user knows what to fix.
+    """
+    verify_fp = install_state.outputs_dir() / "verify.json"
+    if not verify_fp.exists():
+        _print(f"  [dim](no verify output found at {verify_fp})[/dim]")
+        return
+    try:
+        result = json.loads(verify_fp.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        _print(f"  [dim](could not read {verify_fp}: {exc})[/dim]")
+        return
+    failures = [c for c in result.get("checks", []) if not c.get("passed", False)]
+    if not failures:
+        return
+    for c in failures:
+        _print(f"    - {c['name']}: {c.get('error', 'unknown')}")
+        if c.get("remediation"):
+            _print(f"      FIX: {c['remediation']}")
+    _print(f"  [dim]Full report: {verify_fp}[/dim]")
+
+
 def _build_namespace(cfg: SetupConfig, **overrides: Any) -> argparse.Namespace:  # type: ignore[no-untyped-def]
     """Build an argparse.Namespace from SetupConfig for subcommand dispatch.
 
@@ -875,6 +902,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     rc = verify.run(_build_namespace(cfg))
     if rc not in (0, 4):
         _print("  [red]Validation failed.[/red]")
+        _report_verify_failures()
         return rc
     _print("  [green]  All checks passed.[/green]")
 
@@ -1325,6 +1353,7 @@ def run_setup(cfg: SetupConfig) -> int:
     rc = verify.run(_build_namespace(cfg))
     if rc not in (0, 4):
         _print("  [red]Validation failed.[/red]")
+        _report_verify_failures()
         return rc
     _print("  [green]All checks passed.[/green]")
 
