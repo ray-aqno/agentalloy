@@ -34,12 +34,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from agentalloy.config import Settings, get_settings
+from agentalloy.embed_provider import EmbedClient, get_embed_client
 from agentalloy.lm_client import (
     LMBadResponse,
     LMClientError,
     LMTimeout,
     LMUnavailable,
-    OpenAICompatClient,
 )
 from agentalloy.storage.ladybug import LadybugStore
 from agentalloy.storage.vector_store import (
@@ -559,10 +559,10 @@ def main(argv: list[str] | None = None) -> int:
 
             stats: ReembedStats
             if fragments:
-                with OpenAICompatClient(settings.runtime_embed_base_url) as client:
-
+                embed_client: EmbedClient = get_embed_client(settings)
+                try:
                     def _embed(text: str) -> list[float]:
-                        vectors = client.embed(model=model_id, texts=[text])
+                        vectors = embed_client.embed(model=model_id, texts=[text])
                         return vectors[0]
 
                     stats = reembed_fragments(
@@ -572,7 +572,9 @@ def main(argv: list[str] | None = None) -> int:
                         embedding_model=model_id,
                         progress_tty=sys.stderr.isatty(),
                     )
-                stats.log_summary()
+                    stats.log_summary()
+                finally:
+                    embed_client.close()
             else:
                 # --rebuild-fts with no fragments to embed
                 logger.info("no fragments to embed; running --rebuild-fts only")

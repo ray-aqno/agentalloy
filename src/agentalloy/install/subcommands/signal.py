@@ -25,9 +25,9 @@ from agentalloy.signals.skill_loader import (  # type: ignore[reportPrivateUsage
 )
 
 try:
-    from agentalloy.lm_client import OpenAICompatClient
+    from agentalloy.embed_provider import get_embed_client
 except Exception:  # pragma: no cover
-    OpenAICompatClient = None  # type: ignore[assignment,misc]
+    get_embed_client = None  # type: ignore[assignment,misc]
 
 
 # ---------------------------------------------------------------------------
@@ -92,8 +92,8 @@ def _evaluate_phase(args: argparse.Namespace) -> int:
         from agentalloy.config import get_settings
 
         cfg = get_settings()
-        if OpenAICompatClient is not None:
-            lm_client = OpenAICompatClient(cfg.runtime_embed_base_url)
+        if get_embed_client is not None:
+            lm_client = get_embed_client(cfg)
     except Exception:
         pass
 

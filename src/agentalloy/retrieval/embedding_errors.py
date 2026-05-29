@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from agentalloy.lm_client import OpenAICompatClient
+    from agentalloy.embed_provider import EmbedClient
     from agentalloy.reads.models import ActiveFragment
 
 logger = logging.getLogger(__name__)
@@ -296,14 +296,14 @@ class _EmbedContext:
     """Internal context for safe_embed()."""
 
     model: str
-    client: OpenAICompatClient
+    client: EmbedClient
     texts: list[str]
     call_count: int = 0
     last_error: Exception | None = None
 
 
 def safe_embed(
-    client: OpenAICompatClient,
+    client: EmbedClient,
     model: str,
     texts: list[str],
 ) -> list[list[float]]:
@@ -317,7 +317,7 @@ def safe_embed(
     4. Raises EmbeddingError with the appropriate code
 
     Args:
-        client: The LM client (OpenAICompatClient)
+        client: The embedding client (EmbedClient)
         model: The embedding model name
         texts: List of text strings to embed
 

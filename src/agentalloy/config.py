@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     # generative LLM dependency — only an embedding service.
     runtime_embed_base_url: str = "http://localhost:11434"
     runtime_embedding_model: str = "qwen3-embedding:0.6b"
+    embedding_provider: str = "openai_compat"
     dedup_hard_threshold: float = 0.92
     dedup_soft_threshold: float = 0.80
     bounce_budget: int = 3

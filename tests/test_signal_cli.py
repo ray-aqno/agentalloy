@@ -302,10 +302,7 @@ def test_evaluate_phase_emits_advisory_to_stdout(tmp_path: Path, monkeypatch: py
     with (
         patch.object(sig, "_load_workflow_skill_for_phase", side_effect=mock_load),
         patch.object(sig, "_write_telemetry"),
-        patch(
-            "agentalloy.install.subcommands.signal.OpenAICompatClient",
-            side_effect=RuntimeError("no server"),
-        ),
+        patch("agentalloy.install.subcommands.signal.get_embed_client", side_effect=RuntimeError("no server")),
     ):
         args = argparse.Namespace(prompt_file=str(prompt_file), tool=None, tool_path=None)
         sys.stdout = captured_stdout
@@ -327,7 +324,7 @@ def test_evaluate_phase_emits_advisory_to_stdout(tmp_path: Path, monkeypatch: py
 def test_evaluate_phase_lm_client_constructed_from_embed_url(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """_evaluate_phase builds an OpenAICompatClient against runtime_embed_base_url."""
+    """_evaluate_phase builds an embed client against runtime_embed_base_url."""
     from agentalloy.install.subcommands import signal as sig
 
     _write_phase(tmp_path, "build")
@@ -346,9 +343,9 @@ def test_evaluate_phase_lm_client_constructed_from_embed_url(
 
     constructed_urls: list[str] = []
 
-    class _FakeClient:
-        def __init__(self, url: str):
-            constructed_urls.append(url)
+    class _FakeClient:  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType, reportUnknownMemberType, reportUnknownArgumentType]
+        def __init__(self, settings: Any) -> None:  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
+            constructed_urls.append(settings.runtime_embed_base_url)
 
     prompt_file = tmp_path / "prompt.txt"
     prompt_file.write_text("done")
@@ -356,7 +353,7 @@ def test_evaluate_phase_lm_client_constructed_from_embed_url(
     with (
         patch.object(sig, "_load_workflow_skill_for_phase", return_value=skill),
         patch.object(sig, "_write_telemetry"),
-        patch("agentalloy.install.subcommands.signal.OpenAICompatClient", _FakeClient),
+        patch.object(sig, "get_embed_client", _FakeClient),
         patch.dict(os.environ, {"AGENTALLOY_FORCE_CHECK": "1"}),
     ):
         args = argparse.Namespace(prompt_file=str(prompt_file), tool=None, tool_path=None)

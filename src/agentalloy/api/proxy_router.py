@@ -26,7 +26,7 @@ from agentalloy.api.proxy_telemetry import write_proxy_trace
 
 if TYPE_CHECKING:
     from agentalloy.config import Settings as AppSettings
-    from agentalloy.lm_client import OpenAICompatClient
+    from agentalloy.embed_provider import EmbedClient
     from agentalloy.orchestration.compose import ComposeOrchestrator
     from agentalloy.storage.vector_store import VectorStore
 
@@ -48,7 +48,7 @@ def get_upstream_client(request: Request) -> httpx.AsyncClient | None:
     return getattr(request.app.state, "upstream_client", None)
 
 
-def get_embed_client(request: Request) -> OpenAICompatClient | None:
+def get_embed_client(request: Request) -> EmbedClient | None:
     """Return the embedding client from app.state."""
     return getattr(request.app.state, "embed_client", None)
 
@@ -262,7 +262,7 @@ async def proxy_chat_completions(
     request: ProxyRequest,
     fastapi_request: Request,
     upstream: httpx.AsyncClient | None = Depends(get_upstream_client),
-    embed_client: OpenAICompatClient | None = Depends(get_embed_client),
+    embed_client: EmbedClient | None = Depends(get_embed_client),
     vector_store: VectorStore | None = Depends(get_vector_store),
     orchestrator: ComposeOrchestrator | None = Depends(get_orchestrator_for_proxy),
     settings: AppSettings = Depends(get_settings_for_proxy),  # pyright: ignore[reportUnknownArgumentType]

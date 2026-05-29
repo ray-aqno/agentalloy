@@ -1135,7 +1135,10 @@ def uninstall(
                     cmdline = cmdline_path.read_bytes()
                     # Replace null bytes with spaces for readability
                     cmdline_str = cmdline.decode("utf-8", errors="replace").replace("\x00", " ")
-                    is_agentalloy = "agentalloy.app:app" in cmdline_str
+                    is_agentalloy = (
+                        "agentalloy.app:app" in cmdline_str
+                        or "agentalloy/__main__.py" in cmdline_str
+                    )
                 else:
                     # macOS fallback: use ps
                     ps_result = subprocess.run(
@@ -1146,7 +1149,10 @@ def uninstall(
                     )
                     if ps_result.returncode == 0:
                         cmdline_str = ps_result.stdout.strip()
-                        is_agentalloy = "agentalloy.app:app" in cmdline_str
+                        is_agentalloy = (
+                            "agentalloy.app:app" in cmdline_str
+                            or "agentalloy/__main__.py" in cmdline_str
+                        )
             except (OSError, subprocess.TimeoutExpired):
                 # Can't determine owner — treat as a foreign process to be safe.
                 # Defaulting to True would risk killing an unrelated process.
