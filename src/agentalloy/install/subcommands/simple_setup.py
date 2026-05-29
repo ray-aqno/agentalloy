@@ -706,19 +706,54 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
                 return 1
 
     # 3. Select compose file
-    # Resolve from the agentalloy repo root (parent of the installed package),
-    # not cwd — users may run `agentalloy setup` from anywhere. The Containerfile
-    # build context requires the full repo, so an editable install is required
-    # for container deployment. enable_service.py uses the same parents[4] walk.
+    # The Containerfile build context needs the full repo (pyproject.toml,
+    # uv.lock, src/, data/), so container deployment requires a checkout on
+    # disk. Search for it in:
+    #   1. cwd (user ran setup from inside the clone)
+    #   2. parents[4] of __file__ (editable install — points at repo root)
+    # Non-editable installs (e.g. `uv tool install agentalloy`) land in a
+    # site-packages tree with no source above it; those users must cd into a
+    # clone or pass an explicit path.
     default_compose = "compose.radeon.yaml" if cfg.recommended_host == "radeon" else "compose.yaml"
-    repo_root = Path(__file__).resolve().parents[4]
-    compose_path = repo_root / default_compose
-    if not cfg.non_interactive:
+
+    def _has_assets(d: Path) -> bool:
+        return (d / default_compose).exists() and (d / "Containerfile").exists()
+
+    candidates = [Path.cwd(), Path(__file__).resolve().parents[4]]
+    compose_path: Path | None = None
+    for cand in candidates:
+        if _has_assets(cand):
+            compose_path = cand / default_compose
+            break
+
+    if compose_path is None:
+        if cfg.non_interactive:
+            _print(
+                "  [red]Could not locate the agentalloy repo on disk.[/red]\n"
+                f"  Looked for {default_compose} + Containerfile in:\n"
+                + "\n".join(f"    - {c}" for c in candidates)
+                + "\n  Container deployment requires a checkout (the Containerfile\n"
+                "  build context needs pyproject.toml, src/, data/). Either:\n"
+                "    a) cd into your agentalloy clone and re-run setup, or\n"
+                "    b) install editably: `git clone … && cd agentalloy && \n"
+                "       uv tool install --editable .`"
+            )
+            return 1
+        _print(
+            "  [yellow]Could not auto-locate the agentalloy repo.[/yellow] "
+            "Container deployment\n"
+            "  needs the full source tree (Containerfile build context). "
+            "Enter the path\n"
+            "  to your agentalloy clone:"
+        )
+        custom = input("  ").strip()
+        compose_path = Path(custom).expanduser().resolve() / default_compose
+    elif not cfg.non_interactive:
         _print(f"\n  Detected compose file: {compose_path} — correct? [Y/n]")
         ans = input("  ").strip().lower()
         if ans in ("n", "no"):
             custom = input("  Enter compose file path: ").strip()
-            compose_path = Path(custom).resolve()
+            compose_path = Path(custom).expanduser().resolve()
     cfg.compose_file = str(compose_path.resolve())
 
     # 4. Run container preflight

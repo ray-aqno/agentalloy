@@ -1163,14 +1163,16 @@ class TestContainerFlow:
     def test_compose_resolved_from_repo_root_not_cwd(
         self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
     ):
-        """Container setup resolves compose file from the package repo root, ignoring cwd.
+        """When cwd lacks assets, container setup falls back to the package repo root.
 
-        Regression guard: previously `Path.cwd() / "compose.yaml"` was used, so users
-        running `agentalloy setup` from outside the repo got preflight failures.
+        Regression guard for two bugs:
+          (1) Previously used `Path.cwd() / "compose.yaml"` unconditionally.
+          (2) Then used `parents[4]` unconditionally, which broke for non-editable
+              `uv tool install` users (parents[4] lands in site-packages).
+        Now: cwd first, then parents[4] (the editable-install repo root).
         """
         SetupConfig, run_setup = self._import_run_setup()
 
-        # Compute the repo root the production code will resolve to.
         import agentalloy.install.subcommands.simple_setup as setup_mod
 
         expected_root = Path(setup_mod.__file__).resolve().parents[4]
@@ -1181,8 +1183,7 @@ class TestContainerFlow:
                 return_value=("podman compose", "/usr/bin/podman"),
             ),
             patch("subprocess.run") as mock_run,
-            # Point cwd at an empty tmp dir with no compose files — if the code
-            # still used cwd, preflight would fail.
+            # Empty cwd → must fall through to parents[4] (real repo root).
             patch("pathlib.Path.cwd", return_value=tmp_path),
         ):
             mock_result = MagicMock()
@@ -1196,6 +1197,67 @@ class TestContainerFlow:
 
         st = state_mod.load_state()
         assert st["compose_file"] == str(expected_root / "compose.yaml")
+
+    def test_compose_resolved_from_cwd_when_present(
+        self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
+    ):
+        """If user runs setup from a clone, cwd-resident assets win over parents[4]."""
+        SetupConfig, run_setup = self._import_run_setup()
+
+        (tmp_path / "compose.yaml").write_text("services: {}\n")
+        (tmp_path / "Containerfile").write_text("FROM scratch\n")
+
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._detect_compose_binary",
+                return_value=("podman compose", "/usr/bin/podman"),
+            ),
+            patch("subprocess.run") as mock_run,
+            patch("pathlib.Path.cwd", return_value=tmp_path),
+        ):
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_run.return_value = mock_result
+
+            rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
+
+        assert rc == 0
+        import agentalloy.install.state as state_mod
+
+        st = state_mod.load_state()
+        assert st["compose_file"] == str(tmp_path / "compose.yaml")
+
+    def test_container_fails_clearly_when_no_repo_found(
+        self,
+        tmp_state_dir: tuple[Path, Path],
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ):
+        """Non-editable install with no clone on disk: exit 1 with actionable error."""
+        SetupConfig, run_setup = self._import_run_setup()
+
+        # Force parents[4] resolution to a directory that does NOT contain assets,
+        # simulating a `uv tool install agentalloy` layout.
+        fake_module_file = tmp_path / "site-packages" / "agentalloy" / "install" / "subcommands" / "simple_setup.py"
+        fake_module_file.parent.mkdir(parents=True, exist_ok=True)
+        fake_module_file.touch()
+
+        import agentalloy.install.subcommands.simple_setup as setup_mod
+
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._detect_compose_binary",
+                return_value=("podman compose", "/usr/bin/podman"),
+            ),
+            patch("pathlib.Path.cwd", return_value=tmp_path),
+            patch.object(setup_mod, "__file__", str(fake_module_file)),
+        ):
+            rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
+
+        assert rc == 1
+        out = capsys.readouterr().out.lower()
+        assert "could not locate" in out
+        assert "clone" in out
 
     def test_apple_silicon_warning_auto_continues_non_interactive(
         self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
