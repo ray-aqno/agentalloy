@@ -8,6 +8,7 @@ compat layer.
 The interface mirrors the ``EmbedClient`` protocol so
 the two can be swapped via the provider factory in ``embed_provider.py``.
 """
+
 from __future__ import annotations
 
 from typing import Any, cast
