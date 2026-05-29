@@ -1238,7 +1238,14 @@ class TestContainerFlow:
 
         # Force parents[4] resolution to a directory that does NOT contain assets,
         # simulating a `uv tool install agentalloy` layout.
-        fake_module_file = tmp_path / "site-packages" / "agentalloy" / "install" / "subcommands" / "simple_setup.py"
+        fake_module_file = (
+            tmp_path
+            / "site-packages"
+            / "agentalloy"
+            / "install"
+            / "subcommands"
+            / "simple_setup.py"
+        )
         fake_module_file.parent.mkdir(parents=True, exist_ok=True)
         fake_module_file.touch()
 
