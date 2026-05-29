@@ -11,12 +11,11 @@ the two can be swapped via the provider factory in ``embed_provider.py``.
 
 from __future__ import annotations
 
-import logging
 from typing import Any, cast
 
-import httpx
+from agentalloy.lm_client import LMClientError
 
-logger = logging.getLogger(__name__)
+import httpx
 
 
 class OllamaEmbedClient:
@@ -53,8 +52,8 @@ class OllamaEmbedClient:
     def embed(self, *, model: str, texts: list[str]) -> list[list[float]]:
         """Batch-embed *texts* using the Ollama-native ``/api/embed`` endpoint.
 
-        The *model* parameter is accepted for protocol compatibility but is ignored —
-        the model is set at construction time.
+        The *model* parameter is passed to the API so callers can override the
+        construction-time model — mirroring the OpenAI-compatible client behaviour.
 
         Returns one vector per input text, in the same order.
         """
@@ -63,7 +62,7 @@ class OllamaEmbedClient:
 
         resp = httpx.post(
             f"{self._base_url}/api/embed",
-            json={"model": self._model, "input": texts, "keep_alive": self._keep_alive},
+            json={"model": model, "input": texts, "keep_alive": self._keep_alive},
             timeout=self._timeout,
         )
         resp.raise_for_status()
@@ -72,14 +71,9 @@ class OllamaEmbedClient:
         embeddings: list[list[float]] = cast(list[list[float]], data.get("embeddings", []))
 
         if len(embeddings) != len(texts):
-            logger.warning(
-                "Ollama returned %d embeddings for %d texts — truncating / padding to match",
-                len(embeddings),
-                len(texts),
+            raise LMClientError(
+                f"Ollama returned {len(embeddings)} embeddings for {len(texts)} texts"
             )
-            embeddings = embeddings[: len(texts)]
-            while len(embeddings) < len(texts):
-                embeddings.append([])
 
         return embeddings
 

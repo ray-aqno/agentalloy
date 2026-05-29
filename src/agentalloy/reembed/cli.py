@@ -560,19 +560,21 @@ def main(argv: list[str] | None = None) -> int:
             stats: ReembedStats
             if fragments:
                 embed_client: EmbedClient = get_embed_client(settings)
+                try:
+                    def _embed(text: str) -> list[float]:
+                        vectors = embed_client.embed(model=model_id, texts=[text])
+                        return vectors[0]
 
-                def _embed(text: str) -> list[float]:
-                    vectors = embed_client.embed(model=model_id, texts=[text])
-                    return vectors[0]
-
-                stats = reembed_fragments(
-                    fragments,
-                    embed_fn=_embed,
-                    vector_store=vs,
-                    embedding_model=model_id,
-                    progress_tty=sys.stderr.isatty(),
-                )
-                stats.log_summary()
+                    stats = reembed_fragments(
+                        fragments,
+                        embed_fn=_embed,
+                        vector_store=vs,
+                        embedding_model=model_id,
+                        progress_tty=sys.stderr.isatty(),
+                    )
+                    stats.log_summary()
+                finally:
+                    embed_client.close()
             else:
                 # --rebuild-fts with no fragments to embed
                 logger.info("no fragments to embed; running --rebuild-fts only")

@@ -56,8 +56,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     settings = get_settings()
     settings.ensure_data_dirs()
-    # Also ensure the container data dir exists (fixes Containerfile COPY issue)
-    Path("/app/data").mkdir(parents=True, exist_ok=True)
+    # Also ensure the container data dir exists (fixes Containerfile COPY issue).
+    # Only create /app/data in deployment contexts (containers); native installs
+    # that don't use /app should skip this silently.
+    if Path("/.dockerenv").exists() or Path("/app").is_dir():
+        Path("/app/data").mkdir(parents=True, exist_ok=True)
     store = LadybugStore(settings.ladybug_db_path)
     store.open()
     vector_store: VectorStore = open_or_create(settings.duckdb_path)

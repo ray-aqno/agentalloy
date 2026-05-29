@@ -302,7 +302,7 @@ def test_evaluate_phase_emits_advisory_to_stdout(tmp_path: Path, monkeypatch: py
     with (
         patch.object(sig, "_load_workflow_skill_for_phase", side_effect=mock_load),
         patch.object(sig, "_write_telemetry"),
-        patch("agentalloy.embed_provider.get_embed_client", side_effect=RuntimeError("no server")),
+        patch("agentalloy.install.subcommands.signal.get_embed_client", side_effect=RuntimeError("no server")),
     ):
         args = argparse.Namespace(prompt_file=str(prompt_file), tool=None, tool_path=None)
         sys.stdout = captured_stdout
