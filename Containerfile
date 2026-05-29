@@ -27,6 +27,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 # seeded corpus that ships in-repo. Then install the project itself.
 COPY README.md ./
 COPY src/ ./src/
+RUN mkdir -p data
 COPY data/ ./data/
 
 RUN uv sync --frozen --no-dev

@@ -14,10 +14,10 @@ from agentalloy.api.retrieve_models import (
     RetrieveQueryHit,
     RetrieveQueryResponse,
 )
+from agentalloy.embed_provider import EmbedClient
 from agentalloy.lm_client import (
     LMClientError,
     LMModelNotLoaded,
-    OpenAICompatClient,
 )
 from agentalloy.orchestration.compose import RetrievalStageError
 from agentalloy.reads import get_active_version_by_id
@@ -36,7 +36,7 @@ class RetrieveOrchestrator:
     def __init__(
         self,
         source: RuntimeCache | LadybugStore,
-        lm: OpenAICompatClient,
+        lm: EmbedClient,
         vector_store: VectorStore,
         telemetry: TelemetryWriter,
         *,

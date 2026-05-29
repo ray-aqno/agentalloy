@@ -24,10 +24,10 @@ from agentalloy.api.compose_models import (
     ErrorCode,
     LatencyBreakdown,
 )
+from agentalloy.embed_provider import EmbedClient
 from agentalloy.lm_client import (
     LMClientError,
     LMModelNotLoaded,
-    OpenAICompatClient,
 )
 from agentalloy.reads.models import ActiveFragment
 from agentalloy.retrieval.domain import (
@@ -75,7 +75,7 @@ class ComposeOrchestrator:
     def __init__(
         self,
         source: RuntimeCache | LadybugStore,
-        lm: OpenAICompatClient,
+        lm: EmbedClient,
         vector_store: VectorStore,
         telemetry: TelemetryWriter,
         *,
@@ -88,12 +88,12 @@ class ComposeOrchestrator:
         self._embedding_model = embedding_model
 
     @property
-    def lm(self) -> OpenAICompatClient:
+    def lm(self) -> EmbedClient:
         """Test hook: allows tests to monkeypatch the underlying embed client."""
         return self._lm
 
     @lm.setter
-    def lm(self, client: OpenAICompatClient) -> None:
+    def lm(self, client: EmbedClient) -> None:
         self._lm = client
 
     async def compose(self, req: ComposeRequest) -> ComposedResult | EmptyResult:

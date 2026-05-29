@@ -8,7 +8,8 @@ from typing import Literal
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
-from agentalloy.lm_client import LMClientError, OpenAICompatClient
+from agentalloy.embed_provider import EmbedClient
+from agentalloy.lm_client import LMClientError
 from agentalloy.storage.ladybug import LadybugStore
 from agentalloy.storage.vector_store import VectorStore
 
@@ -33,7 +34,7 @@ class HealthChecker:
     def __init__(
         self,
         store: LadybugStore,
-        lm: OpenAICompatClient,
+        lm: EmbedClient,
         vector_store: VectorStore,
         embedding_model: str,
         *,

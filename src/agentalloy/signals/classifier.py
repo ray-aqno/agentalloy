@@ -21,12 +21,10 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+from agentalloy.embed_provider import EmbedClient
 from agentalloy.signals.predicates import PredicateContext, PredicateResult
-
-if TYPE_CHECKING:
-    from agentalloy.lm_client import OpenAICompatClient
 
 _log = logging.getLogger(__name__)
 
@@ -108,7 +106,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
 def _intent_similarity(
     text: str,
     intent: str,
-    lm_client: OpenAICompatClient,
+    lm_client: EmbedClient,
     model: str,
     threshold: float = _SIMILARITY_THRESHOLD,
 ) -> PredicateResult:
@@ -131,7 +129,7 @@ def _intent_similarity(
 def _topic_similarity(
     text: str,
     topics: list[str],
-    lm_client: OpenAICompatClient,
+    lm_client: EmbedClient,
     model: str,
     threshold: float = _SIMILARITY_THRESHOLD,
 ) -> PredicateResult:
@@ -152,7 +150,7 @@ def _topic_similarity(
 def eval_user_intent_matches(
     args: dict[str, Any],
     ctx: PredicateContext,
-    lm_client: OpenAICompatClient,
+    lm_client: EmbedClient,
     model: str,
 ) -> PredicateResult:
     # recent_prompts arg is not supported; similarity runs against recent_prompt_text only.
@@ -166,7 +164,7 @@ def eval_user_intent_matches(
 def eval_agent_intent_matches(
     args: dict[str, Any],
     ctx: PredicateContext,
-    lm_client: OpenAICompatClient,
+    lm_client: EmbedClient,
     model: str,
 ) -> PredicateResult:
     intent = args.get("intent", "")
@@ -180,7 +178,7 @@ def eval_agent_intent_matches(
 def eval_artifact_completeness(
     args: dict[str, Any],
     ctx: PredicateContext,
-    lm_client: OpenAICompatClient,
+    lm_client: EmbedClient,
     model: str,
 ) -> PredicateResult:
     # Soft advisory only — gate handling (advisory emission) lives in gates.py.
@@ -191,7 +189,7 @@ def eval_artifact_completeness(
 def eval_prompt_topic_matches(
     args: dict[str, Any],
     ctx: PredicateContext,
-    lm_client: OpenAICompatClient,
+    lm_client: EmbedClient,
     model: str,
 ) -> PredicateResult:
     topics = args.get("topics", [])
@@ -204,7 +202,7 @@ def eval_prompt_topic_matches(
 SEMANTIC_PREDICATES: dict[
     str,
     Callable[
-        [dict[str, Any], PredicateContext, OpenAICompatClient, str],
+        [dict[str, Any], PredicateContext, EmbedClient, str],
         PredicateResult,
     ],
 ] = {

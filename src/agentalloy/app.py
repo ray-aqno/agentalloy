@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request, status
@@ -26,7 +27,7 @@ from agentalloy.api.skill_router import router as skill_router
 from agentalloy.api.telemetry_router import TelemetryQuerier
 from agentalloy.api.telemetry_router import router as telemetry_router
 from agentalloy.config import get_settings
-from agentalloy.lm_client import OpenAICompatClient
+from agentalloy.embed_provider import EmbedClient, get_embed_client
 from agentalloy.orchestration.compose import (
     AssemblyStageError,
     ComposeOrchestrator,
@@ -55,10 +56,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     settings = get_settings()
     settings.ensure_data_dirs()
+    # Also ensure the container data dir exists (fixes Containerfile COPY issue)
+    Path("/app/data").mkdir(parents=True, exist_ok=True)
     store = LadybugStore(settings.ladybug_db_path)
     store.open()
     vector_store: VectorStore = open_or_create(settings.duckdb_path)
-    embed_client = OpenAICompatClient(settings.runtime_embed_base_url)
+    embed_client: EmbedClient = get_embed_client(settings)
     telemetry = DuckDBTelemetryWriter(vector_store)
 
     # --- NXS-777: startup-time cache load ---
@@ -108,7 +111,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.embed_client = embed_client
     app.state.vector_store = vector_store
 
-    # Async client for embed proxy passthrough (OpenAICompatClient is sync)
+    # Async client for embed proxy passthrough
     import contextlib as _ctx
 
     embed_async_client: httpx.AsyncClient | None = None

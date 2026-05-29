@@ -16,9 +16,10 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from agentalloy.api.proxy_models import ProxyRequest
+from agentalloy.embed_provider import EmbedClient
 from agentalloy.signals.gates import decide_transition
 from agentalloy.signals.prefilter import check_prefilter
 from agentalloy.signals.skill_loader import (  # type: ignore[reportPrivateUsage]
@@ -27,9 +28,6 @@ from agentalloy.signals.skill_loader import (  # type: ignore[reportPrivateUsage
     _read_phase,
     _write_phase_atomic,
 )
-
-if TYPE_CHECKING:
-    from agentalloy.lm_client import OpenAICompatClient
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +59,7 @@ def _extract_task_from_messages(request: ProxyRequest) -> str | None:
 async def evaluate_signal(
     request: ProxyRequest,
     cwd: Path,
-    embed_client: OpenAICompatClient | None = None,
+    embed_client: EmbedClient | None = None,
 ) -> SignalResult:
     """Evaluate the signal layer for an incoming proxy request.
 

@@ -57,6 +57,7 @@ services:
     environment:
       RUNTIME_EMBED_BASE_URL: "http://ollama:11434"
       RUNTIME_EMBEDDING_MODEL: "qwen3-embedding:0.6b"
+      EMBEDDING_PROVIDER: "openai_compat"
       LADYBUG_DB_PATH: "/app/data/ladybug"
       DUCKDB_PATH: "/app/data/skills.duck"
       LOG_LEVEL: "INFO"

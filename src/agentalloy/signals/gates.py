@@ -6,8 +6,9 @@ SDD phase graph (linear): spec → design → build → qa → ship
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
+from agentalloy.embed_provider import EmbedClient
 from agentalloy.signals.predicates import (
     PREDICATES,
     PredicateContext,
@@ -16,9 +17,6 @@ from agentalloy.signals.predicates import (
     _read_file,  # pyright: ignore[reportPrivateUsage]
     evaluate_predicate,
 )
-
-if TYPE_CHECKING:
-    from agentalloy.lm_client import OpenAICompatClient
 
 # Linear SDD phase graph: phase → next phase
 _PHASE_GRAPH: dict[str, str] = {
@@ -83,7 +81,7 @@ def _evaluate_single(
     predicate_name: str,
     args: dict[str, Any],
     ctx: PredicateContext,
-    lm_client: OpenAICompatClient | None,
+    lm_client: EmbedClient | None,
     qwen_calls: list[int],
 ) -> PredicateResult:
     if predicate_name in PREDICATES:
@@ -110,7 +108,7 @@ def _evaluate_single(
 def evaluate_node(
     spec: Any,
     ctx: PredicateContext,
-    lm_client: OpenAICompatClient | None,
+    lm_client: EmbedClient | None,
     qwen_calls: list[int],
     depth: int = 0,
 ) -> tuple[PredicateResult, list[GateEvaluation]]:
@@ -189,7 +187,7 @@ def evaluate_node(
 def evaluate_gates(
     gate_spec: dict[str, Any],
     ctx: PredicateContext,
-    lm_client: OpenAICompatClient | None = None,
+    lm_client: EmbedClient | None = None,
 ) -> list[GateEvaluation]:
     """Evaluate the exit_gates spec and return a flat list of GateEvaluation records."""
     qwen_calls: list[int] = [0]
@@ -227,7 +225,7 @@ def decide_transition(
     current_phase: str,
     gate_spec: dict[str, Any],
     ctx: PredicateContext,
-    lm_client: OpenAICompatClient | None = None,
+    lm_client: EmbedClient | None = None,
     next_phase_hint: str | None = None,
 ) -> PhaseTransitionDecision:
     """Evaluate gates and decide whether to transition to the next phase."""

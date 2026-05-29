@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Protocol, TypedDict, runtime_checkable
 
 from agentalloy.api.compose_models import Phase
-from agentalloy.lm_client import OpenAICompatClient
+from agentalloy.embed_provider import EmbedClient
 from agentalloy.reads import ActiveFragment
 from agentalloy.reads.models import SkillClass
 from agentalloy.retrieval.embedding_errors import (
@@ -245,7 +245,7 @@ def _bm25_fallback_result(
 
 def retrieve_domain_candidates(
     source: object,
-    lm: OpenAICompatClient,
+    lm: EmbedClient,
     vector_store: VectorStore,
     *,
     task: str,
