@@ -561,6 +561,7 @@ def main(argv: list[str] | None = None) -> int:
             if fragments:
                 embed_client: EmbedClient = get_embed_client(settings)
                 try:
+
                     def _embed(text: str) -> list[float]:
                         vectors = embed_client.embed(model=model_id, texts=[text])
                         return vectors[0]

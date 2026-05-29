@@ -8,14 +8,13 @@ compat layer.
 The interface mirrors the ``EmbedClient`` protocol so
 the two can be swapped via the provider factory in ``embed_provider.py``.
 """
-
 from __future__ import annotations
 
 from typing import Any, cast
 
-from agentalloy.lm_client import LMClientError
-
 import httpx
+
+from agentalloy.lm_client import LMClientError
 
 
 class OllamaEmbedClient:
@@ -30,6 +29,18 @@ class OllamaEmbedClient:
     keep_alive:
         How long Ollama should keep the model loaded after the call
         (passed as ``keep_alive`` query parameter).  Defaults to ``"5m"``.
+    timeout:
+        Request timeout in seconds.  Defaults to 30.0.
+
+    Notes
+    -----
+    The ``model`` parameter is passed to the API so callers can override the
+    construction-time model — mirroring the OpenAI-compatible client behaviour.
+
+    Raises
+    ------
+    LMClientError
+        If Ollama returns the wrong number of embeddings.
     """
 
     def __init__(
@@ -56,6 +67,11 @@ class OllamaEmbedClient:
         construction-time model — mirroring the OpenAI-compatible client behaviour.
 
         Returns one vector per input text, in the same order.
+
+        Raises
+        ------
+        LMClientError
+            If Ollama returns the wrong number of embeddings.
         """
         if not texts:
             return []
