@@ -717,7 +717,16 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     default_compose = "compose.radeon.yaml" if cfg.recommended_host == "radeon" else "compose.yaml"
 
     def _has_assets(d: Path) -> bool:
-        return (d / default_compose).exists() and (d / "Containerfile").exists()
+        # Match _check_image_build_deps in preflight.py: Containerfile OR Dockerfile.
+        has_build_file = (d / "Containerfile").exists() or (d / "Dockerfile").exists()
+        return (d / default_compose).exists() and has_build_file
+
+    def _resolve_user_path(raw: str) -> Path:
+        """Accept either a directory (append default_compose) or a compose file path."""
+        p = Path(raw).expanduser().resolve()
+        if p.is_dir():
+            return p / default_compose
+        return p
 
     candidates = [Path.cwd(), Path(__file__).resolve().parents[4]]
     compose_path: Path | None = None
@@ -730,10 +739,10 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         if cfg.non_interactive:
             _print(
                 "  [red]Could not locate the agentalloy repo on disk.[/red]\n"
-                f"  Looked for {default_compose} + Containerfile in:\n"
+                f"  Looked for {default_compose} + (Containerfile or Dockerfile) in:\n"
                 + "\n".join(f"    - {c}" for c in candidates)
-                + "\n  Container deployment requires a checkout (the Containerfile\n"
-                "  build context needs pyproject.toml, src/, data/). Either:\n"
+                + "\n  Container deployment requires a checkout (the build context\n"
+                "  needs pyproject.toml, src/, data/). Either:\n"
                 "    a) cd into your agentalloy clone and re-run setup, or\n"
                 "    b) install editably: `git clone … && cd agentalloy && \n"
                 "       uv tool install --editable .`"
@@ -742,18 +751,17 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         _print(
             "  [yellow]Could not auto-locate the agentalloy repo.[/yellow] "
             "Container deployment\n"
-            "  needs the full source tree (Containerfile build context). "
-            "Enter the path\n"
-            "  to your agentalloy clone:"
+            "  needs the full source tree (build context). Enter the path to your\n"
+            "  agentalloy clone (or directly to a compose YAML):"
         )
         custom = input("  ").strip()
-        compose_path = Path(custom).expanduser().resolve() / default_compose
+        compose_path = _resolve_user_path(custom)
     elif not cfg.non_interactive:
         _print(f"\n  Detected compose file: {compose_path} — correct? [Y/n]")
         ans = input("  ").strip().lower()
         if ans in ("n", "no"):
-            custom = input("  Enter compose file path: ").strip()
-            compose_path = Path(custom).expanduser().resolve()
+            custom = input("  Enter compose file path (or repo dir): ").strip()
+            compose_path = _resolve_user_path(custom)
     cfg.compose_file = str(compose_path.resolve())
 
     # 4. Run container preflight

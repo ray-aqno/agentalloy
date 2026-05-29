@@ -1266,6 +1266,124 @@ class TestContainerFlow:
         assert "could not locate" in out
         assert "clone" in out
 
+    def test_compose_accepts_dockerfile_alternative(
+        self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
+    ):
+        """Asset detection matches preflight: Dockerfile satisfies the build-deps check too."""
+        SetupConfig, run_setup = self._import_run_setup()
+
+        (tmp_path / "compose.yaml").write_text("services: {}\n")
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n")  # not Containerfile
+
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._detect_compose_binary",
+                return_value=("podman compose", "/usr/bin/podman"),
+            ),
+            patch("subprocess.run") as mock_run,
+            patch("pathlib.Path.cwd", return_value=tmp_path),
+        ):
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_run.return_value = mock_result
+
+            rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
+
+        assert rc == 0
+        import agentalloy.install.state as state_mod
+
+        st = state_mod.load_state()
+        assert st["compose_file"] == str(tmp_path / "compose.yaml")
+
+    def test_interactive_fallback_accepts_directory_path(
+        self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
+    ):
+        """When auto-detect fails, user can paste a clone directory (default compose appended)."""
+        SetupConfig, run_setup = self._import_run_setup()
+
+        # Real clone elsewhere
+        clone = tmp_path / "clone"
+        clone.mkdir()
+        (clone / "compose.yaml").write_text("services: {}\n")
+        (clone / "Containerfile").write_text("FROM scratch\n")
+
+        # Empty cwd + fake module location → auto-detect fails, prompt fires.
+        fake_module_file = (
+            tmp_path / "sp" / "agentalloy" / "install" / "subcommands" / "simple_setup.py"
+        )
+        fake_module_file.parent.mkdir(parents=True, exist_ok=True)
+        fake_module_file.touch()
+        empty_cwd = tmp_path / "empty"
+        empty_cwd.mkdir()
+
+        import agentalloy.install.subcommands.simple_setup as setup_mod
+
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._detect_compose_binary",
+                return_value=("podman compose", "/usr/bin/podman"),
+            ),
+            patch("subprocess.run") as mock_run,
+            patch("pathlib.Path.cwd", return_value=empty_cwd),
+            patch.object(setup_mod, "__file__", str(fake_module_file)),
+            patch("builtins.input", side_effect=[str(clone), "y"]),
+        ):
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_run.return_value = mock_result
+
+            rc = run_setup(SetupConfig(deployment="container", non_interactive=False))
+
+        assert rc == 0
+        import agentalloy.install.state as state_mod
+
+        st = state_mod.load_state()
+        assert st["compose_file"] == str(clone / "compose.yaml")
+
+    def test_interactive_fallback_accepts_compose_file_path(
+        self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
+    ):
+        """User can also paste a direct path to the compose YAML, not a directory."""
+        SetupConfig, run_setup = self._import_run_setup()
+
+        clone = tmp_path / "clone"
+        clone.mkdir()
+        compose_file = clone / "compose.yaml"
+        compose_file.write_text("services: {}\n")
+        (clone / "Containerfile").write_text("FROM scratch\n")
+
+        fake_module_file = (
+            tmp_path / "sp" / "agentalloy" / "install" / "subcommands" / "simple_setup.py"
+        )
+        fake_module_file.parent.mkdir(parents=True, exist_ok=True)
+        fake_module_file.touch()
+        empty_cwd = tmp_path / "empty"
+        empty_cwd.mkdir()
+
+        import agentalloy.install.subcommands.simple_setup as setup_mod
+
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._detect_compose_binary",
+                return_value=("podman compose", "/usr/bin/podman"),
+            ),
+            patch("subprocess.run") as mock_run,
+            patch("pathlib.Path.cwd", return_value=empty_cwd),
+            patch.object(setup_mod, "__file__", str(fake_module_file)),
+            patch("builtins.input", side_effect=[str(compose_file), "y"]),
+        ):
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_run.return_value = mock_result
+
+            rc = run_setup(SetupConfig(deployment="container", non_interactive=False))
+
+        assert rc == 0
+        import agentalloy.install.state as state_mod
+
+        st = state_mod.load_state()
+        assert st["compose_file"] == str(compose_file)
+
     def test_apple_silicon_warning_auto_continues_non_interactive(
         self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
     ):
