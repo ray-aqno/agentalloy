@@ -1461,6 +1461,115 @@ class TestContainerFlow:
         out = capsys.readouterr().out.lower()
         assert "apple silicon" not in out
 
+    def test_container_env_uses_ollama_port_for_default_stack(
+        self, tmp_state_dir: tuple[Path, Path]
+    ):
+        """compose.yaml stack writes host .env pointing at ollama:11434 with the right model."""
+        SetupConfig, run_setup = self._import_run_setup()
+
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._detect_compose_binary",
+                return_value=("podman compose", "/usr/bin/podman"),
+            ),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_run.return_value = mock_result
+
+            rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
+
+        assert rc == 0
+        import agentalloy.install.state as state_mod
+
+        env_text = state_mod.env_path().read_text()
+        assert "RUNTIME_EMBED_BASE_URL=http://localhost:11434" in env_text
+        assert "RUNTIME_EMBEDDING_MODEL=qwen3-embedding:0.6b" in env_text
+        # Regression guard: must not be empty or pointing at the agentalloy service.
+        assert 'RUNTIME_EMBEDDING_MODEL=""' not in env_text
+        assert "RUNTIME_EMBED_BASE_URL=http://localhost:47950" not in env_text
+
+    def test_container_env_uses_lm_studio_port_for_radeon_stack(
+        self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
+    ):
+        """compose.radeon.yaml stack writes host .env pointing at LM Studio on host:1234."""
+        SetupConfig, run_setup = self._import_run_setup()
+
+        # Put a radeon compose file in cwd so the auto-detect picks it up.
+        (tmp_path / "compose.radeon.yaml").write_text("services: {}\n")
+        (tmp_path / "Containerfile").write_text("FROM scratch\n")
+
+        # Plant detect.json so recommended_host=radeon → default_compose=radeon.
+        (self.tmp_data / "outputs").mkdir(parents=True, exist_ok=True)
+        (self.tmp_data / "outputs" / "detect.json").write_text(
+            json.dumps(
+                {
+                    "gpu": {
+                        "discrete": [{"vendor": "amd", "model": "RX 7900", "vram_gb": 24}],
+                        "integrated": [],
+                    },
+                    "runner": "ollama",
+                }
+            )
+        )
+
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._detect_compose_binary",
+                return_value=("podman compose", "/usr/bin/podman"),
+            ),
+            patch("subprocess.run") as mock_run,
+            patch("pathlib.Path.cwd", return_value=tmp_path),
+        ):
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_run.return_value = mock_result
+
+            rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
+
+        assert rc == 0
+        import agentalloy.install.state as state_mod
+
+        env_text = state_mod.env_path().read_text()
+        assert "RUNTIME_EMBED_BASE_URL=http://localhost:1234" in env_text
+        assert "RUNTIME_EMBEDDING_MODEL=qwen3-embedding:0.6b" in env_text
+
+    def test_container_runs_install_packs_inside_container(self, tmp_state_dir: tuple[Path, Path]):
+        """Container flow invokes `<binary> exec agentalloy uv run agentalloy install-packs`."""
+        SetupConfig, run_setup = self._import_run_setup()
+
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._detect_compose_binary",
+                return_value=("podman compose", "/usr/bin/podman"),
+            ),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_run.return_value = mock_result
+
+            rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
+
+        assert rc == 0
+        # Find the install-packs call among all subprocess.run invocations.
+        calls = [c.args[0] for c in mock_run.call_args_list if c.args]
+        packs_calls = [
+            argv
+            for argv in calls
+            if isinstance(argv, list)
+            and "exec" in argv
+            and "install-packs" in argv
+            and "agentalloy" in argv
+        ]
+        assert packs_calls, f"install-packs exec call not found in subprocess.run history: {calls}"
+        argv = packs_calls[0]
+        assert argv[0] == "/usr/bin/podman"  # uses the detected binary, not literal "podman"
+        # Order matters: <binary> exec <container> uv run agentalloy install-packs
+        assert argv[:3] == ["/usr/bin/podman", "exec", "agentalloy"]
+        assert argv[-3:] == ["uv", "run", "agentalloy"] or argv[-1] == "install-packs"
+
     def test_verify_failures_surfaced_inline(
         self,
         tmp_state_dir: tuple[Path, Path],
