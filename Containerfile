@@ -23,18 +23,19 @@ COPY pyproject.toml uv.lock ./
 # (needs README.md, src/, etc. — added in the next layer).
 RUN uv sync --frozen --no-dev --no-install-project
 
-# Copy the project source, README (used by hatchling for metadata), and the
-# seeded corpus that ships in-repo. Then install the project itself.
+# Copy the project source and README (used by hatchling for metadata),
+# then install the project itself.
 COPY README.md ./
 COPY src/ ./src/
+
+# Create an empty data dir so the image is runnable without a bind mount.
+# The corpus (LadybugDB + DuckDB) is not shipped in the repo — it's
+# generated locally on first install via `agentalloy install-packs` and
+# `agentalloy.migrate`. compose.yaml bind-mounts a host volume onto
+# /app/data so user data persists across container restarts.
 RUN mkdir -p data
-COPY data/ ./data/
 
 RUN uv sync --frozen --no-dev
-
-# The data directory is bind-mounted at runtime (see compose.yaml) so user
-# ingestions persist on the host. The COPY above provides a sane default
-# for users running the image directly without compose.
 
 ENV LADYBUG_DB_PATH=/app/data/ladybug \
     DUCKDB_PATH=/app/data/skills.duck \
