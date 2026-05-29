@@ -1554,21 +1554,21 @@ class TestContainerFlow:
 
         assert rc == 0
         # Find the install-packs call among all subprocess.run invocations.
-        calls = [c.args[0] for c in mock_run.call_args_list if c.args]
-        packs_calls = [
+        calls: list[list[str]] = []
+        for c in mock_run.call_args_list:
+            if c.args and isinstance(c.args[0], list):
+                calls.append([str(x) for x in c.args[0]])  # type: ignore[arg-type]
+        packs_calls: list[list[str]] = [
             argv
             for argv in calls
-            if isinstance(argv, list)
-            and "exec" in argv
-            and "install-packs" in argv
-            and "agentalloy" in argv
+            if "exec" in argv and "install-packs" in argv and "agentalloy" in argv
         ]
         assert packs_calls, f"install-packs exec call not found in subprocess.run history: {calls}"
-        argv = packs_calls[0]
+        argv: list[str] = packs_calls[0]
         assert argv[0] == "/usr/bin/podman"  # uses the detected binary, not literal "podman"
         # Order matters: <binary> exec <container> uv run agentalloy install-packs
         assert argv[:3] == ["/usr/bin/podman", "exec", "agentalloy"]
-        assert argv[-3:] == ["uv", "run", "agentalloy"] or argv[-1] == "install-packs"
+        assert argv[-1] == "install-packs"
 
     def test_verify_failures_surfaced_inline(
         self,
