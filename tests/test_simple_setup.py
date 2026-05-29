@@ -1160,6 +1160,120 @@ class TestContainerFlow:
         # Should be absolute path
         assert st["compose_file"].startswith("/")
 
+    def test_compose_resolved_from_repo_root_not_cwd(
+        self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
+    ):
+        """Container setup resolves compose file from the package repo root, ignoring cwd.
+
+        Regression guard: previously `Path.cwd() / "compose.yaml"` was used, so users
+        running `agentalloy setup` from outside the repo got preflight failures.
+        """
+        SetupConfig, run_setup = self._import_run_setup()
+
+        # Compute the repo root the production code will resolve to.
+        import agentalloy.install.subcommands.simple_setup as setup_mod
+
+        expected_root = Path(setup_mod.__file__).resolve().parents[4]
+
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._detect_compose_binary",
+                return_value=("podman compose", "/usr/bin/podman"),
+            ),
+            patch("subprocess.run") as mock_run,
+            # Point cwd at an empty tmp dir with no compose files — if the code
+            # still used cwd, preflight would fail.
+            patch("pathlib.Path.cwd", return_value=tmp_path),
+        ):
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_run.return_value = mock_result
+
+            rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
+
+        assert rc == 0
+        import agentalloy.install.state as state_mod
+
+        st = state_mod.load_state()
+        assert st["compose_file"] == str(expected_root / "compose.yaml")
+
+    def test_apple_silicon_warning_auto_continues_non_interactive(
+        self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+    ):
+        """On Darwin/arm64, container setup prints Metal warning but proceeds in non-interactive mode."""
+        SetupConfig, run_setup = self._import_run_setup()
+
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._detect_compose_binary",
+                return_value=("podman compose", "/usr/bin/podman"),
+            ),
+            patch("subprocess.run") as mock_run,
+            patch("platform.system", return_value="Darwin"),
+            patch("platform.machine", return_value="arm64"),
+        ):
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_run.return_value = mock_result
+
+            rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
+
+        assert rc == 0
+        out = capsys.readouterr().out.lower()
+        assert "apple silicon" in out
+        assert "cpu-only" in out
+
+    def test_apple_silicon_warning_cancels_on_no(
+        self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+    ):
+        """On Darwin/arm64 interactive, answering 'n' to the Metal warning cancels setup."""
+        SetupConfig, run_setup = self._import_run_setup()
+
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._detect_compose_binary",
+                return_value=("podman compose", "/usr/bin/podman"),
+            ),
+            patch("subprocess.run") as mock_run,
+            patch("platform.system", return_value="Darwin"),
+            patch("platform.machine", return_value="arm64"),
+            patch("builtins.input", return_value="n"),
+        ):
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_run.return_value = mock_result
+
+            rc = run_setup(SetupConfig(deployment="container", non_interactive=False))
+
+        assert rc == 1
+        out = capsys.readouterr().out.lower()
+        assert "cancelled" in out
+
+    def test_apple_silicon_warning_skipped_on_linux(
+        self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+    ):
+        """On non-Darwin hosts, the Apple Silicon Metal warning does not appear."""
+        SetupConfig, run_setup = self._import_run_setup()
+
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._detect_compose_binary",
+                return_value=("podman compose", "/usr/bin/podman"),
+            ),
+            patch("subprocess.run") as mock_run,
+            patch("platform.system", return_value="Linux"),
+            patch("platform.machine", return_value="x86_64"),
+        ):
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_run.return_value = mock_result
+
+            rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
+
+        assert rc == 0
+        out = capsys.readouterr().out.lower()
+        assert "apple silicon" not in out
+
     def test_native_deployment_records_state(self, tmp_state_dir: tuple[Path, Path]):
         """Native deployment records deployment='native' in state on success."""
         SetupConfig, run_setup = self._import_run_setup()
