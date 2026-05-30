@@ -964,8 +964,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
             return 1
         if not _remove_containers(binary_path, [name for name, _ in existing]):
             _print(
-                "  [red]Failed to remove one or more containers; "
-                "see errors above. Aborting.[/red]"
+                "  [red]Failed to remove one or more containers; see errors above. Aborting.[/red]"
             )
             return 1
         _print("  [green]  Removed.[/green]\n")
