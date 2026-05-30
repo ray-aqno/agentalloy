@@ -697,6 +697,139 @@ def _wait_for_one_shot(binary_path: str, container_name: str, *, timeout: int) -
         return None
 
 
+# Fixed container names declared in compose.yaml via `container_name:`.
+# Used as a fallback when the project-label query doesn't return them —
+# e.g. when the user has overridden COMPOSE_PROJECT_NAME, so labels read
+# `com.docker.compose.project=<other>` and the label filter misses them.
+# The container_names themselves are hard-coded in compose.yaml so they
+# WILL collide regardless of project name; we must clean them up.
+_FIXED_CONTAINER_NAMES: tuple[str, ...] = (
+    "agentalloy",
+    "agentalloy-init",
+    "agentalloy-ollama",
+    "agentalloy-ollama-pull",
+)
+
+
+def _list_project_containers(binary_path: str) -> list[tuple[str, str]]:
+    """Return [(name, status), ...] for containers belonging to this project.
+
+    Two-pass detection:
+      1. Filter by compose project label (covers the common case where the
+         compose project name defaults to ``agentalloy`` from the repo dir).
+      2. Look up the fixed container_names from compose.yaml by name. This
+         catches installs where the user set ``COMPOSE_PROJECT_NAME`` to
+         something else (so the label is wrong) but the ``container_name:``
+         directives still collide on a fresh setup.
+    """
+    out: list[tuple[str, str]] = []
+
+    def _record(line: str) -> None:
+        # Require the tab delimiter from our --format string so we don't
+        # accidentally parse unrelated single-token output (e.g. mocked
+        # subprocess returns in tests).
+        if "\t" not in line:
+            return
+        name, _, status = line.partition("\t")
+        name = name.strip()
+        if name and not any(n == name for n, _ in out):
+            out.append((name, status.strip() or "unknown"))
+
+    # Pass 1: label-based filter (covers the default project name).
+    for label in (
+        "io.podman.compose.project=agentalloy",
+        "com.docker.compose.project=agentalloy",
+    ):
+        try:
+            result = subprocess.run(  # noqa: S603 — fixed argv, binary_path from shutil.which
+                [
+                    binary_path,
+                    "ps",
+                    "-a",
+                    "--filter",
+                    f"label={label}",
+                    "--format",
+                    "{{.Names}}\t{{.Status}}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+        if result.returncode != 0:
+            continue
+        for line in result.stdout.splitlines():
+            _record(line)
+
+    # Pass 2: by fixed container_name — catches projects renamed via
+    # COMPOSE_PROJECT_NAME where the label filter misses them.
+    for fixed_name in _FIXED_CONTAINER_NAMES:
+        if any(n == fixed_name for n, _ in out):
+            continue
+        try:
+            result = subprocess.run(  # noqa: S603 — fixed argv, binary_path from shutil.which
+                [
+                    binary_path,
+                    "ps",
+                    "-a",
+                    "--filter",
+                    f"name=^{fixed_name}$",
+                    "--format",
+                    "{{.Names}}\t{{.Status}}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+        if result.returncode != 0:
+            continue
+        for line in result.stdout.splitlines():
+            _record(line)
+
+    return out
+
+
+def _remove_containers(binary_path: str, names: list[str]) -> bool:
+    """Force-remove the given containers. Retries once after a short sleep
+    to handle podman's dependency-graph race when sibling containers in
+    the same project reference each other via --requires.
+
+    Returns True if all names are gone after the operation.
+    """
+    if not names:
+        return True
+
+    def _try_rm(targets: list[str]) -> None:
+        try:
+            subprocess.run(  # noqa: S603 — fixed argv, binary_path from shutil.which
+                [binary_path, "rm", "-f", *targets],
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+                timeout=60,
+            )
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            # Don't crash the wizard — fall through and let the post-rm
+            # listing decide whether the cleanup succeeded. The caller
+            # prints a remediation hint when the return value is False.
+            _print(f"  [yellow]  rm -f failed: {exc}; will re-check state.[/yellow]")
+
+    # First pass — best effort, errors expected for containers with
+    # dependents that haven't been removed yet.
+    _try_rm(names)
+    survivors = [n for n, _ in _list_project_containers(binary_path) if n in names]
+    if not survivors:
+        return True
+    # Retry the survivors after a brief pause so podman can settle its
+    # dependency cache.
+    time.sleep(2)
+    _try_rm(survivors)
+    final = [n for n, _ in _list_project_containers(binary_path) if n in names]
+    return not final
+
+
 def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     """Execute the container deployment flow.
 
@@ -857,16 +990,54 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
             return 1
     _print()
 
+    # 6.5. Check for stale containers from a prior project run. podman-compose
+    # papers over "name already in use" errors by silently `podman start`ing
+    # the existing container — which "succeeds" but the container immediately
+    # re-exits with its old exit code, and the wizard then bails with a
+    # confusing "init exited 1" message. Surface this up front and let the
+    # user remove them. We filter by the project label so we don't touch
+    # other agentalloy:local containers (e.g. from a parallel checkout).
+    existing = _list_project_containers(binary_path)
+    if existing:
+        _print("[bold]Existing AgentAlloy containers detected:[/bold]")
+        for name, status in existing:
+            _print(f"  - {name}  [dim]({status})[/dim]")
+        _print(
+            f"  [dim]{cfg.compose_binary} will misbehave if these stay around "
+            "(name collisions, stale exit codes, dangling dependency graphs).[/dim]"
+        )
+        if cfg.non_interactive:
+            _print("  [dim]non-interactive: removing automatically[/dim]")
+            confirm_rm = "y"
+        else:
+            # Use _prompt() so non-TTY stdin (CI pipes, redirected input)
+            # falls back to the default ("Y") instead of EOFError'ing on
+            # raw input(). Defaulting to "yes" matches the [Y/n] UX shown.
+            confirm_rm = _prompt("  Remove them and continue?", default="Y").strip().lower()
+        if confirm_rm not in ("", "y", "yes"):
+            _print(
+                "[yellow]Setup cancelled. Remove the containers manually "
+                "or re-run setup and accept removal.[/yellow]"
+            )
+            return 1
+        if not _remove_containers(binary_path, [name for name, _ in existing]):
+            _print(
+                "  [red]Failed to remove one or more containers; see errors above. Aborting.[/red]"
+            )
+            return 1
+        _print("  [green]  Removed.[/green]\n")
+
     # 7. Bring up the stack piecewise so the corpus ingest doesn't race the
     # main service for the kuzu DB lock. kuzu is single-writer: if the
     # agentalloy service is already up when we run `install-packs`, every
     # ingest opens a second kuzu handle against /app/data/ladybug and dies
     # with "Could not set lock on file". So:
-    #   (a) up agentalloy-init (transitively starts ollama + ollama-pull,
-    #       runs schema migrations, exits),
-    #   (b) run install-packs in a one-shot container against the shared
-    #       volume while no one holds the lock,
-    #   (c) up the main agentalloy service.
+    #   (a) up agentalloy-init alone (no depends_on; runs schema
+    #       migrations and exits),
+    #   (b) up ollama + ollama-pull and wait for the model to cache (8a),
+    #   (c) run install-packs in a one-shot container that joins
+    #       ollama's network namespace (8b), while no one holds the lock,
+    #   (d) up the main agentalloy service (step 9).
     _print("[bold]Running container setup...[/bold]")
     _print("  [dim]-> Building image and starting init services[/dim]")
     init_cmd = [
@@ -912,55 +1083,124 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         return 1
     _print("  [green]  Init complete (migrations applied).[/green]")
 
-    # 8. Install skill packs in a one-shot container BEFORE the main service
-    # starts. Allow compose to bring up dependencies (ollama, ollama-pull)
-    # if they aren't already running — install-packs' bulk-reembed step
-    # talks to the ollama service, so it needs to be up. `-T` disables
-    # TTY allocation so output is captured cleanly. No `--entrypoint`
-    # override needed: the image has no ENTRYPOINT, only CMD, which the
-    # trailing argv replaces. `compose run` does NOT start the long-running
-    # `agentalloy` service container, so no kuzu lock contention.
-    _print("  [dim]-> Installing skill packs (one-shot, before service starts)[/dim]")
-    packs_cmd = [
+    # 8a. Bring up ollama + ollama-pull before install-packs. The
+    # `agentalloy-init` service has no depends_on (it only needs the
+    # data volume), so the prior `compose up` step did NOT transitively
+    # start ollama. install-packs' bulk-reembed step embeds against
+    # the ollama container, so without this step every embed call
+    # fails and the corpus ships without vectors. We also wait for
+    # `ollama-pull` (one-shot) to finish so the embedding model is
+    # cached before install-packs starts its first embed call.
+    ollama_up_cmd = [
         binary_path,
         "compose",
         "-f",
         cfg.compose_file,
+        "up",
+        "-d",
+        "ollama",
+        "ollama-pull",
+    ]
+    _print("  [dim]-> Starting ollama for embedding[/dim]")
+    _print(f"  $ {' '.join(ollama_up_cmd)}")
+    try:
+        ollama_result = subprocess.run(
+            ollama_up_cmd, stdout=sys.stdout, stderr=sys.stderr, timeout=300
+        )
+        if ollama_result.returncode != 0:
+            _print("  [red]  compose up (ollama) failed; aborting.[/red]")
+            return ollama_result.returncode
+    except subprocess.TimeoutExpired:
+        _print("  [red]  compose up (ollama) timed out (5 min); aborting.[/red]")
+        return 1
+
+    # Wait for ollama-pull (one-shot) to finish so the embedding model is
+    # cached before install-packs starts. Without this, the first batch
+    # of embed calls 404s on missing model.
+    pull_rc = _wait_for_one_shot(binary_path, "agentalloy-ollama-pull", timeout=600)
+    if pull_rc is None:
+        _print(
+            "  [yellow]  Could not confirm ollama-pull completed "
+            "(wait failed or timed out after 10 min); embeddings may "
+            "fail until the model finishes downloading.[/yellow]"
+        )
+    elif pull_rc != 0:
+        _print(
+            f"  [yellow]  ollama-pull exited {pull_rc}; embeddings may "
+            "fail. Continuing anyway.[/yellow]"
+        )
+    else:
+        _print("  [green]  Embedding model ready.[/green]")
+
+    # 8b. Install skill packs in a one-shot container BEFORE the main
+    # service starts. We use `podman run` directly rather than
+    # `compose run` because podman-compose 1.x's `run` subcommand
+    # translates the service's `depends_on:` into `podman run
+    # --requires=...` flags, and podman's dependency-graph resolver
+    # chokes on stale container references left over from prior project
+    # runs — exiting 127 before the install-packs command ever executes.
+    # Image has no ENTRYPOINT, only CMD, so trailing argv replaces CMD.
+    _print("  [dim]-> Installing skill packs (one-shot, before service starts)[/dim]")
+    # Network: join the ollama container's network namespace directly
+    # (`--network container:agentalloy-ollama`) instead of attaching to
+    # `agentalloy_default`. Two wins:
+    #   1. No assumption about the compose project name. The default
+    #      network is `{project}_default` where project = compose-dir
+    #      basename or COMPOSE_PROJECT_NAME — clones into differently-
+    #      named dirs would otherwise miss `agentalloy_default`.
+    #   2. We reach ollama via `localhost:11434` (shared netns) which
+    #      sidesteps any podman-rootless DNS quirks for compose-network
+    #      aliases.
+    # The ollama container name itself IS hardcoded in compose.yaml
+    # (`container_name: agentalloy-ollama`), so it's stable regardless
+    # of project name.
+    packs_cmd = [
+        binary_path,
         "run",
         "--rm",
-        "-T",
-        "agentalloy",
+        "--network",
+        "container:agentalloy-ollama",
+        "-v",
+        "agentalloy-data:/app/data",
+        "-e",
+        "RUNTIME_EMBED_BASE_URL=http://localhost:11434",
+        "-e",
+        "RUNTIME_EMBEDDING_MODEL=qwen3-embedding:0.6b",
+        "-e",
+        "EMBEDDING_PROVIDER=openai_compat",
+        "-e",
+        "LADYBUG_DB_PATH=/app/data/ladybug",
+        "-e",
+        "DUCKDB_PATH=/app/data/skills.duck",
+        "agentalloy:local",
         "uv",
         "run",
         "agentalloy",
         "install-packs",
     ]
+    _print(f"  $ {' '.join(packs_cmd)}")
     try:
+        # Stream output so failures (e.g. compose-run quirks, missing entry
+        # points, embedder timeouts) are visible. install-packs can run for
+        # several minutes; silent capture hides both progress and errors.
         packs_result = subprocess.run(  # noqa: S603 — argv list, binary_path from shutil.which
-            packs_cmd, capture_output=True, text=True, timeout=600
+            packs_cmd,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            timeout=600,
         )
         if packs_result.returncode != 0:
             _print(
                 "  [yellow]  install-packs returned "
                 f"{packs_result.returncode}; verify may report a low skill count.[/yellow]"
             )
-            if packs_result.stderr:
-                _print(f"  [dim]{packs_result.stderr.strip()[:500]}[/dim]")
+            _print(f"  [dim]  Retry manually: {' '.join(packs_cmd)}[/dim]")
         else:
-            # install-packs returns 0 even when reembed soft-failed (pack
-            # ingestion is the primary contract; reembed is retryable). Scan
-            # stderr for the WARN line so users see when embeddings didn't
-            # land — otherwise "Skill packs installed." would lie.
-            if packs_result.stderr and "WARN: bulk reembed" in packs_result.stderr:
-                _print("  [yellow]  Skill packs ingested, but reembed reported errors.[/yellow]")
-                _print(
-                    "  [dim]  Embedder may have been slow or briefly unreachable. "
-                    "Retry with: "
-                    f"{binary_path} compose -f {cfg.compose_file} "
-                    "run --rm -T agentalloy uv run agentalloy reembed[/dim]"
-                )
-            else:
-                _print("  [green]  Skill packs installed.[/green]")
+            # install-packs returns 0 even when reembed soft-failed. The
+            # streamed output above shows the WARN line directly; the
+            # remediation message belongs in the install-packs subcommand
+            # itself, not here.
+            _print("  [green]  Skill packs installed.[/green]")
     except subprocess.TimeoutExpired:
         _print("  [yellow]  install-packs timed out after 10 min.[/yellow]")
 

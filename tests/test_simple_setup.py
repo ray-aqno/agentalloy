@@ -1494,7 +1494,13 @@ class TestContainerFlow:
         )
         packs_idx = _idx(
             lambda a: (
-                a[:2] == ["/usr/bin/podman", "compose"] and "run" in a and "install-packs" in a
+                # Direct `podman run` (not `compose run`) — we bypass
+                # podman-compose's `run` subcommand because its
+                # depends_on → --requires translation chokes on stale
+                # dependency-graph state and exits 127.
+                a[:2] == ["/usr/bin/podman", "run"]
+                and "agentalloy:local" in a
+                and "install-packs" in a
             )
         )
         agentalloy_up_idx = _idx(
@@ -1507,7 +1513,9 @@ class TestContainerFlow:
         )
 
         assert init_idx >= 0, f"init `compose up agentalloy-init` not found: {calls}"
-        assert packs_idx >= 0, f"`compose run ... install-packs` not found: {calls}"
+        assert packs_idx >= 0, (
+            f"direct `podman run ... agentalloy:local install-packs` not found: {calls}"
+        )
         assert agentalloy_up_idx >= 0, f"`compose up agentalloy` not found: {calls}"
         # Order matters: init → install-packs → main service.
         assert init_idx < packs_idx < agentalloy_up_idx, (

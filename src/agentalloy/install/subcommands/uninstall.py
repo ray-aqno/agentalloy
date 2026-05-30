@@ -241,6 +241,90 @@ def _remove_pulled_models(st: dict[str, Any]) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+# Named volumes declared in compose.yaml. `compose down -v` removes the
+# compose network and anonymous volumes, but NOT named volumes — those
+# survive uninstall by default, which means a "fresh" reinstall reuses
+# the prior corpus and Ollama model cache. We remove them explicitly
+# when the caller asks for --remove-data.
+_COMPOSE_NAMED_VOLUMES: tuple[str, ...] = ("agentalloy-data", "agentalloy-ollama-models")
+
+
+def _resolve_compose_binary(st: dict[str, Any]) -> str | None:
+    """Return the absolute path or bare name of the container runtime
+    binary (e.g. ``/usr/bin/podman`` or ``docker``), or None if state
+    doesn't have enough info. Matches the resolution logic used by
+    ``_stop_container_stack``.
+    """
+    compose_binary_path = st.get("compose_binary_path")
+    if compose_binary_path and Path(compose_binary_path).exists():
+        return str(compose_binary_path)
+    compose_binary_label = st.get("compose_binary")
+    if not isinstance(compose_binary_label, str) or not compose_binary_label:
+        return None
+    parts = compose_binary_label.split()
+    if len(parts) < 2:
+        return None
+    return parts[0]
+
+
+def _remove_compose_volumes(
+    st: dict[str, Any],
+    warnings: list[str],
+) -> list[dict[str, Any]]:
+    """Force-remove the named volumes declared in compose.yaml.
+
+    Must run AFTER ``_stop_container_stack`` — `volume rm` errors with
+    "volume is being used" if any container still mounts it. Idempotent:
+    missing volumes are logged but do not produce warnings.
+
+    Returns a list of action dicts (one per volume attempted).
+    """
+    actions: list[dict[str, Any]] = []
+    if st.get("deployment") != "container":
+        return actions
+
+    binary = _resolve_compose_binary(st)
+    if binary is None:
+        warnings.append(
+            "Container deployment detected but compose binary unresolved — "
+            "skipping volume cleanup. Remove manually with your runtime: "
+            f"`<podman|docker> volume rm -f {' '.join(_COMPOSE_NAMED_VOLUMES)}`"
+        )
+        return actions
+
+    for vol in _COMPOSE_NAMED_VOLUMES:
+        try:
+            result = subprocess.run(  # noqa: S603 — fixed argv, binary resolved above
+                [binary, "volume", "rm", "-f", vol],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except OSError as exc:
+            warnings.append(f"volume rm {vol}: binary not found ({binary}): {exc}")
+            actions.append({"action": "volume_rm_skipped", "volume": vol, "error": str(exc)})
+            continue
+        except subprocess.TimeoutExpired:
+            warnings.append(f"volume rm {vol} timed out after 30s")
+            actions.append({"action": "volume_rm_timeout", "volume": vol})
+            continue
+
+        if result.returncode == 0:
+            actions.append({"action": "volume_removed", "volume": vol})
+        else:
+            # `volume rm -f` on a non-existent volume returns non-zero on
+            # podman but exits 0 on docker; treat both as success when the
+            # error is "no such volume". Anything else is a real warning.
+            stderr = (result.stderr or "").strip()
+            if "no such volume" in stderr.lower() or "not found" in stderr.lower():
+                actions.append({"action": "volume_already_gone", "volume": vol})
+            else:
+                warnings.append(f"volume rm {vol} failed: {stderr or 'unknown error'}")
+                actions.append({"action": "volume_rm_failed", "volume": vol, "error": stderr})
+
+    return actions
+
+
 def _stop_container_stack(
     st: dict[str, Any],
     warnings: list[str],
@@ -754,6 +838,27 @@ def uninstall(
     container_actions: list[dict[str, Any]] = []
     if stop_services:
         container_actions = _stop_container_stack(st, warnings)
+        # 0b. Remove named volumes when the caller asked for --remove-data.
+        # `compose down -v` only removes ANONYMOUS volumes; the named
+        # volumes declared in compose.yaml (agentalloy-data, agentalloy-
+        # ollama-models) survive otherwise and silently carry old corpus
+        # state + cached model into the next reinstall. Volume rm must
+        # run after compose down so containers no longer hold them.
+        if remove_data:
+            container_actions.extend(_remove_compose_volumes(st, warnings))
+    elif remove_data and st.get("deployment") == "container":
+        # remove_data=True with stop_services=False is a programmatic
+        # mis-use: `volume rm` would fail because containers still hold
+        # the volumes open. Surface this loudly instead of silently
+        # leaving the volumes behind — callers asking for --remove-data
+        # almost certainly expect a full wipe.
+        warnings.append(
+            "remove_data=True requested without stop_services — named "
+            "volumes (agentalloy-data, agentalloy-ollama-models) cannot "
+            "be removed while containers still mount them. Re-run with "
+            "stop_services=True or remove the volumes manually after "
+            "`compose down -v`."
+        )
 
     # 1. Remove harness wiring. State is user-scoped and may carry entries
     # from multiple repos, but the containment check MUST use a trusted
