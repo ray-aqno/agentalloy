@@ -1513,9 +1513,10 @@ class TestContainerFlow:
                 a[:2] == ["/usr/bin/podman", "run"]
                 and "--replace" in a
                 and "--name" in a
-                and a[a.index("--name") + 1] == "agentalloy"
                 and "agentalloy:local" in a
                 and "install-packs" not in a
+                and "agentalloy-init" not in a
+                and "ollama-pull" not in a
             )
         )
 
