@@ -898,18 +898,28 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     # until the container stops and prints its exit code on stdout.
     init_rc = _wait_for_one_shot(binary_path, "agentalloy-init", timeout=300)
     if init_rc is None:
-        _print("  [yellow]  agentalloy-init did not finish within 5 min; continuing.[/yellow]")
-    elif init_rc != 0:
+        # Unknown status is fatal: if `podman wait` failed or timed out we
+        # can't confirm migrations finished, and running install-packs
+        # against a half-migrated kuzu DB would either race the still-live
+        # init container for the lock or write into an inconsistent schema.
+        _print(
+            "  [red]  Could not confirm agentalloy-init completed "
+            "(wait failed or timed out after 5 min); aborting.[/red]"
+        )
+        return 1
+    if init_rc != 0:
         _print(f"  [red]  agentalloy-init exited {init_rc}; aborting.[/red]")
         return 1
-    else:
-        _print("  [green]  Init complete (migrations applied).[/green]")
+    _print("  [green]  Init complete (migrations applied).[/green]")
 
     # 8. Install skill packs in a one-shot container BEFORE the main service
-    # starts. `--no-deps` keeps compose from restarting ollama; `-T`
-    # disables TTY allocation so output is captured cleanly. No
-    # `--entrypoint` override needed: the image has no ENTRYPOINT, only
-    # CMD, which the trailing argv replaces.
+    # starts. Allow compose to bring up dependencies (ollama, ollama-pull)
+    # if they aren't already running — install-packs' bulk-reembed step
+    # talks to the ollama service, so it needs to be up. `-T` disables
+    # TTY allocation so output is captured cleanly. No `--entrypoint`
+    # override needed: the image has no ENTRYPOINT, only CMD, which the
+    # trailing argv replaces. `compose run` does NOT start the long-running
+    # `agentalloy` service container, so no kuzu lock contention.
     _print("  [dim]-> Installing skill packs (one-shot, before service starts)[/dim]")
     packs_cmd = [
         binary_path,
@@ -918,7 +928,6 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         cfg.compose_file,
         "run",
         "--rm",
-        "--no-deps",
         "-T",
         "agentalloy",
         "uv",
@@ -948,7 +957,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
                     "  [dim]  Embedder may have been slow or briefly unreachable. "
                     "Retry with: "
                     f"{binary_path} compose -f {cfg.compose_file} "
-                    "run --rm --no-deps -T agentalloy uv run agentalloy reembed[/dim]"
+                    "run --rm -T agentalloy uv run agentalloy reembed[/dim]"
                 )
             else:
                 _print("  [green]  Skill packs installed.[/green]")

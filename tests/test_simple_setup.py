@@ -1494,10 +1494,7 @@ class TestContainerFlow:
         )
         packs_idx = _idx(
             lambda a: (
-                a[:2] == ["/usr/bin/podman", "compose"]
-                and "run" in a
-                and "install-packs" in a
-                and "--no-deps" in a
+                a[:2] == ["/usr/bin/podman", "compose"] and "run" in a and "install-packs" in a
             )
         )
         agentalloy_up_idx = _idx(
@@ -1521,6 +1518,49 @@ class TestContainerFlow:
         # against running inside the live service container — the kuzu lock
         # bug we're fixing).
         assert "exec" not in calls[packs_idx]
+
+    def test_container_aborts_when_init_wait_status_unknown(
+        self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+    ):
+        """If `podman wait agentalloy-init` fails or times out we can't
+        confirm migrations finished — running install-packs anyway would
+        race the still-live init container for the kuzu lock or write
+        into an inconsistent schema. The wizard must abort, not continue."""
+        SetupConfig, run_setup = self._import_run_setup()
+
+        def run_side_effect(argv: Any, **kwargs: Any) -> Any:
+            mock = MagicMock()
+            mock.stderr = ""
+            if isinstance(argv, list) and len(argv) >= 2 and argv[1] == "wait":
+                # Simulate `podman wait` itself failing.
+                mock.returncode = 1
+                mock.stdout = ""
+            else:
+                mock.returncode = 0
+                mock.stdout = "0\n"
+            return mock
+
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
+            ),
+            patch("subprocess.run", side_effect=run_side_effect) as mock_run,
+        ):
+            rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
+
+        assert rc == 1
+        # install-packs must NOT have been invoked.
+        for c in mock_run.call_args_list:
+            if c.args and isinstance(c.args[0], list):
+                argv = [str(x) for x in c.args[0]]  # type: ignore[arg-type]
+                assert "install-packs" not in argv, (
+                    f"install-packs ran despite unknown init status: {argv}"
+                )
+        import re
+
+        out = re.sub(r"\x1b\[[0-9;]*m", "", capsys.readouterr().out)
+        assert "Could not confirm agentalloy-init" in out
 
     def test_verify_failures_surfaced_inline(
         self,
