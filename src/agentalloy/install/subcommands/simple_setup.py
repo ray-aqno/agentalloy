@@ -697,6 +697,53 @@ def _wait_for_one_shot(binary_path: str, container_name: str, *, timeout: int) -
         return None
 
 
+def _inspect_ollama_project(binary_path: str) -> tuple[str, str]:
+    """Return (compose_project, network_name) inferred from the running
+    agentalloy-ollama container.
+
+    podman-compose names the default network ``{project}_default`` where
+    ``project`` defaults to the compose-file dir basename or
+    ``COMPOSE_PROJECT_NAME``. Hardcoding ``agentalloy_default`` breaks when
+    the user clones into a differently-named dir. Instead, ask podman for
+    the truth: ollama is already up by the time we hit step 9, and its
+    labels + network attachments carry the actual project name.
+
+    Falls back to ``("agentalloy", "agentalloy_default")`` if inspection
+    fails — matches the previous hardcoded behavior so we never block setup
+    on a missing field, just degrade gracefully.
+    """
+    fallback = ("agentalloy", "agentalloy_default")
+    try:
+        result = subprocess.run(  # noqa: S603 — fixed argv, binary_path from shutil.which
+            [
+                binary_path,
+                "inspect",
+                "agentalloy-ollama",
+                "--format",
+                '{{ index .Config.Labels "com.docker.compose.project" }}'
+                "\t"
+                "{{ range $k, $_ := .NetworkSettings.Networks }}{{ $k }}\n{{ end }}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return fallback
+    if result.returncode != 0:
+        return fallback
+    raw = result.stdout.strip()
+    if not raw or "\t" not in raw:
+        return fallback
+    project, _, networks_blob = raw.partition("\t")
+    project = project.strip() or fallback[0]
+    networks = [n.strip() for n in networks_blob.splitlines() if n.strip()]
+    # Prefer the default network for this project; fall back to first attached.
+    target = f"{project}_default"
+    network = target if target in networks else (networks[0] if networks else fallback[1])
+    return (project, network)
+
+
 # Fixed container names declared in compose.yaml via `container_name:`.
 # Used as a fallback when the project-label query doesn't return them —
 # e.g. when the user has overridden COMPOSE_PROJECT_NAME, so labels read
@@ -1204,9 +1251,80 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     except subprocess.TimeoutExpired:
         _print("  [yellow]  install-packs timed out after 10 min.[/yellow]")
 
-    # 9. Start the main agentalloy service now that the corpus is populated.
+    # 9. Start the main agentalloy service via direct `podman run --replace`,
+    # NOT `podman compose up`. Same reason install-packs (step 8b) uses direct
+    # run: podman-compose 1.0.6's `up <service>` always re-resolves the full
+    # depends_on graph, even with `--no-deps`. It tries to recreate every dep
+    # we already brought up piecewise in steps 7 + 8a, hits "name already in
+    # use", papers over with `podman start`, and then the new agentalloy
+    # container's `--requires=<dep-ids>` flag (injected from depends_on) points
+    # at internal IDs that no longer line up with podman's stored graph,
+    # exiting 125 with "depends on container ... not found in input list".
+    #
+    # The agentalloy service config below MUST stay in sync with the
+    # `agentalloy:` block in compose.yaml. `--replace` cleans up any dangling
+    # container from a prior failed run. `--requires` is intentionally omitted
+    # — we already waited on each dep above, so podman doesn't need to walk
+    # the graph here.
+    #
+    # Compose project and network are discovered from the running ollama
+    # container, NOT hardcoded: podman-compose derives the project name from
+    # the compose-file dir basename (or COMPOSE_PROJECT_NAME), so a clone
+    # into e.g. ~/code/agentalloy-fork yields project=agentalloy-fork and
+    # network=agentalloy-fork_default. Hardcoding either breaks setup in
+    # those checkouts and breaks `compose ps/down` interop for this container.
+    project_name, network_name = _inspect_ollama_project(binary_path)
     _print("  [dim]-> Starting agentalloy service[/dim]")
-    up_cmd = [binary_path, "compose", "-f", cfg.compose_file, "up", "-d", "agentalloy"]
+    up_cmd = [
+        binary_path,
+        "run",
+        "-d",
+        "--replace",
+        "--name",
+        "agentalloy",
+        "--network",
+        network_name,
+        "--network-alias",
+        "agentalloy",
+        "-v",
+        "agentalloy-data:/app/data",
+        "-p",
+        f"{cfg.port}:47950",
+        "-e",
+        "RUNTIME_EMBED_BASE_URL=http://ollama:11434",
+        "-e",
+        "RUNTIME_EMBEDDING_MODEL=qwen3-embedding:0.6b",
+        "-e",
+        "EMBEDDING_PROVIDER=openai_compat",
+        "-e",
+        "LADYBUG_DB_PATH=/app/data/ladybug",
+        "-e",
+        "DUCKDB_PATH=/app/data/skills.duck",
+        "-e",
+        "LOG_LEVEL=INFO",
+        "--restart",
+        "unless-stopped",
+        "--health-cmd",
+        "curl -fsS --max-time 3 http://127.0.0.1:47950/health",
+        "--health-interval",
+        "15s",
+        "--health-timeout",
+        "5s",
+        "--health-start-period",
+        "30s",
+        "--health-retries",
+        "5",
+        # Compose labels so `podman compose ps`, `down`, and our own
+        # _list_project_containers preflight all recognize the container
+        # as part of the project.
+        "--label",
+        f"io.podman.compose.project={project_name}",
+        "--label",
+        f"com.docker.compose.project={project_name}",
+        "--label",
+        "com.docker.compose.service=agentalloy",
+        "agentalloy:local",
+    ]
     _print(f"  $ {' '.join(up_cmd)}")
     try:
         result = subprocess.run(
@@ -1216,10 +1334,10 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
             timeout=300,
         )
         if result.returncode != 0:
-            _print("  [red]  compose up (agentalloy) failed.[/red]")
+            _print("  [red]  podman run (agentalloy) failed.[/red]")
             return result.returncode
     except subprocess.TimeoutExpired:
-        _print("  [red]  compose up (agentalloy) timed out (5 min).[/red]")
+        _print("  [red]  podman run (agentalloy) timed out (5 min).[/red]")
         return 1
     _print("  [green]  Done.[/green]")
 

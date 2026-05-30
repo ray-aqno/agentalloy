@@ -1505,10 +1505,18 @@ class TestContainerFlow:
         )
         agentalloy_up_idx = _idx(
             lambda a: (
-                a[:2] == ["/usr/bin/podman", "compose"]
-                and "up" in a
-                and "agentalloy" in a
+                # Step 9 uses direct `podman run --replace` (NOT
+                # `podman compose up <service>`) to start the main service.
+                # podman-compose 1.0.6 always re-resolves the depends_on
+                # graph even with --no-deps, and fails on the existing
+                # piecewise-brought-up dep containers.
+                a[:2] == ["/usr/bin/podman", "run"]
+                and "--replace" in a
+                and "--name" in a
+                and "agentalloy:local" in a
+                and "install-packs" not in a
                 and "agentalloy-init" not in a
+                and "ollama-pull" not in a
             )
         )
 
@@ -1516,7 +1524,9 @@ class TestContainerFlow:
         assert packs_idx >= 0, (
             f"direct `podman run ... agentalloy:local install-packs` not found: {calls}"
         )
-        assert agentalloy_up_idx >= 0, f"`compose up agentalloy` not found: {calls}"
+        assert agentalloy_up_idx >= 0, (
+            f"direct `podman run --replace ... agentalloy:local` not found: {calls}"
+        )
         # Order matters: init → install-packs → main service.
         assert init_idx < packs_idx < agentalloy_up_idx, (
             f"Bad ordering — init={init_idx} packs={packs_idx} up={agentalloy_up_idx}: "
@@ -1526,6 +1536,13 @@ class TestContainerFlow:
         # against running inside the live service container — the kuzu lock
         # bug we're fixing).
         assert "exec" not in calls[packs_idx]
+        # Final agentalloy launch MUST use `podman run --replace`, not
+        # `compose up`. `--replace` lets it cleanly recreate the container
+        # even if a dangling agentalloy container is left over from a prior
+        # failed run.
+        assert "--replace" in calls[agentalloy_up_idx], (
+            f"final agentalloy launch missing --replace: {calls[agentalloy_up_idx]}"
+        )
 
     def test_container_aborts_when_init_wait_status_unknown(
         self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
