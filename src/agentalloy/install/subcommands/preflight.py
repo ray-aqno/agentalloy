@@ -500,6 +500,34 @@ def _compose_failure_message(probes: list[_ComposeProbe]) -> tuple[str, str]:
     return error, "\n".join(remediation_lines)
 
 
+def _check_git_present() -> dict[str, Any]:
+    """Container install clones the agentalloy repo into a cache dir when the
+    user runs setup without a local checkout (the Containerfile build context
+    needs the full source tree). That clone needs git on PATH; surface a
+    clear error here rather than letting the clone subprocess crash later.
+    """
+    t0 = time.monotonic()
+    git_path = shutil.which("git")
+    if git_path:
+        return _check(
+            "git_present",
+            passed=True,
+            started=t0,
+            detail=f"git at {git_path}",
+        )
+    return _check(
+        "git_present",
+        passed=False,
+        started=t0,
+        error="git not found on PATH",
+        remediation=(
+            "Install git (e.g. `apt install git`, `brew install git`, "
+            "`dnf install git`). The container install clones the agentalloy "
+            "repo into ~/.cache/agentalloy/repo for the build context."
+        ),
+    )
+
+
 def _check_compose_binary() -> dict[str, Any]:
     t0 = time.monotonic()
     label, binary_path, probes = _probe_compose_runtime()
@@ -624,6 +652,7 @@ def run_preflight(
         checks.append(_check_port_free(port))
     elif phase == "container":
         checks.append(_check_compose_binary())
+        checks.append(_check_git_present())
         checks.append(_check_compose_file_present(compose_file))
         checks.append(_check_port_free(port))
         checks.append(_check_image_build_deps(compose_file))

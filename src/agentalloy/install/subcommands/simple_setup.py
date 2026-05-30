@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import time
@@ -943,12 +944,12 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     # 3. Select compose file
     # The Containerfile build context needs the full repo (pyproject.toml,
     # uv.lock, src/, data/), so container deployment requires a checkout on
-    # disk. Search for it in:
+    # disk. Search order:
     #   1. cwd (user ran setup from inside the clone)
     #   2. parents[4] of __file__ (editable install — points at repo root)
-    # Non-editable installs (e.g. `uv tool install agentalloy`) land in a
-    # site-packages tree with no source above it; those users must cd into a
-    # clone or pass an explicit path.
+    #   3. fall back to cloning into ~/.cache/agentalloy/repo so users who
+    #      installed via `uv tool install agentalloy` don't have to clone
+    #      manually. Pinned to `main` for now; revisit when we tag releases.
     default_compose = "compose.yaml"
 
     def _has_assets(d: Path) -> bool:
@@ -963,6 +964,60 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
             return p / default_compose
         return p
 
+    def _ensure_cached_repo() -> Path | None:
+        """Clone (or refresh) the agentalloy repo into ~/.cache/agentalloy/repo.
+
+        Returns the cache dir on success, None on failure. Uses --depth=1 so the
+        clone is fast (~few MB). On refresh, hard-resets to origin/main so any
+        local edits or stale state in the cache don't break the build context.
+        """
+        cache_dir = Path.home() / ".cache" / "agentalloy" / "repo"
+        if shutil.which("git") is None:
+            _print(
+                "  [red]git not found on PATH — cannot clone the agentalloy repo "
+                "for the build context.[/red]"
+            )
+            return None
+        repo_url = "https://github.com/nrmeyers/agentalloy.git"
+        try:
+            if (cache_dir / ".git").exists():
+                _print(f"  [dim]-> Refreshing cached repo at {cache_dir}[/dim]")
+                subprocess.run(
+                    ["git", "-C", str(cache_dir), "fetch", "--depth=1", "origin", "main"],
+                    check=True,
+                    timeout=120,
+                )
+                subprocess.run(
+                    ["git", "-C", str(cache_dir), "reset", "--hard", "origin/main"],
+                    check=True,
+                    timeout=60,
+                )
+            else:
+                cache_dir.parent.mkdir(parents=True, exist_ok=True)
+                _print(f"  [dim]-> Cloning {repo_url} into {cache_dir}[/dim]")
+                subprocess.run(
+                    [
+                        "git",
+                        "clone",
+                        "--depth=1",
+                        "--branch=main",
+                        repo_url,
+                        str(cache_dir),
+                    ],
+                    check=True,
+                    timeout=180,
+                )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+            _print(f"  [red]git clone/fetch failed: {exc}[/red]")
+            return None
+        if not _has_assets(cache_dir):
+            _print(
+                f"  [red]Cached repo at {cache_dir} is missing {default_compose} "
+                "or Containerfile after clone.[/red]"
+            )
+            return None
+        return cache_dir
+
     candidates = [Path.cwd(), Path(__file__).resolve().parents[4]]
     compose_path: Path | None = None
     for cand in candidates:
@@ -971,12 +1026,18 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
             break
 
     if compose_path is None:
+        cached = _ensure_cached_repo()
+        if cached is not None:
+            compose_path = cached / default_compose
+
+    if compose_path is None:
         if cfg.non_interactive:
             _print(
-                "  [red]Could not locate the agentalloy repo on disk.[/red]\n"
+                "  [red]Could not locate or fetch the agentalloy repo.[/red]\n"
                 f"  Looked for {default_compose} + (Containerfile or Dockerfile) in:\n"
                 + "\n".join(f"    - {c}" for c in candidates)
-                + "\n  Container deployment requires a checkout (the build context\n"
+                + "\n  Auto-clone fallback also failed (see error above).\n"
+                "  Container deployment requires a checkout (the build context\n"
                 "  needs pyproject.toml, src/, data/). Either:\n"
                 "    a) cd into your agentalloy clone and re-run setup, or\n"
                 "    b) install editably: `git clone … && cd agentalloy && \n"
@@ -984,10 +1045,9 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
             )
             return 1
         _print(
-            "  [yellow]Could not auto-locate the agentalloy repo.[/yellow] "
-            "Container deployment\n"
-            "  needs the full source tree (build context). Enter the path to your\n"
-            "  agentalloy clone (or directly to a compose YAML):"
+            "  [yellow]Could not auto-locate or fetch the agentalloy repo.[/yellow] "
+            "Enter the\n"
+            "  path to your agentalloy clone (or directly to a compose YAML):"
         )
         custom = input("  ").strip()
         compose_path = _resolve_user_path(custom)
