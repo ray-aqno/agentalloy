@@ -1494,7 +1494,13 @@ class TestContainerFlow:
         )
         packs_idx = _idx(
             lambda a: (
-                a[:2] == ["/usr/bin/podman", "compose"] and "run" in a and "install-packs" in a
+                # Direct `podman run` (not `compose run`) — we bypass
+                # podman-compose's `run` subcommand because its
+                # depends_on → --requires translation chokes on stale
+                # dependency-graph state and exits 127.
+                a[:2] == ["/usr/bin/podman", "run"]
+                and "agentalloy:local" in a
+                and "install-packs" in a
             )
         )
         agentalloy_up_idx = _idx(

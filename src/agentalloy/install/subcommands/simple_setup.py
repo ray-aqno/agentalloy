@@ -697,6 +697,84 @@ def _wait_for_one_shot(binary_path: str, container_name: str, *, timeout: int) -
         return None
 
 
+def _list_project_containers(binary_path: str) -> list[tuple[str, str]]:
+    """Return [(name, status), ...] for containers labeled with this compose project.
+
+    Uses the ``io.podman.compose.project=agentalloy`` label (set by
+    podman-compose; docker-compose sets ``com.docker.compose.project``)
+    so we only touch this project's containers, not arbitrary
+    agentalloy:local containers from a parallel checkout.
+    """
+    out: list[tuple[str, str]] = []
+    for label in (
+        "io.podman.compose.project=agentalloy",
+        "com.docker.compose.project=agentalloy",
+    ):
+        try:
+            result = subprocess.run(  # noqa: S603 — fixed argv, binary_path from shutil.which
+                [
+                    binary_path,
+                    "ps",
+                    "-a",
+                    "--filter",
+                    f"label={label}",
+                    "--format",
+                    "{{.Names}}\t{{.Status}}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+        if result.returncode != 0:
+            continue
+        for line in result.stdout.splitlines():
+            # Require the tab delimiter from our --format string so we
+            # don't accidentally parse unrelated single-token output
+            # (e.g. mocked subprocess returns in tests).
+            if "\t" not in line:
+                continue
+            name, _, status = line.partition("\t")
+            name = name.strip()
+            if name and not any(n == name for n, _ in out):
+                out.append((name, status.strip() or "unknown"))
+    return out
+
+
+def _remove_containers(binary_path: str, names: list[str]) -> bool:
+    """Force-remove the given containers. Retries once after a short sleep
+    to handle podman's dependency-graph race when sibling containers in
+    the same project reference each other via --requires.
+
+    Returns True if all names are gone after the operation.
+    """
+    if not names:
+        return True
+    # First pass — best effort, errors expected for containers with
+    # dependents that haven't been removed yet.
+    subprocess.run(  # noqa: S603 — fixed argv, binary_path from shutil.which
+        [binary_path, "rm", "-f", *names],
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+        timeout=60,
+    )
+    # Re-check; retry any survivors after a brief pause so podman can
+    # settle its dependency cache.
+    survivors = [n for n, _ in _list_project_containers(binary_path) if n in names]
+    if not survivors:
+        return True
+    time.sleep(2)
+    subprocess.run(  # noqa: S603 — fixed argv, binary_path from shutil.which
+        [binary_path, "rm", "-f", *survivors],
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+        timeout=60,
+    )
+    final = [n for n, _ in _list_project_containers(binary_path) if n in names]
+    return not final
+
+
 def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     """Execute the container deployment flow.
 
@@ -857,6 +935,41 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
             return 1
     _print()
 
+    # 6.5. Check for stale containers from a prior project run. podman-compose
+    # papers over "name already in use" errors by silently `podman start`ing
+    # the existing container — which "succeeds" but the container immediately
+    # re-exits with its old exit code, and the wizard then bails with a
+    # confusing "init exited 1" message. Surface this up front and let the
+    # user remove them. We filter by the project label so we don't touch
+    # other agentalloy:local containers (e.g. from a parallel checkout).
+    existing = _list_project_containers(binary_path)
+    if existing:
+        _print("[bold]Existing AgentAlloy containers detected:[/bold]")
+        for name, status in existing:
+            _print(f"  - {name}  [dim]({status})[/dim]")
+        _print(
+            "  [dim]podman-compose will misbehave if these stay around "
+            "(stale exit codes, dangling --requires graphs).[/dim]"
+        )
+        if cfg.non_interactive:
+            _print("  [dim]non-interactive: removing automatically[/dim]")
+            confirm_rm = "y"
+        else:
+            confirm_rm = input("  Remove them and continue? [Y/n]: ").strip().lower()
+        if confirm_rm not in ("", "y", "yes"):
+            _print(
+                "[yellow]Setup cancelled. Remove the containers manually "
+                "or re-run setup and accept removal.[/yellow]"
+            )
+            return 1
+        if not _remove_containers(binary_path, [name for name, _ in existing]):
+            _print(
+                "  [red]Failed to remove one or more containers; "
+                "see errors above. Aborting.[/red]"
+            )
+            return 1
+        _print("  [green]  Removed.[/green]\n")
+
     # 7. Bring up the stack piecewise so the corpus ingest doesn't race the
     # main service for the kuzu DB lock. kuzu is single-writer: if the
     # agentalloy service is already up when we run `install-packs`, every
@@ -912,24 +1025,87 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         return 1
     _print("  [green]  Init complete (migrations applied).[/green]")
 
-    # 8. Install skill packs in a one-shot container BEFORE the main service
-    # starts. Allow compose to bring up dependencies (ollama, ollama-pull)
-    # if they aren't already running — install-packs' bulk-reembed step
-    # talks to the ollama service, so it needs to be up. `-T` disables
-    # TTY allocation so output is captured cleanly. No `--entrypoint`
-    # override needed: the image has no ENTRYPOINT, only CMD, which the
-    # trailing argv replaces. `compose run` does NOT start the long-running
-    # `agentalloy` service container, so no kuzu lock contention.
-    _print("  [dim]-> Installing skill packs (one-shot, before service starts)[/dim]")
-    packs_cmd = [
+    # 8a. Bring up ollama + ollama-pull before install-packs. The
+    # `agentalloy-init` service has no depends_on (it only needs the
+    # data volume), so the prior `compose up` step did NOT transitively
+    # start ollama. install-packs' bulk-reembed step embeds against
+    # http://ollama:11434, so without this step every embed call
+    # resolves "ollama" → DNS-failure and the corpus ships without
+    # vectors. `ollama-pull` is a one-shot that exits when the model is
+    # cached; we don't wait for it explicitly here because install-packs
+    # retries embed failures and ollama itself becomes reachable as
+    # soon as its container is up — pull-completion isn't required for
+    # /api/embed to respond (it's required for the *first* embed call
+    # to succeed, but retries cover the gap).
+    ollama_up_cmd = [
         binary_path,
         "compose",
         "-f",
         cfg.compose_file,
+        "up",
+        "-d",
+        "ollama",
+        "ollama-pull",
+    ]
+    _print("  [dim]-> Starting ollama for embedding[/dim]")
+    _print(f"  $ {' '.join(ollama_up_cmd)}")
+    try:
+        ollama_result = subprocess.run(
+            ollama_up_cmd, stdout=sys.stdout, stderr=sys.stderr, timeout=300
+        )
+        if ollama_result.returncode != 0:
+            _print("  [red]  compose up (ollama) failed; aborting.[/red]")
+            return ollama_result.returncode
+    except subprocess.TimeoutExpired:
+        _print("  [red]  compose up (ollama) timed out (5 min); aborting.[/red]")
+        return 1
+
+    # Wait for ollama-pull (one-shot) to finish so the embedding model is
+    # cached before install-packs starts. Without this, the first batch
+    # of embed calls 404s on missing model.
+    pull_rc = _wait_for_one_shot(binary_path, "agentalloy-ollama-pull", timeout=600)
+    if pull_rc is None:
+        _print(
+            "  [yellow]  Could not confirm ollama-pull completed "
+            "(wait failed or timed out after 10 min); embeddings may "
+            "fail until the model finishes downloading.[/yellow]"
+        )
+    elif pull_rc != 0:
+        _print(
+            f"  [yellow]  ollama-pull exited {pull_rc}; embeddings may "
+            "fail. Continuing anyway.[/yellow]"
+        )
+    else:
+        _print("  [green]  Embedding model ready.[/green]")
+
+    # 8b. Install skill packs in a one-shot container BEFORE the main
+    # service starts. We use `podman run` directly rather than
+    # `compose run` because podman-compose 1.x's `run` subcommand
+    # translates the service's `depends_on:` into `podman run
+    # --requires=...` flags, and podman's dependency-graph resolver
+    # chokes on stale container references left over from prior project
+    # runs — exiting 127 before the install-packs command ever executes.
+    # Image has no ENTRYPOINT, only CMD, so trailing argv replaces CMD.
+    _print("  [dim]-> Installing skill packs (one-shot, before service starts)[/dim]")
+    packs_cmd = [
+        binary_path,
         "run",
         "--rm",
-        "-T",
-        "agentalloy",
+        "--network",
+        "agentalloy_default",
+        "-v",
+        "agentalloy-data:/app/data",
+        "-e",
+        "RUNTIME_EMBED_BASE_URL=http://ollama:11434",
+        "-e",
+        "RUNTIME_EMBEDDING_MODEL=qwen3-embedding:0.6b",
+        "-e",
+        "EMBEDDING_PROVIDER=openai_compat",
+        "-e",
+        "LADYBUG_DB_PATH=/app/data/ladybug",
+        "-e",
+        "DUCKDB_PATH=/app/data/skills.duck",
+        "agentalloy:local",
         "uv",
         "run",
         "agentalloy",
@@ -951,11 +1127,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
                 "  [yellow]  install-packs returned "
                 f"{packs_result.returncode}; verify may report a low skill count.[/yellow]"
             )
-            _print(
-                "  [dim]  Retry manually: "
-                f"{binary_path} compose -f {cfg.compose_file} "
-                "run --rm -T agentalloy uv run agentalloy install-packs[/dim]"
-            )
+            _print(f"  [dim]  Retry manually: {' '.join(packs_cmd)}[/dim]")
         else:
             # install-packs returns 0 even when reembed soft-failed. The
             # streamed output above shows the WARN line directly; the
