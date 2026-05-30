@@ -714,17 +714,23 @@ def _run_quiet(
 ) -> int:
     """Run ``cmd`` with captured output appended to ``log_file``.
 
-    Returns the process exit code (or 124 on timeout, 1 on OSError).
-    On non-zero exit, prints the last 30 captured lines to stderr so the
-    user can diagnose without scrolling through every podman-compose
-    debug line. The full output is always available in ``log_file``.
+    Returns the process exit code on completion, or 1 (EXIT_USER) on
+    timeout / OSError — staying inside the install CLI exit-code contract
+    (0–4, see __main__.py). On non-zero exit, prints the last 30 captured
+    lines to stderr so the user can diagnose without scrolling through
+    every podman-compose debug line. The full output is always available
+    in ``log_file``.
 
     Replaces the previous ``stdout=sys.stdout, stderr=sys.stderr``
     streaming pattern, which dumped all of podman-compose's internal
     debug chatter (``['podman', '--version', '']`` etc.) inline.
+
+    Log file is opened in binary mode because ``subprocess.run`` writes
+    raw child-process bytes to the stdout fd; a text-mode handle would
+    risk encoding/buffering mismatches (per the subprocess docs).
     """
-    with log_file.open("a", encoding="utf-8") as fh:
-        fh.write(f"\n----- {label} -----\n$ {' '.join(cmd)}\n")
+    with log_file.open("ab") as fh:
+        fh.write(f"\n----- {label} -----\n$ {' '.join(cmd)}\n".encode())
         fh.flush()
         try:
             result = subprocess.run(  # noqa: S603 — argv list from caller
@@ -734,12 +740,12 @@ def _run_quiet(
                 timeout=timeout,
             )
         except subprocess.TimeoutExpired:
-            fh.write(f"[TIMEOUT after {timeout}s]\n")
+            fh.write(f"[TIMEOUT after {timeout}s]\n".encode())
             _print(f"  [red]  {label} timed out after {timeout}s.[/red]")
             _print(f"  [dim]  Full output: {log_file}[/dim]")
-            return 124
+            return 1
         except OSError as exc:
-            fh.write(f"[OSError: {exc}]\n")
+            fh.write(f"[OSError: {exc}]\n".encode())
             _print(f"  [red]  {label} failed to start: {exc}[/red]")
             _print(f"  [dim]  Full output: {log_file}[/dim]")
             return 1
@@ -1036,6 +1042,21 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
             )
             return None
         repo_url = "https://github.com/nrmeyers/agentalloy.git"
+        # If the cache dir exists but isn't a valid git checkout (no .git/
+        # — possibly a partial clone, leftover files, or a manually-placed
+        # directory), `git clone <url> <dest>` would fail with "destination
+        # path already exists and is not an empty directory". Nuke it so
+        # the clone branch below can recreate cleanly.
+        if cache_dir.exists() and not (cache_dir / ".git").exists():
+            _print(
+                f"  [yellow]-> Cache dir {cache_dir} exists but isn't a git "
+                "checkout; recreating.[/yellow]"
+            )
+            try:
+                shutil.rmtree(cache_dir)
+            except OSError as exc:
+                _print(f"  [red]Could not remove stale cache dir: {exc}[/red]")
+                return None
         try:
             if (cache_dir / ".git").exists():
                 _print(f"  [dim]-> Refreshing cached repo at {cache_dir}[/dim]")
@@ -1326,14 +1347,16 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         "install-packs",
     ]
     rc = _run_quiet(packs_cmd, label="install-packs", timeout=600, log_file=log_path)
-    if rc == 124:
-        _print("  [yellow]  install-packs timed out after 10 min; continuing anyway.[/yellow]")
-    elif rc != 0:
+    if rc != 0:
         # install-packs returns 0 even when reembed soft-failed; if we get
-        # here something harder broke. _run_quiet already dumped the tail.
+        # here something harder broke (timeout, image missing, etc.).
+        # _run_quiet already dumped the tail. Soft-fail rather than abort:
+        # the user can re-run install-packs manually, and verify will
+        # surface the low skill count.
         _print(
             "  [yellow]  install-packs returned "
-            f"{rc}; verify may report a low skill count.[/yellow]"
+            f"{rc}; verify may report a low skill count. Retry with "
+            "`agentalloy install-packs` once the container is up.[/yellow]"
         )
     else:
         _print("  [green]  Skill packs installed.[/green]")
