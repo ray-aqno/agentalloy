@@ -720,7 +720,7 @@ def _inspect_ollama_project(binary_path: str) -> tuple[str, str]:
                 "inspect",
                 "agentalloy-ollama",
                 "--format",
-                "{{ index .Config.Labels \"com.docker.compose.project\" }}"
+                '{{ index .Config.Labels "com.docker.compose.project" }}'
                 "\t"
                 "{{ range $k, $_ := .NetworkSettings.Networks }}{{ $k }}\n{{ end }}",
             ],
