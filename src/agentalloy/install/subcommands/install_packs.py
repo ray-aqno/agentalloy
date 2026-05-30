@@ -188,9 +188,11 @@ def _run(args: argparse.Namespace) -> int:
     # are surfaced via the stderr WARN above and ``reembed_exit_code`` in
     # the saved install-packs.json summary — strict callers can inspect
     # the summary. Conflating reembed failure into rc would regress the
-    # native setup flow, which treats rc != 0 as a fatal abort
-    # (see simple_setup.py:1348). The wizard's container branch already
-    # captures install-packs' stderr and surfaces the WARN line to users.
+    # native setup flow inside ``run_setup`` (in
+    # ``agentalloy.install.subcommands.simple_setup``), which treats any
+    # non-zero return from ``install_packs.run`` as a fatal abort. The
+    # wizard's container branch already captures install-packs' stderr and
+    # surfaces the WARN line to users.
     return 0 if not failed else 1
 
 

@@ -85,21 +85,34 @@ class TestEmbedding1024Dim:
 
 
 class TestEmbeddingViaDiagnostics:
-    """Container deployments source embed status from the diagnostics endpoint."""
+    """Container deployments source embed status from the diagnostics endpoint.
+
+    The diagnostics endpoint emits the readiness block under the JSON key
+    ``dependency_readiness`` (see ``DependencyReadiness`` in
+    ``agentalloy.api.diagnostics_router``). These tests use the real wire
+    name so a future schema change to the production response breaks the
+    test instead of silently passing.
+    """
 
     def test_passes_when_diag_reports_embedding_ok(self) -> None:
-        diag = {"dep_readiness": {"embedding_runtime": "ok"}}
+        diag = {"dependency_readiness": {"embedding_runtime": "ok"}}
         result = _check_embedding_via_diagnostics(diag, "embedding_endpoint_reachable")
         assert result["passed"] is True
         assert "embedding_runtime=ok" in result["detail"]
         assert result["name"] == "embedding_endpoint_reachable"
 
     def test_fails_when_diag_reports_unavailable(self) -> None:
-        diag = {"dep_readiness": {"embedding_runtime": "unavailable"}}
+        diag = {"dependency_readiness": {"embedding_runtime": "unavailable"}}
         result = _check_embedding_via_diagnostics(diag, "embedding_endpoint_returns_1024_dim")
         assert result["passed"] is False
         assert "unavailable" in result["error"]
         assert "compose logs" in result["remediation"]
+
+    def test_accepts_legacy_dep_readiness_key(self) -> None:
+        """Older snapshots / cached responses may still carry the legacy key."""
+        diag = {"dep_readiness": {"embedding_runtime": "ok"}}
+        result = _check_embedding_via_diagnostics(diag, "embedding_endpoint_reachable")
+        assert result["passed"] is True
 
     def test_fails_when_diag_is_none(self) -> None:
         """Service unreachable on the runtime port — surface a useful message."""
@@ -109,7 +122,7 @@ class TestEmbeddingViaDiagnostics:
 
     def test_run_checks_uses_diagnostics_in_container_mode(self) -> None:
         """run_checks routes the two embed checks through diagnostics when deployment=container."""
-        diag = {"dep_readiness": {"embedding_runtime": "ok"}}
+        diag = {"dependency_readiness": {"embedding_runtime": "ok"}}
         st: dict[str, Any] = {"deployment": "container", "port": 47950}
         with (
             patch("agentalloy.install.subcommands.verify._probe_diagnostics", return_value=diag),

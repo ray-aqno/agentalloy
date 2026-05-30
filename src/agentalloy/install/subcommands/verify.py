@@ -91,6 +91,11 @@ def _check_embedding_via_diagnostics(
     diagnostics endpoint reports the same embedding_runtime dep status the
     agentalloy service uses internally — "ok" means the service successfully
     embedded against the configured backend at startup or last refresh.
+
+    The diagnostics JSON wire field is ``dependency_readiness`` (see
+    ``DependencyReadiness`` in ``agentalloy.api.diagnostics_router``); the
+    legacy ``dep_readiness`` key is checked too for forward/backward safety
+    against snapshot drift.
     """
     t0 = time.monotonic()
     if diag is None:
@@ -100,11 +105,13 @@ def _check_embedding_via_diagnostics(
             "duration_ms": int((time.monotonic() - t0) * 1000),
             "error": "/diagnostics/runtime unreachable",
             "remediation": (
-                "Container not responding on the configured port. Check "
-                "`<compose binary> compose logs agentalloy` for startup errors."
+                "Container not responding on the configured port. Check the "
+                "container logs (e.g. `podman compose logs agentalloy` or "
+                "`docker compose logs agentalloy`) for startup errors."
             ),
         }
-    status = (diag.get("dep_readiness") or {}).get("embedding_runtime")
+    readiness = diag.get("dependency_readiness") or diag.get("dep_readiness") or {}
+    status = readiness.get("embedding_runtime")
     if status == "ok":
         return {
             "name": check_name,
@@ -118,8 +125,9 @@ def _check_embedding_via_diagnostics(
         "duration_ms": int((time.monotonic() - t0) * 1000),
         "error": f"embedding_runtime status={status!r} (via /diagnostics/runtime)",
         "remediation": (
-            "Bundled Ollama sidecar isn't healthy yet. Check "
-            "`<compose binary> compose logs ollama` and `... logs agentalloy`."
+            "Bundled Ollama sidecar isn't healthy yet. Check the container "
+            "logs — e.g. `podman compose logs ollama` and `podman compose "
+            "logs agentalloy` (substitute `docker compose` if you're on Docker)."
         ),
     }
 
