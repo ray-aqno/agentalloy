@@ -1283,7 +1283,11 @@ class TestContainerFlow:
         clone_calls: list[list[str]] = []
 
         def run_side_effect(argv: Any, **kwargs: Any) -> Any:
-            argv_list = [str(x) for x in argv] if isinstance(argv, list) else []
+            argv_list: list[str] = (
+                [str(x) for x in argv]  # type: ignore[arg-type]
+                if isinstance(argv, list)
+                else []
+            )
             mock = MagicMock()
             mock.returncode = 0
             mock.stdout = "0\n"
