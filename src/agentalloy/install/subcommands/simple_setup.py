@@ -1205,8 +1205,25 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         _print("  [yellow]  install-packs timed out after 10 min.[/yellow]")
 
     # 9. Start the main agentalloy service now that the corpus is populated.
+    # Use `--no-deps`: every dependency (ollama, ollama-pull, agentalloy-init)
+    # was already brought up piecewise in steps 7 + 8a. Without --no-deps,
+    # podman-compose 1.0.6 re-resolves the depends_on graph and tries to
+    # recreate the existing dep containers — they hit "name already in use",
+    # podman-compose papers over with `podman start`, and then the main
+    # agentalloy container's --requires=<dep-ids> references freshly-rotated
+    # internal IDs that no longer match what podman has stored, exiting 127
+    # with "depends on container ... not found in input list".
     _print("  [dim]-> Starting agentalloy service[/dim]")
-    up_cmd = [binary_path, "compose", "-f", cfg.compose_file, "up", "-d", "agentalloy"]
+    up_cmd = [
+        binary_path,
+        "compose",
+        "-f",
+        cfg.compose_file,
+        "up",
+        "-d",
+        "--no-deps",
+        "agentalloy",
+    ]
     _print(f"  $ {' '.join(up_cmd)}")
     try:
         result = subprocess.run(

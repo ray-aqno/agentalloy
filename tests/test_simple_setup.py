@@ -1526,6 +1526,15 @@ class TestContainerFlow:
         # against running inside the live service container — the kuzu lock
         # bug we're fixing).
         assert "exec" not in calls[packs_idx]
+        # Final `compose up agentalloy` MUST carry `--no-deps`. Without it,
+        # podman-compose 1.0.6 re-resolves the depends_on graph, tries to
+        # recreate the dep containers we already brought up in steps 7+8a,
+        # papers over the "name already in use" errors with `podman start`,
+        # and then fails the main container's --requires=<ids> lookup with
+        # "depends on container ... not found in input list" (exit 127).
+        assert "--no-deps" in calls[agentalloy_up_idx], (
+            f"`compose up agentalloy` missing --no-deps: {calls[agentalloy_up_idx]}"
+        )
 
     def test_container_aborts_when_init_wait_status_unknown(
         self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
