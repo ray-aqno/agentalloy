@@ -697,6 +697,53 @@ def _wait_for_one_shot(binary_path: str, container_name: str, *, timeout: int) -
         return None
 
 
+def _inspect_ollama_project(binary_path: str) -> tuple[str, str]:
+    """Return (compose_project, network_name) inferred from the running
+    agentalloy-ollama container.
+
+    podman-compose names the default network ``{project}_default`` where
+    ``project`` defaults to the compose-file dir basename or
+    ``COMPOSE_PROJECT_NAME``. Hardcoding ``agentalloy_default`` breaks when
+    the user clones into a differently-named dir. Instead, ask podman for
+    the truth: ollama is already up by the time we hit step 9, and its
+    labels + network attachments carry the actual project name.
+
+    Falls back to ``("agentalloy", "agentalloy_default")`` if inspection
+    fails — matches the previous hardcoded behavior so we never block setup
+    on a missing field, just degrade gracefully.
+    """
+    fallback = ("agentalloy", "agentalloy_default")
+    try:
+        result = subprocess.run(  # noqa: S603 — fixed argv, binary_path from shutil.which
+            [
+                binary_path,
+                "inspect",
+                "agentalloy-ollama",
+                "--format",
+                "{{ index .Config.Labels \"com.docker.compose.project\" }}"
+                "\t"
+                "{{ range $k, $_ := .NetworkSettings.Networks }}{{ $k }}\n{{ end }}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return fallback
+    if result.returncode != 0:
+        return fallback
+    raw = result.stdout.strip()
+    if not raw or "\t" not in raw:
+        return fallback
+    project, _, networks_blob = raw.partition("\t")
+    project = project.strip() or fallback[0]
+    networks = [n.strip() for n in networks_blob.splitlines() if n.strip()]
+    # Prefer the default network for this project; fall back to first attached.
+    target = f"{project}_default"
+    network = target if target in networks else (networks[0] if networks else fallback[1])
+    return (project, network)
+
+
 # Fixed container names declared in compose.yaml via `container_name:`.
 # Used as a fallback when the project-label query doesn't return them —
 # e.g. when the user has overridden COMPOSE_PROJECT_NAME, so labels read
@@ -1219,6 +1266,14 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     # container from a prior failed run. `--requires` is intentionally omitted
     # — we already waited on each dep above, so podman doesn't need to walk
     # the graph here.
+    #
+    # Compose project and network are discovered from the running ollama
+    # container, NOT hardcoded: podman-compose derives the project name from
+    # the compose-file dir basename (or COMPOSE_PROJECT_NAME), so a clone
+    # into e.g. ~/code/agentalloy-fork yields project=agentalloy-fork and
+    # network=agentalloy-fork_default. Hardcoding either breaks setup in
+    # those checkouts and breaks `compose ps/down` interop for this container.
+    project_name, network_name = _inspect_ollama_project(binary_path)
     _print("  [dim]-> Starting agentalloy service[/dim]")
     up_cmd = [
         binary_path,
@@ -1228,7 +1283,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         "--name",
         "agentalloy",
         "--network",
-        "agentalloy_default",
+        network_name,
         "--network-alias",
         "agentalloy",
         "-v",
@@ -1263,9 +1318,9 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         # _list_project_containers preflight all recognize the container
         # as part of the project.
         "--label",
-        "io.podman.compose.project=agentalloy",
+        f"io.podman.compose.project={project_name}",
         "--label",
-        "com.docker.compose.project=agentalloy",
+        f"com.docker.compose.project={project_name}",
         "--label",
         "com.docker.compose.service=agentalloy",
         "agentalloy:local",

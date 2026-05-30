@@ -1505,11 +1505,11 @@ class TestContainerFlow:
         )
         agentalloy_up_idx = _idx(
             lambda a: (
-                # Step 9 uses direct `podman run --replace` (NOT `compose up`)
-                # to start the main service. podman-compose 1.0.6's `up
-                # <service>` always re-resolves depends_on (even with
-                # --no-deps) and fails on the existing piecewise-brought-up
-                # dep containers.
+                # Step 9 uses direct `podman run --replace` (NOT
+                # `podman compose up <service>`) to start the main service.
+                # podman-compose 1.0.6 always re-resolves the depends_on
+                # graph even with --no-deps, and fails on the existing
+                # piecewise-brought-up dep containers.
                 a[:2] == ["/usr/bin/podman", "run"]
                 and "--replace" in a
                 and "--name" in a
@@ -1524,7 +1524,9 @@ class TestContainerFlow:
         assert packs_idx >= 0, (
             f"direct `podman run ... agentalloy:local install-packs` not found: {calls}"
         )
-        assert agentalloy_up_idx >= 0, f"`compose up agentalloy` not found: {calls}"
+        assert agentalloy_up_idx >= 0, (
+            f"direct `podman run --replace ... agentalloy:local` not found: {calls}"
+        )
         # Order matters: init → install-packs → main service.
         assert init_idx < packs_idx < agentalloy_up_idx, (
             f"Bad ordering — init={init_idx} packs={packs_idx} up={agentalloy_up_idx}: "
