@@ -13,6 +13,8 @@ from agentalloy.install.subcommands.uninstall import (
     _remove_sentinel_block,  # type: ignore[attr-defined]
     _extract_sentinel_content,  # type: ignore[attr-defined]
     _stop_container_stack,  # type: ignore[attr-defined]
+    _remove_compose_volumes,  # type: ignore[attr-defined]
+    _COMPOSE_NAMED_VOLUMES,  # type: ignore[attr-defined]
 )
 
 # Typed helper for mock_which.side_effect to avoid pyright reportUnknownLambdaType
@@ -224,6 +226,81 @@ class TestContainerUninstall:
         assert len(warnings) == 1
         assert "compose_binary" in warnings[0].lower()
         assert actions == []
+
+    def test_remove_compose_volumes_runs_volume_rm_per_named_volume(self):
+        """`compose down -v` doesn't remove named volumes — so a separate
+        `volume rm -f` call must run for each one declared in compose.yaml.
+        Without this, fresh reinstalls silently reuse the prior corpus +
+        ollama model cache.
+        """
+        state: dict[str, Any] = {
+            "deployment": "container",
+            "compose_binary": "podman compose",
+        }
+        warnings: list[str] = []
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stderr = ""
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            actions = _remove_compose_volumes(state, warnings)
+
+        assert mock_run.call_count == len(_COMPOSE_NAMED_VOLUMES)
+        for call, expected_vol in zip(mock_run.call_args_list, _COMPOSE_NAMED_VOLUMES, strict=True):
+            argv = call.args[0]
+            assert argv[0] == "podman"
+            assert argv[1] == "volume"
+            assert argv[2] == "rm"
+            assert argv[3] == "-f"
+            assert argv[4] == expected_vol
+        assert all(a["action"] == "volume_removed" for a in actions)
+        assert not warnings
+
+    def test_remove_compose_volumes_skips_native_deployment(self):
+        """Volume cleanup is container-only — native installs never created
+        the named volumes."""
+        state: dict[str, Any] = {"deployment": "native"}
+        warnings: list[str] = []
+        with patch("subprocess.run") as mock_run:
+            actions = _remove_compose_volumes(state, warnings)
+        mock_run.assert_not_called()
+        assert actions == []
+        assert not warnings
+
+    def test_remove_compose_volumes_handles_missing_volume(self):
+        """`volume rm` of a non-existent volume should be silent (idempotent),
+        not surface a warning. Both podman ("no such volume") and docker
+        ("not found") error strings are recognized."""
+        state: dict[str, Any] = {
+            "deployment": "container",
+            "compose_binary": "docker compose",
+        }
+        warnings: list[str] = []
+
+        def fake_run(argv: Any, **kwargs: Any) -> MagicMock:  # type: ignore[no-untyped-def]
+            m = MagicMock()
+            m.returncode = 1
+            m.stderr = "Error: no such volume: agentalloy-data\n"
+            return m
+
+        with patch("subprocess.run", side_effect=fake_run):
+            actions = _remove_compose_volumes(state, warnings)
+
+        assert all(a["action"] == "volume_already_gone" for a in actions)
+        assert not warnings
+
+    def test_remove_compose_volumes_warns_on_unresolved_binary(self):
+        """When state doesn't have enough info to resolve the runtime
+        binary, emit a manual-cleanup hint instead of silently no-op'ing."""
+        state: dict[str, Any] = {"deployment": "container"}  # no compose_binary
+        warnings: list[str] = []
+        with patch("subprocess.run") as mock_run:
+            actions = _remove_compose_volumes(state, warnings)
+        mock_run.assert_not_called()
+        assert actions == []
+        assert len(warnings) == 1
+        assert "agentalloy-data" in warnings[0]
+        assert "agentalloy-ollama-models" in warnings[0]
 
     def test_compose_down_invalid_label_warns(self, tmp_path: Path):
         """Invalid compose_binary label (no space) is rejected."""
