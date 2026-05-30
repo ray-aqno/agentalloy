@@ -935,32 +935,33 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         "agentalloy",
         "install-packs",
     ]
+    _print(f"  $ {' '.join(packs_cmd)}")
     try:
+        # Stream output so failures (e.g. compose-run quirks, missing entry
+        # points, embedder timeouts) are visible. install-packs can run for
+        # several minutes; silent capture hides both progress and errors.
         packs_result = subprocess.run(  # noqa: S603 — argv list, binary_path from shutil.which
-            packs_cmd, capture_output=True, text=True, timeout=600
+            packs_cmd,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            timeout=600,
         )
         if packs_result.returncode != 0:
             _print(
                 "  [yellow]  install-packs returned "
                 f"{packs_result.returncode}; verify may report a low skill count.[/yellow]"
             )
-            if packs_result.stderr:
-                _print(f"  [dim]{packs_result.stderr.strip()[:500]}[/dim]")
+            _print(
+                "  [dim]  Retry manually: "
+                f"{binary_path} compose -f {cfg.compose_file} "
+                "run --rm -T agentalloy uv run agentalloy install-packs[/dim]"
+            )
         else:
-            # install-packs returns 0 even when reembed soft-failed (pack
-            # ingestion is the primary contract; reembed is retryable). Scan
-            # stderr for the WARN line so users see when embeddings didn't
-            # land — otherwise "Skill packs installed." would lie.
-            if packs_result.stderr and "WARN: bulk reembed" in packs_result.stderr:
-                _print("  [yellow]  Skill packs ingested, but reembed reported errors.[/yellow]")
-                _print(
-                    "  [dim]  Embedder may have been slow or briefly unreachable. "
-                    "Retry with: "
-                    f"{binary_path} compose -f {cfg.compose_file} "
-                    "run --rm -T agentalloy uv run agentalloy reembed[/dim]"
-                )
-            else:
-                _print("  [green]  Skill packs installed.[/green]")
+            # install-packs returns 0 even when reembed soft-failed. The
+            # streamed output above shows the WARN line directly; the
+            # remediation message belongs in the install-packs subcommand
+            # itself, not here.
+            _print("  [green]  Skill packs installed.[/green]")
     except subprocess.TimeoutExpired:
         _print("  [yellow]  install-packs timed out after 10 min.[/yellow]")
 
