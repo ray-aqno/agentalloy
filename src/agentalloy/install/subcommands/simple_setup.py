@@ -1204,25 +1204,71 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     except subprocess.TimeoutExpired:
         _print("  [yellow]  install-packs timed out after 10 min.[/yellow]")
 
-    # 9. Start the main agentalloy service now that the corpus is populated.
-    # Use `--no-deps`: every dependency (ollama, ollama-pull, agentalloy-init)
-    # was already brought up piecewise in steps 7 + 8a. Without --no-deps,
-    # podman-compose 1.0.6 re-resolves the depends_on graph and tries to
-    # recreate the existing dep containers — they hit "name already in use",
-    # podman-compose papers over with `podman start`, and then the main
-    # agentalloy container's --requires=<dep-ids> references freshly-rotated
-    # internal IDs that no longer match what podman has stored, exiting 127
-    # with "depends on container ... not found in input list".
+    # 9. Start the main agentalloy service via direct `podman run --replace`,
+    # NOT `podman compose up`. Same reason install-packs (step 8b) uses direct
+    # run: podman-compose 1.0.6's `up <service>` always re-resolves the full
+    # depends_on graph, even with `--no-deps`. It tries to recreate every dep
+    # we already brought up piecewise in steps 7 + 8a, hits "name already in
+    # use", papers over with `podman start`, and then the new agentalloy
+    # container's `--requires=<dep-ids>` flag (injected from depends_on) points
+    # at internal IDs that no longer line up with podman's stored graph,
+    # exiting 125 with "depends on container ... not found in input list".
+    #
+    # The agentalloy service config below MUST stay in sync with the
+    # `agentalloy:` block in compose.yaml. `--replace` cleans up any dangling
+    # container from a prior failed run. `--requires` is intentionally omitted
+    # — we already waited on each dep above, so podman doesn't need to walk
+    # the graph here.
     _print("  [dim]-> Starting agentalloy service[/dim]")
     up_cmd = [
         binary_path,
-        "compose",
-        "-f",
-        cfg.compose_file,
-        "up",
+        "run",
         "-d",
-        "--no-deps",
+        "--replace",
+        "--name",
         "agentalloy",
+        "--network",
+        "agentalloy_default",
+        "--network-alias",
+        "agentalloy",
+        "-v",
+        "agentalloy-data:/app/data",
+        "-p",
+        f"{cfg.port}:47950",
+        "-e",
+        "RUNTIME_EMBED_BASE_URL=http://ollama:11434",
+        "-e",
+        "RUNTIME_EMBEDDING_MODEL=qwen3-embedding:0.6b",
+        "-e",
+        "EMBEDDING_PROVIDER=openai_compat",
+        "-e",
+        "LADYBUG_DB_PATH=/app/data/ladybug",
+        "-e",
+        "DUCKDB_PATH=/app/data/skills.duck",
+        "-e",
+        "LOG_LEVEL=INFO",
+        "--restart",
+        "unless-stopped",
+        "--health-cmd",
+        "curl -fsS --max-time 3 http://127.0.0.1:47950/health",
+        "--health-interval",
+        "15s",
+        "--health-timeout",
+        "5s",
+        "--health-start-period",
+        "30s",
+        "--health-retries",
+        "5",
+        # Compose labels so `podman compose ps`, `down`, and our own
+        # _list_project_containers preflight all recognize the container
+        # as part of the project.
+        "--label",
+        "io.podman.compose.project=agentalloy",
+        "--label",
+        "com.docker.compose.project=agentalloy",
+        "--label",
+        "com.docker.compose.service=agentalloy",
+        "agentalloy:local",
     ]
     _print(f"  $ {' '.join(up_cmd)}")
     try:
@@ -1233,10 +1279,10 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
             timeout=300,
         )
         if result.returncode != 0:
-            _print("  [red]  compose up (agentalloy) failed.[/red]")
+            _print("  [red]  podman run (agentalloy) failed.[/red]")
             return result.returncode
     except subprocess.TimeoutExpired:
-        _print("  [red]  compose up (agentalloy) timed out (5 min).[/red]")
+        _print("  [red]  podman run (agentalloy) timed out (5 min).[/red]")
         return 1
     _print("  [green]  Done.[/green]")
 

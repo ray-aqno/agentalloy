@@ -1505,10 +1505,17 @@ class TestContainerFlow:
         )
         agentalloy_up_idx = _idx(
             lambda a: (
-                a[:2] == ["/usr/bin/podman", "compose"]
-                and "up" in a
-                and "agentalloy" in a
-                and "agentalloy-init" not in a
+                # Step 9 uses direct `podman run --replace` (NOT `compose up`)
+                # to start the main service. podman-compose 1.0.6's `up
+                # <service>` always re-resolves depends_on (even with
+                # --no-deps) and fails on the existing piecewise-brought-up
+                # dep containers.
+                a[:2] == ["/usr/bin/podman", "run"]
+                and "--replace" in a
+                and "--name" in a
+                and a[a.index("--name") + 1] == "agentalloy"
+                and "agentalloy:local" in a
+                and "install-packs" not in a
             )
         )
 
@@ -1526,14 +1533,12 @@ class TestContainerFlow:
         # against running inside the live service container — the kuzu lock
         # bug we're fixing).
         assert "exec" not in calls[packs_idx]
-        # Final `compose up agentalloy` MUST carry `--no-deps`. Without it,
-        # podman-compose 1.0.6 re-resolves the depends_on graph, tries to
-        # recreate the dep containers we already brought up in steps 7+8a,
-        # papers over the "name already in use" errors with `podman start`,
-        # and then fails the main container's --requires=<ids> lookup with
-        # "depends on container ... not found in input list" (exit 127).
-        assert "--no-deps" in calls[agentalloy_up_idx], (
-            f"`compose up agentalloy` missing --no-deps: {calls[agentalloy_up_idx]}"
+        # Final agentalloy launch MUST use `podman run --replace`, not
+        # `compose up`. `--replace` lets it cleanly recreate the container
+        # even if a dangling agentalloy container is left over from a prior
+        # failed run.
+        assert "--replace" in calls[agentalloy_up_idx], (
+            f"final agentalloy launch missing --replace: {calls[agentalloy_up_idx]}"
         )
 
     def test_container_aborts_when_init_wait_status_unknown(
