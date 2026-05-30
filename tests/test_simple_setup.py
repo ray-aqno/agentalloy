@@ -1290,11 +1290,7 @@ class TestContainerFlow:
             mock.stderr = ""
             # Materialize the cloned repo on disk so _has_assets() passes
             # after the simulated `git clone`.
-            if (
-                len(argv_list) >= 2
-                and argv_list[0] == "git"
-                and argv_list[1] == "clone"
-            ):
+            if len(argv_list) >= 2 and argv_list[0] == "git" and argv_list[1] == "clone":
                 clone_calls.append(argv_list)
                 dest = Path(argv_list[-1])
                 dest.mkdir(parents=True, exist_ok=True)
@@ -1325,9 +1321,7 @@ class TestContainerFlow:
         import agentalloy.install.state as state_mod
 
         st = state_mod.load_state()
-        assert "cache_home" in st["compose_file"] and st["compose_file"].endswith(
-            "compose.yaml"
-        )
+        assert "cache_home" in st["compose_file"] and st["compose_file"].endswith("compose.yaml")
 
     def test_compose_accepts_dockerfile_alternative(
         self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
