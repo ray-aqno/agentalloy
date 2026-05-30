@@ -1003,8 +1003,8 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         for name, status in existing:
             _print(f"  - {name}  [dim]({status})[/dim]")
         _print(
-            "  [dim]podman-compose will misbehave if these stay around "
-            "(stale exit codes, dangling --requires graphs).[/dim]"
+            f"  [dim]{cfg.compose_binary} will misbehave if these stay around "
+            "(name collisions, stale exit codes, dangling dependency graphs).[/dim]"
         )
         if cfg.non_interactive:
             _print("  [dim]non-interactive: removing automatically[/dim]")
@@ -1032,11 +1032,12 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     # agentalloy service is already up when we run `install-packs`, every
     # ingest opens a second kuzu handle against /app/data/ladybug and dies
     # with "Could not set lock on file". So:
-    #   (a) up agentalloy-init (transitively starts ollama + ollama-pull,
-    #       runs schema migrations, exits),
-    #   (b) run install-packs in a one-shot container against the shared
-    #       volume while no one holds the lock,
-    #   (c) up the main agentalloy service.
+    #   (a) up agentalloy-init alone (no depends_on; runs schema
+    #       migrations and exits),
+    #   (b) up ollama + ollama-pull and wait for the model to cache (8a),
+    #   (c) run install-packs in a one-shot container that joins
+    #       ollama's network namespace (8b), while no one holds the lock,
+    #   (d) up the main agentalloy service (step 9).
     _print("[bold]Running container setup...[/bold]")
     _print("  [dim]-> Building image and starting init services[/dim]")
     init_cmd = [

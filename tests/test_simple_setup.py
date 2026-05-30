@@ -1513,7 +1513,9 @@ class TestContainerFlow:
         )
 
         assert init_idx >= 0, f"init `compose up agentalloy-init` not found: {calls}"
-        assert packs_idx >= 0, f"`compose run ... install-packs` not found: {calls}"
+        assert packs_idx >= 0, (
+            f"direct `podman run ... agentalloy:local install-packs` not found: {calls}"
+        )
         assert agentalloy_up_idx >= 0, f"`compose up agentalloy` not found: {calls}"
         # Order matters: init → install-packs → main service.
         assert init_idx < packs_idx < agentalloy_up_idx, (

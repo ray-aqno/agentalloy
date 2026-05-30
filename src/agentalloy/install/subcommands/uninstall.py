@@ -287,8 +287,8 @@ def _remove_compose_volumes(
     if binary is None:
         warnings.append(
             "Container deployment detected but compose binary unresolved — "
-            "skipping volume cleanup. Remove manually: "
-            f"`docker volume rm -f {' '.join(_COMPOSE_NAMED_VOLUMES)}`"
+            "skipping volume cleanup. Remove manually with your runtime: "
+            f"`<podman|docker> volume rm -f {' '.join(_COMPOSE_NAMED_VOLUMES)}`"
         )
         return actions
 
@@ -846,6 +846,19 @@ def uninstall(
         # run after compose down so containers no longer hold them.
         if remove_data:
             container_actions.extend(_remove_compose_volumes(st, warnings))
+    elif remove_data and st.get("deployment") == "container":
+        # remove_data=True with stop_services=False is a programmatic
+        # mis-use: `volume rm` would fail because containers still hold
+        # the volumes open. Surface this loudly instead of silently
+        # leaving the volumes behind — callers asking for --remove-data
+        # almost certainly expect a full wipe.
+        warnings.append(
+            "remove_data=True requested without stop_services — named "
+            "volumes (agentalloy-data, agentalloy-ollama-models) cannot "
+            "be removed while containers still mount them. Re-run with "
+            "stop_services=True or remove the volumes manually after "
+            "`compose down -v`."
+        )
 
     # 1. Remove harness wiring. State is user-scoped and may carry entries
     # from multiple repos, but the containment check MUST use a trusted
