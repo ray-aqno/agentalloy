@@ -104,6 +104,8 @@ Works in any of the [supported harnesses](#harness-support).
 
 **Container alternative.** `agentalloy setup` → choose container. The default `compose.yaml` runs agentalloy + a bundled Ollama sidecar on the compose-internal network with `qwen3-embedding:0.6b` auto-pulled on first start. Port 47950 is the only external surface. Container inference is CPU-only on every host; for GPU acceleration (NVIDIA/AMD/Metal) pick the native install instead.
 
+> **Container install requires a repo checkout.** `compose.yaml` uses `build: { context: . }` to build the image from source, so the wizard needs `Containerfile`, `pyproject.toml`, `uv.lock`, `src/`, and `README.md` next to the compose file. A `uv tool install` by itself doesn't include the build context. Either `git clone` the repo first and run `agentalloy setup` from inside it, or use the native deployment which doesn't need a checkout.
+
 ---
 
 ## Demo

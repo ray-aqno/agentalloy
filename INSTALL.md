@@ -407,6 +407,8 @@ Then based on the answer:
 
 The subcommand detects the available service manager (systemd/launchd) or container runtime (podman preferred, docker fallback), writes the appropriate unit/plist/compose invocation, starts the service, and polls `/health` for up to 30s to confirm startup. Container deployments always use `compose.yaml`, which bundles agentalloy + an Ollama sidecar (CPU-only inference; GPU acceleration requires the native install). On success, the mode is recorded in `install-state.json`.
 
+> **Container deployments need a repo checkout.** `compose.yaml` builds the image from local source (`build: { context: . }`), so `Containerfile`, `pyproject.toml`, `uv.lock`, `src/`, and `README.md` must sit alongside the compose file. A `uv tool install`'d CLI alone is not enough — the wheel doesn't ship the build context. If the user opted into container mode but doesn't have the repo, instruct them to `git clone https://github.com/nrmeyers/agentalloy.git` and re-run `agentalloy setup` from inside that directory. Native mode has no such requirement.
+
 ---
 
 ## Step 14: Start the service + first-run demo
