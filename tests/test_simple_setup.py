@@ -1080,7 +1080,18 @@ class TestContainerFlow:
 
         with patch(
             "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-            return_value=(None, None, [{"binary": "podman", "path": "/usr/bin/podman", "compose_ok": False, "stderr": "podman-compose not installed"}]),
+            return_value=(
+                None,
+                None,
+                [
+                    {
+                        "binary": "podman",
+                        "path": "/usr/bin/podman",
+                        "compose_ok": False,
+                        "stderr": "podman-compose not installed",
+                    }
+                ],
+            ),
         ):
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
 
@@ -1477,21 +1488,25 @@ class TestContainerFlow:
             return -1
 
         init_idx = _idx(
-            lambda a: a[:2] == ["/usr/bin/podman", "compose"]
-            and "up" in a
-            and "agentalloy-init" in a
+            lambda a: (
+                a[:2] == ["/usr/bin/podman", "compose"] and "up" in a and "agentalloy-init" in a
+            )
         )
         packs_idx = _idx(
-            lambda a: a[:2] == ["/usr/bin/podman", "compose"]
-            and "run" in a
-            and "install-packs" in a
-            and "--no-deps" in a
+            lambda a: (
+                a[:2] == ["/usr/bin/podman", "compose"]
+                and "run" in a
+                and "install-packs" in a
+                and "--no-deps" in a
+            )
         )
         agentalloy_up_idx = _idx(
-            lambda a: a[:2] == ["/usr/bin/podman", "compose"]
-            and "up" in a
-            and "agentalloy" in a
-            and "agentalloy-init" not in a
+            lambda a: (
+                a[:2] == ["/usr/bin/podman", "compose"]
+                and "up" in a
+                and "agentalloy" in a
+                and "agentalloy-init" not in a
+            )
         )
 
         assert init_idx >= 0, f"init `compose up agentalloy-init` not found: {calls}"

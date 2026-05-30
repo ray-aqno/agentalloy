@@ -669,9 +669,7 @@ def _test_embed_endpoint(cfg: SetupConfig) -> None:
             )
 
 
-def _wait_for_one_shot(
-    binary_path: str, container_name: str, *, timeout: int
-) -> int | None:
+def _wait_for_one_shot(binary_path: str, container_name: str, *, timeout: int) -> int | None:
     """Block until a one-shot container exits, then return its exit code.
 
     Uses ``podman wait`` / ``docker wait`` (both behave identically: stdout

@@ -414,9 +414,7 @@ def _probe_compose_runtime() -> tuple[str | None, str | None, list[_ComposeProbe
     for candidate in ("podman", "docker"):
         binary = shutil.which(candidate)
         if binary is None:
-            probes.append(
-                {"binary": candidate, "path": None, "compose_ok": False, "stderr": ""}
-            )
+            probes.append({"binary": candidate, "path": None, "compose_ok": False, "stderr": ""})
             continue
         stderr = ""
         compose_ok = False
