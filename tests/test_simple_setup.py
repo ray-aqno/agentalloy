@@ -1068,50 +1068,6 @@ class TestContainerFlow:
         assert st["compose_binary"] == "podman compose"
         assert st["compose_file"] is not None
 
-    def test_radeon_variant_detection(self, tmp_state_dir: tuple[Path, Path], tmp_path: Path):
-        """recommended_host='radeon' selects compose.radeon.yaml."""
-        SetupConfig, run_setup = self._import_run_setup()
-
-        # Create compose.radeon.yaml in cwd
-        compose_radeon = tmp_path / "compose.radeon.yaml"
-        compose_radeon.write_text("version: '3'\nservices: {}\n")
-
-        # Create detect.json with AMD GPU data so hardware detection sets radeon
-        (self.tmp_data / "outputs").mkdir(parents=True, exist_ok=True)
-        detect_json = self.tmp_data / "outputs" / "detect.json"
-        detect_json.write_text(
-            json.dumps(
-                {
-                    "gpu": {
-                        "discrete": [{"vendor": "amd", "model": "RX 7900 XTX", "vram_gb": 24}],
-                        "integrated": [],
-                    },
-                    "runner": "ollama",
-                }
-            )
-        )
-
-        with (
-            patch(
-                "agentalloy.install.subcommands.preflight._detect_compose_binary",
-                return_value=("podman compose", "/usr/bin/podman"),
-            ),
-            patch("subprocess.run") as mock_run,
-            patch("pathlib.Path.cwd", return_value=tmp_path),
-        ):
-            mock_result = MagicMock()
-            mock_result.returncode = 0
-            mock_run.return_value = mock_result
-
-            rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
-
-        assert rc == 0
-
-        import agentalloy.install.state as state_mod
-
-        st = state_mod.load_state()
-        assert "compose.radeon.yaml" in st["compose_file"]
-
     def test_compose_binary_missing_exits_1(
         self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
     ):
@@ -1326,7 +1282,8 @@ class TestContainerFlow:
             patch("subprocess.run") as mock_run,
             patch("pathlib.Path.cwd", return_value=empty_cwd),
             patch.object(setup_mod, "__file__", str(fake_module_file)),
-            patch("builtins.input", side_effect=[str(clone), "y"]),
+            # Prompt sequence: CPU-only continue → clone path → final confirm.
+            patch("builtins.input", side_effect=["y", str(clone), "y"]),
         ):
             mock_result = MagicMock()
             mock_result.returncode = 0
@@ -1370,7 +1327,8 @@ class TestContainerFlow:
             patch("subprocess.run") as mock_run,
             patch("pathlib.Path.cwd", return_value=empty_cwd),
             patch.object(setup_mod, "__file__", str(fake_module_file)),
-            patch("builtins.input", side_effect=[str(compose_file), "y"]),
+            # Prompt sequence: CPU-only continue → compose path → final confirm.
+            patch("builtins.input", side_effect=["y", str(compose_file), "y"]),
         ):
             mock_result = MagicMock()
             mock_result.returncode = 0
@@ -1384,10 +1342,10 @@ class TestContainerFlow:
         st = state_mod.load_state()
         assert st["compose_file"] == str(compose_file)
 
-    def test_apple_silicon_warning_auto_continues_non_interactive(
+    def test_container_cpu_only_warning_shown_to_every_host(
         self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
     ):
-        """On Darwin/arm64, container setup prints Metal warning but proceeds in non-interactive mode."""
+        """Container deployment always warns CPU-only and auto-continues non-interactive."""
         SetupConfig, run_setup = self._import_run_setup()
 
         with (
@@ -1396,8 +1354,6 @@ class TestContainerFlow:
                 return_value=("podman compose", "/usr/bin/podman"),
             ),
             patch("subprocess.run") as mock_run,
-            patch("platform.system", return_value="Darwin"),
-            patch("platform.machine", return_value="arm64"),
         ):
             mock_result = MagicMock()
             mock_result.returncode = 0
@@ -1407,13 +1363,15 @@ class TestContainerFlow:
 
         assert rc == 0
         out = capsys.readouterr().out.lower()
-        assert "apple silicon" in out
         assert "cpu-only" in out
+        assert "gpu acceleration" in out
+        # Regression guard: the previous Apple-Silicon-specific phrasing is gone.
+        assert "apple silicon" not in out
 
-    def test_apple_silicon_warning_cancels_on_no(
+    def test_container_cpu_only_warning_cancels_on_no(
         self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
     ):
-        """On Darwin/arm64 interactive, answering 'n' to the Metal warning cancels setup."""
+        """Interactive 'n' to the CPU-only warning cancels setup with rc=1."""
         SetupConfig, run_setup = self._import_run_setup()
 
         with (
@@ -1422,8 +1380,6 @@ class TestContainerFlow:
                 return_value=("podman compose", "/usr/bin/podman"),
             ),
             patch("subprocess.run") as mock_run,
-            patch("platform.system", return_value="Darwin"),
-            patch("platform.machine", return_value="arm64"),
             patch("builtins.input", return_value="n"),
         ):
             mock_result = MagicMock()
@@ -1436,35 +1392,8 @@ class TestContainerFlow:
         out = capsys.readouterr().out.lower()
         assert "cancelled" in out
 
-    def test_apple_silicon_warning_skipped_on_linux(
-        self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
-    ):
-        """On non-Darwin hosts, the Apple Silicon Metal warning does not appear."""
-        SetupConfig, run_setup = self._import_run_setup()
-
-        with (
-            patch(
-                "agentalloy.install.subcommands.preflight._detect_compose_binary",
-                return_value=("podman compose", "/usr/bin/podman"),
-            ),
-            patch("subprocess.run") as mock_run,
-            patch("platform.system", return_value="Linux"),
-            patch("platform.machine", return_value="x86_64"),
-        ):
-            mock_result = MagicMock()
-            mock_result.returncode = 0
-            mock_run.return_value = mock_result
-
-            rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
-
-        assert rc == 0
-        out = capsys.readouterr().out.lower()
-        assert "apple silicon" not in out
-
-    def test_container_env_uses_ollama_port_for_default_stack(
-        self, tmp_state_dir: tuple[Path, Path]
-    ):
-        """compose.yaml stack writes host .env pointing at ollama:11434 with the right model."""
+    def test_container_env_is_just_runtime_port(self, tmp_state_dir: tuple[Path, Path]):
+        """Container .env now contains only RUNTIME_PORT — embedder is internal to compose."""
         SetupConfig, run_setup = self._import_run_setup()
 
         with (
@@ -1484,56 +1413,11 @@ class TestContainerFlow:
         import agentalloy.install.state as state_mod
 
         env_text = state_mod.env_path().read_text()
-        assert "RUNTIME_EMBED_BASE_URL=http://localhost:11434" in env_text
-        assert "RUNTIME_EMBEDDING_MODEL=qwen3-embedding:0.6b" in env_text
-        # Regression guard: must not be empty or pointing at the agentalloy service.
-        assert 'RUNTIME_EMBEDDING_MODEL=""' not in env_text
-        assert "RUNTIME_EMBED_BASE_URL=http://localhost:47950" not in env_text
-
-    def test_container_env_uses_lm_studio_port_for_radeon_stack(
-        self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
-    ):
-        """compose.radeon.yaml stack writes host .env pointing at LM Studio on host:1234."""
-        SetupConfig, run_setup = self._import_run_setup()
-
-        # Put a radeon compose file in cwd so the auto-detect picks it up.
-        (tmp_path / "compose.radeon.yaml").write_text("services: {}\n")
-        (tmp_path / "Containerfile").write_text("FROM scratch\n")
-
-        # Plant detect.json so recommended_host=radeon → default_compose=radeon.
-        (self.tmp_data / "outputs").mkdir(parents=True, exist_ok=True)
-        (self.tmp_data / "outputs" / "detect.json").write_text(
-            json.dumps(
-                {
-                    "gpu": {
-                        "discrete": [{"vendor": "amd", "model": "RX 7900", "vram_gb": 24}],
-                        "integrated": [],
-                    },
-                    "runner": "ollama",
-                }
-            )
-        )
-
-        with (
-            patch(
-                "agentalloy.install.subcommands.preflight._detect_compose_binary",
-                return_value=("podman compose", "/usr/bin/podman"),
-            ),
-            patch("subprocess.run") as mock_run,
-            patch("pathlib.Path.cwd", return_value=tmp_path),
-        ):
-            mock_result = MagicMock()
-            mock_result.returncode = 0
-            mock_run.return_value = mock_result
-
-            rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
-
-        assert rc == 0
-        import agentalloy.install.state as state_mod
-
-        env_text = state_mod.env_path().read_text()
-        assert "RUNTIME_EMBED_BASE_URL=http://localhost:1234" in env_text
-        assert "RUNTIME_EMBEDDING_MODEL=qwen3-embedding:0.6b" in env_text
+        assert "RUNTIME_PORT=47950" in env_text
+        # Regression guards: host should no longer carry embedder coordinates;
+        # those live entirely inside the container's compose environment.
+        assert "RUNTIME_EMBED_BASE_URL" not in env_text
+        assert "RUNTIME_EMBEDDING_MODEL" not in env_text
 
     def test_container_runs_install_packs_inside_container(self, tmp_state_dir: tuple[Path, Path]):
         """Container flow invokes `<binary> exec agentalloy uv run agentalloy install-packs`."""

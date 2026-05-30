@@ -275,14 +275,29 @@ def _stop_container_stack(
         )
         return actions
 
-    # Verify compose file still exists
+    # Verify compose file still exists. Pre-simplification (when compose.radeon.yaml
+    # still existed) some users have install-state.json pointing at it. After it
+    # was deleted, fall back to compose.yaml in the same directory so uninstall
+    # can still run `compose down -v` cleanly instead of asking the user to do it
+    # manually.
     cf_path = Path(compose_file)
     if not cf_path.exists():
-        warnings.append(
-            f"Compose file missing: {compose_file} — skipping compose down. "
-            "Clean up containers manually."
-        )
-        return actions
+        if cf_path.name == "compose.radeon.yaml":
+            fallback = cf_path.parent / "compose.yaml"
+            if fallback.exists():
+                warnings.append(
+                    f"Recorded compose file {compose_file} no longer exists "
+                    "(compose.radeon.yaml was retired). Falling back to "
+                    f"{fallback} for `compose down`."
+                )
+                compose_file = str(fallback)
+                cf_path = fallback
+        if not cf_path.exists():
+            warnings.append(
+                f"Compose file missing: {compose_file} — skipping compose down. "
+                "Clean up containers manually."
+            )
+            return actions
 
     # Use stored absolute path if available; fall back to splitting label
     compose_binary_path = st.get("compose_binary_path")

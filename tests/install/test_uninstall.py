@@ -142,6 +142,48 @@ class TestContainerUninstall:
         assert "binary not found" in warnings[0].lower()
         assert actions[0]["action"] == "compose_down_skipped"
 
+    def test_compose_down_radeon_fallback_to_compose_yaml(self, tmp_path: Path):
+        """Existing radeon-container installs migrate cleanly when compose.radeon.yaml is gone.
+
+        Pre-simplification, install-state.json recorded `compose.radeon.yaml`.
+        After it was deleted, uninstall must still be able to bring the stack
+        down — it falls back to compose.yaml in the same directory and notes
+        the migration in warnings.
+        """
+        # compose.radeon.yaml in state is DELETED; compose.yaml lives next to it.
+        radeon_path = tmp_path / "compose.radeon.yaml"
+        compose_yaml = tmp_path / "compose.yaml"
+        compose_yaml.touch()  # only the new file exists on disk
+
+        state: dict[str, Any] = {
+            "deployment": "container",
+            "compose_binary": "podman compose",
+            "compose_binary_path": "/usr/bin/podman",
+            "compose_file": str(radeon_path),
+        }
+        warnings: list[str] = []
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_result.stderr = ""
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            actions = _stop_container_stack(state, warnings)
+
+        # Migration warning fired with the right wording
+        assert any("retired" in w.lower() or "falling back" in w.lower() for w in warnings), (
+            f"expected migration warning, got: {warnings}"
+        )
+        # compose down was invoked against compose.yaml, not the missing radeon file
+        mock_run.assert_called_once()
+        argv = mock_run.call_args[0][0]
+        assert str(compose_yaml) in argv
+        assert str(radeon_path) not in argv
+        # And the action succeeded
+        assert actions
+        assert actions[0]["action"] != "compose_down_skipped"
+
     def test_compose_down_missing_file_warns(self, tmp_path: Path):
         """Compose file in state points to non-existent file."""
         state: dict[str, Any] = {

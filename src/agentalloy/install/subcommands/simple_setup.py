@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import platform
 import subprocess
 import sys
 import time
@@ -138,23 +137,6 @@ def _resolve_preset(cfg: SetupConfig) -> str:
         preset = {"ollama": "cpu", "lm-studio": "cpu-lm-studio"}.get(runner, "cpu-llama-server")
     cfg.preset = preset
     return preset
-
-
-def _container_embed_defaults(cfg: SetupConfig) -> tuple[str, str]:
-    """Return (embed_url, embed_model) for host-side .env in container deployments.
-
-    Values are derived from the compose file the user selected:
-      - compose.radeon.yaml: LM Studio runs on the host at port 1234
-      - compose.yaml (default): ollama sidecar publishes 11434 to the host
-
-    Both stacks use the same embedding model. These values mirror the
-    `environment:` block of each compose service so the host's view and the
-    container's view of the embedder agree.
-    """
-    compose_name = Path(cfg.compose_file).name if cfg.compose_file else "compose.yaml"
-    if "radeon" in compose_name:
-        return "http://localhost:1234", "qwen3-embedding:0.6b"
-    return "http://localhost:11434", "qwen3-embedding:0.6b"
 
 
 def _report_verify_failures() -> None:
@@ -731,23 +713,26 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     assert binary_path is not None  # _detect_compose_binary returns both or neither
     _print(f"  Compose binary: {label} at {binary_path}")
 
-    # 2b. Apple Silicon container caveat: Docker Desktop / Podman Machine on macOS
-    # run containers inside a Linux VM and cannot pass Metal through. The bundled
-    # Ollama sidecar will run CPU-only inference regardless of host capability.
-    if platform.system() == "Darwin" and platform.machine() == "arm64":
-        _print(
-            "\n  [yellow]Heads up — Apple Silicon + container deployment:[/yellow]\n"
-            "  Docker/Podman on macOS cannot expose Metal to containers, so the\n"
-            "  bundled Ollama will run CPU-only. For an embedding model this is\n"
-            "  functional but noticeably slower than a native install would be.\n"
-            "  If you want Metal acceleration, cancel and re-run setup choosing\n"
-            "  the native deployment instead."
-        )
-        if not cfg.non_interactive:
-            ans = input("  Continue with container (CPU-only)? [Y/n]: ").strip().lower()
-            if ans in ("n", "no"):
-                _print("[yellow]Setup cancelled.[/yellow]")
-                return 1
+    # 2b. Container = CPU-only, on every host. GPU passthrough is intentionally
+    # out of scope: nvidia needs nvidia-container-toolkit + deploy.resources,
+    # AMD needs ROCm device mounts + a ROCm Ollama image, and Docker Desktop
+    # on macOS cannot pass Metal through at all. Users who want GPU should
+    # choose the native install. The bundled Ollama sidecar handles inference
+    # on CPU using the qwen3-embedding:0.6b model — functional for embeddings
+    # but slower than GPU.
+    _print(
+        "\n  [yellow]Note — container deployment is CPU-only on every host.[/yellow]\n"
+        "  GPU acceleration (NVIDIA/AMD/Apple Metal) only works with a native\n"
+        "  install. The bundled Ollama runs on CPU; for a 600M embedding model\n"
+        "  on short text this is functional but noticeably slower than GPU.\n"
+        "  If you want GPU acceleration, cancel and re-run setup choosing the\n"
+        "  native deployment."
+    )
+    if not cfg.non_interactive:
+        ans = input("  Continue with container (CPU-only)? [Y/n]: ").strip().lower()
+        if ans in ("n", "no"):
+            _print("[yellow]Setup cancelled.[/yellow]")
+            return 1
 
     # 3. Select compose file
     # The Containerfile build context needs the full repo (pyproject.toml,
@@ -758,7 +743,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     # Non-editable installs (e.g. `uv tool install agentalloy`) land in a
     # site-packages tree with no source above it; those users must cd into a
     # clone or pass an explicit path.
-    default_compose = "compose.radeon.yaml" if cfg.recommended_host == "radeon" else "compose.yaml"
+    default_compose = "compose.yaml"
 
     def _has_assets(d: Path) -> bool:
         # Match _check_image_build_deps in preflight.py: Containerfile OR Dockerfile.
@@ -913,7 +898,19 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
             if packs_result.stderr:
                 _print(f"  [dim]{packs_result.stderr.strip()[:500]}[/dim]")
         else:
-            _print("  [green]  Skill packs installed.[/green]")
+            # install-packs returns 0 even when reembed soft-failed (pack
+            # ingestion is the primary contract; reembed is retryable). Scan
+            # stderr for the WARN line so users see when embeddings didn't
+            # land — otherwise "Skill packs installed." would lie.
+            if packs_result.stderr and "WARN: bulk reembed" in packs_result.stderr:
+                _print("  [yellow]  Skill packs ingested, but reembed reported errors.[/yellow]")
+                _print(
+                    "  [dim]  Embedder may have been slow or briefly unreachable. "
+                    "Retry with: "
+                    f"{binary_path} exec agentalloy uv run agentalloy reembed[/dim]"
+                )
+            else:
+                _print("  [green]  Skill packs installed.[/green]")
     except subprocess.TimeoutExpired:
         _print("  [yellow]  install-packs timed out after 5 min.[/yellow]")
 
@@ -926,11 +923,11 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     st["port"] = cfg.port
     install_state.save_state(st)
 
-    # Write minimal .env for container defaults so verify and embed checks work.
-    # RUNTIME_EMBED_BASE_URL points the HOST at the embedder, not at the agentalloy
-    # service itself. Per compose stack:
-    #   - compose.yaml (bundled ollama sidecar): ollama publishes 11434 to host
-    #   - compose.radeon.yaml (LM Studio on host): LM Studio listens on 1234
+    # Host .env for container deployments only needs the API port. The
+    # embedder lives entirely inside the container (compose internal network)
+    # and is not reachable from the host. Host-side verify reads embed status
+    # through agentalloy's /diagnostics/runtime endpoint instead of probing
+    # the embedder URL directly.
     env_dir = install_state.user_config_dir()
     env_dir.mkdir(parents=True, exist_ok=True)
     env_fp = install_state.env_path()
@@ -940,14 +937,8 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         st["env_original_content"] = env_fp.read_text()
         install_state.save_state(st)
 
-    embed_url, embed_model = _container_embed_defaults(cfg)
-    env_lines = [
-        f"RUNTIME_EMBED_BASE_URL={embed_url}",
-        f"RUNTIME_EMBEDDING_MODEL={embed_model}",
-        f"RUNTIME_PORT={cfg.port}",
-    ]
     install_state._atomic_write(  # pyright: ignore[reportPrivateUsage]
-        env_fp, "\n".join(env_lines) + "\n"
+        env_fp, f"RUNTIME_PORT={cfg.port}\n"
     )
 
     # 11. Run verify

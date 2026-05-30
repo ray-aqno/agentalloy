@@ -1,14 +1,16 @@
-# Compose stack for AgentAlloy (cpu / apple-silicon / nvidia presets).
+# AgentAlloy container stack (one stack, every host, CPU-only inference).
 # Works with both `podman compose up` (project preference) and `docker compose up`.
 #
-# For AMD Radeon dGPU or iGPU (LM Studio Vulkan backend), use compose.radeon.yaml instead.
+# GPU acceleration is intentionally out of scope here — pick the native install
+# if you want NVIDIA CUDA, AMD ROCm, or Apple Metal. Containers run on CPU.
 #
 # What this gives you:
-#   - agentalloy service on http://localhost:47950
-#   - Ollama running qwen3-embedding:0.6b reachable at http://localhost:11434 from the host
+#   - agentalloy service on http://localhost:47950  (THE ONLY external surface)
+#   - Ollama sidecar running qwen3-embedding:0.6b on the internal compose
+#     network; not published to the host
 #   - The model is auto-pulled on first start by the `ollama-pull` init service
 #   - Database schemas are initialized on first start by the `agentalloy-init` service
-#   - Persistent named volumes for corpus data and Ollama models (safe on macOS / Windows)
+#   - Persistent named volumes for corpus data and Ollama models
 #
 # Usage:
 #   podman compose up -d
@@ -29,8 +31,9 @@ services:
     container_name: agentalloy-ollama
     volumes:
       - ollama-models:/root/.ollama
-    ports:
-      - "11434:11434"
+    # No `ports:` block — Ollama is reachable only from inside the compose
+    # network at http://ollama:11434. The agentalloy service is the only
+    # externally-published surface (47950 below).
     healthcheck:
       test: ["CMD-SHELL", "ollama list >/dev/null 2>&1"]
       interval: 10s

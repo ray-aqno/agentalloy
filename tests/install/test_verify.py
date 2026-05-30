@@ -17,6 +17,7 @@ from agentalloy.install.subcommands.verify import (
     _check_duckdb_present,  # pyright: ignore[reportPrivateUsage]
     _check_embedding_1024_dim,  # pyright: ignore[reportPrivateUsage]
     _check_embedding_endpoint_reachable,  # pyright: ignore[reportPrivateUsage]
+    _check_embedding_via_diagnostics,  # pyright: ignore[reportPrivateUsage]
     _check_harness_config_present,  # pyright: ignore[reportPrivateUsage]
     _check_harness_config_url,  # pyright: ignore[reportPrivateUsage]
     _check_ladybug_present,  # pyright: ignore[reportPrivateUsage]
@@ -76,6 +77,97 @@ class TestEmbedding1024Dim:
         result = _check_embedding_1024_dim("http://localhost:11434", "wrong-model")
         assert result["passed"] is False
         assert "768" in result.get("error", "")
+
+
+# ---------------------------------------------------------------------------
+# Container mode: embed checks via /diagnostics/runtime
+# ---------------------------------------------------------------------------
+
+
+class TestEmbeddingViaDiagnostics:
+    """Container deployments source embed status from the diagnostics endpoint.
+
+    The diagnostics endpoint emits the readiness block under the JSON key
+    ``dependency_readiness`` (see ``DependencyReadiness`` in
+    ``agentalloy.api.diagnostics_router``). These tests use the real wire
+    name so a future schema change to the production response breaks the
+    test instead of silently passing.
+    """
+
+    def test_passes_when_diag_reports_embedding_ok(self) -> None:
+        diag = {"dependency_readiness": {"embedding_runtime": "ok"}}
+        result = _check_embedding_via_diagnostics(diag, "embedding_endpoint_reachable")
+        assert result["passed"] is True
+        assert "embedding_runtime=ok" in result["detail"]
+        assert result["name"] == "embedding_endpoint_reachable"
+
+    def test_fails_when_diag_reports_unavailable(self) -> None:
+        diag = {"dependency_readiness": {"embedding_runtime": "unavailable"}}
+        result = _check_embedding_via_diagnostics(diag, "embedding_endpoint_returns_1024_dim")
+        assert result["passed"] is False
+        assert "unavailable" in result["error"]
+        assert "compose logs" in result["remediation"]
+
+    def test_accepts_legacy_dep_readiness_key(self) -> None:
+        """Older snapshots / cached responses may still carry the legacy key."""
+        diag = {"dep_readiness": {"embedding_runtime": "ok"}}
+        result = _check_embedding_via_diagnostics(diag, "embedding_endpoint_reachable")
+        assert result["passed"] is True
+
+    def test_fails_when_diag_is_none(self) -> None:
+        """Service unreachable on the runtime port — surface a useful message."""
+        result = _check_embedding_via_diagnostics(None, "embedding_endpoint_reachable")
+        assert result["passed"] is False
+        assert "/diagnostics/runtime unreachable" in result["error"]
+
+    def test_run_checks_uses_diagnostics_in_container_mode(self) -> None:
+        """run_checks routes the two embed checks through diagnostics when deployment=container."""
+        diag = {"dependency_readiness": {"embedding_runtime": "ok"}}
+        st: dict[str, Any] = {"deployment": "container", "port": 47950}
+        with (
+            patch("agentalloy.install.subcommands.verify._probe_diagnostics", return_value=diag),
+            # The direct-probe checks must NOT be called in container mode.
+            patch(
+                "agentalloy.install.subcommands.verify._check_embedding_endpoint_reachable"
+            ) as direct_reach,
+            patch("agentalloy.install.subcommands.verify._check_embedding_1024_dim") as direct_dim,
+            # Stub out the DB / harness / port checks so the test stays focused.
+            patch(
+                "agentalloy.install.subcommands.verify._check_duckdb_present",
+                return_value={"name": "duckdb_present", "passed": True},
+            ),
+            patch(
+                "agentalloy.install.subcommands.verify._check_ladybug_present",
+                return_value={"name": "ladybug_present", "passed": True},
+            ),
+            patch(
+                "agentalloy.install.subcommands.verify._check_skill_count",
+                return_value={"name": "skill_count_meets_minimum", "passed": True},
+            ),
+            patch(
+                "agentalloy.install.subcommands.verify._check_harness_config_present",
+                return_value={"name": "harness_config_present", "passed": True},
+            ),
+            patch(
+                "agentalloy.install.subcommands.verify._check_harness_config_url",
+                return_value={"name": "harness_config_url_matches", "passed": True},
+            ),
+            patch(
+                "agentalloy.install.subcommands.verify._check_port_available",
+                return_value={"name": "runtime_port_available", "passed": True},
+            ),
+        ):
+            result = run_checks(st)
+
+        direct_reach.assert_not_called()
+        direct_dim.assert_not_called()
+        check_names = [c["name"] for c in result["checks"]]
+        assert "embedding_endpoint_reachable" in check_names
+        assert "embedding_endpoint_returns_1024_dim" in check_names
+        # Both embed checks should reflect diagnostics-sourced detail.
+        embed_checks = [c for c in result["checks"] if c["name"].startswith("embedding_")]
+        for c in embed_checks:
+            assert "diagnostics/runtime" in (c.get("detail") or "")
 
 
 # ---------------------------------------------------------------------------
