@@ -122,6 +122,31 @@ class TestComposeBinaryCheck:
         assert result["passed"] is True
         assert "docker compose" in result["detail"]
 
+    def test_check_distinguishes_missing_compose_provider(self):
+        """Podman on PATH but `podman compose version` exits non-zero
+        (no compose provider plugin installed) — error must name the
+        actual cause and remediation must point at a compose provider,
+        not at re-installing podman."""
+        failed = MagicMock()
+        failed.returncode = 1
+        failed.stderr = "Error: requires a compose provider, e.g. podman-compose"
+        failed.stdout = ""
+
+        def which_side_effect(cmd: str) -> str | None:
+            return "/usr/bin/podman" if cmd == "podman" else None
+
+        with (
+            patch("shutil.which", side_effect=which_side_effect),
+            patch("subprocess.run", return_value=failed),
+        ):
+            result = _check_compose_binary()
+
+        assert result["passed"] is False
+        assert "podman" in result["error"]
+        assert "/usr/bin/podman" in result["error"]
+        assert "no compose provider" in result["error"].lower()
+        assert "podman-compose" in result["remediation"]
+
 
 class TestComposeFilePresentCheck:
     """Test _check_compose_file_present check function."""
