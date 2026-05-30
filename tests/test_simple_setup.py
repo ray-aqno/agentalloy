@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -1204,17 +1205,21 @@ class TestContainerFlow:
         st = state_mod.load_state()
         assert st["compose_file"] == str(tmp_path / "compose.yaml")
 
-    def test_container_fails_clearly_when_no_repo_found(
+    def test_container_fails_clearly_when_no_repo_and_no_git(
         self,
         tmp_state_dir: tuple[Path, Path],
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ):
-        """Non-editable install with no clone on disk: exit 1 with actionable error."""
+        """Non-editable install with no clone on disk AND no git on PATH:
+        the clone-fallback can't run, so exit 1 with an actionable error.
+
+        (When git IS available, the wizard clones the repo into
+        ~/.cache/agentalloy/repo and proceeds — see
+        test_container_clones_repo_when_no_local_checkout.)
+        """
         SetupConfig, run_setup = self._import_run_setup()
 
-        # Force parents[4] resolution to a directory that does NOT contain assets,
-        # simulating a `uv tool install agentalloy` layout.
         fake_module_file = (
             tmp_path
             / "site-packages"
@@ -1228,6 +1233,15 @@ class TestContainerFlow:
 
         import agentalloy.install.subcommands.simple_setup as setup_mod
 
+        # shutil.which is called for compose binary detection too, so only
+        # intercept the "git" lookup; let everything else fall through.
+        real_which = shutil.which
+
+        def _which(name: str, *args: Any, **kwargs: Any) -> str | None:
+            if name == "git":
+                return None
+            return real_which(name, *args, **kwargs)
+
         with (
             patch(
                 "agentalloy.install.subcommands.preflight._probe_compose_runtime",
@@ -1235,13 +1249,83 @@ class TestContainerFlow:
             ),
             patch("pathlib.Path.cwd", return_value=tmp_path),
             patch.object(setup_mod, "__file__", str(fake_module_file)),
+            patch.object(setup_mod.shutil, "which", side_effect=_which),
         ):
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
 
         assert rc == 1
         out = capsys.readouterr().out.lower()
-        assert "could not locate" in out
-        assert "clone" in out
+        assert "git not found" in out or "could not locate" in out
+
+    def test_container_clones_repo_when_no_local_checkout(
+        self,
+        tmp_state_dir: tuple[Path, Path],
+        tmp_path: Path,
+    ):
+        """When neither cwd nor the editable-install path has the repo on
+        disk, the wizard clones https://github.com/nrmeyers/agentalloy into
+        ~/.cache/agentalloy/repo and uses that as the build context.
+        """
+        SetupConfig, run_setup = self._import_run_setup()
+
+        fake_module_file = (
+            tmp_path / "sp" / "agentalloy" / "install" / "subcommands" / "simple_setup.py"
+        )
+        fake_module_file.parent.mkdir(parents=True, exist_ok=True)
+        fake_module_file.touch()
+        empty_cwd = tmp_path / "empty"
+        empty_cwd.mkdir()
+
+        # Redirect the cache to tmp_path so the test doesn't touch the
+        # real ~/.cache/agentalloy/repo on the developer's machine.
+        fake_cache = tmp_path / "cache_home"
+
+        clone_calls: list[list[str]] = []
+
+        def run_side_effect(argv: Any, **kwargs: Any) -> Any:
+            argv_list: list[str] = (
+                [str(x) for x in argv]  # type: ignore[arg-type]
+                if isinstance(argv, list)
+                else []
+            )
+            mock = MagicMock()
+            mock.returncode = 0
+            mock.stdout = "0\n"
+            mock.stderr = ""
+            # Materialize the cloned repo on disk so _has_assets() passes
+            # after the simulated `git clone`.
+            if len(argv_list) >= 2 and argv_list[0] == "git" and argv_list[1] == "clone":
+                clone_calls.append(argv_list)
+                dest = Path(argv_list[-1])
+                dest.mkdir(parents=True, exist_ok=True)
+                (dest / ".git").mkdir(exist_ok=True)
+                (dest / "compose.yaml").write_text("services: {}\n")
+                (dest / "Containerfile").write_text("FROM scratch\n")
+            return mock
+
+        import agentalloy.install.subcommands.simple_setup as setup_mod
+
+        with (
+            patch(
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
+            ),
+            patch("pathlib.Path.cwd", return_value=empty_cwd),
+            patch.object(setup_mod, "__file__", str(fake_module_file)),
+            patch("pathlib.Path.home", return_value=fake_cache),
+            patch("subprocess.run", side_effect=run_side_effect),
+        ):
+            rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
+
+        assert rc == 0
+        assert any(c[:2] == ["git", "clone"] for c in clone_calls), (
+            f"expected a `git clone` invocation, got: {clone_calls}"
+        )
+        # Compose file should point at the cached clone.
+        import agentalloy.install.state as state_mod
+
+        st = state_mod.load_state()
+        assert "cache_home" in st["compose_file"] and st["compose_file"].endswith("compose.yaml")
 
     def test_compose_accepts_dockerfile_alternative(
         self, tmp_state_dir: tuple[Path, Path], tmp_path: Path

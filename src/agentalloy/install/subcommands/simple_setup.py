@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import time
@@ -697,6 +698,69 @@ def _wait_for_one_shot(binary_path: str, container_name: str, *, timeout: int) -
         return None
 
 
+def _container_setup_log_path() -> Path:
+    """Where we tee captured subprocess output during container setup."""
+    log_dir = install_state.user_data_dir() / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir / "container-setup.log"
+
+
+def _run_quiet(
+    cmd: list[str],
+    *,
+    label: str,
+    timeout: int,
+    log_file: Path,
+) -> int:
+    """Run ``cmd`` with captured output appended to ``log_file``.
+
+    Returns the process exit code on completion, or 1 (EXIT_USER) on
+    timeout / OSError — staying inside the install CLI exit-code contract
+    (0–4, see __main__.py). On non-zero exit, prints the last 30 captured
+    lines to stderr so the user can diagnose without scrolling through
+    every podman-compose debug line. The full output is always available
+    in ``log_file``.
+
+    Replaces the previous ``stdout=sys.stdout, stderr=sys.stderr``
+    streaming pattern, which dumped all of podman-compose's internal
+    debug chatter (``['podman', '--version', '']`` etc.) inline.
+
+    Log file is opened in binary mode because ``subprocess.run`` writes
+    raw child-process bytes to the stdout fd; a text-mode handle would
+    risk encoding/buffering mismatches (per the subprocess docs).
+    """
+    with log_file.open("ab") as fh:
+        fh.write(f"\n----- {label} -----\n$ {' '.join(cmd)}\n".encode())
+        fh.flush()
+        try:
+            result = subprocess.run(  # noqa: S603 — argv list from caller
+                cmd,
+                stdout=fh,
+                stderr=subprocess.STDOUT,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            fh.write(f"[TIMEOUT after {timeout}s]\n".encode())
+            _print(f"  [red]  {label} timed out after {timeout}s.[/red]")
+            _print(f"  [dim]  Full output: {log_file}[/dim]")
+            return 1
+        except OSError as exc:
+            fh.write(f"[OSError: {exc}]\n".encode())
+            _print(f"  [red]  {label} failed to start: {exc}[/red]")
+            _print(f"  [dim]  Full output: {log_file}[/dim]")
+            return 1
+    if result.returncode != 0:
+        try:
+            tail = log_file.read_text(encoding="utf-8", errors="replace").splitlines()[-30:]
+        except OSError:
+            tail = []
+        _print(f"  [red]  {label} failed (exit {result.returncode}). Last 30 lines:[/red]")
+        for line in tail:
+            _print(f"  [dim]  | {line}[/dim]")
+        _print(f"  [dim]  Full output: {log_file}[/dim]")
+    return result.returncode
+
+
 def _inspect_ollama_project(binary_path: str) -> tuple[str, str]:
     """Return (compose_project, network_name) inferred from the running
     agentalloy-ollama container.
@@ -943,12 +1007,12 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     # 3. Select compose file
     # The Containerfile build context needs the full repo (pyproject.toml,
     # uv.lock, src/, data/), so container deployment requires a checkout on
-    # disk. Search for it in:
+    # disk. Search order:
     #   1. cwd (user ran setup from inside the clone)
     #   2. parents[4] of __file__ (editable install — points at repo root)
-    # Non-editable installs (e.g. `uv tool install agentalloy`) land in a
-    # site-packages tree with no source above it; those users must cd into a
-    # clone or pass an explicit path.
+    #   3. fall back to cloning into ~/.cache/agentalloy/repo so users who
+    #      installed via `uv tool install agentalloy` don't have to clone
+    #      manually. Pinned to `main` for now; revisit when we tag releases.
     default_compose = "compose.yaml"
 
     def _has_assets(d: Path) -> bool:
@@ -963,6 +1027,75 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
             return p / default_compose
         return p
 
+    def _ensure_cached_repo() -> Path | None:
+        """Clone (or refresh) the agentalloy repo into ~/.cache/agentalloy/repo.
+
+        Returns the cache dir on success, None on failure. Uses --depth=1 so the
+        clone is fast (~few MB). On refresh, hard-resets to origin/main so any
+        local edits or stale state in the cache don't break the build context.
+        """
+        cache_dir = Path.home() / ".cache" / "agentalloy" / "repo"
+        if shutil.which("git") is None:
+            _print(
+                "  [red]git not found on PATH — cannot clone the agentalloy repo "
+                "for the build context.[/red]"
+            )
+            return None
+        repo_url = "https://github.com/nrmeyers/agentalloy.git"
+        # If the cache dir exists but isn't a valid git checkout (no .git/
+        # — possibly a partial clone, leftover files, or a manually-placed
+        # directory), `git clone <url> <dest>` would fail with "destination
+        # path already exists and is not an empty directory". Nuke it so
+        # the clone branch below can recreate cleanly.
+        if cache_dir.exists() and not (cache_dir / ".git").exists():
+            _print(
+                f"  [yellow]-> Cache dir {cache_dir} exists but isn't a git "
+                "checkout; recreating.[/yellow]"
+            )
+            try:
+                shutil.rmtree(cache_dir)
+            except OSError as exc:
+                _print(f"  [red]Could not remove stale cache dir: {exc}[/red]")
+                return None
+        try:
+            if (cache_dir / ".git").exists():
+                _print(f"  [dim]-> Refreshing cached repo at {cache_dir}[/dim]")
+                subprocess.run(
+                    ["git", "-C", str(cache_dir), "fetch", "--depth=1", "origin", "main"],
+                    check=True,
+                    timeout=120,
+                )
+                subprocess.run(
+                    ["git", "-C", str(cache_dir), "reset", "--hard", "origin/main"],
+                    check=True,
+                    timeout=60,
+                )
+            else:
+                cache_dir.parent.mkdir(parents=True, exist_ok=True)
+                _print(f"  [dim]-> Cloning {repo_url} into {cache_dir}[/dim]")
+                subprocess.run(
+                    [
+                        "git",
+                        "clone",
+                        "--depth=1",
+                        "--branch=main",
+                        repo_url,
+                        str(cache_dir),
+                    ],
+                    check=True,
+                    timeout=180,
+                )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+            _print(f"  [red]git clone/fetch failed: {exc}[/red]")
+            return None
+        if not _has_assets(cache_dir):
+            _print(
+                f"  [red]Cached repo at {cache_dir} is missing {default_compose} "
+                "or Containerfile after clone.[/red]"
+            )
+            return None
+        return cache_dir
+
     candidates = [Path.cwd(), Path(__file__).resolve().parents[4]]
     compose_path: Path | None = None
     for cand in candidates:
@@ -971,12 +1104,18 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
             break
 
     if compose_path is None:
+        cached = _ensure_cached_repo()
+        if cached is not None:
+            compose_path = cached / default_compose
+
+    if compose_path is None:
         if cfg.non_interactive:
             _print(
-                "  [red]Could not locate the agentalloy repo on disk.[/red]\n"
+                "  [red]Could not locate or fetch the agentalloy repo.[/red]\n"
                 f"  Looked for {default_compose} + (Containerfile or Dockerfile) in:\n"
                 + "\n".join(f"    - {c}" for c in candidates)
-                + "\n  Container deployment requires a checkout (the build context\n"
+                + "\n  Auto-clone fallback also failed (see error above).\n"
+                "  Container deployment requires a checkout (the build context\n"
                 "  needs pyproject.toml, src/, data/). Either:\n"
                 "    a) cd into your agentalloy clone and re-run setup, or\n"
                 "    b) install editably: `git clone … && cd agentalloy && \n"
@@ -984,10 +1123,9 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
             )
             return 1
         _print(
-            "  [yellow]Could not auto-locate the agentalloy repo.[/yellow] "
-            "Container deployment\n"
-            "  needs the full source tree (build context). Enter the path to your\n"
-            "  agentalloy clone (or directly to a compose YAML):"
+            "  [yellow]Could not auto-locate or fetch the agentalloy repo.[/yellow] "
+            "Enter the\n"
+            "  path to your agentalloy clone (or directly to a compose YAML):"
         )
         custom = input("  ").strip()
         compose_path = _resolve_user_path(custom)
@@ -1085,8 +1223,10 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     #   (c) run install-packs in a one-shot container that joins
     #       ollama's network namespace (8b), while no one holds the lock,
     #   (d) up the main agentalloy service (step 9).
+    log_path = _container_setup_log_path()
     _print("[bold]Running container setup...[/bold]")
-    _print("  [dim]-> Building image and starting init services[/dim]")
+    _print(f"  [dim]Full setup log: {log_path}[/dim]")
+    _print("  [dim]-> Building image and running migrations (1-2 min)...[/dim]")
     init_cmd = [
         binary_path,
         "compose",
@@ -1097,20 +1237,9 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         "--build",
         "agentalloy-init",
     ]
-    _print(f"  $ {' '.join(init_cmd)}")
-    try:
-        result = subprocess.run(
-            init_cmd,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-            timeout=600,
-        )
-        if result.returncode != 0:
-            _print("  [red]  compose up (init) failed.[/red]")
-            return result.returncode
-    except subprocess.TimeoutExpired:
-        _print("  [red]  compose up (init) timed out (10 min).[/red]")
-        return 1
+    rc = _run_quiet(init_cmd, label="compose up (init)", timeout=600, log_file=log_path)
+    if rc != 0:
+        return rc
 
     # Wait for the one-shot init container to exit. `podman wait` blocks
     # until the container stops and prints its exit code on stdout.
@@ -1148,18 +1277,10 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         "ollama",
         "ollama-pull",
     ]
-    _print("  [dim]-> Starting ollama for embedding[/dim]")
-    _print(f"  $ {' '.join(ollama_up_cmd)}")
-    try:
-        ollama_result = subprocess.run(
-            ollama_up_cmd, stdout=sys.stdout, stderr=sys.stderr, timeout=300
-        )
-        if ollama_result.returncode != 0:
-            _print("  [red]  compose up (ollama) failed; aborting.[/red]")
-            return ollama_result.returncode
-    except subprocess.TimeoutExpired:
-        _print("  [red]  compose up (ollama) timed out (5 min); aborting.[/red]")
-        return 1
+    _print("  [dim]-> Starting ollama and pulling embedding model (1-3 min)...[/dim]")
+    rc = _run_quiet(ollama_up_cmd, label="compose up (ollama)", timeout=300, log_file=log_path)
+    if rc != 0:
+        return rc
 
     # Wait for ollama-pull (one-shot) to finish so the embedding model is
     # cached before install-packs starts. Without this, the first batch
@@ -1187,7 +1308,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     # chokes on stale container references left over from prior project
     # runs — exiting 127 before the install-packs command ever executes.
     # Image has no ENTRYPOINT, only CMD, so trailing argv replaces CMD.
-    _print("  [dim]-> Installing skill packs (one-shot, before service starts)[/dim]")
+    _print("  [dim]-> Installing skill packs (2-5 min)...[/dim]")
     # Network: join the ollama container's network namespace directly
     # (`--network container:agentalloy-ollama`) instead of attaching to
     # `agentalloy_default`. Two wins:
@@ -1225,31 +1346,20 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         "agentalloy",
         "install-packs",
     ]
-    _print(f"  $ {' '.join(packs_cmd)}")
-    try:
-        # Stream output so failures (e.g. compose-run quirks, missing entry
-        # points, embedder timeouts) are visible. install-packs can run for
-        # several minutes; silent capture hides both progress and errors.
-        packs_result = subprocess.run(  # noqa: S603 — argv list, binary_path from shutil.which
-            packs_cmd,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-            timeout=600,
+    rc = _run_quiet(packs_cmd, label="install-packs", timeout=600, log_file=log_path)
+    if rc != 0:
+        # install-packs returns 0 even when reembed soft-failed; if we get
+        # here something harder broke (timeout, image missing, etc.).
+        # _run_quiet already dumped the tail. Soft-fail rather than abort:
+        # the user can re-run install-packs manually, and verify will
+        # surface the low skill count.
+        _print(
+            "  [yellow]  install-packs returned "
+            f"{rc}; verify may report a low skill count. Retry with "
+            "`agentalloy install-packs` once the container is up.[/yellow]"
         )
-        if packs_result.returncode != 0:
-            _print(
-                "  [yellow]  install-packs returned "
-                f"{packs_result.returncode}; verify may report a low skill count.[/yellow]"
-            )
-            _print(f"  [dim]  Retry manually: {' '.join(packs_cmd)}[/dim]")
-        else:
-            # install-packs returns 0 even when reembed soft-failed. The
-            # streamed output above shows the WARN line directly; the
-            # remediation message belongs in the install-packs subcommand
-            # itself, not here.
-            _print("  [green]  Skill packs installed.[/green]")
-    except subprocess.TimeoutExpired:
-        _print("  [yellow]  install-packs timed out after 10 min.[/yellow]")
+    else:
+        _print("  [green]  Skill packs installed.[/green]")
 
     # 9. Start the main agentalloy service via direct `podman run --replace`,
     # NOT `podman compose up`. Same reason install-packs (step 8b) uses direct
@@ -1325,20 +1435,9 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         "com.docker.compose.service=agentalloy",
         "agentalloy:local",
     ]
-    _print(f"  $ {' '.join(up_cmd)}")
-    try:
-        result = subprocess.run(
-            up_cmd,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-            timeout=300,
-        )
-        if result.returncode != 0:
-            _print("  [red]  podman run (agentalloy) failed.[/red]")
-            return result.returncode
-    except subprocess.TimeoutExpired:
-        _print("  [red]  podman run (agentalloy) timed out (5 min).[/red]")
-        return 1
+    rc = _run_quiet(up_cmd, label="podman run (agentalloy)", timeout=300, log_file=log_path)
+    if rc != 0:
+        return rc
     _print("  [green]  Done.[/green]")
 
     # 10. Poll health endpoint
