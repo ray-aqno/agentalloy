@@ -669,6 +669,36 @@ def _test_embed_endpoint(cfg: SetupConfig) -> None:
             )
 
 
+def _wait_for_one_shot(
+    binary_path: str, container_name: str, *, timeout: int
+) -> int | None:
+    """Block until a one-shot container exits, then return its exit code.
+
+    Uses ``podman wait`` / ``docker wait`` (both behave identically: stdout
+    is the exit code as a decimal, the wait call itself returns 0). Returns
+    ``None`` if the wait call fails or times out so the caller can decide
+    whether to bail or continue.
+    """
+    try:
+        result = subprocess.run(  # noqa: S603 — fixed argv, binary_path from shutil.which
+            [binary_path, "wait", container_name],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    out = result.stdout.strip().splitlines()
+    if not out:
+        return None
+    try:
+        return int(out[-1].strip())
+    except ValueError:
+        return None
+
+
 def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     """Execute the container deployment flow.
 
@@ -676,7 +706,8 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     Validates container prerequisites, runs compose up, and validates.
     """
     from agentalloy.install.subcommands.preflight import (  # noqa: PLC0415
-        _detect_compose_binary,  # pyright: ignore[reportPrivateUsage]
+        _compose_failure_message,  # pyright: ignore[reportPrivateUsage]
+        _probe_compose_runtime,  # pyright: ignore[reportPrivateUsage]
     )
 
     # 1. Run early preflight
@@ -699,18 +730,15 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     _print("  [green]  Preflight (early) passed.[/green]")
 
     # 2. Detect compose binary (standalone, before compose file selection)
-    label, binary_path = _detect_compose_binary()
+    label, binary_path, probes = _probe_compose_runtime()
     if label is None:
-        _print("  [red]No compose binary found (podman or docker).[/red]")
-        _print(
-            "  Install Podman (recommended) or Docker and ensure `compose`\n"
-            "  is available:\n"
-            "    Linux:  sudo apt install podman\n"
-            "    macOS:  brew install podman"
-        )
+        error, remediation = _compose_failure_message(probes)
+        _print(f"  [red]{error}[/red]")
+        for line in remediation.splitlines():
+            _print(f"  {line}")
         return 1
     cfg.compose_binary = label
-    assert binary_path is not None  # _detect_compose_binary returns both or neither
+    assert binary_path is not None  # _probe_compose_runtime returns both or neither
     _print(f"  Compose binary: {label} at {binary_path}")
 
     # 2b. Container = CPU-only, on every host. GPU passthrough is intentionally
@@ -831,27 +859,124 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
             return 1
     _print()
 
-    # 7. Execute: compose up -d --build
+    # 7. Bring up the stack piecewise so the corpus ingest doesn't race the
+    # main service for the kuzu DB lock. kuzu is single-writer: if the
+    # agentalloy service is already up when we run `install-packs`, every
+    # ingest opens a second kuzu handle against /app/data/ladybug and dies
+    # with "Could not set lock on file". So:
+    #   (a) up agentalloy-init (transitively starts ollama + ollama-pull,
+    #       runs schema migrations, exits),
+    #   (b) run install-packs in a one-shot container against the shared
+    #       volume while no one holds the lock,
+    #   (c) up the main agentalloy service.
     _print("[bold]Running container setup...[/bold]")
-    _print("  [dim]-> Starting containers[/dim]")
-    cmd = [binary_path, "compose", "-f", cfg.compose_file, "up", "-d", "--build"]
-    _print(f"  $ {' '.join(cmd)}")
+    _print("  [dim]-> Building image and starting init services[/dim]")
+    init_cmd = [
+        binary_path,
+        "compose",
+        "-f",
+        cfg.compose_file,
+        "up",
+        "-d",
+        "--build",
+        "agentalloy-init",
+    ]
+    _print(f"  $ {' '.join(init_cmd)}")
     try:
         result = subprocess.run(
-            cmd,
+            init_cmd,
             stdout=sys.stdout,
             stderr=sys.stderr,
             timeout=600,
         )
         if result.returncode != 0:
-            _print("  [red]  compose up failed.[/red]")
+            _print("  [red]  compose up (init) failed.[/red]")
             return result.returncode
     except subprocess.TimeoutExpired:
-        _print("  [red]  compose up timed out (10 min).[/red]")
+        _print("  [red]  compose up (init) timed out (10 min).[/red]")
+        return 1
+
+    # Wait for the one-shot init container to exit. `podman wait` blocks
+    # until the container stops and prints its exit code on stdout.
+    init_rc = _wait_for_one_shot(binary_path, "agentalloy-init", timeout=300)
+    if init_rc is None:
+        _print("  [yellow]  agentalloy-init did not finish within 5 min; continuing.[/yellow]")
+    elif init_rc != 0:
+        _print(f"  [red]  agentalloy-init exited {init_rc}; aborting.[/red]")
+        return 1
+    else:
+        _print("  [green]  Init complete (migrations applied).[/green]")
+
+    # 8. Install skill packs in a one-shot container BEFORE the main service
+    # starts. `--no-deps` keeps compose from restarting ollama; `-T`
+    # disables TTY allocation so output is captured cleanly. No
+    # `--entrypoint` override needed: the image has no ENTRYPOINT, only
+    # CMD, which the trailing argv replaces.
+    _print("  [dim]-> Installing skill packs (one-shot, before service starts)[/dim]")
+    packs_cmd = [
+        binary_path,
+        "compose",
+        "-f",
+        cfg.compose_file,
+        "run",
+        "--rm",
+        "--no-deps",
+        "-T",
+        "agentalloy",
+        "uv",
+        "run",
+        "agentalloy",
+        "install-packs",
+    ]
+    try:
+        packs_result = subprocess.run(  # noqa: S603 — argv list, binary_path from shutil.which
+            packs_cmd, capture_output=True, text=True, timeout=600
+        )
+        if packs_result.returncode != 0:
+            _print(
+                "  [yellow]  install-packs returned "
+                f"{packs_result.returncode}; verify may report a low skill count.[/yellow]"
+            )
+            if packs_result.stderr:
+                _print(f"  [dim]{packs_result.stderr.strip()[:500]}[/dim]")
+        else:
+            # install-packs returns 0 even when reembed soft-failed (pack
+            # ingestion is the primary contract; reembed is retryable). Scan
+            # stderr for the WARN line so users see when embeddings didn't
+            # land — otherwise "Skill packs installed." would lie.
+            if packs_result.stderr and "WARN: bulk reembed" in packs_result.stderr:
+                _print("  [yellow]  Skill packs ingested, but reembed reported errors.[/yellow]")
+                _print(
+                    "  [dim]  Embedder may have been slow or briefly unreachable. "
+                    "Retry with: "
+                    f"{binary_path} compose -f {cfg.compose_file} "
+                    "run --rm --no-deps -T agentalloy uv run agentalloy reembed[/dim]"
+                )
+            else:
+                _print("  [green]  Skill packs installed.[/green]")
+    except subprocess.TimeoutExpired:
+        _print("  [yellow]  install-packs timed out after 10 min.[/yellow]")
+
+    # 9. Start the main agentalloy service now that the corpus is populated.
+    _print("  [dim]-> Starting agentalloy service[/dim]")
+    up_cmd = [binary_path, "compose", "-f", cfg.compose_file, "up", "-d", "agentalloy"]
+    _print(f"  $ {' '.join(up_cmd)}")
+    try:
+        result = subprocess.run(
+            up_cmd,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            _print("  [red]  compose up (agentalloy) failed.[/red]")
+            return result.returncode
+    except subprocess.TimeoutExpired:
+        _print("  [red]  compose up (agentalloy) timed out (5 min).[/red]")
         return 1
     _print("  [green]  Done.[/green]")
 
-    # 8. Poll health endpoint
+    # 10. Poll health endpoint
     _print("  [dim]-> Waiting for service health...[/dim]")
     healthy = False
     deadline = time.monotonic() + 120
@@ -870,49 +995,6 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         _print("  [yellow]  Service not healthy after 120s — check container logs.[/yellow]")
     else:
         _print("  [green]  Service healthy.[/green]")
-
-    # 9. Install skill packs INSIDE the container (corpus generation lives there;
-    # running install-packs on the host would write to a different data dir and
-    # leave the container's /app/data corpus empty, which then trips verify's
-    # skill_count_meets_minimum check). The container's data volume holds the
-    # canonical corpus for the container deployment.
-    _print("  [dim]-> Installing skill packs in container...[/dim]")
-    packs_cmd = [
-        binary_path,
-        "exec",
-        "agentalloy",
-        "uv",
-        "run",
-        "agentalloy",
-        "install-packs",
-    ]
-    try:
-        packs_result = subprocess.run(  # noqa: S603 — argv list, binary_path from shutil.which
-            packs_cmd, capture_output=True, text=True, timeout=300
-        )
-        if packs_result.returncode != 0:
-            _print(
-                "  [yellow]  install-packs in container returned "
-                f"{packs_result.returncode}; verify may report a low skill count.[/yellow]"
-            )
-            if packs_result.stderr:
-                _print(f"  [dim]{packs_result.stderr.strip()[:500]}[/dim]")
-        else:
-            # install-packs returns 0 even when reembed soft-failed (pack
-            # ingestion is the primary contract; reembed is retryable). Scan
-            # stderr for the WARN line so users see when embeddings didn't
-            # land — otherwise "Skill packs installed." would lie.
-            if packs_result.stderr and "WARN: bulk reembed" in packs_result.stderr:
-                _print("  [yellow]  Skill packs ingested, but reembed reported errors.[/yellow]")
-                _print(
-                    "  [dim]  Embedder may have been slow or briefly unreachable. "
-                    "Retry with: "
-                    f"{binary_path} exec agentalloy uv run agentalloy reembed[/dim]"
-                )
-            else:
-                _print("  [green]  Skill packs installed.[/green]")
-    except subprocess.TimeoutExpired:
-        _print("  [yellow]  install-packs timed out after 5 min.[/yellow]")
 
     # 10. Record state + write .env (before verify so it reads fresh values)
     st = install_state.load_state()

@@ -28,7 +28,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -390,6 +390,62 @@ def _check_fastflowlm_present() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+class _ComposeProbe(TypedDict):
+    """Per-binary probe result. ``stderr`` is empty unless ``compose`` failed."""
+
+    binary: str
+    path: str | None
+    compose_ok: bool
+    stderr: str
+
+
+def _probe_compose_runtime() -> tuple[str | None, str | None, list[_ComposeProbe]]:
+    """Probe podman and docker for a working ``compose`` subcommand.
+
+    Returns ``(label, binary_path, probes)``. ``label`` and ``binary_path``
+    are populated for the first runtime whose ``compose version`` exits 0
+    (podman preferred, docker fallback). ``probes`` records every candidate
+    we considered — including ones we found on PATH but that lacked a working
+    compose provider — so callers can build accurate error messages.
+    """
+    probes: list[_ComposeProbe] = []
+    chosen_label: str | None = None
+    chosen_path: str | None = None
+    for candidate in ("podman", "docker"):
+        binary = shutil.which(candidate)
+        if binary is None:
+            probes.append(
+                {"binary": candidate, "path": None, "compose_ok": False, "stderr": ""}
+            )
+            continue
+        stderr = ""
+        compose_ok = False
+        try:
+            result = subprocess.run(
+                [binary, "compose", "version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            compose_ok = result.returncode == 0
+            if not compose_ok:
+                stderr = (result.stderr or result.stdout or "").strip()
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            stderr = str(exc)
+        probes.append(
+            {
+                "binary": candidate,
+                "path": binary,
+                "compose_ok": compose_ok,
+                "stderr": stderr,
+            }
+        )
+        if compose_ok and chosen_label is None:
+            chosen_label = f"{candidate} compose"
+            chosen_path = binary
+    return chosen_label, chosen_path, probes
+
+
 def _detect_compose_binary() -> tuple[str | None, str | None]:
     """Detect a compose-capable binary (podman preferred, docker fallback).
 
@@ -399,27 +455,56 @@ def _detect_compose_binary() -> tuple[str | None, str | None]:
 
     Returns ``(None, None)`` if neither found.
     """
-    for candidate in ("podman", "docker"):
-        binary = shutil.which(candidate)
-        if binary is None:
-            continue
-        try:
-            result = subprocess.run(
-                [binary, "compose", "version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                return f"{candidate} compose", binary
-        except (subprocess.TimeoutExpired, OSError):
-            continue
-    return None, None
+    label, binary_path, _ = _probe_compose_runtime()
+    return label, binary_path
+
+
+def _compose_failure_message(probes: list[_ComposeProbe]) -> tuple[str, str]:
+    """Build (error, remediation) strings describing why no compose is available.
+
+    Distinguishes three states:
+      (a) neither binary present on PATH,
+      (b) at least one binary present but its ``compose`` subcommand failed
+          (typically: provider plugin missing — ``podman-compose`` /
+          ``docker-compose`` not installed),
+      (c) handled by the caller — at least one probe succeeded.
+    """
+    present = [p for p in probes if p["path"] is not None]
+    if not present:
+        return (
+            "Neither `podman` nor `docker` found on PATH",
+            (
+                "Install Podman (recommended) or Docker:\n"
+                "  Linux:   sudo apt install podman podman-compose\n"
+                "  macOS:   brew install podman\n"
+                "  Verify:  podman compose version (or docker compose version)"
+            ),
+        )
+    # State (b): binary present but `compose` subcommand failed.
+    lines = [
+        f"{p['binary']} found at {p['path']} but `{p['binary']} compose version` failed"
+        + (f": {p['stderr']}" if p["stderr"] else "")
+        for p in present
+    ]
+    error = "Container runtime present but no compose provider:\n  " + "\n  ".join(lines)
+    has_podman = any(p["binary"] == "podman" for p in present)
+    has_docker = any(p["binary"] == "docker" for p in present)
+    remediation_lines = ["Install a compose provider for your runtime:"]
+    if has_podman:
+        remediation_lines.append(
+            "  podman: sudo apt install podman-compose  (or: pip install podman-compose)"
+        )
+    if has_docker:
+        remediation_lines.append(
+            "  docker: sudo apt install docker-compose-plugin  (or: docker-compose)"
+        )
+    remediation_lines.append("Then verify: podman compose version (or docker compose version)")
+    return error, "\n".join(remediation_lines)
 
 
 def _check_compose_binary() -> dict[str, Any]:
     t0 = time.monotonic()
-    label, binary_path = _detect_compose_binary()
+    label, binary_path, probes = _probe_compose_runtime()
     if label is not None:
         return _check(
             "compose_binary",
@@ -427,17 +512,13 @@ def _check_compose_binary() -> dict[str, Any]:
             started=t0,
             detail=f"{label} at {binary_path}",
         )
+    error, remediation = _compose_failure_message(probes)
     return _check(
         "compose_binary",
         passed=False,
         started=t0,
-        error="Neither `podman compose` nor `docker compose` found on PATH",
-        remediation=(
-            "Install Podman (recommended) or Docker:\n"
-            "  Linux:   sudo apt install podman (or docker-compose-plugin)\n"
-            "  macOS:   brew install podman (or docker-desktop)\n"
-            "  Verify:  podman compose version (or docker compose version)"
-        ),
+        error=error,
+        remediation=remediation,
     )
 
 

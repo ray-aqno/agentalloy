@@ -1020,8 +1020,8 @@ class TestContainerFlow:
         # Mock compose binary detection
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._detect_compose_binary",
-                return_value=("podman compose", "/usr/bin/podman"),
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
             ),
             patch("subprocess.run") as mock_run,
             patch.object(sys.stdin, "isatty", lambda: True),
@@ -1032,6 +1032,8 @@ class TestContainerFlow:
         ):
             mock_result = MagicMock()
             mock_result.returncode = 0
+            mock_result.stdout = "0\n"
+            mock_result.stderr = ""
             mock_run.return_value = mock_result
 
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
@@ -1047,13 +1049,15 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._detect_compose_binary",
-                return_value=("podman compose", "/usr/bin/podman"),
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
             ),
             patch("subprocess.run") as mock_run,
         ):
             mock_result = MagicMock()
             mock_result.returncode = 0
+            mock_result.stdout = "0\n"
+            mock_result.stderr = ""
             mock_run.return_value = mock_result
 
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
@@ -1075,8 +1079,8 @@ class TestContainerFlow:
         SetupConfig, run_setup = self._import_run_setup()
 
         with patch(
-            "agentalloy.install.subcommands.preflight._detect_compose_binary",
-            return_value=(None, None),
+            "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+            return_value=(None, None, [{"binary": "podman", "path": "/usr/bin/podman", "compose_ok": False, "stderr": "podman-compose not installed"}]),
         ):
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
 
@@ -1096,14 +1100,16 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._detect_compose_binary",
-                return_value=("podman compose", "/usr/bin/podman"),
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
             ),
             patch("subprocess.run") as mock_run,
             patch("pathlib.Path.cwd", return_value=tmp_path),
         ):
             mock_result = MagicMock()
             mock_result.returncode = 0
+            mock_result.stdout = "0\n"
+            mock_result.stderr = ""
             mock_run.return_value = mock_result
 
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
@@ -1135,8 +1141,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._detect_compose_binary",
-                return_value=("podman compose", "/usr/bin/podman"),
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
             ),
             patch("subprocess.run") as mock_run,
             # Empty cwd → must fall through to parents[4] (real repo root).
@@ -1144,6 +1150,8 @@ class TestContainerFlow:
         ):
             mock_result = MagicMock()
             mock_result.returncode = 0
+            mock_result.stdout = "0\n"
+            mock_result.stderr = ""
             mock_run.return_value = mock_result
 
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
@@ -1165,14 +1173,16 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._detect_compose_binary",
-                return_value=("podman compose", "/usr/bin/podman"),
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
             ),
             patch("subprocess.run") as mock_run,
             patch("pathlib.Path.cwd", return_value=tmp_path),
         ):
             mock_result = MagicMock()
             mock_result.returncode = 0
+            mock_result.stdout = "0\n"
+            mock_result.stderr = ""
             mock_run.return_value = mock_result
 
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
@@ -1209,8 +1219,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._detect_compose_binary",
-                return_value=("podman compose", "/usr/bin/podman"),
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
             ),
             patch("pathlib.Path.cwd", return_value=tmp_path),
             patch.object(setup_mod, "__file__", str(fake_module_file)),
@@ -1233,14 +1243,16 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._detect_compose_binary",
-                return_value=("podman compose", "/usr/bin/podman"),
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
             ),
             patch("subprocess.run") as mock_run,
             patch("pathlib.Path.cwd", return_value=tmp_path),
         ):
             mock_result = MagicMock()
             mock_result.returncode = 0
+            mock_result.stdout = "0\n"
+            mock_result.stderr = ""
             mock_run.return_value = mock_result
 
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
@@ -1276,8 +1288,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._detect_compose_binary",
-                return_value=("podman compose", "/usr/bin/podman"),
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
             ),
             patch("subprocess.run") as mock_run,
             patch("pathlib.Path.cwd", return_value=empty_cwd),
@@ -1287,6 +1299,8 @@ class TestContainerFlow:
         ):
             mock_result = MagicMock()
             mock_result.returncode = 0
+            mock_result.stdout = "0\n"
+            mock_result.stderr = ""
             mock_run.return_value = mock_result
 
             rc = run_setup(SetupConfig(deployment="container", non_interactive=False))
@@ -1321,8 +1335,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._detect_compose_binary",
-                return_value=("podman compose", "/usr/bin/podman"),
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
             ),
             patch("subprocess.run") as mock_run,
             patch("pathlib.Path.cwd", return_value=empty_cwd),
@@ -1332,6 +1346,8 @@ class TestContainerFlow:
         ):
             mock_result = MagicMock()
             mock_result.returncode = 0
+            mock_result.stdout = "0\n"
+            mock_result.stderr = ""
             mock_run.return_value = mock_result
 
             rc = run_setup(SetupConfig(deployment="container", non_interactive=False))
@@ -1350,13 +1366,15 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._detect_compose_binary",
-                return_value=("podman compose", "/usr/bin/podman"),
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
             ),
             patch("subprocess.run") as mock_run,
         ):
             mock_result = MagicMock()
             mock_result.returncode = 0
+            mock_result.stdout = "0\n"
+            mock_result.stderr = ""
             mock_run.return_value = mock_result
 
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
@@ -1376,14 +1394,16 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._detect_compose_binary",
-                return_value=("podman compose", "/usr/bin/podman"),
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
             ),
             patch("subprocess.run") as mock_run,
             patch("builtins.input", return_value="n"),
         ):
             mock_result = MagicMock()
             mock_result.returncode = 0
+            mock_result.stdout = "0\n"
+            mock_result.stderr = ""
             mock_run.return_value = mock_result
 
             rc = run_setup(SetupConfig(deployment="container", non_interactive=False))
@@ -1398,13 +1418,15 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._detect_compose_binary",
-                return_value=("podman compose", "/usr/bin/podman"),
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
             ),
             patch("subprocess.run") as mock_run,
         ):
             mock_result = MagicMock()
             mock_result.returncode = 0
+            mock_result.stdout = "0\n"
+            mock_result.stderr = ""
             mock_run.return_value = mock_result
 
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
@@ -1419,40 +1441,71 @@ class TestContainerFlow:
         assert "RUNTIME_EMBED_BASE_URL" not in env_text
         assert "RUNTIME_EMBEDDING_MODEL" not in env_text
 
-    def test_container_runs_install_packs_inside_container(self, tmp_state_dir: tuple[Path, Path]):
-        """Container flow invokes `<binary> exec agentalloy uv run agentalloy install-packs`."""
+    def test_container_runs_install_packs_as_one_shot_before_service(
+        self, tmp_state_dir: tuple[Path, Path]
+    ):
+        """Container flow runs install-packs in a one-shot container BEFORE
+        the agentalloy service is started, so the kuzu DB lock isn't held
+        by uvicorn while ingest writes to /app/data/ladybug."""
         SetupConfig, run_setup = self._import_run_setup()
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._detect_compose_binary",
-                return_value=("podman compose", "/usr/bin/podman"),
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
             ),
             patch("subprocess.run") as mock_run,
         ):
             mock_result = MagicMock()
             mock_result.returncode = 0
+            mock_result.stdout = "0\n"
+            mock_result.stderr = ""
             mock_run.return_value = mock_result
 
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
 
         assert rc == 0
-        # Find the install-packs call among all subprocess.run invocations.
         calls: list[list[str]] = []
         for c in mock_run.call_args_list:
             if c.args and isinstance(c.args[0], list):
                 calls.append([str(x) for x in c.args[0]])  # type: ignore[arg-type]
-        packs_calls: list[list[str]] = [
-            argv
-            for argv in calls
-            if "exec" in argv and "install-packs" in argv and "agentalloy" in argv
-        ]
-        assert packs_calls, f"install-packs exec call not found in subprocess.run history: {calls}"
-        argv: list[str] = packs_calls[0]
-        assert argv[0] == "/usr/bin/podman"  # uses the detected binary, not literal "podman"
-        # Order matters: <binary> exec <container> uv run agentalloy install-packs
-        assert argv[:3] == ["/usr/bin/podman", "exec", "agentalloy"]
-        assert argv[-1] == "install-packs"
+
+        def _idx(predicate: Any) -> int:
+            for i, argv in enumerate(calls):
+                if predicate(argv):
+                    return i
+            return -1
+
+        init_idx = _idx(
+            lambda a: a[:2] == ["/usr/bin/podman", "compose"]
+            and "up" in a
+            and "agentalloy-init" in a
+        )
+        packs_idx = _idx(
+            lambda a: a[:2] == ["/usr/bin/podman", "compose"]
+            and "run" in a
+            and "install-packs" in a
+            and "--no-deps" in a
+        )
+        agentalloy_up_idx = _idx(
+            lambda a: a[:2] == ["/usr/bin/podman", "compose"]
+            and "up" in a
+            and "agentalloy" in a
+            and "agentalloy-init" not in a
+        )
+
+        assert init_idx >= 0, f"init `compose up agentalloy-init` not found: {calls}"
+        assert packs_idx >= 0, f"`compose run ... install-packs` not found: {calls}"
+        assert agentalloy_up_idx >= 0, f"`compose up agentalloy` not found: {calls}"
+        # Order matters: init → install-packs → main service.
+        assert init_idx < packs_idx < agentalloy_up_idx, (
+            f"Bad ordering — init={init_idx} packs={packs_idx} up={agentalloy_up_idx}: "
+            f"{calls[init_idx]} / {calls[packs_idx]} / {calls[agentalloy_up_idx]}"
+        )
+        # The install-packs argv should NOT contain `exec` (regression guard
+        # against running inside the live service container — the kuzu lock
+        # bug we're fixing).
+        assert "exec" not in calls[packs_idx]
 
     def test_verify_failures_surfaced_inline(
         self,
@@ -1486,14 +1539,16 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._detect_compose_binary",
-                return_value=("podman compose", "/usr/bin/podman"),
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
             ),
             patch("subprocess.run") as mock_run,
             patch("agentalloy.install.subcommands.verify.run", return_value=1),
         ):
             mock_result = MagicMock()
             mock_result.returncode = 0
+            mock_result.stdout = "0\n"
+            mock_result.stderr = ""
             mock_run.return_value = mock_result
 
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
