@@ -1531,7 +1531,12 @@ class TestContainerFlow:
         def run_side_effect(argv: Any, **kwargs: Any) -> Any:
             mock = MagicMock()
             mock.stderr = ""
-            if isinstance(argv, list) and len(argv) >= 2 and argv[1] == "wait":
+            argv_list: list[str] = (
+                [str(x) for x in argv]  # type: ignore[arg-type]
+                if isinstance(argv, list)
+                else []
+            )
+            if len(argv_list) >= 2 and argv_list[1] == "wait":
                 # Simulate `podman wait` itself failing.
                 mock.returncode = 1
                 mock.stdout = ""
