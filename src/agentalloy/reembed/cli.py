@@ -35,6 +35,11 @@ from pathlib import Path
 
 from agentalloy.config import Settings, get_settings
 from agentalloy.embed_provider import EmbedClient, get_embed_client
+from agentalloy.install.container_service import (
+    is_in_container,
+    restart_service_in_container,
+    stop_service_in_container,
+)
 from agentalloy.lm_client import (
     LMBadResponse,
     LMClientError,
@@ -483,6 +488,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    # Stop service in container mode before DB operations
+    if is_in_container():
+        if args.no_restart:
+            logger.info("skipping container service stop (no_restart requested)")
+        else:
+            print(
+                "Stopping agentalloy service (container mode) to release database locks...",
+                file=sys.stderr,
+            )
+            if not stop_service_in_container(no_restart=False):
+                print("ERROR: Failed to stop service. Proceeding anyway...", file=sys.stderr)
+
     settings = get_settings()
     model_id = args.model or settings.runtime_embedding_model
     duck_path = _duckdb_path(settings)
@@ -600,6 +617,19 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_OK if stats.failed == 0 else EXIT_LLM
     finally:
         _maybe_restart()
+        if is_in_container():
+            if args.no_restart:
+                logger.info("skipping container service restart (no_restart requested)")
+            else:
+                print("Operation complete, restarting agentalloy service...", file=sys.stderr)
+                if not restart_service_in_container(no_restart=False):
+                    print(
+                        "ERROR: Failed to restart service after operation. "
+                        "Run `podman restart agentalloy` manually.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                print("Service restarted successfully.", file=sys.stderr)
 
 
 if __name__ == "__main__":

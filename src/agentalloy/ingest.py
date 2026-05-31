@@ -29,6 +29,7 @@ from typing import Any, cast
 import yaml
 
 from agentalloy.config import get_settings
+from agentalloy.install.container_service import is_in_container, restart_service_in_container, stop_service_in_container
 from agentalloy.skill_tier import resolve_skill_tier
 from agentalloy.storage.ladybug import LadybugStore
 
@@ -158,6 +159,15 @@ def main(argv: list[str] | None = None) -> int:
             "compatibility with the legacy imported corpus."
         ),
     )
+    parser.add_argument(
+        "--no-restart",
+        action="store_true",
+        help=(
+            "Skip stopping and restarting the running uvicorn service when "
+            "ingesting inside a container. Useful when you want to load skills "
+            "without disrupting the live server."
+        ),
+    )
     args = parser.parse_args(argv)
 
     target = Path(args.path)
@@ -165,10 +175,34 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: path not found: {target}", file=sys.stderr)
         return EXIT_USAGE
 
-    if target.is_dir():
-        return _batch(target, force=args.force, yes=args.yes, strict=args.strict)
+    no_restart = args.no_restart
 
-    return _single(target, force=args.force, yes=args.yes, strict=args.strict)
+    if target.is_dir():
+        return _batch_with_container(target, force=args.force, yes=args.yes, strict=args.strict, no_restart=no_restart)
+
+    return _single_with_container(target, force=args.force, yes=args.yes, strict=args.strict, no_restart=no_restart)
+
+
+def _single_with_container(yaml_path: Path, *, force: bool, yes: bool, strict: bool = False, no_restart: bool = False) -> int:
+    """Wrap _single() with container stop/restart logic."""
+    if is_in_container() and not no_restart:
+        stop_service_in_container(no_restart=no_restart)
+    try:
+        return _single(yaml_path, force=force, yes=yes, strict=strict)
+    finally:
+        if is_in_container() and not no_restart:
+            restart_service_in_container(no_restart=no_restart)
+
+
+def _batch_with_container(directory: Path, *, force: bool, yes: bool, strict: bool = False, no_restart: bool = False) -> int:
+    """Wrap _batch() with container stop/restart logic."""
+    if is_in_container() and not no_restart:
+        stop_service_in_container(no_restart=no_restart)
+    try:
+        return _batch(directory, force=force, yes=yes, strict=strict)
+    finally:
+        if is_in_container() and not no_restart:
+            restart_service_in_container(no_restart=no_restart)
 
 
 def _single(yaml_path: Path, *, force: bool, yes: bool, strict: bool = False) -> int:

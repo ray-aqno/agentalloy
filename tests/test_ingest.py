@@ -573,3 +573,113 @@ def test_workflow_skill_with_position_marker_no_w1(tmp_path: Path) -> None:
     assert not any("missing_position_marker" in w for w in warns), (
         f"Unexpected W1 warning when position marker present: {warns}"
     )
+
+
+# ---------------------------------------------------------------------------
+# TASK-4: --no-restart flag for container stop/restart
+# ---------------------------------------------------------------------------
+
+
+def test_no_restart_skips_container_stop_restart_in_container(
+    tmp_path: Path, seeded_db: tuple[str, LadybugStore]
+) -> None:
+    """When --no-restart is passed and we're in a container,
+    stop_service_in_container and restart_service_in_container must NOT be called."""
+    db_path, _ = seeded_db
+    yaml_file = tmp_path / "domain.yaml"
+    yaml_file.write_text(_DOMAIN_YAML)
+
+    with patch("agentalloy.ingest.get_settings", return_value=_make_settings(db_path)), \
+         patch("agentalloy.ingest.is_in_container", return_value=True), \
+         patch(
+             "agentalloy.ingest.stop_service_in_container",
+             autospec=True,
+         ) as mock_stop, \
+         patch(
+             "agentalloy.ingest.restart_service_in_container",
+             autospec=True,
+         ) as mock_restart:
+        code = main([str(yaml_file), "--yes", "--no-restart"])
+
+    assert code == EXIT_OK
+    mock_stop.assert_not_called()
+    mock_restart.assert_not_called()
+
+
+def test_without_no_restart_calls_container_stop_restart_in_container(
+    tmp_path: Path, seeded_db: tuple[str, LadybugStore]
+) -> None:
+    """Without --no-restart, when in a container, stop_service_in_container
+    and restart_service_in_container MUST be called."""
+    db_path, _ = seeded_db
+    yaml_file = tmp_path / "domain.yaml"
+    yaml_file.write_text(_DOMAIN_YAML)
+
+    with patch("agentalloy.ingest.get_settings", return_value=_make_settings(db_path)), \
+         patch("agentalloy.ingest.is_in_container", return_value=True), \
+         patch(
+             "agentalloy.ingest.stop_service_in_container",
+             return_value=True,
+             autospec=True,
+         ) as mock_stop, \
+         patch(
+             "agentalloy.ingest.restart_service_in_container",
+             return_value=True,
+             autospec=True,
+         ) as mock_restart:
+        code = main([str(yaml_file), "--yes"])
+
+    assert code == EXIT_OK
+    mock_stop.assert_called_once_with(no_restart=False)
+    mock_restart.assert_called_once_with(no_restart=False)
+
+
+def test_no_restart_skips_in_container_batch_mode(
+    tmp_path: Path, seeded_db: tuple[str, LadybugStore]
+) -> None:
+    """--no-restart in batch mode must also skip container stop/restart."""
+    db_path, _ = seeded_db
+    batch_dir = tmp_path / "batch"
+    batch_dir.mkdir()
+    _write_domain(batch_dir / "skill_a.yaml", "batch-skill-a", "Batch Skill A")
+
+    with patch("agentalloy.ingest.get_settings", return_value=_make_settings(db_path)), \
+         patch("agentalloy.ingest.is_in_container", return_value=True), \
+         patch(
+             "agentalloy.ingest.stop_service_in_container",
+             autospec=True,
+         ) as mock_stop, \
+         patch(
+             "agentalloy.ingest.restart_service_in_container",
+             autospec=True,
+         ) as mock_restart:
+        code = main([str(batch_dir), "--yes", "--no-restart"])
+
+    assert code == EXIT_OK
+    mock_stop.assert_not_called()
+    mock_restart.assert_not_called()
+
+
+def test_not_in_container_noops_container_functions(
+    tmp_path: Path, seeded_db: tuple[str, LadybugStore]
+) -> None:
+    """When not in a container, container stop/restart functions must NOT be called."""
+    db_path, _ = seeded_db
+    yaml_file = tmp_path / "domain.yaml"
+    yaml_file.write_text(_DOMAIN_YAML)
+
+    with patch("agentalloy.ingest.get_settings", return_value=_make_settings(db_path)), \
+         patch("agentalloy.ingest.is_in_container", return_value=False), \
+         patch(
+             "agentalloy.ingest.stop_service_in_container",
+             autospec=True,
+         ) as mock_stop, \
+         patch(
+             "agentalloy.ingest.restart_service_in_container",
+             autospec=True,
+         ) as mock_restart:
+        code = main([str(yaml_file), "--yes"])
+
+    assert code == EXIT_OK
+    mock_stop.assert_not_called()
+    mock_restart.assert_not_called()
