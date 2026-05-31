@@ -186,12 +186,22 @@ class TestRestartServiceInContainer:
         def fake_popen(cmd_list, **kwargs):
             return mock_proc
 
+        # Counter-based monotonic: first call sets deadline, subsequent calls exceed it.
+        _monotonic_calls = [0]
+
+        def fake_monotonic():
+            _monotonic_calls[0] += 1
+            if _monotonic_calls[0] == 1:
+                return 1000.0  # deadline = 1000.0 + 30.0 = 10030.0
+            return 10031.0   # 10031.0 >= 10030.0 → loop exits
+
         with monkeypatch.context() as m:
             m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
             m.setattr("agentalloy.install.state.validate_port", lambda x: x)
             m.setattr(subprocess, "Popen", fake_popen)
             m.setattr("agentalloy.install.server_proc.port_reachable", lambda *a, **kw: False)
-            m.setattr(time, "sleep", lambda s: None)
+            m.setattr("agentalloy.install.container_service.time.monotonic", fake_monotonic)
+            m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
 
             from agentalloy.install.container_service import restart_service_in_container
             result = restart_service_in_container()

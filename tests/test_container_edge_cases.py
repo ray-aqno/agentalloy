@@ -57,7 +57,6 @@ class TestServiceNotRunning:
 
     def test_stop_returns_true_when_process_already_exited(self, monkeypatch: pytest.MonkeyPatch):
         """If SIGTERM hits a ProcessLookupError (process already gone), stop returns True."""
-
         def fake_find_pid():
             return 7777
 
@@ -631,6 +630,7 @@ class TestHealthEndpointNotResponding:
 
     def test_health_timeout_returns_false(self, monkeypatch: pytest.MonkeyPatch):
         """When /health never responds within 30s, restart returns False."""
+        # Mock monotonic to exceed the 30s deadline so the loop exits immediately
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None
         mock_proc.terminate = MagicMock()
@@ -730,11 +730,22 @@ class TestProcessLookupErrorDuringStop:
             # Process stays alive — triggers SIGKILL path.
             return True
 
+        # Use a counter-based monotonic mock: first call sets deadline,
+        # subsequent calls exceed it so the loop exits.
+        _monotonic_calls = [0]
+
+        def fake_monotonic():
+            _monotonic_calls[0] += 1
+            if _monotonic_calls[0] == 1:
+                return 1000.0  # deadline = 1000.0 + 15.0 = 10015.0
+            return 10016.0   # 10016.0 >= 10015.0 → loop exits
+
         with monkeypatch.context() as m:
             m.setattr("agentalloy.install.container_service._find_uvicorn_pid", lambda: 3333)
             m.setattr("os.kill", fake_kill)
             m.setattr("agentalloy.install.container_service._pid_alive", fake_pid_alive)
-            m.setattr(time, "sleep", lambda s: None)
+            m.setattr("agentalloy.install.container_service.time.monotonic", fake_monotonic)
+            m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
 
             from agentalloy.install.container_service import stop_service_in_container
 
@@ -753,10 +764,14 @@ class TestRestartServiceEdgeCases:
         # Process already dead on first poll.
         mock_proc.poll.return_value = 1
 
-        current_time = [1000.0]
+        # Counter-based monotonic: first call sets deadline, subsequent calls exceed it.
+        _monotonic_calls = [0]
 
         def fake_monotonic():
-            return current_time[0]
+            _monotonic_calls[0] += 1
+            if _monotonic_calls[0] == 1:
+                return 1000.0  # deadline = 1000.0 + 30.0 = 10030.0
+            return 10031.0   # 10031.0 >= 10030.0 → loop exits
 
         with monkeypatch.context() as m:
             m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
