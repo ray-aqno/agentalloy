@@ -28,8 +28,12 @@ class TestReembedContainerStopRestart:
         """reembed with service running: stops uvicorn, runs embed, restarts service."""
         with (
             patch("agentalloy.reembed.cli.is_in_container", return_value=True),
-            patch("agentalloy.reembed.cli.stop_service_in_container", return_value=True) as mock_stop,
-            patch("agentalloy.reembed.cli.restart_service_in_container", return_value=True) as mock_restart,
+            patch(
+                "agentalloy.reembed.cli.stop_service_in_container", return_value=True
+            ) as mock_stop,
+            patch(
+                "agentalloy.reembed.cli.restart_service_in_container", return_value=True
+            ) as mock_restart,
             patch("agentalloy.reembed.cli._is_service_running", return_value=True),
             patch("agentalloy.reembed.cli._stop_service", return_value=True),
             patch("agentalloy.reembed.cli._restart_service"),
@@ -124,8 +128,12 @@ class TestReembedContainerStopRestart:
         """reembed when service is not running: stop is no-op, normal operation proceeds."""
         with (
             patch("agentalloy.reembed.cli.is_in_container", return_value=True),
-            patch("agentalloy.reembed.cli.stop_service_in_container", return_value=False) as mock_stop,
-            patch("agentalloy.reembed.cli.restart_service_in_container", return_value=True) as mock_restart,
+            patch(
+                "agentalloy.reembed.cli.stop_service_in_container", return_value=False
+            ) as mock_stop,
+            patch(
+                "agentalloy.reembed.cli.restart_service_in_container", return_value=True
+            ) as mock_restart,
             patch("agentalloy.reembed.cli._is_service_running", return_value=False),
             patch("agentalloy.reembed.cli.get_settings") as mock_settings,
             patch("agentalloy.reembed.cli.open_or_create") as mock_open_vs,
@@ -182,7 +190,9 @@ class TestInstallPacksContainerStopRestart:
         """install-packs calls reembed which stops/restarts the service in container mode."""
         with (
             patch("agentalloy.reembed.cli.is_in_container", return_value=True),
-            patch("agentalloy.reembed.cli.stop_service_in_container", return_value=True) as mock_stop,
+            patch(
+                "agentalloy.reembed.cli.stop_service_in_container", return_value=True
+            ) as mock_stop,
             patch("agentalloy.reembed.cli.restart_service_in_container", return_value=True),
             patch("agentalloy.reembed.cli._is_service_running", return_value=True),
             patch("agentalloy.reembed.cli._stop_service", return_value=True),
@@ -277,7 +287,9 @@ class TestInstallPacksContainerStopRestart:
         """install-packs when service not running: stop is no-op, operation proceeds."""
         with (
             patch("agentalloy.reembed.cli.is_in_container", return_value=True),
-            patch("agentalloy.reembed.cli.stop_service_in_container", return_value=False) as mock_stop,
+            patch(
+                "agentalloy.reembed.cli.stop_service_in_container", return_value=False
+            ) as mock_stop,
             patch("agentalloy.reembed.cli._is_service_running", return_value=False),
             patch("agentalloy.reembed.cli.get_settings") as mock_settings,
             patch("agentalloy.reembed.cli.open_or_create") as mock_open_vs,
@@ -355,7 +367,9 @@ fragments:
         with (
             patch("agentalloy.ingest.is_in_container", return_value=True),
             patch("agentalloy.ingest.stop_service_in_container", return_value=True),
-            patch("agentalloy.ingest.restart_service_in_container", return_value=True) as mock_restart,
+            patch(
+                "agentalloy.ingest.restart_service_in_container", return_value=True
+            ) as mock_restart,
             patch("agentalloy.ingest.get_settings") as mock_settings,
             patch("agentalloy.ingest.LadybugStore") as mock_store_cls,
             patch("agentalloy.ingest._validate", return_value=[]),
@@ -409,7 +423,9 @@ fragments:
         with (
             patch("agentalloy.ingest.is_in_container", return_value=True),
             patch("agentalloy.ingest.stop_service_in_container", return_value=False) as mock_stop,
-            patch("agentalloy.ingest.restart_service_in_container", return_value=True) as mock_restart,
+            patch(
+                "agentalloy.ingest.restart_service_in_container", return_value=True
+            ) as mock_restart,
             patch("agentalloy.ingest.get_settings") as mock_settings,
             patch("agentalloy.ingest.LadybugStore") as mock_store_cls,
             patch("agentalloy.ingest._validate", return_value=[]),

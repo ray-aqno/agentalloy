@@ -56,6 +56,7 @@ class TestServiceNotRunning:
 
     def test_stop_returns_true_when_process_already_exited(self, monkeypatch: pytest.MonkeyPatch):
         """If SIGTERM hits a ProcessLookupError (process already gone), stop returns True."""
+
         def fake_find_pid():
             return 7777
 
@@ -171,7 +172,10 @@ class TestUserInterruptDuringStop:
             m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
             m.setattr("agentalloy.install.state.validate_port", lambda x: x)
             m.setattr("agentalloy.install.container_service.subprocess.Popen", fake_popen)
-            m.setattr("agentalloy.install.container_service.server_proc.port_reachable", lambda *a, **kw: True)
+            m.setattr(
+                "agentalloy.install.container_service.server_proc.port_reachable",
+                lambda *a, **kw: True,
+            )
             m.setattr(time, "sleep", lambda s: None)
             m.setattr(time, "monotonic", lambda: 99999.0)
 
@@ -200,8 +204,13 @@ class TestRestartFailure:
         with monkeypatch.context() as m:
             m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
             m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr("agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc)
-            m.setattr("agentalloy.install.container_service.server_proc.port_reachable", lambda *a, **kw: True)
+            m.setattr(
+                "agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc
+            )
+            m.setattr(
+                "agentalloy.install.container_service.server_proc.port_reachable",
+                lambda *a, **kw: True,
+            )
             m.setattr(time, "sleep", lambda s: None)
 
             from agentalloy.install.container_service import restart_service_in_container
@@ -252,6 +261,7 @@ class TestDifferentContainerRuntime:
 
     def test_is_in_container_with_dockerenv(self, monkeypatch: pytest.MonkeyPatch):
         """Docker environment: /.dockerenv exists."""
+
         class FakePath:
             def __init__(self, path_str):
                 self._path_str = path_str
@@ -271,6 +281,7 @@ class TestDifferentContainerRuntime:
 
     def test_is_in_container_with_podman(self, monkeypatch: pytest.MonkeyPatch):
         """Podman environment: /.dockerenv also exists (Podman creates it for compatibility)."""
+
         class FakePath:
             def __init__(self, path_str):
                 self._path_str = path_str
@@ -290,6 +301,7 @@ class TestDifferentContainerRuntime:
 
     def test_is_in_container_with_app_dir(self, monkeypatch: pytest.MonkeyPatch):
         """Custom container: /app directory exists (used by some Docker/Podman setups)."""
+
         class FakePath:
             def __init__(self, path_str):
                 self._path_str = path_str
@@ -307,8 +319,11 @@ class TestDifferentContainerRuntime:
 
             assert is_in_container() is True
 
-    def test_is_in_container_fallback_to_app_dir_when_no_dockerenv(self, monkeypatch: pytest.MonkeyPatch):
+    def test_is_in_container_fallback_to_app_dir_when_no_dockerenv(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
         """When /.dockerenv doesn't exist but /app is a directory, still detect container."""
+
         class FakePath:
             def __init__(self, path_str):
                 self._path_str = path_str
@@ -371,17 +386,13 @@ class TestMultipleCLICommands:
             m.setattr(
                 "agentalloy.reembed.cli.LadybugStore",
                 MagicMock(
-                    return_value=MagicMock(
-                        __enter__=lambda s: s, __exit__=lambda s, *a: None
-                    )
+                    return_value=MagicMock(__enter__=lambda s: s, __exit__=lambda s, *a: None)
                 ),
             )
             m.setattr(
                 "agentalloy.reembed.cli.open_or_create",
                 MagicMock(
-                    return_value=MagicMock(
-                        __enter__=lambda s: s, __exit__=lambda s, *a: None
-                    )
+                    return_value=MagicMock(__enter__=lambda s: s, __exit__=lambda s, *a: None)
                 ),
             )
             m.setattr(
@@ -443,9 +454,7 @@ class TestMultipleCLICommands:
             )
             m.setattr(
                 "agentalloy.ingest.get_settings",
-                MagicMock(
-                    return_value=MagicMock(ladybug_db_path=str(tmp_path / "fake.db"))
-                ),
+                MagicMock(return_value=MagicMock(ladybug_db_path=str(tmp_path / "fake.db"))),
             )
 
             from agentalloy.ingest import main
@@ -455,7 +464,9 @@ class TestMultipleCLICommands:
             # it doesn't crash and the container functions are called.
             assert rc in (0, 2, 3)  # EXIT_OK, EXIT_VALIDATION, or EXIT_DB
 
-    def test_install_packs_bulk_reembed_calls_container_functions(self, monkeypatch: pytest.MonkeyPatch):
+    def test_install_packs_bulk_reembed_calls_container_functions(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
         """install-packs bulk reembed should pass no_restart flag correctly."""
         with monkeypatch.context() as m:
             m.setattr(
@@ -488,9 +499,14 @@ class TestServiceCrashBetweenStopAndRestart:
         with monkeypatch.context() as m:
             m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
             m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr("agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc)
+            m.setattr(
+                "agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc
+            )
             # Port reachable but process died — this is the crash scenario.
-            m.setattr("agentalloy.install.container_service.server_proc.port_reachable", lambda *a, **kw: True)
+            m.setattr(
+                "agentalloy.install.container_service.server_proc.port_reachable",
+                lambda *a, **kw: True,
+            )
             m.setattr(time, "sleep", lambda s: None)
 
             from agentalloy.install.container_service import restart_service_in_container
@@ -637,15 +653,22 @@ class TestHealthEndpointNotResponding:
         with monkeypatch.context() as m:
             m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
             m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr("agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc)
+            m.setattr(
+                "agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc
+            )
             # Patch on the container_service module's own reference to server_proc.
-            m.setattr("agentalloy.install.container_service.server_proc.port_reachable", lambda *a, **kw: False)
+            m.setattr(
+                "agentalloy.install.container_service.server_proc.port_reachable",
+                lambda *a, **kw: False,
+            )
             # Mock monotonic to return a value already past the 30s deadline,
             # so the health-check loop exits immediately without real waiting.
             monotonic_calls = [0]
+
             def _monotonic():
                 monotonic_calls[0] += 1
                 return 0.0 if monotonic_calls[0] == 1 else 99999.0
+
             m.setattr("agentalloy.install.container_service.time.monotonic", _monotonic)
             m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
 
@@ -665,12 +688,19 @@ class TestHealthEndpointNotResponding:
         with monkeypatch.context() as m:
             m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
             m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr("agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc)
-            m.setattr("agentalloy.install.container_service.server_proc.port_reachable", lambda *a, **kw: False)
+            m.setattr(
+                "agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc
+            )
+            m.setattr(
+                "agentalloy.install.container_service.server_proc.port_reachable",
+                lambda *a, **kw: False,
+            )
             monotonic_calls = [0]
+
             def _monotonic():
                 monotonic_calls[0] += 1
                 return 0.0 if monotonic_calls[0] == 1 else 99999.0
+
             m.setattr("agentalloy.install.container_service.time.monotonic", _monotonic)
             m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
 
@@ -689,12 +719,19 @@ class TestHealthEndpointNotResponding:
         with monkeypatch.context() as m:
             m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
             m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr("agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc)
-            m.setattr("agentalloy.install.container_service.server_proc.port_reachable", lambda *a, **kw: False)
+            m.setattr(
+                "agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc
+            )
+            m.setattr(
+                "agentalloy.install.container_service.server_proc.port_reachable",
+                lambda *a, **kw: False,
+            )
             monotonic_calls = [0]
+
             def _monotonic():
                 monotonic_calls[0] += 1
                 return 0.0 if monotonic_calls[0] == 1 else 99999.0
+
             m.setattr("agentalloy.install.container_service.time.monotonic", _monotonic)
             m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
 
@@ -749,7 +786,7 @@ class TestProcessLookupErrorDuringStop:
             _monotonic_calls[0] += 1
             if _monotonic_calls[0] == 1:
                 return 1000.0  # deadline = 1000.0 + 15.0 = 10015.0
-            return 10016.0   # 10016.0 >= 10015.0 → loop exits
+            return 10016.0  # 10016.0 >= 10015.0 → loop exits
 
         with monkeypatch.context() as m:
             m.setattr("agentalloy.install.container_service._find_uvicorn_pid", lambda: 3333)
@@ -782,13 +819,18 @@ class TestRestartServiceEdgeCases:
             _monotonic_calls[0] += 1
             if _monotonic_calls[0] == 1:
                 return 1000.0  # deadline = 1000.0 + 30.0 = 10030.0
-            return 10031.0   # 10031.0 >= 10030.0 → loop exits
+            return 10031.0  # 10031.0 >= 10030.0 → loop exits
 
         with monkeypatch.context() as m:
             m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
             m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr("agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc)
-            m.setattr("agentalloy.install.container_service.server_proc.port_reachable", lambda *a, **kw: False)
+            m.setattr(
+                "agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc
+            )
+            m.setattr(
+                "agentalloy.install.container_service.server_proc.port_reachable",
+                lambda *a, **kw: False,
+            )
             m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
             m.setattr("agentalloy.install.container_service.time.monotonic", fake_monotonic)
 
@@ -805,8 +847,13 @@ class TestRestartServiceEdgeCases:
         with monkeypatch.context() as m:
             m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
             m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr("agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc)
-            m.setattr("agentalloy.install.container_service.server_proc.port_reachable", lambda *a, **kw: True)
+            m.setattr(
+                "agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc
+            )
+            m.setattr(
+                "agentalloy.install.container_service.server_proc.port_reachable",
+                lambda *a, **kw: True,
+            )
             m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
 
             from agentalloy.install.container_service import restart_service_in_container
@@ -828,8 +875,13 @@ class TestRestartServiceEdgeCases:
         with monkeypatch.context() as m:
             m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
             m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr("agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc)
-            m.setattr("agentalloy.install.container_service.server_proc.port_reachable", lambda *a, **kw: False)
+            m.setattr(
+                "agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc
+            )
+            m.setattr(
+                "agentalloy.install.container_service.server_proc.port_reachable",
+                lambda *a, **kw: False,
+            )
             m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
 
             from agentalloy.install.container_service import restart_service_in_container

@@ -17,9 +17,7 @@ from pathlib import Path
 from agentalloy.install import server_proc
 from agentalloy.install import state as install_state
 
-_DEFAULT_UVICORN_CMD = (
-    "uv run uvicorn agentalloy.app:app --host 0.0.0.0 --port 47950"
-)
+_DEFAULT_UVICORN_CMD = "uv run uvicorn agentalloy.app:app --host 0.0.0.0 --port 47950"
 
 
 def is_in_container() -> bool:

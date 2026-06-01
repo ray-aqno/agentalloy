@@ -20,6 +20,7 @@ class TestIsInContainer:
 
     def test_detects_dockerenv(self, monkeypatch: pytest.MonkeyPatch):
         """When /.dockerenv exists, should return True."""
+
         class FakePath:
             def __init__(self, path_str: str):
                 self._path_str = path_str
@@ -36,10 +37,12 @@ class TestIsInContainer:
         with monkeypatch.context() as m:
             m.setattr(Path, "__new__", lambda cls, path_str: FakePath(path_str))
             from agentalloy.install.container_service import is_in_container
+
             assert is_in_container() is True
 
     def test_detects_app_dir(self, monkeypatch: pytest.MonkeyPatch):
         """When /app is a directory, should return True."""
+
         class FakePath:
             def __init__(self, path_str: str):
                 self._path_str = path_str
@@ -56,10 +59,12 @@ class TestIsInContainer:
         with monkeypatch.context() as m:
             m.setattr(Path, "__new__", lambda cls, path_str: FakePath(path_str))
             from agentalloy.install.container_service import is_in_container
+
             assert is_in_container() is True
 
     def test_not_in_container(self, monkeypatch: pytest.MonkeyPatch):
         """When neither /.dockerenv nor /app exist, should return False."""
+
         class FakePath:
             def __init__(self, path_str: str):
                 self._path_str = path_str
@@ -76,6 +81,7 @@ class TestIsInContainer:
         with monkeypatch.context() as m:
             m.setattr(Path, "__new__", lambda cls, path_str: FakePath(path_str))
             from agentalloy.install.container_service import is_in_container
+
             assert is_in_container() is False
 
 
@@ -100,6 +106,7 @@ class TestStopServiceInContainer:
             m.setattr(time, "sleep", lambda s: None)
 
             from agentalloy.install.container_service import stop_service_in_container
+
             result = stop_service_in_container()
             assert result is True
             assert (12345, signal.SIGTERM) in stopped
@@ -110,6 +117,7 @@ class TestStopServiceInContainer:
             m.setattr("agentalloy.install.container_service._find_uvicorn_pid", lambda: None)
 
             from agentalloy.install.container_service import stop_service_in_container
+
             result = stop_service_in_container()
             assert result is False
 
@@ -131,6 +139,7 @@ class TestStopServiceInContainer:
             m.setattr(time, "sleep", lambda s: None)
 
             from agentalloy.install.container_service import stop_service_in_container
+
             result = stop_service_in_container()
             assert result is True
             assert (9999, signal.SIGTERM) in stopped
@@ -148,6 +157,7 @@ class TestStopServiceInContainer:
             m.setattr("os.kill", raise_lookup)
 
             from agentalloy.install.container_service import stop_service_in_container
+
             result = stop_service_in_container()
             assert result is True
 
@@ -174,6 +184,7 @@ class TestRestartServiceInContainer:
             m.setattr(time, "sleep", lambda s: None)
 
             from agentalloy.install.container_service import restart_service_in_container
+
             result = restart_service_in_container()
             assert result is True
 
@@ -193,7 +204,7 @@ class TestRestartServiceInContainer:
             _monotonic_calls[0] += 1
             if _monotonic_calls[0] == 1:
                 return 1000.0  # deadline = 1000.0 + 30.0 = 10030.0
-            return 10031.0   # 10031.0 >= 10030.0 → loop exits
+            return 10031.0  # 10031.0 >= 10030.0 → loop exits
 
         with monkeypatch.context() as m:
             m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
@@ -204,6 +215,7 @@ class TestRestartServiceInContainer:
             m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
 
             from agentalloy.install.container_service import restart_service_in_container
+
             result = restart_service_in_container()
             assert result is False
             # Verify cleanup happened.
@@ -214,9 +226,12 @@ class TestRestartServiceInContainer:
         with monkeypatch.context() as m:
             m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
             m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr(subprocess, "Popen", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("boom")))
+            m.setattr(
+                subprocess, "Popen", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("boom"))
+            )
 
             from agentalloy.install.container_service import restart_service_in_container
+
             result = restart_service_in_container()
             assert result is False
 
@@ -233,9 +248,7 @@ class TestTestKuzuLockReleased:
         (ladybug / "edges").mkdir()
         return ladybug
 
-    def test_lock_released_immediately(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_lock_released_immediately(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """When Kuzu connection succeeds on first try, should return True."""
         ladybug = self._make_fake_ladybug_dir(tmp_path)
         mock_db = MagicMock()
@@ -254,12 +267,11 @@ class TestTestKuzuLockReleased:
             m.setattr("agentalloy.install.state.user_data_dir", lambda: ladybug.parent)
 
             from agentalloy.install.container_service import test_kuzu_lock_released
+
             result = test_kuzu_lock_released()
             assert result is True
 
-    def test_lock_still_held_retries(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_lock_still_held_retries(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """When Kuzu fails initially then succeeds, should retry and return True."""
         ladybug = self._make_fake_ladybug_dir(tmp_path)
         call_count = [0]
@@ -280,13 +292,12 @@ class TestTestKuzuLockReleased:
             m.setattr("agentalloy.install.state.user_data_dir", lambda: ladybug.parent)
 
             from agentalloy.install.container_service import test_kuzu_lock_released
+
             result = test_kuzu_lock_released()
             assert result is True
             assert call_count[0] == 3  # 2 failures + 1 success
 
-    def test_lock_still_held_after_retries(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_lock_still_held_after_retries(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """When Kuzu keeps failing, should return False after retries exhausted."""
         ladybug = self._make_fake_ladybug_dir(tmp_path)
 
@@ -303,12 +314,11 @@ class TestTestKuzuLockReleased:
             m.setattr("agentalloy.install.state.user_data_dir", lambda: ladybug.parent)
 
             from agentalloy.install.container_service import test_kuzu_lock_released
+
             result = test_kuzu_lock_released()
             assert result is False
 
-    def test_no_ladybug_dir_returns_true(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_no_ladybug_dir_returns_true(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """When no ladybug DB dir exists, lock is considered released."""
 
         def fake_user_data_dir():
@@ -318,6 +328,7 @@ class TestTestKuzuLockReleased:
             m.setattr("agentalloy.install.state.user_data_dir", fake_user_data_dir)
 
             from agentalloy.install.container_service import test_kuzu_lock_released
+
             result = test_kuzu_lock_released()
             assert result is True
 
@@ -331,6 +342,7 @@ class TestStopServiceNoRestart:
             m.setattr("agentalloy.install.container_service._find_uvicorn_pid", lambda: 12345)
 
             from agentalloy.install.container_service import stop_service_in_container
+
             result = stop_service_in_container(no_restart=True)
             assert result is False
 
@@ -351,6 +363,7 @@ class TestStopServiceNoRestart:
             m.setattr(time, "sleep", lambda s: None)
 
             from agentalloy.install.container_service import stop_service_in_container
+
             result = stop_service_in_container(no_restart=False)
             assert result is True
 
@@ -363,9 +376,14 @@ class TestRestartServiceNoRestart:
         with monkeypatch.context() as m:
             m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
             m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr(subprocess, "Popen", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("should not start")))
+            m.setattr(
+                subprocess,
+                "Popen",
+                lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("should not start")),
+            )
 
             from agentalloy.install.container_service import restart_service_in_container
+
             result = restart_service_in_container(no_restart=True)
             assert result is True
 
@@ -382,6 +400,7 @@ class TestRestartServiceNoRestart:
             m.setattr(time, "sleep", lambda s: None)
 
             from agentalloy.install.container_service import restart_service_in_container
+
             result = restart_service_in_container(no_restart=False)
             assert result is True
 
@@ -407,6 +426,7 @@ class TestRestartPortFromState:
             m.setattr(time, "sleep", lambda s: None)
 
             from agentalloy.install.container_service import restart_service_in_container
+
             result = restart_service_in_container()
             assert result is True
             # Verify the command uses the configured port, not the default.
@@ -534,6 +554,7 @@ class TestIntegration:
             m.setattr(subprocess, "Popen", fake_popen_stderr)
 
             from agentalloy.install.container_service import restart_service_in_container
+
             result = restart_service_in_container()
 
             assert result is False

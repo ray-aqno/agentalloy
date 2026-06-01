@@ -182,12 +182,18 @@ def main(argv: list[str] | None = None) -> int:
     no_restart = args.no_restart
 
     if target.is_dir():
-        return _batch_with_container(target, force=args.force, yes=args.yes, strict=args.strict, no_restart=no_restart)
+        return _batch_with_container(
+            target, force=args.force, yes=args.yes, strict=args.strict, no_restart=no_restart
+        )
 
-    return _single_with_container(target, force=args.force, yes=args.yes, strict=args.strict, no_restart=no_restart)
+    return _single_with_container(
+        target, force=args.force, yes=args.yes, strict=args.strict, no_restart=no_restart
+    )
 
 
-def _single_with_container(yaml_path: Path, *, force: bool, yes: bool, strict: bool = False, no_restart: bool = False) -> int:
+def _single_with_container(
+    yaml_path: Path, *, force: bool, yes: bool, strict: bool = False, no_restart: bool = False
+) -> int:
     """Wrap _single() with container stop/restart logic."""
     if is_in_container() and not no_restart:
         stop_service_in_container(no_restart=no_restart)
@@ -198,7 +204,9 @@ def _single_with_container(yaml_path: Path, *, force: bool, yes: bool, strict: b
             restart_service_in_container(no_restart=no_restart)
 
 
-def _batch_with_container(directory: Path, *, force: bool, yes: bool, strict: bool = False, no_restart: bool = False) -> int:
+def _batch_with_container(
+    directory: Path, *, force: bool, yes: bool, strict: bool = False, no_restart: bool = False
+) -> int:
     """Wrap _batch() with container stop/restart logic."""
     if is_in_container() and not no_restart:
         stop_service_in_container(no_restart=no_restart)
