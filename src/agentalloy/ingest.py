@@ -29,7 +29,11 @@ from typing import Any, cast
 import yaml
 
 from agentalloy.config import get_settings
-from agentalloy.install.container_service import is_in_container, restart_service_in_container, stop_service_in_container
+from agentalloy.install.container_service import (
+    is_in_container,
+    restart_service_in_container,
+    stop_service_in_container,
+)
 from agentalloy.skill_tier import resolve_skill_tier
 from agentalloy.storage.ladybug import LadybugStore
 

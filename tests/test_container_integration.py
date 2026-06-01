@@ -16,7 +16,6 @@ from agentalloy.install.container_service import (
     stop_service_in_container,
 )
 
-
 # ---------------------------------------------------------------------------
 # 1. reembed integration tests
 # ---------------------------------------------------------------------------
@@ -184,7 +183,7 @@ class TestInstallPacksContainerStopRestart:
         with (
             patch("agentalloy.reembed.cli.is_in_container", return_value=True),
             patch("agentalloy.reembed.cli.stop_service_in_container", return_value=True) as mock_stop,
-            patch("agentalloy.reembed.cli.restart_service_in_container", return_value=True) as mock_restart,
+            patch("agentalloy.reembed.cli.restart_service_in_container", return_value=True),
             patch("agentalloy.reembed.cli._is_service_running", return_value=True),
             patch("agentalloy.reembed.cli._stop_service", return_value=True),
             patch("agentalloy.reembed.cli._restart_service"),

@@ -514,6 +514,7 @@ class TestIntegration:
 
             # Re-import to get fresh function (module-level cache cleared).
             import importlib
+
             import agentalloy.install.container_service as cs
 
             importlib.reload(cs)
@@ -523,7 +524,6 @@ class TestIntegration:
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
     ):
         """Test that errors during restart produce messages on stderr."""
-        import sys
 
         def fake_popen_stderr(cmd_list, **kwargs):
             raise RuntimeError("uvicorn failed to start")
