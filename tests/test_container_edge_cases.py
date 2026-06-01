@@ -121,7 +121,10 @@ class TestConcurrentStopAttempts:
             mock_proc.poll.return_value = None
             m.setattr("subprocess.Popen", MagicMock(return_value=mock_proc))
             # Mock server_log_path to use a writeable tmp path for the real open() call.
-            m.setattr("agentalloy.install.server_proc.server_log_path", lambda: Path("/tmp/test_server.log"))
+            m.setattr(
+                "agentalloy.install.server_proc.server_log_path",
+                lambda: Path("/tmp/test_server.log"),
+            )
             # Mock user_data_dir so .env file check returns False naturally (no .env at this path).
             m.setattr("agentalloy.install.state.user_data_dir", lambda: Path("/tmp/test_user_data"))
 
