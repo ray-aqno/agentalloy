@@ -223,10 +223,12 @@ def _unwire_claude_code_hooks_settings_json() -> list[dict[str, Any]]:
         try:
             new_data = json.loads(new_content)
             settings_path.write_text(json.dumps(new_data, indent=2) + "\n")
-            removed.append({
-                "path": str(settings_path),
-                "action": "removed_sentinel_block",
-            })
+            removed.append(
+                {
+                    "path": str(settings_path),
+                    "action": "removed_sentinel_block",
+                }
+            )
             return removed
         except json.JSONDecodeError:
             pass
@@ -239,11 +241,13 @@ def _unwire_claude_code_hooks_settings_json() -> list[dict[str, Any]]:
 
     for key in keys_to_remove:
         del data[key]
-        removed.append({
-            "path": str(settings_path),
-            "action": "removed_key",
-            "key": key,
-        })
+        removed.append(
+            {
+                "path": str(settings_path),
+                "action": "removed_key",
+                "key": key,
+            }
+        )
 
     if keys_to_remove:
         settings_path.write_text(json.dumps(data, indent=2) + "\n")

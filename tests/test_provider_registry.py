@@ -29,6 +29,7 @@ if str(_src) not in sys.path:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _noop_env(port: int) -> dict[str, str]:
     return {"AGENTALLOY_PORT": str(port)}
 
@@ -56,6 +57,7 @@ def _make_spec(name: str = "test-harness") -> HarnessSpec:
 # ---------------------------------------------------------------------------
 # TestHarnessSpec
 # ---------------------------------------------------------------------------
+
 
 class TestHarnessSpec(TestCase):
     """Tests for the HarnessSpec frozen dataclass."""
@@ -124,6 +126,7 @@ class TestHarnessSpec(TestCase):
 # TestCapability
 # ---------------------------------------------------------------------------
 
+
 class TestCapability(TestCase):
     """Tests for the Capability enum."""
 
@@ -143,6 +146,7 @@ class TestCapability(TestCase):
 # TestProtocol
 # ---------------------------------------------------------------------------
 
+
 class TestProtocol(TestCase):
     """Tests for the Protocol enum."""
 
@@ -156,6 +160,7 @@ class TestProtocol(TestCase):
 # ---------------------------------------------------------------------------
 # TestWireRecord
 # ---------------------------------------------------------------------------
+
 
 class TestWireRecord(TestCase):
     """Tests for the WireRecord frozen dataclass."""
@@ -247,6 +252,7 @@ class TestWireRecord(TestCase):
 # TestProviderRegistry
 # ---------------------------------------------------------------------------
 
+
 class TestProviderRegistry(TestCase):
     """Tests for the REGISTRY dict."""
 
@@ -307,12 +313,27 @@ class TestProviderRegistry(TestCase):
         """REGISTRY can hold multiple distinct HarnessSpec entries."""
         initial_count = len(REGISTRY)
         specs = [
-            HarnessSpec(name="a", binary="a-bin", capabilities=(Capability.HOOK,),
-                        protocol=Protocol.ANTHROPIC, env_builder=_noop_env),
-            HarnessSpec(name="b", binary="b-bin", capabilities=(Capability.PROXY,),
-                        protocol=Protocol.OPENAI, env_builder=_noop_env),
-            HarnessSpec(name="c", binary="c-bin", capabilities=(Capability.MARKDOWN_ONLY,),
-                        protocol=Protocol.EITHER, env_builder=_noop_env),
+            HarnessSpec(
+                name="a",
+                binary="a-bin",
+                capabilities=(Capability.HOOK,),
+                protocol=Protocol.ANTHROPIC,
+                env_builder=_noop_env,
+            ),
+            HarnessSpec(
+                name="b",
+                binary="b-bin",
+                capabilities=(Capability.PROXY,),
+                protocol=Protocol.OPENAI,
+                env_builder=_noop_env,
+            ),
+            HarnessSpec(
+                name="c",
+                binary="c-bin",
+                capabilities=(Capability.MARKDOWN_ONLY,),
+                protocol=Protocol.EITHER,
+                env_builder=_noop_env,
+            ),
         ]
         for s in specs:
             REGISTRY[s.name] = s
@@ -341,6 +362,7 @@ class TestProviderRegistry(TestCase):
 # ---------------------------------------------------------------------------
 # Type-check stubs
 # ---------------------------------------------------------------------------
+
 
 class TestTypeStubs(TestCase):
     """Verify the type aliases resolve correctly at runtime."""

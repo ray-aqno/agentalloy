@@ -67,9 +67,7 @@ def _inject_sentinel_block(existing: str, block: str) -> str:
     return existing + full_block + nl
 
 
-def apply_persistent_config(
-    port: int, root: Path, force: bool = False
-) -> list[WireRecord]:
+def apply_persistent_config(port: int, root: Path, force: bool = False) -> list[WireRecord]:
     """Install wiring for aider.
 
     Writes two files:
@@ -102,7 +100,7 @@ def apply_persistent_config(
         "```bash\n"
         f"curl -s -X POST http://localhost:{port}/compose/text \\\n"
         "  -H 'Content-Type: application/json' \\\n"
-        "  -d '{\"task\": \"<task>\", \"phase\": \"<phase>\"}'\n"
+        '  -d \'{"task": "<task>", "phase": "<phase>"}\'\n'
         "```\n\n"
         "Phases: `spec`, `design`, `build`, `qa`, `ops`.\n"
     )

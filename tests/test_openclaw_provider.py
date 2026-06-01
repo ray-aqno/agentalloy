@@ -92,9 +92,7 @@ class TestOpenclawInstall(TestCase):
                 agentalloy_plugin = plugins["plugins"]["agentalloy"]
                 self.assertEqual(agentalloy_plugin["enabled"], True)
                 self.assertEqual(agentalloy_plugin["type"], "proxy")
-                self.assertEqual(
-                    agentalloy_plugin["baseUrl"], "http://localhost:7070/v1"
-                )
+                self.assertEqual(agentalloy_plugin["baseUrl"], "http://localhost:7070/v1")
                 self.assertEqual(agentalloy_plugin["apiKey"], "agentalloy")
 
                 self.assertIsInstance(result, list)
@@ -138,15 +136,17 @@ class TestOpenclawInstall(TestCase):
                 # Pre-existing plugins.json with another plugin
                 config_path = fake_home / ".openclaw" / "plugins.json"
                 config_path.parent.mkdir(parents=True, exist_ok=True)
-                existing = json.dumps({
-                    "plugins": {
-                        "other-plugin": {
-                            "enabled": True,
-                            "type": "local",
-                            "path": "/usr/local/bin/other-plugin",
+                existing = json.dumps(
+                    {
+                        "plugins": {
+                            "other-plugin": {
+                                "enabled": True,
+                                "type": "local",
+                                "path": "/usr/local/bin/other-plugin",
+                            }
                         }
                     }
-                })
+                )
                 config_path.write_text(existing, encoding="utf-8")
 
                 # Run install
@@ -156,9 +156,7 @@ class TestOpenclawInstall(TestCase):
 
                 # Other plugin should still be there
                 self.assertIn("other-plugin", plugins["plugins"])
-                self.assertEqual(
-                    plugins["plugins"]["other-plugin"]["type"], "local"
-                )
+                self.assertEqual(plugins["plugins"]["other-plugin"]["type"], "local")
                 # Agentalloy plugin should be added
                 self.assertIn("agentalloy", plugins["plugins"])
                 self.assertEqual(
@@ -291,9 +289,7 @@ class TestOpenclawWireRecord(TestCase):
 
             with patch.object(Path, "home", return_value=fake_home):
                 result = install.apply_persistent_config(7070, fake_home)
-                self.assertEqual(
-                    result[0].marker_key, "openclaw.plugins.agentalloy"
-                )
+                self.assertEqual(result[0].marker_key, "openclaw.plugins.agentalloy")
 
     def test_wire_record_to_dict(self):
         """WireRecord.to_dict() serializes correctly."""

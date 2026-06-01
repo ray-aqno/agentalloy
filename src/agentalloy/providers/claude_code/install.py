@@ -71,9 +71,7 @@ def _inject_sentinel_block(existing: str, block: str) -> str:
     return existing + full_block + nl
 
 
-def apply_persistent_config(
-    port: int, root: Path, force: bool = False
-) -> list[WireRecord]:
+def apply_persistent_config(port: int, root: Path, force: bool = False) -> list[WireRecord]:
     """Install wiring for claude-code by writing ~/.agentalloy/claude-code-env.sh.
 
     Creates a shell script with sentinel-bounded environment variable exports

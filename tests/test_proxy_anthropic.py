@@ -520,14 +520,18 @@ class TestOpenAIStreamToAnthropic:
                 "choices": [
                     {
                         "index": 0,
-                        "delta": {"role": "assistant", "content": None, "tool_calls": [
-                            {
-                                "index": 0,
-                                "id": "call_abc",
-                                "type": "function",
-                                "function": {"name": "get_weather", "arguments": ""},
-                            }
-                        ]},
+                        "delta": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_abc",
+                                    "type": "function",
+                                    "function": {"name": "get_weather", "arguments": ""},
+                                }
+                            ],
+                        },
                         "finish_reason": None,
                     }
                 ],
@@ -540,12 +544,14 @@ class TestOpenAIStreamToAnthropic:
                 "choices": [
                     {
                         "index": 0,
-                        "delta": {"tool_calls": [
-                            {
-                                "index": 0,
-                                "function": {"arguments": '{"loc'},
-                            }
-                        ]},
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": '{"loc'},
+                                }
+                            ]
+                        },
                         "finish_reason": None,
                     }
                 ],
@@ -558,12 +564,14 @@ class TestOpenAIStreamToAnthropic:
                 "choices": [
                     {
                         "index": 0,
-                        "delta": {"tool_calls": [
-                            {
-                                "index": 0,
-                                "function": {"arguments": 'ation":"SF"}'},
-                            }
-                        ]},
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": 'ation":"SF"}'},
+                                }
+                            ]
+                        },
                         "finish_reason": "tool_calls",
                     }
                 ],
@@ -573,12 +581,22 @@ class TestOpenAIStreamToAnthropic:
         events = _openai_stream_to_anthropic(chunks, "gpt-4")
 
         # Should have tool_use content_block_start
-        tc_starts = [e for e in events if e["type"] == "content_block_start" and e.get("content_block", {}).get("type") == "tool_use"]
+        tc_starts = [
+            e
+            for e in events
+            if e["type"] == "content_block_start"
+            and e.get("content_block", {}).get("type") == "tool_use"
+        ]
         assert len(tc_starts) >= 1
         assert tc_starts[0]["content_block"]["name"] == "get_weather"
 
         # Should have input_json_delta
-        json_deltas = [e for e in events if e["type"] == "content_block_delta" and e.get("delta", {}).get("type") == "input_json_delta"]
+        json_deltas = [
+            e
+            for e in events
+            if e["type"] == "content_block_delta"
+            and e.get("delta", {}).get("type") == "input_json_delta"
+        ]
         assert len(json_deltas) >= 1
 
         # Should have tool_use stop_reason
@@ -620,9 +638,9 @@ class TestOpenAIStreamToAnthropic:
 
         # Should have text delta
         text_deltas = [
-            e for e in events
-            if e["type"] == "content_block_delta"
-            and e.get("delta", {}).get("type") == "text_delta"
+            e
+            for e in events
+            if e["type"] == "content_block_delta" and e.get("delta", {}).get("type") == "text_delta"
         ]
         assert len(text_deltas) == 2
         assert text_deltas[0]["delta"]["text"] == "Hello"
@@ -648,10 +666,14 @@ class TestAnthropicToolToOpenAI:
     """Test individual tool conversion."""
 
     def test_basic_tool(self):
-        tool = {"name": "search", "description": "Search the web", "input_schema": {
-            "type": "object",
-            "properties": {"query": {"type": "string"}},
-        }}
+        tool = {
+            "name": "search",
+            "description": "Search the web",
+            "input_schema": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+            },
+        }
         result = _anthropic_tool_to_openai(tool)
         assert result == {
             "type": "function",
@@ -688,9 +710,7 @@ class TestAnthropicMessageModel:
         msg = AnthropicMessage(
             role="assistant",
             content="",
-            tool_calls=[
-                {"id": "t1", "name": "search", "input": {"q": "x"}}
-            ],
+            tool_calls=[{"id": "t1", "name": "search", "input": {"q": "x"}}],
         )
         assert msg.tool_calls is not None
         assert len(msg.tool_calls) == 1
@@ -868,9 +888,7 @@ class TestInterleavedStreamToAnthropic:
                             "tool_calls": [
                                 {
                                     "index": 0,
-                                    "function": {
-                                        "arguments": '{"location": "SF"}'
-                                    },
+                                    "function": {"arguments": '{"location": "SF"}'},
                                 }
                             ]
                         },
@@ -886,16 +904,13 @@ class TestInterleavedStreamToAnthropic:
         text_deltas = [
             e
             for e in events
-            if e["type"] == "content_block_delta"
-            and e.get("delta", {}).get("type") == "text_delta"
+            if e["type"] == "content_block_delta" and e.get("delta", {}).get("type") == "text_delta"
         ]
         assert len(text_deltas) == 1
         assert text_deltas[0]["delta"]["text"] == "Let me check."
 
         # Text block should be stopped before tool_use starts
-        text_stops = [
-            e for e in events if e["type"] == "content_block_stop" and e["index"] == 0
-        ]
+        text_stops = [e for e in events if e["type"] == "content_block_stop" and e["index"] == 0]
         assert len(text_stops) == 1
 
         # Tool_use block should have start, delta, stop
@@ -921,11 +936,7 @@ class TestInterleavedStreamToAnthropic:
         assert json_deltas[0]["delta"]["partial_json"] == '{"location": "SF"}'
 
         # Tool_use stop
-        tc_stops = [
-            e
-            for e in events
-            if e["type"] == "content_block_stop" and e["index"] == 1
-        ]
+        tc_stops = [e for e in events if e["type"] == "content_block_stop" and e["index"] == 1]
         assert len(tc_stops) == 1
 
         # Final message events
@@ -977,9 +988,7 @@ class TestInterleavedStreamToAnthropic:
                             "tool_calls": [
                                 {
                                     "index": 0,
-                                    "function": {
-                                        "arguments": '{"q":"weather"}'
-                                    },
+                                    "function": {"arguments": '{"q":"weather"}'},
                                 }
                             ]
                         },
@@ -1040,9 +1049,7 @@ class TestInterleavedStreamToAnthropic:
                             "tool_calls": [
                                 {
                                     "index": 1,
-                                    "function": {
-                                        "arguments": '{"route": "home"}'
-                                    },
+                                    "function": {"arguments": '{"route": "home"}'},
                                 }
                             ]
                         },
@@ -1068,8 +1075,7 @@ class TestInterleavedStreamToAnthropic:
         text_deltas = [
             e
             for e in events
-            if e["type"] == "content_block_delta"
-            and e.get("delta", {}).get("type") == "text_delta"
+            if e["type"] == "content_block_delta" and e.get("delta", {}).get("type") == "text_delta"
         ]
         assert len(text_deltas) == 1
         assert text_deltas[0]["delta"]["text"] == "Also checking traffic."
@@ -1160,47 +1166,47 @@ class TestInterleavedStreamToAnthropic:
                 ],
             },
             # Partial arg chunk 3
-             {
-                 "id": "chatcmpl-1",
-                 "object": "chat.completion.chunk",
-                 "created": 123456,
-                 "model": "gpt-4",
-                 "choices": [
-                     {
-                         "index": 0,
-                         "delta": {
-                             "tool_calls": [
-                                 {
-                                     "index": 0,
-                                     "function": {"arguments": '"result"'},
-                                 }
-                             ]
-                         },
-                         "finish_reason": None,
-                     }
-                 ],
-             },
-             # Final closing brace
-             {
-                 "id": "chatcmpl-1",
-                 "object": "chat.completion.chunk",
-                 "created": 123456,
-                 "model": "gpt-4",
-                 "choices": [
-                     {
-                         "index": 0,
-                         "delta": {
-                             "tool_calls": [
-                                 {
-                                     "index": 0,
-                                     "function": {"arguments": '"}'},
-                                 }
-                             ]
-                         },
-                         "finish_reason": "tool_calls",
-                     }
-                 ],
-             },
+            {
+                "id": "chatcmpl-1",
+                "object": "chat.completion.chunk",
+                "created": 123456,
+                "model": "gpt-4",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": '"result"'},
+                                }
+                            ]
+                        },
+                        "finish_reason": None,
+                    }
+                ],
+            },
+            # Final closing brace
+            {
+                "id": "chatcmpl-1",
+                "object": "chat.completion.chunk",
+                "created": 123456,
+                "model": "gpt-4",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": '"}'},
+                                }
+                            ]
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+            },
         ]
         events = _openai_stream_to_anthropic_interleaved(chunks, "gpt-4")
 
@@ -1308,8 +1314,7 @@ class TestInterleavedStreamToAnthropic:
         text_deltas = [
             e
             for e in events
-            if e["type"] == "content_block_delta"
-            and e.get("delta", {}).get("type") == "text_delta"
+            if e["type"] == "content_block_delta" and e.get("delta", {}).get("type") == "text_delta"
         ]
         assert len(text_deltas) == 2
         assert text_deltas[0]["delta"]["text"] == "Hello"

@@ -160,9 +160,7 @@ def _run(args: argparse.Namespace) -> int:
     port_owned = _port_owned_by_us(port, host=host)
 
     if existing_pid is not None:
-        print_rich(
-            f"  Port {port}: server already running (pid {existing_pid})"
-        )
+        print_rich(f"  Port {port}: server already running (pid {existing_pid})")
     elif port_owned:
         # PID file says we own it but ss didn't find it — probably a race.
         # Try to connect.
@@ -199,8 +197,7 @@ def _run(args: argparse.Namespace) -> int:
             return 1
     elif no_start_server and existing_pid is None:
         print_rich_stderr(
-            f"ERROR: No server running on port {port}. "
-            f"Start one first or omit --no-start-server.",
+            f"ERROR: No server running on port {port}. Start one first or omit --no-start-server.",
         )
         return 1
 

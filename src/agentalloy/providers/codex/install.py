@@ -82,9 +82,7 @@ def _inject_sentinel_block(existing: str, block: str) -> str:
     return existing + full_block + nl
 
 
-def apply_persistent_config(
-    port: int, root: Path, force: bool = False
-) -> list[WireRecord]:
+def apply_persistent_config(port: int, root: Path, force: bool = False) -> list[WireRecord]:
     """Install wiring for codex by writing ~/.codex/config.toml.
 
     Creates a TOML config file with an apiBaseUrl sentinel-bounded block

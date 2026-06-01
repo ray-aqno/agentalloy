@@ -76,9 +76,7 @@ def _resolve_windsurf_path(root: Path) -> tuple[str, bool]:
     return ".windsurfrules", False
 
 
-def apply_persistent_config(
-    port: int, root: Path, force: bool = False
-) -> list[WireRecord]:
+def apply_persistent_config(port: int, root: Path, force: bool = False) -> list[WireRecord]:
     """Install persistent wiring for windsurf.
 
     Writes .windsurf/rules/agentalloy.md (dedicated) or .windsurfrules (shared)
@@ -99,7 +97,7 @@ def apply_persistent_config(
     instruction_content = (
         "---\n"
         "description: Fetch skill context before starting any SDD coding task\n"
-        "globs: [\"**/*\"]\n"
+        'globs: ["**/*"]\n'
         "---\n\n"
         "# AgentAlloy -- skill context\n\n"
         f"A local agentalloy service runs at `http://localhost:{port}`.\n\n"
@@ -109,7 +107,7 @@ def apply_persistent_config(
         "```bash\n"
         f"curl -s -X POST http://localhost:{port}/compose/text \\\n"
         "  -H 'Content-Type: application/json' \\\n"
-        "  -d '{\"task\": \"<task>\", \"phase\": \"<phase>\"}'\n"
+        '  -d \'{"task": "<task>", "phase": "<phase>"}\'\n'
         "```\n\n"
         "Phases: `spec`, `design`, `build`, `qa`, `ops`.\n"
     )

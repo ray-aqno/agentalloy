@@ -72,9 +72,7 @@ class TestWireHarnessDeprecation:
         with warnings.catch_warnings(record=True) as recorded:
             warnings.simplefilter("always")
             wire_harness.wire_harness("claude-code", port=8000, root=repo_root, legacy=True)
-        deprecation_warnings = [
-            w for w in recorded if issubclass(w.category, DeprecationWarning)
-        ]
+        deprecation_warnings = [w for w in recorded if issubclass(w.category, DeprecationWarning)]
         assert len(deprecation_warnings) == 1
 
 
@@ -239,7 +237,6 @@ class TestModuleDeprecationDocstring:
         assert "registry" in wire_harness.__doc__.lower() or "REGISTRY" in wire_harness.__doc__
 
 
-
 @pytest.fixture()
 def mock_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Patch Path.home() to return a tmp_path subdir for hermetic tests."""
@@ -326,7 +323,9 @@ class TestClaudeCode:
 
 class TestHermesAgent:
     def test_user_scope_writes_soul_md(self, tmp_path: Path) -> None:
-        result = wire_harness.wire_harness("hermes-agent", port=8000, root=tmp_path, scope="user", legacy=True)
+        result = wire_harness.wire_harness(
+            "hermes-agent", port=8000, root=tmp_path, scope="user", legacy=True
+        )
         assert result["integration_vector"] == "markdown_injection"
         soul = tmp_path / ".hermes" / "SOUL.md"
         assert soul.exists()
@@ -336,7 +335,9 @@ class TestHermesAgent:
         assert "/health" in content
 
     def test_repo_scope_writes_agents_md(self, repo_root: Path) -> None:
-        result = wire_harness.wire_harness("hermes-agent", port=8000, root=repo_root, scope="repo", legacy=True)
+        result = wire_harness.wire_harness(
+            "hermes-agent", port=8000, root=repo_root, scope="repo", legacy=True
+        )
         assert result["integration_vector"] == "markdown_injection"
         agents = repo_root / "AGENTS.md"
         assert agents.exists()
@@ -348,7 +349,9 @@ class TestHermesAgent:
         soul = tmp_path / ".hermes" / "SOUL.md"
         soul.parent.mkdir(parents=True)
         soul.write_text("# My persona\n\nBe terse.\n")
-        wire_harness.wire_harness("hermes-agent", port=8000, root=tmp_path, scope="user", legacy=True)
+        wire_harness.wire_harness(
+            "hermes-agent", port=8000, root=tmp_path, scope="user", legacy=True
+        )
         content = soul.read_text()
         assert "# My persona" in content
         assert "Be terse." in content
@@ -535,7 +538,9 @@ class TestOpenHarnesses:
 
 class TestContinue:
     def test_closed_creates_config(self, repo_root: Path) -> None:
-        result = wire_harness.wire_harness("continue-closed", port=8000, root=repo_root, legacy=True)
+        result = wire_harness.wire_harness(
+            "continue-closed", port=8000, root=repo_root, legacy=True
+        )
         assert result["harness"] == "continue-closed"
         config_path = repo_root / ".continuerc.json"
         assert config_path.exists()
@@ -838,7 +843,9 @@ class TestIntakeActivationMarkers:
     ]
 
     def test_hermes_agent_has_intake_markers(self, tmp_path: Path) -> None:
-        wire_harness.wire_harness("hermes-agent", port=8000, root=tmp_path, scope="user", legacy=True)
+        wire_harness.wire_harness(
+            "hermes-agent", port=8000, root=tmp_path, scope="user", legacy=True
+        )
         content = (tmp_path / ".hermes" / "SOUL.md").read_text()
         for marker in self._INTAKE_MARKERS:
             assert marker in content, f"Missing marker: {marker}"
@@ -919,7 +926,9 @@ class TestMCPFallback:
 
     def test_continue_closed_mcp_writes_continuerc(self, repo_root: Path) -> None:
         """continue-closed --mcp-fallback writes MCP entry to .continuerc.json."""
-        result = wire_harness.wire_harness("continue-closed", port=7777, root=repo_root, mcp_fallback=True)
+        result = wire_harness.wire_harness(
+            "continue-closed", port=7777, root=repo_root, mcp_fallback=True
+        )
         assert result["integration_vector"] == "mcp_server_config"
 
         config_path = repo_root / ".continuerc.json"

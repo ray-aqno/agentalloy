@@ -76,22 +76,28 @@ class TestHookScript:
 
     def test_hook_script_exists_and_is_executable(self) -> None:
         """The hook script exists at the expected path and is executable."""
-        script_path = Path(__file__).resolve().parent.parent / \
-            "src/agentalloy/install/agentalloy-hook-claude-code.sh"
+        script_path = (
+            Path(__file__).resolve().parent.parent
+            / "src/agentalloy/install/agentalloy-hook-claude-code.sh"
+        )
         assert script_path.exists(), f"Hook script not found at {script_path}"
         assert script_path.stat().st_mode & 0o111, "Hook script is not executable"
 
     def test_hook_script_reads_json_from_stdin(self, tmp_path: Path) -> None:
         """The hook script reads JSON from stdin, not from CLAUDE_PROMPT_FILE."""
-        script_path = Path(__file__).resolve().parent.parent / \
-            "src/agentalloy/install/agentalloy-hook-claude-code.sh"
+        script_path = (
+            Path(__file__).resolve().parent.parent
+            / "src/agentalloy/install/agentalloy-hook-claude-code.sh"
+        )
 
         # Write a test JSON payload to stdin
-        payload = json.dumps({
-            "event": "UserPromptSubmit",
-            "prompt": "test prompt",
-            "cwd": str(tmp_path),
-        })
+        payload = json.dumps(
+            {
+                "event": "UserPromptSubmit",
+                "prompt": "test prompt",
+                "cwd": str(tmp_path),
+            }
+        )
 
         # Run the script with the payload on stdin
         # The script will try to POST to localhost:47950 which won't be running,
@@ -108,14 +114,18 @@ class TestHookScript:
 
     def test_hook_script_env_var_override(self, tmp_path: Path) -> None:
         """The hook script respects AGENTALLOY_HOOK_URL env var."""
-        script_path = Path(__file__).resolve().parent.parent / \
-            "src/agentalloy/install/agentalloy-hook-claude-code.sh"
+        script_path = (
+            Path(__file__).resolve().parent.parent
+            / "src/agentalloy/install/agentalloy-hook-claude-code.sh"
+        )
 
-        payload = json.dumps({
-            "event": "UserPromptSubmit",
-            "prompt": "test prompt",
-            "cwd": str(tmp_path),
-        })
+        payload = json.dumps(
+            {
+                "event": "UserPromptSubmit",
+                "prompt": "test prompt",
+                "cwd": str(tmp_path),
+            }
+        )
 
         # Set AGENTALLOY_HOOK_URL to a non-existent endpoint
         env = {"AGENTALLOY_HOOK_URL": "http://localhost:99999/v1/hook/user-prompt-submit"}
@@ -132,14 +142,18 @@ class TestHookScript:
 
     def test_hook_script_dispatches_pre_tool_use(self, tmp_path: Path) -> None:
         """The hook script dispatches PreToolUse events to the correct endpoint."""
-        script_path = Path(__file__).resolve().parent.parent / \
-            "src/agentalloy/install/agentalloy-hook-claude-code.sh"
+        script_path = (
+            Path(__file__).resolve().parent.parent
+            / "src/agentalloy/install/agentalloy-hook-claude-code.sh"
+        )
 
-        payload = json.dumps({
-            "event": "PreToolUse",
-            "tool_name": "Bash",
-            "cwd": str(tmp_path),
-        })
+        payload = json.dumps(
+            {
+                "event": "PreToolUse",
+                "tool_name": "Bash",
+                "cwd": str(tmp_path),
+            }
+        )
 
         result = subprocess.run(
             ["bash", str(script_path)],
@@ -279,8 +293,9 @@ class TestSignalFirstCaching:
 
         # Cached response should be significantly faster
         # (allowing for some variance in CI environments)
-        assert cached_latency <= first_latency + 50, \
+        assert cached_latency <= first_latency + 50, (
             f"Cached latency ({cached_latency}ms) should be close to fresh ({first_latency}ms)"
+        )
 
     def test_stale_cache_returns_stale_value(self, client: TestClient, reset_hook_cache) -> None:
         """Stale cache returns the stale value while revalidating in background."""
@@ -333,6 +348,7 @@ class TestTimeout:
     def test_swr_timeout_is_2500ms(self, reset_hook_cache: Any) -> None:
         """The SWR timeout is 2.5 seconds (2500ms)."""
         from agentalloy.api.hook_router import SWR_TIMEOUT_MS
+
         assert SWR_TIMEOUT_MS == 2500
 
     def test_background_revalidation_has_timeout(
@@ -349,6 +365,7 @@ class TestTimeout:
             SWR_TIMEOUT_MS,
             _CachedSignalResult,
         )
+
         stale_cache = _CachedSignalResult(
             composed_block="stale",
             phase="build",
@@ -471,12 +488,18 @@ class TestClaudeCodeProvider:
         settings_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Write a settings.json with a sentinel-bounded block
-        settings_content = json.dumps({
-            "permissions": {"allow": ["Bash(*)"]},
-        }, indent=2) + "\n" + \
-            "# <!-- BEGIN agentalloy install -->\n" + \
-            '"hooks": {"UserPromptSubmit": {"command": "/hook.sh"}}\n' + \
-            "# <!-- END agentalloy install -->\n"
+        settings_content = (
+            json.dumps(
+                {
+                    "permissions": {"allow": ["Bash(*)"]},
+                },
+                indent=2,
+            )
+            + "\n"
+            + "# <!-- BEGIN agentalloy install -->\n"
+            + '"hooks": {"UserPromptSubmit": {"command": "/hook.sh"}}\n'
+            + "# <!-- END agentalloy install -->\n"
+        )
 
         # This won't be valid JSON, so we write it as a raw file
         # that the sentinel removal logic can parse

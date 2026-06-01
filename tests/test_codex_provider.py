@@ -35,6 +35,7 @@ class TestCodexHarnessSpec(TestCase):
     def test_codex_spec_fields(self):
         """HarnessSpec has correct name, binary, capabilities, protocol."""
         from agentalloy.providers import Capability, Protocol
+
         spec = REGISTRY["codex"]
         self.assertEqual(spec.name, "codex")
         self.assertEqual(spec.binary, "codex")

@@ -25,9 +25,7 @@ def _capture_original(path: Path) -> str | None:
     return None
 
 
-def apply_persistent_config(
-    port: int, root: Path, force: bool = False
-) -> list[WireRecord]:
+def apply_persistent_config(port: int, root: Path, force: bool = False) -> list[WireRecord]:
     """Install wiring for cline.
 
     Writes .cline/settings.json with proxy API fields.

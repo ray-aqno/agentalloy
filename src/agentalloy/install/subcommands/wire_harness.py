@@ -485,12 +485,14 @@ def _wire_legacy(
         )
 
         hook_result = _wire_claude_code_hooks(port)
-        files_written.append({
-            "path": hook_result["path"],
-            "action": hook_result["action"],
-            "script": hook_result["script"],
-            "hook_events": hook_result.get("hook_events", []),
-        })
+        files_written.append(
+            {
+                "path": hook_result["path"],
+                "action": hook_result["action"],
+                "script": hook_result["script"],
+                "hook_events": hook_result.get("hook_events", []),
+            }
+        )
         return _build_result(harness, "claude_code_hooks", files_written, root)
 
     # continue special case (already has proxy, skip)

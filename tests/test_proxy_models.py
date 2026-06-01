@@ -182,7 +182,10 @@ class TestProxyRequest:
                 "function": {
                     "name": "get_weather",
                     "description": "Get the weather for a location",
-                    "parameters": {"type": "object", "properties": {"location": {"type": "string"}}},
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"location": {"type": "string"}},
+                    },
                 },
             }
         ]
@@ -317,7 +320,9 @@ class TestProxyStreamDelta:
 
     def test_tool_calls_serialization(self):
         delta = ProxyStreamDelta(
-            tool_calls=[{"index": 0, "id": "call_456", "function": {"name": "search", "arguments": ""}}]
+            tool_calls=[
+                {"index": 0, "id": "call_456", "function": {"name": "search", "arguments": ""}}
+            ]
         )
         d = delta.model_dump(exclude_none=True)
         assert "tool_calls" in d

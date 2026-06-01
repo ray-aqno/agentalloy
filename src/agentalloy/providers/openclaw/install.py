@@ -42,9 +42,7 @@ def _save_plugins(path: Path, plugins: dict[str, Any]) -> None:
     path.write_text(json.dumps(plugins, indent=2) + "\n", encoding="utf-8")
 
 
-def apply_persistent_config(
-    port: int, root: Path, force: bool = False
-) -> list[WireRecord]:
+def apply_persistent_config(port: int, root: Path, force: bool = False) -> list[WireRecord]:
     """Install wiring for openclaw by writing ~/.openclaw/plugins.json.
 
     Creates a JSON plugin config with an agentalloy plugin entry pointing

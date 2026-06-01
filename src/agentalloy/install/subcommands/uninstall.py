@@ -1068,7 +1068,10 @@ def uninstall(
             settings_removed = uninstall_proxy._unwire_claude_code_hooks_settings_json()
             for sr in settings_removed:
                 files_removed.append(sr)
-                print(f"  settings.json cleanup: {sr['action']} ({sr.get('key', sr.get('action'))})", file=sys.stderr)
+                print(
+                    f"  settings.json cleanup: {sr['action']} ({sr.get('key', sr.get('action'))})",
+                    file=sys.stderr,
+                )
 
     if proxy_removed:
         for p in proxy_removed:

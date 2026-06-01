@@ -186,9 +186,12 @@ class TestPortOwned:
     def test_port_owned_with_valid_pid_file(self, tmp_state_dir: tuple[Path, Path]):
         """When PID file exists and process is alive and listening, returns True."""
         _write_pid_file(12345)
-        with patch(
-            "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid"
-        ) as mock_find, patch("os.kill") as mock_kill:
+        with (
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid"
+            ) as mock_find,
+            patch("os.kill") as mock_kill,
+        ):
             mock_find.return_value = 12345
             mock_kill.return_value = None  # pretend PID is alive
             assert _port_owned_by_us(47950) is True
@@ -226,14 +229,18 @@ class TestHarnessValidation:
 
     def test_invalid_harness_rejected(self, tmp_state_dir: tuple[Path, Path]):
         """An invalid harness name should return exit code 1."""
-        with patch("agentalloy.install.subcommands.wrap.server_proc.find_listening_pid", return_value=None):
-            rc = _run(argparse.Namespace(
-                harness="nonexistent-harness",
-                port=None,
-                via="proxy",
-                no_start_server=True,
-                child_args=["echo", "hello"],
-            ))
+        with patch(
+            "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid", return_value=None
+        ):
+            rc = _run(
+                argparse.Namespace(
+                    harness="nonexistent-harness",
+                    port=None,
+                    via="proxy",
+                    no_start_server=True,
+                    child_args=["echo", "hello"],
+                )
+            )
         # Should fail before reaching server_proc because harness is invalid
         assert rc == 1
 
@@ -290,20 +297,26 @@ class TestRun:
 
     def test_server_start_called_when_needed(self, tmp_state_dir: tuple[Path, Path]):
         """When no server is running, start_background should be called."""
-        with patch(
-            "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
-            return_value=None,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.server_proc.start_background",
-            return_value=12345,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.server_proc.wait_until_listening",
-            return_value=True,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.wire_harness",
-            return_value={"files_written": [], "harness": "claude-code"},
-        ), patch(
-            "agentalloy.install.subcommands.wrap.server_proc.stop",
+        with (
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
+                return_value=None,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.start_background",
+                return_value=12345,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.wait_until_listening",
+                return_value=True,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.wire_harness",
+                return_value={"files_written": [], "harness": "claude-code"},
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.stop",
+            ),
         ):
             args = self._make_args(child_args=["echo", "hello"])
             rc = _run(args)
@@ -311,16 +324,21 @@ class TestRun:
 
     def test_server_not_started_when_running(self, tmp_state_dir: tuple[Path, Path]):
         """When server is already running, start_background should NOT be called."""
-        with patch(
-            "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
-            return_value=9999,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.server_proc.start_background",
-        ) as mock_start, patch(
-            "agentalloy.install.subcommands.wrap.wire_harness",
-            return_value={"files_written": [], "harness": "claude-code"},
-        ), patch(
-            "agentalloy.install.subcommands.wrap.server_proc.stop",
+        with (
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
+                return_value=9999,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.start_background",
+            ) as mock_start,
+            patch(
+                "agentalloy.install.subcommands.wrap.wire_harness",
+                return_value={"files_written": [], "harness": "claude-code"},
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.stop",
+            ),
         ):
             args = self._make_args(no_start_server=True, child_args=["echo", "hello"])
             rc = _run(args)
@@ -329,14 +347,18 @@ class TestRun:
 
     def test_proxy_wiring_applied(self, tmp_state_dir: tuple[Path, Path]):
         """--via proxy should call wire_harness without legacy=True."""
-        with patch(
-            "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
-            return_value=9999,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.wire_harness",
-            return_value={"files_written": [], "harness": "claude-code"},
-        ), patch(
-            "agentalloy.install.subcommands.wrap.server_proc.stop",
+        with (
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
+                return_value=9999,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.wire_harness",
+                return_value={"files_written": [], "harness": "claude-code"},
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.stop",
+            ),
         ):
             args = self._make_args(via="proxy", child_args=["echo", "hello"])
             rc = _run(args)
@@ -344,14 +366,18 @@ class TestRun:
 
     def test_hook_wiring_applied(self, tmp_state_dir: tuple[Path, Path]):
         """--via hook should call wire_harness with legacy=True."""
-        with patch(
-            "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
-            return_value=9999,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.wire_harness",
-            return_value={"files_written": [], "harness": "claude-code"},
-        ), patch(
-            "agentalloy.install.subcommands.wrap.server_proc.stop",
+        with (
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
+                return_value=9999,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.wire_harness",
+                return_value={"files_written": [], "harness": "claude-code"},
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.stop",
+            ),
         ):
             args = self._make_args(via="hook", child_args=["echo", "hello"])
             rc = _run(args)
@@ -363,17 +389,22 @@ class TestRun:
         mock_proc.pid = 54321
         mock_proc.wait.return_value = 0
 
-        with patch(
-            "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
-            return_value=9999,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.wire_harness",
-            return_value={"files_written": [], "harness": "claude-code"},
-        ), patch(
-            "agentalloy.install.subcommands.wrap.subprocess.Popen",
-            return_value=mock_proc,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.server_proc.stop",
+        with (
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
+                return_value=9999,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.wire_harness",
+                return_value={"files_written": [], "harness": "claude-code"},
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.subprocess.Popen",
+                return_value=mock_proc,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.stop",
+            ),
         ):
             args = self._make_args(child_args=["echo", "hello"])
             rc = _run(args)
@@ -382,15 +413,19 @@ class TestRun:
 
     def test_child_process_file_not_found(self, tmp_state_dir: tuple[Path, Path]):
         """Child process not found should return exit code 2."""
-        with patch(
-            "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
-            return_value=9999,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.wire_harness",
-            return_value={"files_written": [], "harness": "claude-code"},
-        ), patch(
-            "agentalloy.install.subcommands.wrap.subprocess.Popen",
-            side_effect=FileNotFoundError("command not found"),
+        with (
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
+                return_value=9999,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.wire_harness",
+                return_value={"files_written": [], "harness": "claude-code"},
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.subprocess.Popen",
+                side_effect=FileNotFoundError("command not found"),
+            ),
         ):
             args = self._make_args(child_args=["nonexistent-command-xyz"])
             rc = _run(args)
@@ -402,24 +437,31 @@ class TestRun:
         mock_proc.pid = 54321
         mock_proc.wait.return_value = 0
 
-        with patch(
-            "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
-            return_value=None,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.server_proc.start_background",
-            return_value=12345,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.server_proc.wait_until_listening",
-            return_value=True,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.wire_harness",
-            return_value={"files_written": [], "harness": "claude-code"},
-        ), patch(
-            "agentalloy.install.subcommands.wrap.subprocess.Popen",
-            return_value=mock_proc,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.server_proc.stop",
-        ) as mock_stop:
+        with (
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
+                return_value=None,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.start_background",
+                return_value=12345,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.wait_until_listening",
+                return_value=True,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.wire_harness",
+                return_value={"files_written": [], "harness": "claude-code"},
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.subprocess.Popen",
+                return_value=mock_proc,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.stop",
+            ) as mock_stop,
+        ):
             args = self._make_args(child_args=["echo", "hello"])
             rc = _run(args)
             assert rc == 0
@@ -431,23 +473,30 @@ class TestRun:
         mock_proc.pid = 54321
         mock_proc.wait.return_value = 0
 
-        with patch(
-            "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
-            return_value=None,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.server_proc.start_background",
-            return_value=12345,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.server_proc.wait_until_listening",
-            return_value=True,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.wire_harness",
-            return_value={"files_written": [], "harness": "claude-code"},
-        ), patch(
-            "agentalloy.install.subcommands.wrap.subprocess.Popen",
-            return_value=mock_proc,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.server_proc.stop",
+        with (
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
+                return_value=None,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.start_background",
+                return_value=12345,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.wait_until_listening",
+                return_value=True,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.wire_harness",
+                return_value={"files_written": [], "harness": "claude-code"},
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.subprocess.Popen",
+                return_value=mock_proc,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.stop",
+            ),
         ):
             args = self._make_args(child_args=["echo", "hello"])
             rc = _run(args)
@@ -491,14 +540,18 @@ class TestIntegration:
 
     def test_echo_child_exits_cleanly(self, tmp_state_dir: tuple[Path, Path]):
         """Wrap should successfully run 'echo hello' and return 0."""
-        with patch(
-            "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
-            return_value=9999,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.wire_harness",
-            return_value={"files_written": [], "harness": "claude-code"},
-        ), patch(
-            "agentalloy.install.subcommands.wrap.server_proc.stop",
+        with (
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
+                return_value=9999,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.wire_harness",
+                return_value={"files_written": [], "harness": "claude-code"},
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.stop",
+            ),
         ):
             args = argparse.Namespace(
                 harness="claude-code",
@@ -517,17 +570,22 @@ class TestIntegration:
         mock_proc.pid = 54321
         mock_proc.wait.return_value = 0
 
-        with patch(
-            "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
-            return_value=9999,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.wire_harness",
-            return_value={"files_written": [], "harness": "claude-code"},
-        ), patch(
-            "agentalloy.install.subcommands.wrap.subprocess.Popen",
-            return_value=mock_proc,
-        ), patch(
-            "agentalloy.install.subcommands.wrap.server_proc.stop",
+        with (
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.find_listening_pid",
+                return_value=9999,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.wire_harness",
+                return_value={"files_written": [], "harness": "claude-code"},
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.subprocess.Popen",
+                return_value=mock_proc,
+            ),
+            patch(
+                "agentalloy.install.subcommands.wrap.server_proc.stop",
+            ),
         ):
             args = argparse.Namespace(
                 harness="claude-code",

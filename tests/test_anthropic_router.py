@@ -131,7 +131,13 @@ class TestOpenAItoAnthropic:
                         "index": 0,
                         "delta": {
                             "role": "assistant",
-                            "tool_calls": [{"index": 0, "id": "tc1", "function": {"name": "search", "arguments": ""}}],
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "tc1",
+                                    "function": {"name": "search", "arguments": ""},
+                                }
+                            ],
                             "content": "prefix",
                         },
                         "finish_reason": None,
@@ -145,12 +151,22 @@ class TestOpenAItoAnthropic:
         ]
         events = _openai_stream_to_anthropic(chunks, "claude-3-opus")
         # Collect text deltas
-        text_deltas = [e["delta"]["text"] for e in events if e.get("type") == "content_block_delta" and e.get("delta", {}).get("type") == "text_delta"]
+        text_deltas = [
+            e["delta"]["text"]
+            for e in events
+            if e.get("type") == "content_block_delta"
+            and e.get("delta", {}).get("type") == "text_delta"
+        ]
         combined = "".join(text_deltas)
         assert "prefix" in combined
         assert " text" in combined
         # Tool_use blocks should be present
-        tc_starts = [e for e in events if e.get("type") == "content_block_start" and e.get("content_block", {}).get("type") == "tool_use"]
+        tc_starts = [
+            e
+            for e in events
+            if e.get("type") == "content_block_start"
+            and e.get("content_block", {}).get("type") == "tool_use"
+        ]
         assert len(tc_starts) >= 1
         assert tc_starts[0]["content_block"]["name"] == "search"
 
@@ -377,26 +393,30 @@ class TestAnthropicMessageToOpenAI:
 
     def test_tool_result_role(self) -> None:
         """Anthropic tool role maps to OpenAI tool role."""
-        msg = _anthropic_message_to_openai({
-            "role": "tool",
-            "content": "Result data",
-        })
+        msg = _anthropic_message_to_openai(
+            {
+                "role": "tool",
+                "content": "Result data",
+            }
+        )
         assert msg.role == "tool"
         assert msg.content == "Result data"
 
     def test_assistant_with_tool_calls(self) -> None:
         """Assistant message with tool_calls gets OpenAI tool_calls format."""
-        msg = _anthropic_message_to_openai({
-            "role": "assistant",
-            "content": "Let me search for that.",
-            "tool_calls": [
-                {
-                    "id": "toolu_123",
-                    "name": "search",
-                    "input": {"query": "openai api"},
-                }
-            ],
-        })
+        msg = _anthropic_message_to_openai(
+            {
+                "role": "assistant",
+                "content": "Let me search for that.",
+                "tool_calls": [
+                    {
+                        "id": "toolu_123",
+                        "name": "search",
+                        "input": {"query": "openai api"},
+                    }
+                ],
+            }
+        )
         assert msg.role == "assistant"
         assert msg.content == "Let me search for that."
         assert msg.tool_calls is not None
@@ -408,21 +428,23 @@ class TestAnthropicMessageToOpenAI:
 
     def test_assistant_with_multiple_tool_calls(self) -> None:
         """Assistant message with multiple tool_calls."""
-        msg = _anthropic_message_to_openai({
-            "role": "assistant",
-            "tool_calls": [
-                {
-                    "id": "toolu_1",
-                    "name": "search",
-                    "input": {"q": "first"},
-                },
-                {
-                    "id": "toolu_2",
-                    "name": "browse",
-                    "input": {"url": "https://example.com"},
-                },
-            ],
-        })
+        msg = _anthropic_message_to_openai(
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "toolu_1",
+                        "name": "search",
+                        "input": {"q": "first"},
+                    },
+                    {
+                        "id": "toolu_2",
+                        "name": "browse",
+                        "input": {"url": "https://example.com"},
+                    },
+                ],
+            }
+        )
         assert msg.tool_calls is not None
         assert len(msg.tool_calls) == 2
         assert msg.tool_calls[0]["function"]["name"] == "search"
@@ -430,28 +452,32 @@ class TestAnthropicMessageToOpenAI:
 
     def test_assistant_tool_calls_no_id_gets_generated(self) -> None:
         """Tool calls without id get a generated call_<uuid>."""
-        msg = _anthropic_message_to_openai({
-            "role": "assistant",
-            "tool_calls": [
-                {
-                    "name": "calc",
-                    "input": {"expr": "2+2"},
-                }
-            ],
-        })
+        msg = _anthropic_message_to_openai(
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "name": "calc",
+                        "input": {"expr": "2+2"},
+                    }
+                ],
+            }
+        )
         assert msg.tool_calls is not None
         assert msg.tool_calls[0]["id"].startswith("call_")
         assert msg.tool_calls[0]["function"]["name"] == "calc"
 
     def test_content_block_array_with_tool_use(self) -> None:
         """Content-block array with tool_use blocks is passed through."""
-        msg = _anthropic_message_to_openai({
-            "role": "assistant",
-            "content": [
-                {"type": "text", "text": "Thinking..."},
-                {"type": "tool_use", "id": "toolu_1", "name": "search", "input": {"q": "test"}},
-            ],
-        })
+        msg = _anthropic_message_to_openai(
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "Thinking..."},
+                    {"type": "tool_use", "id": "toolu_1", "name": "search", "input": {"q": "test"}},
+                ],
+            }
+        )
         assert msg.role == "assistant"
         assert isinstance(msg.content, list)
         assert msg.content[0]["type"] == "text"
@@ -459,13 +485,15 @@ class TestAnthropicMessageToOpenAI:
 
     def test_content_block_array_text_only(self) -> None:
         """Text-only content-block array is merged into a single string."""
-        msg = _anthropic_message_to_openai({
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "First part"},
-                {"type": "text", "text": " Second part"},
-            ],
-        })
+        msg = _anthropic_message_to_openai(
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "First part"},
+                    {"type": "text", "text": " Second part"},
+                ],
+            }
+        )
         assert msg.role == "user"
         assert msg.content == "First part Second part"
 
@@ -487,7 +515,11 @@ class TestAnthropicToOpenAIWithTools:
                 AnthropicTool(
                     name="search",
                     description="Search the web",
-                    input_schema={"type": "object", "properties": {"q": {"type": "string"}}, "required": ["q"]},
+                    input_schema={
+                        "type": "object",
+                        "properties": {"q": {"type": "string"}},
+                        "required": ["q"],
+                    },
                 ),
                 AnthropicTool(
                     name="calc",
@@ -589,7 +621,9 @@ class TestAnthropicToOpenAIWithTools:
         assert len(openai_req.messages[1].tool_calls) == 1
         assert openai_req.messages[1].tool_calls[0]["id"] == "toolu_abc123"
         assert openai_req.messages[1].tool_calls[0]["function"]["name"] == "search"
-        assert json.loads(openai_req.messages[1].tool_calls[0]["function"]["arguments"]) == {"query": "openai"}
+        assert json.loads(openai_req.messages[1].tool_calls[0]["function"]["arguments"]) == {
+            "query": "openai"
+        }
         # Tool result
         assert openai_req.messages[2].role == "tool"
         assert openai_req.messages[2].content == "Results: ..."

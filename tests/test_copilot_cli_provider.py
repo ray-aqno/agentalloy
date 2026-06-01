@@ -117,12 +117,8 @@ class TestCopilotCliInstall(TestCase):
 
                 self.assertIn("localhost:9000", content)
                 self.assertNotIn("localhost:8000", content)
-                self.assertEqual(
-                    content.count("<!-- BEGIN agentalloy install -->"), 1
-                )
-                self.assertEqual(
-                    content.count("<!-- END agentalloy install -->"), 1
-                )
+                self.assertEqual(content.count("<!-- BEGIN agentalloy install -->"), 1)
+                self.assertEqual(content.count("<!-- END agentalloy install -->"), 1)
 
     def test_apply_persistent_config_preserves_existing_content(self):
         """apply_persistent_config preserves existing content outside sentinels."""
@@ -136,9 +132,7 @@ class TestCopilotCliInstall(TestCase):
                 # Pre-existing file with user content
                 instructions_path = fake_home / ".github" / "copilot-instructions.md"
                 instructions_path.parent.mkdir(parents=True, exist_ok=True)
-                instructions_path.write_text(
-                    "# My Copilot Rules\n\nUse TypeScript strict mode.\n"
-                )
+                instructions_path.write_text("# My Copilot Rules\n\nUse TypeScript strict mode.\n")
 
                 # Run install
                 install.apply_persistent_config(8000, fake_home)

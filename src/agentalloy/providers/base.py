@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 # Capability enum
 # ---------------------------------------------------------------------------
 
+
 class Capability(Enum):
     """Integration capability for a harness.
 
@@ -45,6 +46,7 @@ class Capability(Enum):
 # ---------------------------------------------------------------------------
 # Protocol enum
 # ---------------------------------------------------------------------------
+
 
 class Protocol(Enum):
     """LLM protocol the harness speaks.

@@ -105,11 +105,17 @@ def _wire_claude_code_hooks(port: int = 47950) -> dict[str, Any]:
                     for _event_name, event_cfg in existing["hooks"].items():
                         env: dict[str, Any] = event_cfg.get("env", {})
                         if "AGENTALLOY_HOOK_URL" in env:
-                            env["AGENTALLOY_HOOK_URL"] = f"http://localhost:{port}/v1/hook/user-prompt-submit"
+                            env["AGENTALLOY_HOOK_URL"] = (
+                                f"http://localhost:{port}/v1/hook/user-prompt-submit"
+                            )
                         if "AGENTALLOY_HOOK_URL_PRE" in env:
-                            env["AGENTALLOY_HOOK_URL_PRE"] = f"http://localhost:{port}/v1/hook/pre-tool-use"
+                            env["AGENTALLOY_HOOK_URL_PRE"] = (
+                                f"http://localhost:{port}/v1/hook/pre-tool-use"
+                            )
                         if "AGENTALLOY_HOOK_URL_POST" in env:
-                            env["AGENTALLOY_HOOK_URL_POST"] = f"http://localhost:{port}/v1/hook/post-tool-use"
+                            env["AGENTALLOY_HOOK_URL_POST"] = (
+                                f"http://localhost:{port}/v1/hook/post-tool-use"
+                            )
                         event_cfg["env"] = env
                     hooks_path.write_text(json.dumps(existing, indent=2) + "\n")
                     return {
@@ -141,10 +147,12 @@ def _unwire_claude_code_hooks() -> list[dict[str, Any]]:
 
     if hooks_path.exists():
         hooks_path.unlink()
-        removed.append({
-            "path": str(hooks_path),
-            "action": "removed_hooks_config",
-        })
+        removed.append(
+            {
+                "path": str(hooks_path),
+                "action": "removed_hooks_config",
+            }
+        )
 
     # Also clean up settings.json merge entries (legacy path)
     removed.extend(_unwire_claude_code_settings_json())
@@ -178,11 +186,13 @@ def _unwire_claude_code_settings_json() -> list[dict[str, Any]]:
     sentinel_key = "_agentalloy_install_marker"
     if sentinel_key in data:
         marker = data.pop(sentinel_key, {})
-        removed.append({
-            "path": str(settings_path),
-            "action": "removed_marker",
-            "marker": marker,
-        })
+        removed.append(
+            {
+                "path": str(settings_path),
+                "action": "removed_marker",
+                "marker": marker,
+            }
+        )
 
     # Remove hook-related entries that may have been written by the legacy path
     keys_to_remove: list[str] = []
@@ -192,20 +202,24 @@ def _unwire_claude_code_settings_json() -> list[dict[str, Any]]:
 
     for key in keys_to_remove:
         del data[key]  # pyright: ignore[reportUnknownMemberType]
-        removed.append({
-            "path": str(settings_path),
-            "action": "removed_key",
-            "key": key,
-        })
+        removed.append(
+            {
+                "path": str(settings_path),
+                "action": "removed_key",
+                "key": key,
+            }
+        )
 
     # Also remove any "hooks" top-level key
     if "hooks" in data:
         del data["hooks"]
-        removed.append({
-            "path": str(settings_path),
-            "action": "removed_key",
-            "key": "hooks",
-        })
+        removed.append(
+            {
+                "path": str(settings_path),
+                "action": "removed_key",
+                "key": "hooks",
+            }
+        )
 
     if removed:
         # Write back the cleaned settings.json
@@ -252,10 +266,12 @@ def _remove_hooks_from_settings_json(settings_path: Path) -> list[dict[str, Any]
         try:
             new_data = json.loads(new_content)
             settings_path.write_text(json.dumps(new_data, indent=2) + "\n")
-            removed.append({
-                "path": str(settings_path),
-                "action": "removed_sentinel_block",
-            })
+            removed.append(
+                {
+                    "path": str(settings_path),
+                    "action": "removed_sentinel_block",
+                }
+            )
         except json.JSONDecodeError:
             # If re-parsing fails, fall back to key-based removal
             pass
@@ -268,11 +284,13 @@ def _remove_hooks_from_settings_json(settings_path: Path) -> list[dict[str, Any]
 
     for key in keys_to_remove:
         del data[key]  # pyright: ignore[reportUnknownMemberType]
-        removed.append({
-            "path": str(settings_path),
-            "action": "removed_key",
-            "key": key,
-        })
+        removed.append(
+            {
+                "path": str(settings_path),
+                "action": "removed_key",
+                "key": key,
+            }
+        )
 
     if keys_to_remove:
         settings_path.write_text(json.dumps(data, indent=2) + "\n")

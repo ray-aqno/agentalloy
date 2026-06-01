@@ -159,9 +159,6 @@ class AnthropicResponse(BaseModel):
     role: Literal["assistant"] = "assistant"
     content: list[AnthropicContentBlock]
     model: str
-    stop_reason: (
-        Literal["end_turn", "max_tokens", "tool_use"]
-        | None
-    ) = None
+    stop_reason: Literal["end_turn", "max_tokens", "tool_use"] | None = None
     stop_sequence: str | None = None
     usage: dict[str, Any]  # input_tokens, output_tokens

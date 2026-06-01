@@ -120,8 +120,7 @@ def _anthropic_message_to_openai(
         # Content-block array
         # Check if any block is a tool_use — if so, preserve the array
         has_tool_use = any(
-            isinstance(block, dict) and block.get("type") == "tool_use"
-            for block in content
+            isinstance(block, dict) and block.get("type") == "tool_use" for block in content
         )
         if has_tool_use:
             return ProxyMessage(role=role, content=content)
@@ -731,12 +730,8 @@ def _stream_anthropic_response(
                 if not choices:
                     usage: dict[str, Any] = chunk.get("usage") or {}
                     if usage:
-                        input_tokens = int(
-                            usage.get("prompt_tokens") or input_tokens
-                        )
-                        output_tokens = int(
-                            usage.get("completion_tokens") or output_tokens
-                        )
+                        input_tokens = int(usage.get("prompt_tokens") or input_tokens)
+                        output_tokens = int(usage.get("completion_tokens") or output_tokens)
                     continue
 
                 choice: dict[str, Any] = choices[0]
@@ -748,20 +743,20 @@ def _stream_anthropic_response(
                 # Emit message_start on first chunk
                 if first_chunk:
                     yield _sse_event(
-                         "message_start",
-                         {
-                             "message": {
-                                 "id": msg_id,
-                                 "type": "message",
-                                 "role": "assistant",
-                                 "content": [],
-                                 "model": model,
-                                 "stop_reason": None,
-                                 "stop_sequence": None,
-                                 "usage": {"input_tokens": 0, "output_tokens": 0},
-                             },
-                         },
-                     )
+                        "message_start",
+                        {
+                            "message": {
+                                "id": msg_id,
+                                "type": "message",
+                                "role": "assistant",
+                                "content": [],
+                                "model": model,
+                                "stop_reason": None,
+                                "stop_sequence": None,
+                                "usage": {"input_tokens": 0, "output_tokens": 0},
+                            },
+                        },
+                    )
                     first_chunk = False
 
                 # --- Process tool calls ---
@@ -800,8 +795,7 @@ def _stream_anthropic_response(
                                     "index": tc_idx + 1,
                                     "content_block": {
                                         "type": "tool_use",
-                                        "id": ts["id"]
-                                        or f"toolu_{uuid.uuid4().hex[:24]}",
+                                        "id": ts["id"] or f"toolu_{uuid.uuid4().hex[:24]}",
                                         "name": ts["name"],
                                     },
                                 },
@@ -869,9 +863,7 @@ def _stream_anthropic_response(
                 usage = chunk.get("usage") or {}
                 if usage:
                     input_tokens = int(usage.get("prompt_tokens") or input_tokens)
-                    output_tokens = int(
-                        usage.get("completion_tokens") or output_tokens
-                    )
+                    output_tokens = int(usage.get("completion_tokens") or output_tokens)
 
     return StreamingResponse(
         content=event_generator(),

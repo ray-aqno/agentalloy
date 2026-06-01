@@ -301,7 +301,11 @@ async def hook_user_prompt_submit(request: Request) -> JSONResponse:
             "should_compose": result.get("should_compose", False),
             "latency_ms": latency_ms,
             "cache_hit": False,
-            **{k: v for k, v in result.items() if k not in ("composed_block", "phase", "should_compose")},
+            **{
+                k: v
+                for k, v in result.items()
+                if k not in ("composed_block", "phase", "should_compose")
+            },
         },
     )
 
@@ -385,7 +389,9 @@ async def hook_pre_tool_use(request: Request) -> JSONResponse:
                     qwen_calls: list[int] = [0]
                     result, _ = evaluate_node(gate_spec, ctx, None, qwen_calls)
                     if result == PredicateResult.MET:
-                        system_skills.append(f"[agentalloy-system:{skill_id}]\n{raw_prose}\n[/agentalloy-system]")
+                        system_skills.append(
+                            f"[agentalloy-system:{skill_id}]\n{raw_prose}\n[/agentalloy-system]"
+                        )
         except Exception:
             pass
 
