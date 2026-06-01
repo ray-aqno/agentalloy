@@ -1,0 +1,16 @@
+## Problem
+Kuzu database lock errors when running CLI commands in container.
+
+## Solution  
+Container detection + graceful service stop/restart
+
+## Changes
+- src/agentalloy/install/container_service.py (new)
+- src/agentalloy/reembed/cli.py
+- src/agentalloy/ingest.py
+- tests/test_container_service.py (new)
+- tests/test_container_integration.py (new)
+- tests/test_container_edge_cases.py (new)
+
+## Testing
+1384 tests pass, 73 new tests added.
