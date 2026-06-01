@@ -54,6 +54,11 @@ def add_parser(
         action="store_true",
         help="Print available pack names (one per line) and exit.",
     )
+    p.add_argument(
+        "--no-restart",
+        action="store_true",
+        help="Do not restart the agentalloy service after bulk reembed",
+    )
     p.set_defaults(func=_run)
 
 
@@ -151,7 +156,7 @@ def _run(args: argparse.Namespace) -> int:
 
     # Bulk reembed once at the end (idempotent — only embeds new fragments).
     print("install-packs: bulk reembed", file=sys.stderr)
-    reembed_rc = _bulk_reembed()
+    reembed_rc = _bulk_reembed(no_restart=getattr(args, "no_restart", False))
 
     duration_ms = int((time.monotonic() - t0) * 1000)
     summary = {
@@ -496,12 +501,13 @@ def _ordered_with_deps(
     return ordered
 
 
-def _bulk_reembed() -> int:
+def _bulk_reembed(no_restart: bool = False) -> int:
     """Run the reembed CLI in-process. Returns its exit code."""
     try:
         from agentalloy.reembed.cli import main as reembed_main
 
-        return reembed_main([])
+        argv = ["--no-restart"] if no_restart else []
+        return reembed_main(argv)
     except Exception as exc:  # noqa: BLE001 — surface but don't crash setup
         print(f"install-packs: reembed raised: {exc}", file=sys.stderr)
         return 2

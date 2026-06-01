@@ -73,11 +73,11 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.pyright]
-include = ["src", "tests"]
+include = ["src"]
 # Authoring subpackage is being redesigned — exclude from strict typecheck
 # until the new approach lands. See the navistone fork divergence note in
 # the 0875b29 merge commit (authoring kept here, removed on nrmeyers).
-exclude = ["src/agentalloy/authoring/**"]
+exclude = ["src/agentalloy/authoring/**", "tests/**"]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
 reportMissingTypeStubs = false

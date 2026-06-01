@@ -4,7 +4,7 @@ The reembed CLI itself lives in ``agentalloy.reembed.cli`` and has its
 own argparse. This subcommand re-declares the same flags and forwards
 them so users can run::
 
-    agentalloy reembed [--skill-id ID] [--limit N] [--force] [--model M] [--dry-run]
+    |    agentalloy reembed [--skill-id ID] [--limit N] [--force] [--model M] [--dry-run] [--no-restart]
 
 The remediation strings emitted by ``install-packs`` reference
 ``agentalloy reembed``, so this must stay in the registered subcommand
@@ -58,6 +58,11 @@ def add_parser(
             "re-embedding. Use to recover from an install-time FTS warning."
         ),
     )
+    p.add_argument(
+        "--no-restart",
+        action="store_true",
+        help="Do not restart the agentalloy service after operation",
+    )
     p.set_defaults(func=_run)
 
 
@@ -77,4 +82,6 @@ def _run(args: argparse.Namespace) -> int:
         forwarded.append("--dry-run")
     if args.rebuild_fts:
         forwarded.append("--rebuild-fts")
+    if args.no_restart:
+        forwarded.append("--no-restart")
     return reembed_main(forwarded)
