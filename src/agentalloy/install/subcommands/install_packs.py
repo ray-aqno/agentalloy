@@ -156,7 +156,7 @@ def _run(args: argparse.Namespace) -> int:
 
     # Bulk reembed once at the end (idempotent — only embeds new fragments).
     print("install-packs: bulk reembed", file=sys.stderr)
-    reembed_rc = _bulk_reembed(no_restart=args.no_restart)
+    reembed_rc = _bulk_reembed(no_restart=getattr(args, "no_restart", False))
 
     duration_ms = int((time.monotonic() - t0) * 1000)
     summary = {

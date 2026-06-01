@@ -195,12 +195,13 @@ def _single_with_container(
     yaml_path: Path, *, force: bool, yes: bool, strict: bool = False, no_restart: bool = False
 ) -> int:
     """Wrap _single() with container stop/restart logic."""
+    container_stopped = False
     if is_in_container() and not no_restart:
-        stop_service_in_container(no_restart=no_restart)
+        container_stopped = stop_service_in_container(no_restart=no_restart)
     try:
         return _single(yaml_path, force=force, yes=yes, strict=strict)
     finally:
-        if is_in_container() and not no_restart:
+        if is_in_container() and not no_restart and container_stopped:
             restart_service_in_container(no_restart=no_restart)
 
 
@@ -208,12 +209,13 @@ def _batch_with_container(
     directory: Path, *, force: bool, yes: bool, strict: bool = False, no_restart: bool = False
 ) -> int:
     """Wrap _batch() with container stop/restart logic."""
+    container_stopped = False
     if is_in_container() and not no_restart:
-        stop_service_in_container(no_restart=no_restart)
+        container_stopped = stop_service_in_container(no_restart=no_restart)
     try:
         return _batch(directory, force=force, yes=yes, strict=strict)
     finally:
-        if is_in_container() and not no_restart:
+        if is_in_container() and not no_restart and container_stopped:
             restart_service_in_container(no_restart=no_restart)
 
 

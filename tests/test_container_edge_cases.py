@@ -115,6 +115,15 @@ class TestConcurrentStopAttempts:
             m.setattr("agentalloy.install.state.validate_port", lambda x: x)
             m.setattr("agentalloy.install.server_proc.port_reachable", lambda *a, **kw: True)
             m.setattr(time, "sleep", lambda s: None)
+            # Mock Popen to prevent spawning real uvicorn processes.
+            # The mock must return our configured proc (via return_value), not a new MagicMock.
+            mock_proc = MagicMock()
+            mock_proc.poll.return_value = None
+            m.setattr("subprocess.Popen", MagicMock(return_value=mock_proc))
+            # Mock server_log_path to use a writeable tmp path for the real open() call.
+            m.setattr("agentalloy.install.server_proc.server_log_path", lambda: Path("/tmp/test_server.log"))
+            # Mock user_data_dir so .env file check returns False naturally (no .env at this path).
+            m.setattr("agentalloy.install.state.user_data_dir", lambda: Path("/tmp/test_user_data"))
 
             from agentalloy.install.container_service import restart_service_in_container
 

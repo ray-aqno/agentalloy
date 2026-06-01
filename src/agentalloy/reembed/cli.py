@@ -489,6 +489,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     # Stop service in container mode before DB operations
+    container_was_stopped = False
     if is_in_container():
         if args.no_restart:
             logger.info("skipping container service stop (no_restart requested)")
@@ -497,8 +498,12 @@ def main(argv: list[str] | None = None) -> int:
                 "Stopping agentalloy service (container mode) to release database locks...",
                 file=sys.stderr,
             )
-            if not stop_service_in_container(no_restart=False):
-                print("ERROR: Failed to stop service. Proceeding anyway...", file=sys.stderr)
+            container_was_stopped = stop_service_in_container(no_restart=False)
+            if not container_was_stopped:
+                logger.warning(
+                    "no running agentalloy service found in container; "
+                    "proceeding without stop/restart"
+                )
 
     settings = get_settings()
     model_id = args.model or settings.runtime_embedding_model
@@ -620,16 +625,15 @@ def main(argv: list[str] | None = None) -> int:
         if is_in_container():
             if args.no_restart:
                 logger.info("skipping container service restart (no_restart requested)")
-            else:
+            elif container_was_stopped:
                 print("Operation complete, restarting agentalloy service...", file=sys.stderr)
                 if not restart_service_in_container(no_restart=False):
-                    print(
-                        "ERROR: Failed to restart service after operation. "
-                        "Run `podman restart agentalloy` manually.",
-                        file=sys.stderr,
+                    logger.warning(
+                        "failed to restart agentalloy service after operation. "
+                        "Run `podman restart agentalloy` manually."
                     )
-                    sys.exit(1)
-                print("Service restarted successfully.", file=sys.stderr)
+            else:
+                logger.debug("skipping container restart — no service was stopped")
 
 
 if __name__ == "__main__":

@@ -171,7 +171,8 @@ class TestReembedContainerStopRestart:
             assert rc == 0
             # stop_service_in_container should be called but return False (no-op since no pid)
             mock_stop.assert_called_once_with(no_restart=False)
-            mock_restart.assert_called_once_with(no_restart=False)
+            # restart should NOT be called since stop returned False (no service was running)
+            mock_restart.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -446,8 +447,8 @@ fragments:
             assert rc == 0
             # stop_service_in_container returns False (no process found)
             mock_stop.assert_called_once_with(no_restart=False)
-            # restart still happens since operation completed
-            mock_restart.assert_called_once_with(no_restart=False)
+            # restart should NOT be called since stop returned False (no service was running)
+            mock_restart.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

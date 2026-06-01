@@ -614,11 +614,10 @@ def test_container_stop_restart_success(tmp_path: Path, capsys) -> None:
             in captured.err
         )
         assert "Operation complete, restarting agentalloy service..." in captured.err
-        assert "Service restarted successfully." in captured.err
 
 
-def test_container_restart_failure_exits_1(tmp_path: Path) -> None:
-    """Container restart failure causes exit code 1."""
+def test_container_restart_failure_logs_warning(tmp_path: Path) -> None:
+    """Container restart failure logs a warning but does not override the operation result."""
     with (
         patch("agentalloy.reembed.cli.is_in_container", return_value=True),
         patch("agentalloy.reembed.cli.stop_service_in_container", return_value=True),
@@ -642,10 +641,10 @@ def test_container_restart_failure_exits_1(tmp_path: Path) -> None:
         mock_vs.count_embeddings.return_value = 100
         mock_vs.fragment_ids_present.return_value = set()
 
-        with pytest.raises(SystemExit) as exc_info:
-            reembed_main(["--rebuild-fts"])
+        code = reembed_main(["--rebuild-fts"])
 
-        assert exc_info.value.code == 1
+        # Operation should succeed even if restart fails
+        assert code == EXIT_OK
 
 
 # ---------------------------------------------------------------------------
@@ -756,4 +755,3 @@ def test_container_without_no_restart_calls_stop_and_restart(tmp_path: Path, cap
         captured = capsys.readouterr()
         assert "Stopping agentalloy service (container mode)" in captured.err
         assert "Operation complete, restarting agentalloy service" in captured.err
-        assert "Service restarted successfully." in captured.err

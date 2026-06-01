@@ -41,10 +41,12 @@ def is_in_container() -> bool:
 
 
 def _find_uvicorn_pid() -> int | None:
-    """Scan /proc for a process whose cmdline contains 'uvicorn'.
+    """Scan /proc for the AgentAlloy uvicorn process.
 
-    Returns the PID of the first match, or None if no uvicorn process
-    is found.
+    Returns the PID of the first match, or None if no matching process
+    is found.  Only matches processes that serve ``agentalloy.app``,
+    avoiding accidental kills of unrelated uvicorn instances in shared
+    containers or test/debug sessions.
     """
     proc_dir = Path("/proc")
     if not proc_dir.is_dir():
@@ -58,7 +60,7 @@ def _find_uvicorn_pid() -> int | None:
             cmdline = cmdline_path.read_bytes().decode("utf-8", errors="replace")
         except (OSError, PermissionError):
             continue
-        if "uvicorn" in cmdline:
+        if "agentalloy.app" in cmdline:
             try:
                 return int(pid_str.name)
             except ValueError:
@@ -152,16 +154,33 @@ def restart_service_in_container(no_restart: bool = False) -> bool:
     # Parse the command into a list for subprocess.Popen.
     cmd_list = cmd.split()
 
+    # Load the user's .env file so the restarted service has the same
+    # runtime configuration as the original (API keys, model settings, etc.).
+    env = os.environ.copy()
+    env_path = install_state.user_data_dir() / ".env"
+    if env_path.is_file():
+        try:
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                env[key.strip()] = value.strip()
+        except OSError:
+            pass
+
     proc: subprocess.Popen[bytes] | None = None
     started = False
     try:
-        proc = subprocess.Popen(
-            cmd_list,
-            stdout=open(log_path, "ab", buffering=0),  # noqa: SIM115
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        with open(log_path, "ab", buffering=0) as log_fh:
+            proc = subprocess.Popen(
+                cmd_list,
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+                env=env,
+            )
         started = True
     except Exception:
         return False
