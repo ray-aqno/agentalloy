@@ -643,7 +643,11 @@ class TestHealthEndpointNotResponding:
             m.setattr("agentalloy.install.container_service.server_proc.port_reachable", lambda *a, **kw: False)
             # Mock monotonic to return a value already past the 30s deadline,
             # so the health-check loop exits immediately without real waiting.
-            m.setattr("agentalloy.install.container_service.time.monotonic", lambda: 99999.0)
+            monotonic_calls = [0]
+            def _monotonic():
+                monotonic_calls[0] += 1
+                return 0.0 if monotonic_calls[0] == 1 else 99999.0
+            m.setattr("agentalloy.install.container_service.time.monotonic", _monotonic)
             m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
 
             from agentalloy.install.container_service import restart_service_in_container
@@ -664,7 +668,11 @@ class TestHealthEndpointNotResponding:
             m.setattr("agentalloy.install.state.validate_port", lambda x: x)
             m.setattr("agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc)
             m.setattr("agentalloy.install.container_service.server_proc.port_reachable", lambda *a, **kw: False)
-            m.setattr("agentalloy.install.container_service.time.monotonic", lambda: 99999.0)
+            monotonic_calls = [0]
+            def _monotonic():
+                monotonic_calls[0] += 1
+                return 0.0 if monotonic_calls[0] == 1 else 99999.0
+            m.setattr("agentalloy.install.container_service.time.monotonic", _monotonic)
             m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
 
             from agentalloy.install.container_service import restart_service_in_container
@@ -684,7 +692,11 @@ class TestHealthEndpointNotResponding:
             m.setattr("agentalloy.install.state.validate_port", lambda x: x)
             m.setattr("agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc)
             m.setattr("agentalloy.install.container_service.server_proc.port_reachable", lambda *a, **kw: False)
-            m.setattr("agentalloy.install.container_service.time.monotonic", lambda: 99999.0)
+            monotonic_calls = [0]
+            def _monotonic():
+                monotonic_calls[0] += 1
+                return 0.0 if monotonic_calls[0] == 1 else 99999.0
+            m.setattr("agentalloy.install.container_service.time.monotonic", _monotonic)
             m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
 
             from agentalloy.install.container_service import restart_service_in_container
