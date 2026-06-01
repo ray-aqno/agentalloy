@@ -16,7 +16,6 @@ from agentalloy.api.proxy_anthropic_models import (
     AnthropicContentBlock,
     AnthropicMessage,
     AnthropicRequest,
-    AnthropicResponse,
     AnthropicTool,
     AnthropicToolChoice,
 )
@@ -25,12 +24,11 @@ from agentalloy.api.proxy_anthropic_router import (
     _anthropic_to_openai,
     _anthropic_tool_choice_to_openai,
     _anthropic_tool_to_openai,
-    _openai_to_anthropic,
     _openai_stream_to_anthropic,
     _openai_stream_to_anthropic_interleaved,
+    _openai_to_anthropic,
 )
 from agentalloy.api.proxy_models import ProxyMessage, ProxyRequest
-
 
 # ---------------------------------------------------------------------------
 # AnthropicRequest.tools -> ProxyRequest.tools
@@ -1083,7 +1081,7 @@ class TestInterleavedStreamToAnthropic:
         tc0_stop_idx = event_types.index("content_block_stop", tc0_start_idx)
         text_idx = event_types.index("content_block_delta", tc0_stop_idx)
         tc1_start_idx = event_types.index("content_block_start", text_idx)
-        tc1_stop_idx = event_types.index("content_block_stop", tc1_start_idx)
+        event_types.index("content_block_stop", tc1_start_idx)
         assert tc0_stop_idx < text_idx < tc1_start_idx
 
         # Both tool_use blocks should have proper stop events

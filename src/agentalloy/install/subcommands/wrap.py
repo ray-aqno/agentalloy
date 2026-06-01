@@ -19,6 +19,7 @@ Lifecycle:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import signal
 import subprocess
@@ -60,10 +61,8 @@ def _write_pid_file(pid: int) -> None:
 
 def _remove_pid_file() -> None:
     """Remove the wrap PID file."""
-    try:
+    with contextlib.suppress(OSError):
         _pid_file_path().unlink(missing_ok=True)
-    except OSError:
-        pass
 
 
 def _port_owned_by_us(port: int, host: str = server_proc.DEFAULT_HOST) -> bool:
@@ -285,17 +284,13 @@ def _run(args: argparse.Namespace) -> int:
         print_rich(f"\n  Received {sig_name}, tearing down ...")
 
         # Kill child process group.
-        try:
+        with contextlib.suppress(ProcessLookupError, OSError):
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        except (ProcessLookupError, OSError):
-            pass
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            try:
+            with contextlib.suppress(ProcessLookupError, OSError):
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except (ProcessLookupError, OSError):
-                pass
             proc.wait()
 
         # Teardown wiring if via=hook (proxy wiring is reversible by nature).
@@ -306,10 +301,8 @@ def _run(args: argparse.Namespace) -> int:
 
         # Stop server if we started it.
         if server_started and existing_pid is not None:
-            try:
+            with contextlib.suppress(server_proc.ServerLifecycleError):
                 server_proc.stop(existing_pid, timeout_s=5)
-            except server_proc.ServerLifecycleError:
-                pass
             _remove_pid_file()
 
         print_rich("  Teardown complete.")
@@ -329,10 +322,8 @@ def _run(args: argparse.Namespace) -> int:
 
     # Stop server if we started it.
     if server_started and existing_pid is not None:
-        try:
+        with contextlib.suppress(server_proc.ServerLifecycleError):
             server_proc.stop(existing_pid, timeout_s=5)
-        except server_proc.ServerLifecycleError:
-            pass
         _remove_pid_file()
 
     print_rich("  Teardown complete.")

@@ -21,7 +21,6 @@ from unittest.mock import patch
 # Ensure the openclaw provider is imported so it registers itself in REGISTRY.
 from agentalloy.providers.openclaw import REGISTRY  # noqa: F401
 
-
 # ---------------------------------------------------------------------------
 # HarnessSpec tests
 # ---------------------------------------------------------------------------
@@ -74,8 +73,8 @@ class TestOpenclawInstall(TestCase):
 
     def test_apply_persistent_config_creates_plugins_json(self):
         """install_writer creates ~/.openclaw/plugins.json with agentalloy plugin."""
-        from agentalloy.providers.openclaw import install
         from agentalloy.providers.base import WireRecord
+        from agentalloy.providers.openclaw import install
 
         with tempfile.TemporaryDirectory() as tmp:
             fake_home = Path(tmp) / "home"

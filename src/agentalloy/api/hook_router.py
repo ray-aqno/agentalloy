@@ -23,8 +23,8 @@ hooks run in a tight per-turn loop and must return within milliseconds.
 from __future__ import annotations
 
 import logging
-import time
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -139,8 +139,8 @@ def _evaluate_sync(
     # Try to get an embed client (soft-fail).
     lm_client = None
     try:
-        from agentalloy.embed_provider import get_embed_client
         from agentalloy.config import get_settings
+        from agentalloy.embed_provider import get_embed_client
 
         cfg = get_settings()
         if get_embed_client is not None:
@@ -239,10 +239,7 @@ async def hook_user_prompt_submit(request: Request) -> JSONResponse:
     cwd_str = body.get("cwd", "")
 
     # Resolve working directory
-    if cwd_str:
-        cwd = Path(cwd_str)
-    else:
-        cwd = Path.cwd()
+    cwd = Path(cwd_str) if cwd_str else Path.cwd()
 
     # Signal-first cache check
     cached = _get_cached()
@@ -348,12 +345,12 @@ async def hook_pre_tool_use(request: Request) -> JSONResponse:
     # Evaluate system skills for this tool
     system_skills: list[str] = []
     try:
+        from agentalloy.signals.gates import evaluate_node
+        from agentalloy.signals.predicates import PredicateResult
         from agentalloy.signals.skill_loader import (
             _build_predicate_context,
             _read_phase,
         )
-        from agentalloy.signals.gates import evaluate_node
-        from agentalloy.signals.predicates import PredicateResult
 
         current_phase = _read_phase(cwd)
         ctx = _build_predicate_context(

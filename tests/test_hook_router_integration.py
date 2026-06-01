@@ -18,11 +18,14 @@ import subprocess
 import time
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
+from agentalloy.api.hook_router import (
+    _CachedSignalResult,
+    _set_cached,
+)
 from agentalloy.app import create_app
 from agentalloy.install.subcommands.claude_code import (
     _hooks_config_path,
@@ -31,13 +34,6 @@ from agentalloy.install.subcommands.claude_code import (
     _wire_claude_code_hooks,
     remove_hooks_from_settings_json,
 )
-from agentalloy.api.hook_router import (
-    _evaluate_sync,
-    _get_cached,
-    _set_cached,
-    _CachedSignalResult,
-)
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -288,7 +284,7 @@ class TestSignalFirstCaching:
 
     def test_stale_cache_returns_stale_value(self, client: TestClient, reset_hook_cache) -> None:
         """Stale cache returns the stale value while revalidating in background."""
-        from agentalloy.api.hook_router import _set_cached, SWR_TIMEOUT_MS
+        from agentalloy.api.hook_router import SWR_TIMEOUT_MS
 
         # Manually set a stale cache entry
         stale_cache = _CachedSignalResult(
@@ -350,9 +346,8 @@ class TestTimeout:
 
         # Make the cache stale
         from agentalloy.api.hook_router import (
-            _set_cached,
-            _CachedSignalResult,
             SWR_TIMEOUT_MS,
+            _CachedSignalResult,
         )
         stale_cache = _CachedSignalResult(
             composed_block="stale",
@@ -411,7 +406,7 @@ class TestClaudeCodeProvider:
         """Re-running _wire_claude_code_hooks is idempotent."""
         monkeypatch.setattr(Path, "home", lambda: fake_home)
 
-        result1 = _wire_claude_code_hooks(port=7070)
+        _wire_claude_code_hooks(port=7070)
         hooks_path = _hooks_config_path()
         first_content = hooks_path.read_text()
 

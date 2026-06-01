@@ -12,13 +12,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agentalloy.providers import REGISTRY
 from agentalloy.providers.base import (
     Capability,
     HarnessSpec,
     Protocol,
     WireRecord,
 )
-from agentalloy.providers import REGISTRY
 
 from . import install
 

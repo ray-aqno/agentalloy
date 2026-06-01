@@ -8,7 +8,6 @@ import uuid
 from typing import Any
 
 from agentalloy.api.proxy_anthropic_models import (
-    AnthropicContentBlock,
     AnthropicMessage,
     AnthropicRequest,
     AnthropicTool,

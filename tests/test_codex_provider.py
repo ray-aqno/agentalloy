@@ -14,12 +14,11 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from unittest import TestCase, main
+from unittest import TestCase
 from unittest.mock import patch
 
 # Ensure the codex provider is imported so it registers itself in REGISTRY.
 from agentalloy.providers.codex import REGISTRY  # noqa: F401
-
 
 # ---------------------------------------------------------------------------
 # HarnessSpec tests
@@ -67,8 +66,8 @@ class TestCodexInstall(TestCase):
 
     def test_apply_persistent_config_creates_config_toml(self):
         """install_writer creates ~/.codex/config.toml with apiBaseUrl."""
-        from agentalloy.providers.codex import install
         from agentalloy.providers.base import WireRecord
+        from agentalloy.providers.codex import install
 
         with tempfile.TemporaryDirectory() as tmp:
             fake_home = Path(tmp) / "home"

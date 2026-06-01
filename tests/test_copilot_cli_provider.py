@@ -14,12 +14,11 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from unittest import TestCase, main
+from unittest import TestCase
 from unittest.mock import patch
 
 # Ensure the copilot_cli provider is imported so it registers itself in REGISTRY.
 from agentalloy.providers.github_copilot import REGISTRY  # noqa: F401
-
 
 # ---------------------------------------------------------------------------
 # HarnessSpec tests
@@ -73,8 +72,8 @@ class TestCopilotCliInstall(TestCase):
 
     def test_apply_persistent_config_creates_instructions_md(self):
         """install_writer writes ~/.github/copilot-instructions.md with sentinel block."""
-        from agentalloy.providers.github_copilot import install
         from agentalloy.providers.base import WireRecord
+        from agentalloy.providers.github_copilot import install
 
         with tempfile.TemporaryDirectory() as tmp:
             fake_home = Path(tmp) / "home"
@@ -186,7 +185,7 @@ class TestCopilotCliInstall(TestCase):
             fake_home.mkdir()
 
             with patch.object(Path, "home", return_value=fake_home):
-                result = install.apply_persistent_config(8000, fake_home)
+                install.apply_persistent_config(8000, fake_home)
                 content = (fake_home / ".github" / "copilot-instructions.md").read_text()
 
                 self.assertIn("spec", content)
@@ -204,7 +203,7 @@ class TestCopilotCliInstall(TestCase):
             fake_home.mkdir()
 
             with patch.object(Path, "home", return_value=fake_home):
-                result = install.apply_persistent_config(8000, fake_home)
+                install.apply_persistent_config(8000, fake_home)
                 content = (fake_home / ".github" / "copilot-instructions.md").read_text()
 
                 self.assertIn("curl -fs http://localhost:8000/health", content)
@@ -218,7 +217,7 @@ class TestCopilotCliInstall(TestCase):
             fake_home.mkdir()
 
             with patch.object(Path, "home", return_value=fake_home):
-                result = install.apply_persistent_config(8000, fake_home)
+                install.apply_persistent_config(8000, fake_home)
                 content = (fake_home / ".github" / "copilot-instructions.md").read_text()
 
                 self.assertIn("curl -s -X POST http://localhost:8000/compose/text", content)

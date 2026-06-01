@@ -92,20 +92,20 @@ def apply_persistent_config(
 
     template_content = (
         "## AgentAlloy — skill context\n\n"
-        "A local agentalloy service runs at `http://localhost:{port}` with a curated\n"
+        f"A local agentalloy service runs at `http://localhost:{port}` with a curated\n"
         "corpus of engineering skills.\n\n"
-        "**Health-gate.** Before using, verify: `curl -fs http://localhost:{port}/health`.\n"
+        f"**Health-gate.** Before using, verify: `curl -fs http://localhost:{port}/health`.\n"
         "If unreachable, ignore this block.\n\n"
         "**Session start — determine phase.** Check `.agentalloy/phase` for the current\n"
         "phase. If it exists, use that phase.\n\n"
         "**When in an SDD phase, before starting work, run:**\n"
         "```bash\n"
-        "curl -s -X POST http://localhost:{port}/compose/text \\\n"
+        f"curl -s -X POST http://localhost:{port}/compose/text \\\n"
         "  -H 'Content-Type: application/json' \\\n"
-        "  -d '{{\"task\": \"<task>\", \"phase\": \"<phase>\"}}'\n"
+        "  -d '{\"task\": \"<task>\", \"phase\": \"<phase>\"}'\n"
         "```\n\n"
         "Phases: `spec`, `design`, `build`, `qa`, `ops`.\n"
-    ).format(port=port)
+    )
 
     original_instructions = _capture_original(instructions_path)
     instructions_path.write_text(template_content, encoding="utf-8")

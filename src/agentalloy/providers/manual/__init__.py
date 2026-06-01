@@ -10,12 +10,12 @@ Registers the ``manual`` harness in REGISTRY with:
 
 from __future__ import annotations
 
+from agentalloy.providers import REGISTRY
 from agentalloy.providers.base import (
     Capability,
     HarnessSpec,
     Protocol,
 )
-from agentalloy.providers import REGISTRY
 
 
 def _env_builder(port: int) -> dict[str, str]:

@@ -1,6 +1,7 @@
 """Stub install module — apply_persistent_config / install_writer placeholder."""
 
 from pathlib import Path
+
 from agentalloy.providers.base import WireRecord
 
 

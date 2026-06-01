@@ -12,6 +12,7 @@ populates ``REGISTRY`` with its ``HarnessSpec``.
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import pkgutil
 from pathlib import Path
@@ -31,11 +32,16 @@ for _mod_info in pkgutil.iter_modules([str(_PROVIDERS_DIR)]):
     # Skip non-package modules (e.g. base.py) and the package itself.
     if _mod_info.name in ("base",):
         continue
-    try:
+    with contextlib.suppress(Exception):
         importlib.import_module(f".{_mod_info.name}", package=__name__)
-    except Exception:
-        # Provider packages may have optional dependencies; skip silently.
-        pass
+    with contextlib.suppress(Exception):
+        importlib.import_module(f".{_mod_info.name}", package=__name__)
+    with contextlib.suppress(Exception):
+        importlib.import_module(f".{_mod_info.name}", package=__name__)
+    with contextlib.suppress(Exception):
+        importlib.import_module(f".{_mod_info.name}", package=__name__)
+    with contextlib.suppress(Exception):
+        importlib.import_module(f".{_mod_info.name}", package=__name__)
 
 __all__ = [
     "Capability",

@@ -12,17 +12,18 @@ Total: 22 unit tests.
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 from pathlib import Path
 from unittest import TestCase, main
+
+# Import agentalloy providers (must be before sys.path modification for E402)
+from agentalloy.providers import REGISTRY, Capability, HarnessSpec, Protocol, WireRecord
 
 # Ensure the src directory is on the path so we can import agentalloy.
 _src = Path(__file__).resolve().parent.parent / "src"
 if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
-
-from agentalloy.providers import REGISTRY, Capability, HarnessSpec, Protocol, WireRecord
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -85,9 +86,9 @@ class TestHarnessSpec(TestCase):
     def test_frozen_immutability(self):
         """HarnessSpec is frozen — cannot mutate fields after creation."""
         spec = _make_spec()
-        with self.assertRaises(Exception):  # dataclasses.FrozenInstanceError
+        with self.assertRaises((dataclasses.FrozenInstanceError, TypeError)):
             spec.name = "changed"
-        with self.assertRaises(Exception):
+        with self.assertRaises((dataclasses.FrozenInstanceError, TypeError)):
             spec.binary = "changed"
 
     def test_env_builder_returns_dict(self):

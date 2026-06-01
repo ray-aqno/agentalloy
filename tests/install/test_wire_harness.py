@@ -9,23 +9,20 @@ from __future__ import annotations
 import json
 import warnings
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from agentalloy.install.subcommands import wire_harness
-from agentalloy.install.subcommands import uninstall_proxy
-
+from agentalloy.install import state as install_state
+from agentalloy.install.subcommands import uninstall_proxy, wire_harness
 from agentalloy.install.subcommands.wire_harness import (
     SENTINEL_BEGIN,
     SENTINEL_END,
-    VALID_HARNESSES,
     STEP_NAME,
-    _inject_sentinel_block,
+    VALID_HARNESSES,
     _detect_line_ending,
+    _inject_sentinel_block,
 )
-
-from agentalloy.install import state as install_state
-
 
 # ---------------------------------------------------------------------------
 # Fixture helpers
@@ -210,7 +207,7 @@ class TestValidHarnessesFromRegistry:
         """VALID_HARNESSES keys match REGISTRY keys."""
         from agentalloy.providers import REGISTRY
 
-        assert wire_harness.VALID_HARNESSES == frozenset(REGISTRY.keys())
+        assert frozenset(REGISTRY.keys()) == wire_harness.VALID_HARNESSES
 
     def test_valid_harnesses_not_from_local_registry(self) -> None:
         """VALID_HARNESSES does not include mcp-only (local-only entry)."""
@@ -241,11 +238,6 @@ class TestModuleDeprecationDocstring:
         """Module docstring references the provider REGISTRY."""
         assert "registry" in wire_harness.__doc__.lower() or "REGISTRY" in wire_harness.__doc__
 
-
-@pytest.fixture()
-def repo_root(tmp_path: Path) -> Path:
-    (tmp_path / "pyproject.toml").write_text("")
-    return tmp_path
 
 
 @pytest.fixture()
