@@ -479,6 +479,23 @@ def _wire_legacy(
 
     # Claude Code hook wiring (legacy path): installs the hook script
     # and writes the hooks config file.
+    # Check for duplicate sentinels in CLAUDE.md before proceeding.
+    claude_md = root / "CLAUDE.md"
+    if claude_md.exists():
+        existing_content = claude_md.read_text()
+        begin_count = existing_content.count(SENTINEL_BEGIN)
+        end_count = existing_content.count(SENTINEL_END)
+        if begin_count > 1 or end_count > 1:
+            print(
+                f"ERROR: target file contains {begin_count} BEGIN and {end_count} END "
+                f"agentalloy sentinels (expected at most 1 of each). Refusing to write.",
+                file=sys.stderr,
+            )
+            print(
+                "FIX:   Remove duplicate sentinel blocks manually, leaving at most one pair.",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
     if harness == "claude-code":
         from agentalloy.install.subcommands.claude_code import (
             _wire_claude_code_hooks,
