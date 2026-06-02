@@ -251,11 +251,60 @@ def _check_port_free(port: int) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _try_brew_install(package: str, *, cask: bool = False) -> tuple[bool, str | None]:
+    """Run `brew install [--cask] <package>` on macOS. Returns (ok, error).
+
+    No-op on non-macOS or when brew isn't on PATH.
+    """
+    if sys.platform != "darwin":
+        return False, "not macOS"
+    if not shutil.which("brew"):
+        return False, "brew not on PATH"
+    cmd = ["brew", "install"]
+    if cask:
+        cmd.append("--cask")
+    cmd.append(package)
+    print(f"  preflight: running `{' '.join(cmd)}` ...", file=sys.stderr)
+    try:
+        subprocess.run(cmd, check=True, timeout=600)
+    except subprocess.CalledProcessError as exc:
+        return False, f"brew install failed (exit {exc.returncode})"
+    except subprocess.TimeoutExpired:
+        return False, "brew install timed out after 600s"
+    except OSError as exc:
+        return False, f"brew install failed to spawn: {exc}"
+    return True, None
+
+
 def _check_ollama_present() -> dict[str, Any]:
     t0 = time.monotonic()
     binary = shutil.which("ollama")
     if binary:
         return _check("ollama_present", passed=True, started=t0, detail=f"ollama at {binary}")
+
+    # macOS auto-install via Homebrew cask (ollama-app bundles the CLI on PATH).
+    if sys.platform == "darwin" and shutil.which("brew"):
+        ok, err = _try_brew_install("ollama-app", cask=True)
+        if ok:
+            binary = shutil.which("ollama")
+            if binary:
+                return _check(
+                    "ollama_present",
+                    passed=True,
+                    started=t0,
+                    detail=f"ollama at {binary} (installed via brew)",
+                )
+        return _check(
+            "ollama_present",
+            passed=False,
+            started=t0,
+            error=f"ollama not found and brew install failed: {err or 'unknown error'}",
+            remediation=(
+                "Install Ollama manually: https://ollama.com/download/mac, "
+                "then re-run preflight."
+            ),
+        )
+
     return _check(
         "ollama_present",
         passed=False,
@@ -264,7 +313,7 @@ def _check_ollama_present() -> dict[str, Any]:
         remediation=(
             "Install Ollama:\n"
             "  Linux:   curl -fsSL https://ollama.com/install.sh | sh\n"
-            "  macOS:   brew install ollama (or https://ollama.com/download/mac)\n"
+            "  macOS:   brew install --cask ollama-app (or https://ollama.com/download/mac)\n"
             "  Windows: https://ollama.com/download\n"
             "Do not auto-execute — confirm with the user first."
         ),
@@ -335,15 +384,40 @@ def _check_llama_server_present() -> dict[str, Any]:
         return _check(
             "llama_server_present", passed=True, started=t0, detail=f"llama-server at {binary}"
         )
+
+    # macOS auto-install via Homebrew (llama.cpp formula ships llama-server).
+    if sys.platform == "darwin" and shutil.which("brew"):
+        ok, err = _try_brew_install("llama.cpp")
+        if ok:
+            binary = shutil.which("llama-server")
+            if binary:
+                return _check(
+                    "llama_server_present",
+                    passed=True,
+                    started=t0,
+                    detail=f"llama-server at {binary} (installed via brew)",
+                )
+        return _check(
+            "llama_server_present",
+            passed=False,
+            started=t0,
+            error=f"llama-server not found and brew install failed: {err or 'unknown error'}",
+            remediation=(
+                "Install llama.cpp manually: `brew install llama.cpp`, "
+                "then re-run preflight."
+            ),
+        )
+
     return _check(
         "llama_server_present",
         passed=False,
         started=t0,
         error="llama-server not found on PATH",
         remediation=(
-            "Install llama-server (llama.cpp): see "
-            "https://github.com/ggerganov/llama.cpp/blob/master/examples/server/README.md"
-            "You can also build it from source or use a pre-built binary.\\n"
+            "Install llama-server (llama.cpp):\n"
+            "  macOS:   brew install llama.cpp\n"
+            "  Other:   build from source — see "
+            "https://github.com/ggerganov/llama.cpp/blob/master/examples/server/README.md\n"
             "Do not auto-execute — confirm with the user first."
         ),
     )
