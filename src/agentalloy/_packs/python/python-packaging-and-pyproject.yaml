@@ -8,6 +8,8 @@ always_apply: false
 phase_scope: null
 category_scope: language
 author: navistone
+deprecated: true
+superseded_by: python-packaging-pyproject
 change_summary: |
   Initial authoring 2026-05-04. Sources — packaging.python.org tutorial https://packaging.python.org/en/latest/tutorials/packaging-projects/ (verified 2026-05-04 against fixtures/upstream/curated/python.yaml topic `packaging_and_dependency_management`); PEP 517 https://peps.python.org/pep-0517/ (build backends); PEP 518 https://peps.python.org/pep-0518/ (pyproject.toml); PEP 621 https://peps.python.org/pep-0621/ (project metadata); uv documentation https://docs.astral.sh/uv/ for the modern dep-management toolchain. Skill scope: structuring a Python project with pyproject.toml, picking a build backend, dependency management, src layout; not specific framework deployment, not CI publishing pipelines.
 
