@@ -1,0 +1,299 @@
+skill_type: domain
+skill_id: java-spring-webflux
+canonical_name: Spring WebFlux — Reactive Programming
+category: engineering
+skill_class: domain
+domain_tags:
+- java
+- spring-webflux
+- reactive
+- project-reactor
+- non-blocking
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Spring WebFlux — Reactive Programming
+
+  ## Overview
+
+  WebFlux is Spring's reactive web stack. Built on Project Reactor (Mono = 0/1 result, Flux = 0..N stream), it runs on Netty by default. Non-blocking I/O lets a small thread pool handle thousands of concurrent connections.
+
+  ---
+
+  ## Mono and Flux
+
+  ```java
+  Mono<User> findUser(Long id);          // 0 or 1 user
+  Flux<Order> ordersOf(Long userId);     // 0+ orders
+  Mono<Void> deleteUser(Long id);        // signal-only
+  ```
+
+  Mono and Flux are publishers — nothing happens until something subscribes. Operators (`map`, `flatMap`, `filter`, `zip`) compose pipelines lazily.
+
+  ## Reactive Controllers
+
+  ```java
+  @RestController
+  public class OrderController {
+      private final OrderRepository orders;
+
+      public OrderController(OrderRepository orders) { this.orders = orders; }
+
+      @GetMapping("/orders/{id}")
+      public Mono<Order> getOrder(@PathVariable Long id) {
+          return orders.findById(id);
+      }
+
+      @GetMapping(value = "/orders", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+      public Flux<Order> streamOrders() {
+          return orders.findAll();  // streams as SSE
+      }
+
+      @PostMapping("/orders")
+      public Mono<Order> create(@RequestBody Mono<OrderRequest> req) {
+          return req.flatMap(r -> orders.save(new Order(r)));
+      }
+  }
+  ```
+
+  Returning Mono/Flux means the framework subscribes — your code never calls `.subscribe()` directly in a request handler.
+
+  ## flatMap — The Workhorse
+
+  `flatMap` chains async operations:
+
+  ```java
+  Mono<OrderConfirmation> processOrder(Long orderId) {
+      return orderRepo.findById(orderId)
+          .flatMap(order -> paymentClient.charge(order))
+          .flatMap(payment -> emailClient.sendConfirmation(payment))
+          .map(OrderConfirmation::new);
+  }
+  ```
+
+  Each step's result becomes input to the next. `map` is for sync transforms; `flatMap` for async.
+
+  ## Error Handling
+
+  ```java
+  service.getUser(id)
+      .onErrorResume(NotFoundException.class, e -> Mono.empty())
+      .switchIfEmpty(Mono.error(new ResponseStatusException(NOT_FOUND)))
+      .doOnError(e -> log.error("user lookup failed", e));
+  ```
+
+  - `onErrorResume` — substitute a fallback Mono.
+  - `onErrorReturn` — substitute a value.
+  - `switchIfEmpty` — handle empty result (different from error).
+  - `doOnError` — side effect (logging).
+
+  ## Backpressure
+
+  Reactive Streams' core feature: consumers signal demand. Publishers don't push faster than consumers can handle. Operators handle this transparently — you only think about it when integrating with non-reactive code.
+
+  If your downstream is slower than upstream: `Flux.onBackpressureBuffer(1000)` or `onBackpressureDrop()` define the strategy.
+
+  ## Schedulers
+
+  ```java
+  Mono<String> readFile(Path p) {
+      return Mono.fromCallable(() -> Files.readString(p))
+          .subscribeOn(Schedulers.boundedElastic());  // blocking I/O on dedicated pool
+  }
+  ```
+
+  - `Schedulers.parallel()` — CPU-bound work; one thread per core.
+  - `Schedulers.boundedElastic()` — blocking I/O, scales as needed.
+  - `Schedulers.single()` — single-thread sequential work.
+
+  ## When to Use WebFlux
+
+  Use WebFlux when:
+  - You're proxying many concurrent slow upstream calls (high concurrency, low CPU).
+  - You need streaming responses (SSE, WebSocket-like patterns).
+  - The whole stack is reactive (R2DBC, reactive HTTP clients).
+
+  Use Spring MVC (blocking) when:
+  - The team is unfamiliar with reactive (steep learning curve).
+  - Most work is blocking JDBC + heavy CPU (no concurrency win).
+  - Synchronous code is dramatically simpler for the domain.
+
+  A mostly-blocking app on WebFlux performs worse than on MVC.
+
+  ## R2DBC for Reactive SQL
+
+  ```java
+  public interface UserRepository extends ReactiveCrudRepository<User, Long> {
+      Mono<User> findByEmail(String email);
+      Flux<User> findByCountry(String country);
+  }
+  ```
+
+  R2DBC = Reactive Relational Database Connectivity. Drivers exist for Postgres, MySQL, MSSQL, H2. Required for end-to-end non-blocking.
+
+  ## Common Pitfalls
+
+  - **Calling `.block()` in a handler.** Defeats the purpose; the request thread blocks. Use `.subscribeOn(boundedElastic())` for legacy blocking calls.
+  - **JDBC inside WebFlux.** JDBC is blocking. Either wrap in `boundedElastic` or use R2DBC.
+  - **Returning `Mono` then ignoring it.** Reactor is lazy — if nothing subscribes, nothing happens. Frameworks subscribe; your own code might not.
+  - **Reactive code that's actually blocking under the hood.** `Files.readString` blocks. Wrap with `Mono.fromCallable(...).subscribeOn(boundedElastic())`.
+
+  ## Verification
+
+  A working WebFlux app:
+
+  - Thread dump shows few threads under load (Netty event loops, ~2x cores).
+  - Latency under 5x concurrency is similar to under 100x (non-blocking scales).
+  - No `java.lang.IllegalStateException: block()? threadName="reactor-http-...` in logs.
+  - Streaming endpoints serve continuous SSE without buffering the whole response.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Mono and Flux
+
+    ```java
+    Mono<User> findUser(Long id);          // 0 or 1 user
+    Flux<Order> ordersOf(Long userId);     // 0+ orders
+    Mono<Void> deleteUser(Long id);        // signal-only
+    ```
+
+    Mono and Flux are publishers — nothing happens until something subscribes. Operators (`map`, `flatMap`, `filter`, `zip`) compose pipelines lazily.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Reactive Controllers
+
+    ```java
+    @RestController
+    public class OrderController {
+        private final OrderRepository orders;
+
+        public OrderController(OrderRepository orders) { this.orders = orders; }
+
+        @GetMapping("/orders/{id}")
+        public Mono<Order> getOrder(@PathVariable Long id) {
+            return orders.findById(id);
+        }
+
+        @GetMapping(value = "/orders", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+        public Flux<Order> streamOrders() {
+            return orders.findAll();  // streams as SSE
+        }
+
+        @PostMapping("/orders")
+        public Mono<Order> create(@RequestBody Mono<OrderRequest> req) {
+            return req.flatMap(r -> orders.save(new Order(r)));
+        }
+    }
+    ```
+
+    Returning Mono/Flux means the framework subscribes — your code never calls `.subscribe()` directly in a request handler.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## flatMap — The Workhorse
+
+    `flatMap` chains async operations:
+
+    ```java
+    Mono<OrderConfirmation> processOrder(Long orderId) {
+        return orderRepo.findById(orderId)
+            .flatMap(order -> paymentClient.charge(order))
+            .flatMap(payment -> emailClient.sendConfirmation(payment))
+            .map(OrderConfirmation::new);
+    }
+    ```
+
+    Each step's result becomes input to the next. `map` is for sync transforms; `flatMap` for async.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Error Handling
+
+    ```java
+    service.getUser(id)
+        .onErrorResume(NotFoundException.class, e -> Mono.empty())
+        .switchIfEmpty(Mono.error(new ResponseStatusException(NOT_FOUND)))
+        .doOnError(e -> log.error("user lookup failed", e));
+    ```
+
+    - `onErrorResume` — substitute a fallback Mono.
+    - `onErrorReturn` — substitute a value.
+    - `switchIfEmpty` — handle empty result (different from error).
+    - `doOnError` — side effect (logging).
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Backpressure
+
+    Reactive Streams' core feature: consumers signal demand. Publishers don't push faster than consumers can handle. Operators handle this transparently — you only think about it when integrating with non-reactive code.
+
+    If your downstream is slower than upstream: `Flux.onBackpressureBuffer(1000)` or `onBackpressureDrop()` define the strategy.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Schedulers
+
+    ```java
+    Mono<String> readFile(Path p) {
+        return Mono.fromCallable(() -> Files.readString(p))
+            .subscribeOn(Schedulers.boundedElastic());  // blocking I/O on dedicated pool
+    }
+    ```
+
+    - `Schedulers.parallel()` — CPU-bound work; one thread per core.
+    - `Schedulers.boundedElastic()` — blocking I/O, scales as needed.
+    - `Schedulers.single()` — single-thread sequential work.
+- fragment_type: rationale
+  sequence: 7
+  content: |-
+    ## When to Use WebFlux
+
+    Use WebFlux when:
+    - You're proxying many concurrent slow upstream calls (high concurrency, low CPU).
+    - You need streaming responses (SSE, WebSocket-like patterns).
+    - The whole stack is reactive (R2DBC, reactive HTTP clients).
+
+    Use Spring MVC (blocking) when:
+    - The team is unfamiliar with reactive (steep learning curve).
+    - Most work is blocking JDBC + heavy CPU (no concurrency win).
+    - Synchronous code is dramatically simpler for the domain.
+
+    A mostly-blocking app on WebFlux performs worse than on MVC.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## R2DBC for Reactive SQL
+
+    ```java
+    public interface UserRepository extends ReactiveCrudRepository<User, Long> {
+        Mono<User> findByEmail(String email);
+        Flux<User> findByCountry(String country);
+    }
+    ```
+
+    R2DBC = Reactive Relational Database Connectivity. Drivers exist for Postgres, MySQL, MSSQL, H2. Required for end-to-end non-blocking.
+- fragment_type: guardrail
+  sequence: 9
+  content: |-
+    ## Common Pitfalls
+
+    - **Calling `.block()` in a handler.** Defeats the purpose; the request thread blocks. Use `.subscribeOn(boundedElastic())` for legacy blocking calls.
+    - **JDBC inside WebFlux.** JDBC is blocking. Either wrap in `boundedElastic` or use R2DBC.
+    - **Returning `Mono` then ignoring it.** Reactor is lazy — if nothing subscribes, nothing happens. Frameworks subscribe; your own code might not.
+    - **Reactive code that's actually blocking under the hood.** `Files.readString` blocks. Wrap with `Mono.fromCallable(...).subscribeOn(boundedElastic())`.
+- fragment_type: verification
+  sequence: 10
+  content: |-
+    ## Verification
+
+    A working WebFlux app:
+
+    - Thread dump shows few threads under load (Netty event loops, ~2x cores).
+    - Latency under 5x concurrency is similar to under 100x (non-blocking scales).
+    - No `java.lang.IllegalStateException: block()? threadName="reactor-http-...` in logs.
+    - Streaming endpoints serve continuous SSE without buffering the whole response.

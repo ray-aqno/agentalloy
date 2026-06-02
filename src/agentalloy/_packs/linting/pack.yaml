@@ -1,0 +1,60 @@
+name: linting
+version: 1.0.0
+tier: tooling
+description: |
+  Linting and formatting toolchains across JS/TS and Python — ESLint v9 flat config (rules, plugins, scoping), Prettier configuration and options, typescript-eslint type-aware linting, and Ruff (Python linter + formatter). Precision-favored tooling tier; sourced from the canonical docs of each tool per R1 tier-3 procedure (eslint/eslint, prettier/prettier, typescript-eslint/typescript-eslint, astral-sh/ruff GitHub repos).
+author: navistone
+embed_model: qwen3-embedding:0.6b
+embedding_dim: 1024
+license: MIT
+homepage: https://github.com/nrmeyers/agentalloy
+always_install: false
+depends_on:
+- core
+- engineering
+skills:
+- skill_id: linting-eslint-flat-config
+  file: linting-eslint-flat-config.yaml
+  fragment_count: 12
+- skill_id: linting-eslint-rules-and-plugins
+  file: linting-eslint-rules-and-plugins.yaml
+  fragment_count: 12
+- skill_id: linting-prettier-and-formatting
+  file: linting-prettier-and-formatting.yaml
+  fragment_count: 13
+- skill_id: linting-ruff-python
+  file: linting-ruff-python.yaml
+  fragment_count: 6
+- skill_id: linting-typescript-eslint
+  file: linting-typescript-eslint.yaml
+  fragment_count: 6
+- skill_id: linting-ci-integration
+  file: linting-ci-integration.yaml
+  fragment_count: 12
+- skill_id: linting-eslint-plugin-authoring
+  file: linting-eslint-plugin-authoring.yaml
+  fragment_count: 10
+- skill_id: linting-format-vs-lint
+  file: linting-format-vs-lint.yaml
+  fragment_count: 10
+- skill_id: linting-golangci-lint
+  file: linting-golangci-lint.yaml
+  fragment_count: 11
+- skill_id: linting-monorepo-strategies
+  file: linting-monorepo-strategies.yaml
+  fragment_count: 11
+- skill_id: linting-performance-optimization
+  file: linting-performance-optimization.yaml
+  fragment_count: 10
+- skill_id: linting-pre-commit-hooks
+  file: linting-pre-commit-hooks.yaml
+  fragment_count: 10
+- skill_id: linting-shareable-configs
+  file: linting-shareable-configs.yaml
+  fragment_count: 12
+- skill_id: linting-stylelint
+  file: linting-stylelint.yaml
+  fragment_count: 10
+- skill_id: linting-typescript-strict-mode
+  file: linting-typescript-strict-mode.yaml
+  fragment_count: 9

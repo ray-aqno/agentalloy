@@ -1,0 +1,207 @@
+skill_type: domain
+skill_id: redis-lists-and-sorted-sets
+canonical_name: Redis Lists and Sorted Sets
+category: engineering
+skill_class: domain
+domain_tags:
+- redis
+- lists
+- sorted-sets
+- queues
+- leaderboards
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus source after 14B over-fragmented
+raw_prose: |
+  # Redis Lists and Sorted Sets
+
+  ## Overview
+
+  Redis lists are linked lists supporting fast push/pop at both ends. Sorted sets pair members with floating-point scores for O(log N) ranked access. Together they cover queue, leaderboard, and ranking workloads. This skill covers both.
+
+  ---
+
+  ## Lists — Doubly-Linked at the Ends
+
+  Redis lists are ordered collections optimized for push/pop at both ends. Insertion or removal at the head/tail is O(1); operations in the middle are O(N).
+
+  ```
+  LPUSH queue:work job-1 job-2     # push to head
+  RPUSH queue:work job-3           # push to tail
+  LPOP queue:work                  # pop from head → job-2 (most recent push to head)
+  RPOP queue:work                  # pop from tail → job-3
+  LLEN queue:work                  # length
+  LRANGE queue:work 0 -1           # all elements (head to tail)
+  ```
+
+  Common pattern: producer pushes to one end, consumer pops from the other. LPUSH + RPOP makes a FIFO queue. LPUSH + LPOP makes a LIFO stack.
+
+  ## Blocking Pop for Worker Queues
+
+  Polling lists with LPOP wastes cycles when the queue is empty. BLPOP and BRPOP block the connection until an element is available or a timeout elapses:
+
+  ```
+  BLPOP queue:work 30              # block up to 30 seconds
+  BRPOP queue:work 0               # block indefinitely
+  ```
+
+  This is the standard pattern for Redis-as-job-queue. Multiple workers can BLPOP the same key; Redis distributes jobs across them. Combine with `LMOVE` (atomic pop-and-push to a 'processing' list) for at-least-once semantics.
+
+  ## List Caveats
+
+  - Lists do not support efficient random access. `LINDEX key i` is O(N).
+  - Lists do not enforce uniqueness. If you need 'list of unique items', use a sorted set instead.
+  - Trim aggressively with `LTRIM key start stop` to bound list growth — useful for capped activity feeds.
+
+  ## Sorted Sets — Ranked Members
+
+  Sorted sets are like sets, but each member carries a floating-point score. Members are sorted by score (ties break lexicographically by member). Operations:
+
+  ```
+  ZADD leaderboard 1500 alice 1200 bob 1800 carol
+  ZSCORE leaderboard alice              # 1500
+  ZRANGE leaderboard 0 -1 WITHSCORES    # ascending
+  ZREVRANGE leaderboard 0 9 WITHSCORES  # top 10 descending
+  ZRANK leaderboard alice               # 1 (0-based, ascending)
+  ZREVRANK leaderboard alice            # 1 (0-based, descending)
+  ZINCRBY leaderboard 50 alice          # alice +50 → 1550
+  ```
+
+  ZADD is O(log N); range queries are O(log N + M) where M is the result size. This makes sorted sets the natural fit for leaderboards, time-indexed events, and any 'top N' retrieval.
+
+  ## Range Queries by Score
+
+  ZRANGEBYSCORE is the most useful sorted-set operation:
+
+  ```
+  ZRANGEBYSCORE leaderboard 1000 1999     # all members with scores 1000-1999
+  ZRANGEBYSCORE leaderboard 1500 +inf LIMIT 0 10  # top 10 above 1500
+  ZRANGEBYSCORE leaderboard (1500 +inf    # exclusive lower bound
+  ```
+
+  Use `+inf` and `-inf` for unbounded ranges. Prefix a number with `(` for exclusive bounds.
+
+  For time-indexed data, store the unix timestamp as the score. Then `ZRANGEBYSCORE feed start_ts end_ts` returns activity in a window.
+
+  ## Common Patterns
+
+  - **Leaderboard**: ZADD as scores update; ZREVRANGE for top-N display.
+  - **Time-series index**: score = timestamp; ZRANGEBYSCORE for window queries.
+  - **Priority queue**: score = priority; ZPOPMIN to dequeue highest priority.
+  - **Capped activity feed**: ZADD then ZREMRANGEBYRANK to trim oldest.
+  - **Recent items per user**: one sorted set per user, score = timestamp, ZREVRANGE 0 N for latest.
+
+  ## Performance Considerations
+
+  - ZADD on bulk inserts is fastest with `ZADD key score1 member1 score2 member2 ...` rather than one call per member.
+  - ZRANGE on a million-element sorted set is still fast for small ranges — the cost is O(log N + M).
+  - `ZSCAN` for full iteration without blocking; never `ZRANGE 0 -1` on production sorted sets that may grow unbounded.
+  - Score collisions sort by member name lexicographically; if you need stable ordering on ties, encode the tie-breaker into the member name.
+
+  ## Verification
+
+  - For lists used as queues: monitor `LLEN` over time. A growing length means consumers are falling behind producers.
+  - For leaderboards: spot-check `ZRANK` and `ZSCORE` for a known member after writes; verify the rank matches expected.
+  - For time-series indexes: confirm `ZRANGEBYSCORE` returns the right count for a known window.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Lists — Doubly-Linked at the Ends
+
+    Redis lists are ordered collections optimized for push/pop at both ends. Insertion or removal at the head/tail is O(1); operations in the middle are O(N).
+
+    ```
+    LPUSH queue:work job-1 job-2     # push to head
+    RPUSH queue:work job-3           # push to tail
+    LPOP queue:work                  # pop from head → job-2 (most recent push to head)
+    RPOP queue:work                  # pop from tail → job-3
+    LLEN queue:work                  # length
+    LRANGE queue:work 0 -1           # all elements (head to tail)
+    ```
+
+    Common pattern: producer pushes to one end, consumer pops from the other. LPUSH + RPOP makes a FIFO queue. LPUSH + LPOP makes a LIFO stack.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Blocking Pop for Worker Queues
+
+    Polling lists with LPOP wastes cycles when the queue is empty. BLPOP and BRPOP block the connection until an element is available or a timeout elapses:
+
+    ```
+    BLPOP queue:work 30              # block up to 30 seconds
+    BRPOP queue:work 0               # block indefinitely
+    ```
+
+    This is the standard pattern for Redis-as-job-queue. Multiple workers can BLPOP the same key; Redis distributes jobs across them. Combine with `LMOVE` (atomic pop-and-push to a 'processing' list) for at-least-once semantics.
+- fragment_type: guardrail
+  sequence: 3
+  content: |-
+    ## List Caveats
+
+    - Lists do not support efficient random access. `LINDEX key i` is O(N).
+    - Lists do not enforce uniqueness. If you need 'list of unique items', use a sorted set instead.
+    - Trim aggressively with `LTRIM key start stop` to bound list growth — useful for capped activity feeds.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Sorted Sets — Ranked Members
+
+    Sorted sets are like sets, but each member carries a floating-point score. Members are sorted by score (ties break lexicographically by member). Operations:
+
+    ```
+    ZADD leaderboard 1500 alice 1200 bob 1800 carol
+    ZSCORE leaderboard alice              # 1500
+    ZRANGE leaderboard 0 -1 WITHSCORES    # ascending
+    ZREVRANGE leaderboard 0 9 WITHSCORES  # top 10 descending
+    ZRANK leaderboard alice               # 1 (0-based, ascending)
+    ZREVRANK leaderboard alice            # 1 (0-based, descending)
+    ZINCRBY leaderboard 50 alice          # alice +50 → 1550
+    ```
+
+    ZADD is O(log N); range queries are O(log N + M) where M is the result size. This makes sorted sets the natural fit for leaderboards, time-indexed events, and any 'top N' retrieval.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Range Queries by Score
+
+    ZRANGEBYSCORE is the most useful sorted-set operation:
+
+    ```
+    ZRANGEBYSCORE leaderboard 1000 1999     # all members with scores 1000-1999
+    ZRANGEBYSCORE leaderboard 1500 +inf LIMIT 0 10  # top 10 above 1500
+    ZRANGEBYSCORE leaderboard (1500 +inf    # exclusive lower bound
+    ```
+
+    Use `+inf` and `-inf` for unbounded ranges. Prefix a number with `(` for exclusive bounds.
+
+    For time-indexed data, store the unix timestamp as the score. Then `ZRANGEBYSCORE feed start_ts end_ts` returns activity in a window.
+- fragment_type: example
+  sequence: 6
+  content: |-
+    ## Common Patterns
+
+    - **Leaderboard**: ZADD as scores update; ZREVRANGE for top-N display.
+    - **Time-series index**: score = timestamp; ZRANGEBYSCORE for window queries.
+    - **Priority queue**: score = priority; ZPOPMIN to dequeue highest priority.
+    - **Capped activity feed**: ZADD then ZREMRANGEBYRANK to trim oldest.
+    - **Recent items per user**: one sorted set per user, score = timestamp, ZREVRANGE 0 N for latest.
+- fragment_type: guardrail
+  sequence: 7
+  content: |-
+    ## Performance Considerations
+
+    - ZADD on bulk inserts is fastest with `ZADD key score1 member1 score2 member2 ...` rather than one call per member.
+    - ZRANGE on a million-element sorted set is still fast for small ranges — the cost is O(log N + M).
+    - `ZSCAN` for full iteration without blocking; never `ZRANGE 0 -1` on production sorted sets that may grow unbounded.
+    - Score collisions sort by member name lexicographically; if you need stable ordering on ties, encode the tie-breaker into the member name.
+- fragment_type: verification
+  sequence: 8
+  content: |-
+    ## Verification
+
+    - For lists used as queues: monitor `LLEN` over time. A growing length means consumers are falling behind producers.
+    - For leaderboards: spot-check `ZRANK` and `ZSCORE` for a known member after writes; verify the rank matches expected.
+    - For time-series indexes: confirm `ZRANGEBYSCORE` returns the right count for a known window.

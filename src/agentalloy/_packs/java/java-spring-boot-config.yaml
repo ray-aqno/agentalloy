@@ -1,0 +1,309 @@
+skill_type: domain
+skill_id: java-spring-boot-config
+canonical_name: Spring Boot Configuration and Properties
+category: engineering
+skill_class: domain
+domain_tags:
+- java
+- spring-boot
+- configuration
+- application-properties
+- profiles
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Spring Boot Configuration and Properties
+
+  ## Overview
+
+  Spring Boot reads configuration from application.properties or application.yml plus environment variables, command-line args, and external sources. The resolution order matters: command-line overrides env, env overrides yml, yml overrides defaults. @ConfigurationProperties binds typed objects.
+
+  ---
+
+  ## application.yml — The Standard Setup
+
+  ```yaml
+  spring:
+    application:
+      name: my-service
+    datasource:
+      url: jdbc:postgresql://localhost:5432/mydb
+      username: ${DB_USER}
+      password: ${DB_PASS}
+
+  server:
+    port: 8080
+
+  management:
+    endpoints:
+      web:
+        exposure:
+          include: health,metrics,info
+  ```
+
+  YAML lives in `src/main/resources/application.yml`. Hierarchical structure groups related config; `${VAR}` references env vars.
+
+  ## Property Resolution Order
+
+  Spring Boot resolves properties in this order (later wins):
+
+  1. Default property sources (jar's application.yml).
+  2. Profile-specific (`application-prod.yml`).
+  3. External `application.yml` next to the jar.
+  4. OS env vars.
+  5. Java system properties (`-Dkey=value`).
+  6. Command-line args (`--key=value`).
+
+  So `--spring.datasource.url=...` on the command line beats every other source. Useful for one-off overrides.
+
+  ## Profile-Specific Config
+
+  ```yaml
+  # application.yml (defaults)
+  logging:
+    level:
+      root: INFO
+
+  # application-dev.yml
+  logging:
+    level:
+      root: DEBUG
+  spring:
+    jpa:
+      show-sql: true
+
+  # application-prod.yml
+  logging:
+    level:
+      root: WARN
+  ```
+
+  Activate via `SPRING_PROFILES_ACTIVE=prod` or `spring.profiles.active=prod`. Profile config layers on top of defaults.
+
+  ## @ConfigurationProperties — Typed Binding
+
+  ```java
+  @ConfigurationProperties(prefix = "myapp.email")
+  public record EmailConfig(
+      String fromAddress,
+      String smtpHost,
+      int smtpPort,
+      Duration timeout
+  ) {}
+
+  // In application.yml
+  myapp:
+    email:
+      from-address: noreply@example.com
+      smtp-host: smtp.example.com
+      smtp-port: 587
+      timeout: 30s
+
+  // Inject anywhere
+  @Service
+  class EmailService {
+      public EmailService(EmailConfig config) { ... }
+  }
+  ```
+
+  Type-safe binding catches typos at startup. Kebab-case in YAML maps to camelCase in Java.
+
+  ## Environment Variable Mapping
+
+  `MYAPP_EMAIL_FROM_ADDRESS=noreply@example.com` maps to `myapp.email.from-address`. Underscores become dots, double underscores become hyphens (with caveats — see Spring Boot relaxed binding docs).
+
+  ## Validation
+
+  ```java
+  @ConfigurationProperties(prefix = "myapp.email")
+  @Validated
+  public record EmailConfig(
+      @NotBlank String fromAddress,
+      @NotBlank String smtpHost,
+      @Min(1) @Max(65535) int smtpPort
+  ) {}
+  ```
+
+  `@Validated` triggers Bean Validation on bind. Misconfigured properties fail startup with clear messages instead of NPE-ing later.
+
+  ## Externalized Secrets
+
+  Don't put secrets in version-controlled YAML. Options:
+
+  - **Env vars** for cloud deploys (12-factor).
+  - **Spring Cloud Config Server** for centralized config.
+  - **HashiCorp Vault** integration via spring-cloud-vault.
+  - **Cloud-native KMS**: AWS Parameter Store + Secrets Manager via spring-cloud-aws.
+
+  The pattern: YAML references `${VAR}`, the runtime resolves from the secret store.
+
+  ## Common Pitfalls
+
+  - **Hardcoding env-specific values.** No way to override in tests / staging. Use `${VAR}` or profile config.
+  - **Forgetting profile activation.** `application-prod.yml` doesn't kick in unless the prod profile is active. Set `spring.profiles.active`.
+  - **Storing secrets in `application.properties` checked into git.** They never come out — assume the repo is compromised. Rotate.
+  - **Relying on default profiles in tests.** Tests often need a `test` profile. Set explicitly via `@ActiveProfiles("test")`.
+
+  ## Verification
+
+  A working configuration setup:
+
+  - `--spring.datasource.url=...` overrides the YAML at runtime.
+  - Wrong types in @ConfigurationProperties fail startup with a clear error.
+  - Profile switches change behavior reliably (dev = SQL logging on, prod = off).
+  - Secrets never appear in logs (Spring Boot masks `password`, `secret`, `token` patterns by default in `/actuator/env`).
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## application.yml — The Standard Setup
+
+    ```yaml
+    spring:
+      application:
+        name: my-service
+      datasource:
+        url: jdbc:postgresql://localhost:5432/mydb
+        username: ${DB_USER}
+        password: ${DB_PASS}
+
+    server:
+      port: 8080
+
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: health,metrics,info
+    ```
+
+    YAML lives in `src/main/resources/application.yml`. Hierarchical structure groups related config; `${VAR}` references env vars.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Property Resolution Order
+
+    Spring Boot resolves properties in this order (later wins):
+
+    1. Default property sources (jar's application.yml).
+    2. Profile-specific (`application-prod.yml`).
+    3. External `application.yml` next to the jar.
+    4. OS env vars.
+    5. Java system properties (`-Dkey=value`).
+    6. Command-line args (`--key=value`).
+
+    So `--spring.datasource.url=...` on the command line beats every other source. Useful for one-off overrides.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Profile-Specific Config
+
+    ```yaml
+    # application.yml (defaults)
+    logging:
+      level:
+        root: INFO
+
+    # application-dev.yml
+    logging:
+      level:
+        root: DEBUG
+    spring:
+      jpa:
+        show-sql: true
+
+    # application-prod.yml
+    logging:
+      level:
+        root: WARN
+    ```
+
+    Activate via `SPRING_PROFILES_ACTIVE=prod` or `spring.profiles.active=prod`. Profile config layers on top of defaults.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## @ConfigurationProperties — Typed Binding
+
+    ```java
+    @ConfigurationProperties(prefix = "myapp.email")
+    public record EmailConfig(
+        String fromAddress,
+        String smtpHost,
+        int smtpPort,
+        Duration timeout
+    ) {}
+
+    // In application.yml
+    myapp:
+      email:
+        from-address: noreply@example.com
+        smtp-host: smtp.example.com
+        smtp-port: 587
+        timeout: 30s
+
+    // Inject anywhere
+    @Service
+    class EmailService {
+        public EmailService(EmailConfig config) { ... }
+    }
+    ```
+
+    Type-safe binding catches typos at startup. Kebab-case in YAML maps to camelCase in Java.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Environment Variable Mapping
+
+    `MYAPP_EMAIL_FROM_ADDRESS=noreply@example.com` maps to `myapp.email.from-address`. Underscores become dots, double underscores become hyphens (with caveats — see Spring Boot relaxed binding docs).
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Validation
+
+    ```java
+    @ConfigurationProperties(prefix = "myapp.email")
+    @Validated
+    public record EmailConfig(
+        @NotBlank String fromAddress,
+        @NotBlank String smtpHost,
+        @Min(1) @Max(65535) int smtpPort
+    ) {}
+    ```
+
+    `@Validated` triggers Bean Validation on bind. Misconfigured properties fail startup with clear messages instead of NPE-ing later.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Externalized Secrets
+
+    Don't put secrets in version-controlled YAML. Options:
+
+    - **Env vars** for cloud deploys (12-factor).
+    - **Spring Cloud Config Server** for centralized config.
+    - **HashiCorp Vault** integration via spring-cloud-vault.
+    - **Cloud-native KMS**: AWS Parameter Store + Secrets Manager via spring-cloud-aws.
+
+    The pattern: YAML references `${VAR}`, the runtime resolves from the secret store.
+- fragment_type: guardrail
+  sequence: 8
+  content: |-
+    ## Common Pitfalls
+
+    - **Hardcoding env-specific values.** No way to override in tests / staging. Use `${VAR}` or profile config.
+    - **Forgetting profile activation.** `application-prod.yml` doesn't kick in unless the prod profile is active. Set `spring.profiles.active`.
+    - **Storing secrets in `application.properties` checked into git.** They never come out — assume the repo is compromised. Rotate.
+    - **Relying on default profiles in tests.** Tests often need a `test` profile. Set explicitly via `@ActiveProfiles("test")`.
+- fragment_type: verification
+  sequence: 9
+  content: |-
+    ## Verification
+
+    A working configuration setup:
+
+    - `--spring.datasource.url=...` overrides the YAML at runtime.
+    - Wrong types in @ConfigurationProperties fail startup with a clear error.
+    - Profile switches change behavior reliably (dev = SQL logging on, prod = off).
+    - Secrets never appear in logs (Spring Boot masks `password`, `secret`, `token` patterns by default in `/actuator/env`).

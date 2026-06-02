@@ -1,0 +1,317 @@
+skill_type: domain
+skill_id: ui-design-error-states
+canonical_name: Error States and Recovery
+category: design
+skill_class: domain
+domain_tags:
+- ui-design
+- error-states
+- error-messages
+- recovery
+- ux-writing
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Error States and Recovery
+
+  ## Overview
+
+  Errors are always going to happen. The discipline: tell the user what went wrong in their terms, suggest what to do, and make recovery easy. Generic 'Something went wrong' messages teach users the system is unreliable; specific, recoverable errors teach them how to fix it.
+
+  ---
+
+  ## Three Levels of Errors
+
+  **Field-level** — one input is wrong. Inline next to the field. The user is mid-task.
+
+  **Form/section-level** — the operation failed but adjacent UI is still useful. Error banner above the form; rest of the page unaffected.
+
+  **Page-level** — nothing renders. Full-page error state with explanation and recovery.
+
+  The level should match the scope. A field error blocking the whole page is heavy-handed; a page error for one wrong character is overkill.
+
+  ## Error Message Anatomy
+
+  Good error messages have:
+
+  - **What went wrong** in user terms (not stack trace).
+  - **Why it matters** if not obvious.
+  - **What to do next** — concrete action.
+
+  Bad: `Error: Failed to fetch (500)`
+  Better: `Couldn't load your orders. The server is having trouble. [Retry]`
+  Best: `Couldn't load your orders. We're investigating; in the meantime you can [view cached orders] or [try again].`
+
+  ## Tone
+
+  - **Don't blame the user**: 'You entered the wrong password' → 'Email or password didn't match.'
+  - **Don't blame the system in a way that feels evasive**: 'A problem occurred' → 'We couldn't save your changes.'
+  - **Don't joke about errors users care about**: a 'Oops!' on a payment failure feels dismissive.
+
+  Match the gravity of the error. Failed save = sober. Network blip on profile pic = light.
+
+  ## Field Validation Errors
+
+  Inline, specific, and retain user input:
+
+  ```
+  [Email   alice@] ← user types
+  [Email is required]  ← if blank
+  [Email must contain @]  ← if @ missing
+  [Email already in use]  ← if conflict
+  ```
+
+  Don't summarize at the bottom: 'There were 3 errors. See above.' Show errors at the source.
+
+  ## 404 Pages
+
+  Custom 404s are easy wins. The pattern:
+
+  - **Headline**: 'We couldn't find that page' (not 'Error 404').
+  - **Reasons**: 'It may have moved or never existed.'
+  - **Recovery**: link to homepage, search box, or recent links.
+  - **Optional**: humor only if it matches your brand.
+
+  Don't show a stack trace. Don't blame the user.
+
+  ## 500 Pages
+
+  Server errors are different. The user did nothing wrong; something on our side broke:
+
+  ```
+  Something's not working on our end.
+  We've been notified. Please try again in a few minutes.
+  [Retry] [Go to homepage]
+  ```
+
+  If you have an incident, link to status page. Honesty beats vagueness.
+
+  ## Network Failure Recovery
+
+  For client-side apps that lose network:
+
+  ```
+  [Banner: You're offline. Some features may not work.]
+  ```
+
+  When connectivity returns:
+
+  ```
+  [Banner: You're back online. Refreshing data...]
+  ```
+
+  Don't aggressive-modal the user out of the app. Let them keep using what works (read-only state, queued mutations).
+
+  ## Retry Mechanisms
+
+  Three flavors:
+
+  - **Auto-retry** (with backoff) — for transient failures the user shouldn't think about.
+  - **Retry button** — give the user agency for non-transient cases.
+  - **Manual reload** — for severe failures where state may be inconsistent.
+
+  Always show a button as fallback; auto-retry can fail too.
+
+  ## Form-Level Errors
+
+  When submission fails:
+
+  ```
+  [Banner: Couldn't save your changes. Check below for details.]
+  [form fields with field-level errors]
+  [Submit] (enabled, ready to retry)
+  ```
+
+  Don't disable the submit button — the user knows it didn't work; let them retry. Don't clear the form on error.
+
+  ## Boundary Errors (React)
+
+  Component crashes shouldn't take down the whole app:
+
+  ```jsx
+  <ErrorBoundary fallback={<SectionError onRetry={refetch} />}>
+      <OrderList />
+  </ErrorBoundary>
+  ```
+
+  Section-level boundaries isolate failures. Page-level boundary as a final catch-all.
+
+  ## Common Pitfalls
+
+  - **'Something went wrong'** as the only message. Useless. Add specifics or at least a request ID for support.
+  - **Disabling submit on error.** The user knows it failed; they want to fix and retry.
+  - **Auto-redirecting away from errors.** Users lose context. Show the error inline or on the same page.
+  - **Stack traces in production.** Security risk + scares users. Log server-side, show user-friendly copy.
+  - **No way to copy error details for support.** Users want to send the error to support. Provide a 'Copy error details' button on dev errors.
+
+  ## Verification
+
+  A working error system:
+
+  - Errors have a clear cause + suggested action.
+  - Field errors are inline; page errors are page-level.
+  - Tone matches gravity (sober for payments; light for ephemeral).
+  - Recovery (retry, navigate, contact support) is one click.
+  - Component crashes don't take down the whole UI.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Three Levels of Errors
+
+    **Field-level** — one input is wrong. Inline next to the field. The user is mid-task.
+
+    **Form/section-level** — the operation failed but adjacent UI is still useful. Error banner above the form; rest of the page unaffected.
+
+    **Page-level** — nothing renders. Full-page error state with explanation and recovery.
+
+    The level should match the scope. A field error blocking the whole page is heavy-handed; a page error for one wrong character is overkill.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Error Message Anatomy
+
+    Good error messages have:
+
+    - **What went wrong** in user terms (not stack trace).
+    - **Why it matters** if not obvious.
+    - **What to do next** — concrete action.
+
+    Bad: `Error: Failed to fetch (500)`
+    Better: `Couldn't load your orders. The server is having trouble. [Retry]`
+    Best: `Couldn't load your orders. We're investigating; in the meantime you can [view cached orders] or [try again].`
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Tone
+
+    - **Don't blame the user**: 'You entered the wrong password' → 'Email or password didn't match.'
+    - **Don't blame the system in a way that feels evasive**: 'A problem occurred' → 'We couldn't save your changes.'
+    - **Don't joke about errors users care about**: a 'Oops!' on a payment failure feels dismissive.
+
+    Match the gravity of the error. Failed save = sober. Network blip on profile pic = light.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Field Validation Errors
+
+    Inline, specific, and retain user input:
+
+    ```
+    [Email   alice@] ← user types
+    [Email is required]  ← if blank
+    [Email must contain @]  ← if @ missing
+    [Email already in use]  ← if conflict
+    ```
+
+    Don't summarize at the bottom: 'There were 3 errors. See above.' Show errors at the source.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## 404 Pages
+
+    Custom 404s are easy wins. The pattern:
+
+    - **Headline**: 'We couldn't find that page' (not 'Error 404').
+    - **Reasons**: 'It may have moved or never existed.'
+    - **Recovery**: link to homepage, search box, or recent links.
+    - **Optional**: humor only if it matches your brand.
+
+    Don't show a stack trace. Don't blame the user.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## 500 Pages
+
+    Server errors are different. The user did nothing wrong; something on our side broke:
+
+    ```
+    Something's not working on our end.
+    We've been notified. Please try again in a few minutes.
+    [Retry] [Go to homepage]
+    ```
+
+    If you have an incident, link to status page. Honesty beats vagueness.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Network Failure Recovery
+
+    For client-side apps that lose network:
+
+    ```
+    [Banner: You're offline. Some features may not work.]
+    ```
+
+    When connectivity returns:
+
+    ```
+    [Banner: You're back online. Refreshing data...]
+    ```
+
+    Don't aggressive-modal the user out of the app. Let them keep using what works (read-only state, queued mutations).
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Retry Mechanisms
+
+    Three flavors:
+
+    - **Auto-retry** (with backoff) — for transient failures the user shouldn't think about.
+    - **Retry button** — give the user agency for non-transient cases.
+    - **Manual reload** — for severe failures where state may be inconsistent.
+
+    Always show a button as fallback; auto-retry can fail too.
+- fragment_type: execution
+  sequence: 9
+  content: |-
+    ## Form-Level Errors
+
+    When submission fails:
+
+    ```
+    [Banner: Couldn't save your changes. Check below for details.]
+    [form fields with field-level errors]
+    [Submit] (enabled, ready to retry)
+    ```
+
+    Don't disable the submit button — the user knows it didn't work; let them retry. Don't clear the form on error.
+- fragment_type: execution
+  sequence: 10
+  content: |-
+    ## Boundary Errors (React)
+
+    Component crashes shouldn't take down the whole app:
+
+    ```jsx
+    <ErrorBoundary fallback={<SectionError onRetry={refetch} />}>
+        <OrderList />
+    </ErrorBoundary>
+    ```
+
+    Section-level boundaries isolate failures. Page-level boundary as a final catch-all.
+- fragment_type: guardrail
+  sequence: 11
+  content: |-
+    ## Common Pitfalls
+
+    - **'Something went wrong'** as the only message. Useless. Add specifics or at least a request ID for support.
+    - **Disabling submit on error.** The user knows it failed; they want to fix and retry.
+    - **Auto-redirecting away from errors.** Users lose context. Show the error inline or on the same page.
+    - **Stack traces in production.** Security risk + scares users. Log server-side, show user-friendly copy.
+    - **No way to copy error details for support.** Users want to send the error to support. Provide a 'Copy error details' button on dev errors.
+- fragment_type: verification
+  sequence: 12
+  content: |-
+    ## Verification
+
+    A working error system:
+
+    - Errors have a clear cause + suggested action.
+    - Field errors are inline; page errors are page-level.
+    - Tone matches gravity (sober for payments; light for ephemeral).
+    - Recovery (retry, navigate, contact support) is one click.
+    - Component crashes don't take down the whole UI.

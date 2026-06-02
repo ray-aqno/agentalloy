@@ -1,0 +1,261 @@
+skill_type: domain
+skill_id: nodejs-fs-promises
+canonical_name: Node.js fs/promises Patterns
+category: engineering
+skill_class: domain
+domain_tags:
+- nodejs
+- fs-promises
+- file-io
+- async
+- filesystem
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Node.js fs/promises Patterns
+
+  ## Overview
+
+  The `fs/promises` module is the canonical Node file I/O API in Node 16+. Promise-based by default, supports async iteration on directory reads, and integrates with AbortController for cancellation.
+
+  ---
+
+  ## Common Operations
+
+  ```js
+  import { readFile, writeFile, readdir, stat, mkdir, rm } from 'node:fs/promises';
+
+  const text = await readFile('/path/to/file.txt', 'utf8');
+  await writeFile('/path/to/out.txt', text);
+  const entries = await readdir('/path/to/dir');
+  const info = await stat('/path/to/file.txt');
+
+  await mkdir('/path/to/new/dir', { recursive: true });
+  await rm('/path/to/dir', { recursive: true, force: true });
+  ```
+
+  Default behavior: `readFile` returns a Buffer; pass an encoding to get a string. `readdir({ withFileTypes: true })` returns Dirent objects (with `.isFile()` / `.isDirectory()`).
+
+  ## File Handles for Streaming
+
+  For files too large to read at once, open a FileHandle and stream:
+
+  ```js
+  import { open } from 'node:fs/promises';
+
+  const fh = await open('/path/to/big-file');
+  try {
+    for await (const chunk of fh.createReadStream()) {
+      process(chunk);
+    }
+  } finally {
+    await fh.close();
+  }
+  ```
+
+  Node 22+ supports `await using` for automatic cleanup:
+
+  ```js
+  {
+    await using fh = await open('/path/to/big-file');
+    for await (const chunk of fh.createReadStream()) {
+      process(chunk);
+    }
+  }  // fh.close() called automatically on scope exit
+  ```
+
+  ## Async Iteration on Directories
+
+  `opendir` returns a Dir object that's async-iterable:
+
+  ```js
+  import { opendir } from 'node:fs/promises';
+
+  const dir = await opendir('/path/to/large-dir');
+  for await (const dirent of dir) {
+    if (dirent.isFile()) {
+      console.log(dirent.name);
+    }
+  }
+  ```
+
+  For deep traversal: `fs.glob` (Node 22+) or recursive `readdir({ withFileTypes: true, recursive: true })`.
+
+  ## Watching Files
+
+  `fs.watch` returns an async iterable; combine with AbortController for clean cancellation:
+
+  ```js
+  import { watch } from 'node:fs/promises';
+
+  const ac = new AbortController();
+  setTimeout(() => ac.abort(), 60_000);  // stop after 60s
+
+  try {
+    for await (const event of watch('/path', { signal: ac.signal, recursive: true })) {
+      console.log(event.eventType, event.filename);
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') throw err;
+  }
+  ```
+
+  ## Atomic Writes
+
+  Plain `writeFile` is not atomic — a crash mid-write leaves a partial file. Pattern: write to a temp file, rename:
+
+  ```js
+  import { writeFile, rename } from 'node:fs/promises';
+
+  const tmp = `${target}.tmp.${process.pid}.${Date.now()}`;
+  await writeFile(tmp, data);
+  await rename(tmp, target);
+  ```
+
+  `rename` is atomic on the same filesystem. Across filesystems it falls back to copy + unlink, which is not atomic.
+
+  ## Common Pitfalls
+
+  - **Mixing fs and fs/promises.** Don't import both — `import * as fs from 'node:fs'` plus `fs.promises.readFile` works but is uglier than just `from 'node:fs/promises'`.
+  - **Forgetting to close FileHandles.** They don't garbage collect like file descriptors in higher-level languages. Use try/finally or `await using`.
+  - **Reading huge files with readFile.** Anything over a few hundred MB should stream via FileHandle.createReadStream or fs.createReadStream.
+  - **Race conditions on concurrent writes.** fs/promises doesn't lock files. Two writers to the same path race — use a lock file or a mutex if concurrency matters.
+  - **Recursive rm without force: true on missing paths.** Throws ENOENT. The `force: true` flag silences "doesn't exist" errors.
+
+  ## Verification
+
+  A working fs/promises usage:
+
+  - Reads/writes complete without leaking file descriptors (check `lsof` or `process.report.getReport().libuv.handles`).
+  - Large file streaming holds memory roughly constant regardless of file size.
+  - Atomic write pattern leaves either the old or new file, never a partial one, even on simulated crash.
+  - Watcher cleanly stops on AbortController.abort() without throwing unhandled errors.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Common Operations
+
+    ```js
+    import { readFile, writeFile, readdir, stat, mkdir, rm } from 'node:fs/promises';
+
+    const text = await readFile('/path/to/file.txt', 'utf8');
+    await writeFile('/path/to/out.txt', text);
+    const entries = await readdir('/path/to/dir');
+    const info = await stat('/path/to/file.txt');
+
+    await mkdir('/path/to/new/dir', { recursive: true });
+    await rm('/path/to/dir', { recursive: true, force: true });
+    ```
+
+    Default behavior: `readFile` returns a Buffer; pass an encoding to get a string. `readdir({ withFileTypes: true })` returns Dirent objects (with `.isFile()` / `.isDirectory()`).
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## File Handles for Streaming
+
+    For files too large to read at once, open a FileHandle and stream:
+
+    ```js
+    import { open } from 'node:fs/promises';
+
+    const fh = await open('/path/to/big-file');
+    try {
+      for await (const chunk of fh.createReadStream()) {
+        process(chunk);
+      }
+    } finally {
+      await fh.close();
+    }
+    ```
+
+    Node 22+ supports `await using` for automatic cleanup:
+
+    ```js
+    {
+      await using fh = await open('/path/to/big-file');
+      for await (const chunk of fh.createReadStream()) {
+        process(chunk);
+      }
+    }  // fh.close() called automatically on scope exit
+    ```
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Async Iteration on Directories
+
+    `opendir` returns a Dir object that's async-iterable:
+
+    ```js
+    import { opendir } from 'node:fs/promises';
+
+    const dir = await opendir('/path/to/large-dir');
+    for await (const dirent of dir) {
+      if (dirent.isFile()) {
+        console.log(dirent.name);
+      }
+    }
+    ```
+
+    For deep traversal: `fs.glob` (Node 22+) or recursive `readdir({ withFileTypes: true, recursive: true })`.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Watching Files
+
+    `fs.watch` returns an async iterable; combine with AbortController for clean cancellation:
+
+    ```js
+    import { watch } from 'node:fs/promises';
+
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 60_000);  // stop after 60s
+
+    try {
+      for await (const event of watch('/path', { signal: ac.signal, recursive: true })) {
+        console.log(event.eventType, event.filename);
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') throw err;
+    }
+    ```
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Atomic Writes
+
+    Plain `writeFile` is not atomic — a crash mid-write leaves a partial file. Pattern: write to a temp file, rename:
+
+    ```js
+    import { writeFile, rename } from 'node:fs/promises';
+
+    const tmp = `${target}.tmp.${process.pid}.${Date.now()}`;
+    await writeFile(tmp, data);
+    await rename(tmp, target);
+    ```
+
+    `rename` is atomic on the same filesystem. Across filesystems it falls back to copy + unlink, which is not atomic.
+- fragment_type: guardrail
+  sequence: 6
+  content: |-
+    ## Common Pitfalls
+
+    - **Mixing fs and fs/promises.** Don't import both — `import * as fs from 'node:fs'` plus `fs.promises.readFile` works but is uglier than just `from 'node:fs/promises'`.
+    - **Forgetting to close FileHandles.** They don't garbage collect like file descriptors in higher-level languages. Use try/finally or `await using`.
+    - **Reading huge files with readFile.** Anything over a few hundred MB should stream via FileHandle.createReadStream or fs.createReadStream.
+    - **Race conditions on concurrent writes.** fs/promises doesn't lock files. Two writers to the same path race — use a lock file or a mutex if concurrency matters.
+    - **Recursive rm without force: true on missing paths.** Throws ENOENT. The `force: true` flag silences "doesn't exist" errors.
+- fragment_type: verification
+  sequence: 7
+  content: |-
+    ## Verification
+
+    A working fs/promises usage:
+
+    - Reads/writes complete without leaking file descriptors (check `lsof` or `process.report.getReport().libuv.handles`).
+    - Large file streaming holds memory roughly constant regardless of file size.
+    - Atomic write pattern leaves either the old or new file, never a partial one, even on simulated crash.
+    - Watcher cleanly stops on AbortController.abort() without throwing unhandled errors.

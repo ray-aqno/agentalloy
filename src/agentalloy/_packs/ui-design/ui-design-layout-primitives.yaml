@@ -1,0 +1,390 @@
+skill_type: domain
+skill_id: ui-design-layout-primitives
+canonical_name: Layout Primitives — Stack, Grid, Flow
+category: design
+skill_class: domain
+domain_tags:
+- ui-design
+- layout
+- css-grid
+- flexbox
+- stack
+- container-queries
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Layout Primitives — Stack, Grid, Flow
+
+  ## Overview
+
+  Most layout problems reduce to a handful of primitives. Compose them instead of writing one-off CSS. The mental shift: stop thinking 'how do I lay out THIS card' and start thinking 'this is a Stack of Stack of Cluster.'
+
+  ---
+
+  ## Stack — Vertical or Horizontal
+
+  The most-used primitive. Children flow in one direction with consistent gap:
+
+  ```css
+  .stack {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space);
+  }
+  .stack-row {
+      display: flex;
+      flex-direction: row;
+      gap: var(--space);
+      align-items: center;
+  }
+  ```
+
+  Replace `margin-bottom: 1rem` chains with one Stack. Every layout has Stacks at the outer levels.
+
+  ## Grid — Declarative 2D
+
+  Use when you have a fixed-column or auto-flowing grid:
+
+  ```css
+  .grid-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1.5rem;
+  }
+  ```
+
+  `auto-fill` + `minmax()` is the responsive-grid pattern: as many 280-wide columns as fit, growing to share leftover space.
+
+  For 12-column-style grids:
+
+  ```css
+  .grid-12 {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 1rem;
+  }
+  .col-span-4 { grid-column: span 4; }
+  ```
+
+  ## Cluster — Wrapping Inline
+
+  Tags, buttons, badges that wrap:
+
+  ```css
+  .cluster {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+  }
+  ```
+
+  Looks trivial but solves a real problem: items wrap to new lines without `<br>` or fixed widths, gaps stay consistent.
+
+  ## Sidebar
+
+  Two columns where one is fixed-width, the other fills:
+
+  ```css
+  .sidebar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+  }
+  .sidebar > :first-child {
+      flex-basis: 18rem;
+      flex-grow: 1;
+  }
+  .sidebar > :last-child {
+      flex-basis: 0;
+      flex-grow: 999;  /* takes leftover space */
+      min-inline-size: 60%;
+  }
+  ```
+
+  Wraps to vertical stack on narrow screens. No media query needed.
+
+  ## Switcher — Side-by-Side Until Threshold
+
+  Two equal columns that stack on narrow screens:
+
+  ```css
+  .switcher {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+  }
+  .switcher > * {
+      flex-basis: calc((40rem - 100%) * 999);
+      flex-grow: 1;
+  }
+  ```
+
+  The math: when the container is <40rem, items stack; >40rem they share the row. Pure CSS, no breakpoint variable.
+
+  ## Cover — Centered Card with Header/Footer
+
+  ```css
+  .cover {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      padding: 1rem;
+  }
+  .cover > * { margin-block: 1rem; }
+  .cover > .center {
+      margin-block: auto;
+  }
+  ```
+
+  The `auto` margin pushes the centered child to vertical center. Header/footer hug their edges.
+
+  ## Container Queries
+
+  Modern primitive — components query their container, not the viewport:
+
+  ```css
+  .card-list {
+      container-type: inline-size;
+  }
+
+  @container (min-width: 600px) {
+      .card { display: grid; grid-template-columns: 1fr 1fr; }
+  }
+  ```
+
+  Lets the same component lay out differently in a sidebar vs a full-width section. Available in Chrome 105+, Safari 16+, Firefox 110+.
+
+  ## Composing Primitives
+
+  A typical card layout:
+
+  ```jsx
+  <Stack gap="lg">                       {/* outer vertical */}
+      <Stack gap="sm">
+          <h2>Card title</h2>
+          <p>Subtitle</p>
+      </Stack>
+      <Cluster gap="xs">                  {/* tags wrap */}
+          <Badge>react</Badge>
+          <Badge>typescript</Badge>
+      </Cluster>
+      <Stack gap="md" direction="row">    {/* button row */}
+          <Button>Open</Button>
+          <Button variant="ghost">Cancel</Button>
+      </Stack>
+  </Stack>
+  ```
+
+  No one-off CSS; everything composed from primitives. Adding a new card variant is propagating, not authoring.
+
+  ## Common Pitfalls
+
+  - **Margin bottom for spacing.** Use `gap` with Stack or Grid; margins create accumulation bugs and `.first-child` exceptions.
+  - **Hand-coding flex everywhere.** Wrap in primitives; consistent gap and direction across components.
+  - **CSS Grid for everything.** Grid is for 2D; flex/Stack is for 1D. Both have their place.
+  - **Forgetting wrap.** A flex row that overflows breaks small screens. `flex-wrap: wrap` or use Cluster.
+
+  ## Verification
+
+  A primitive-based layout system:
+
+  - Most components assemble from <8 layout primitives.
+  - No `margin-bottom: 16px` chains anywhere.
+  - Layouts adapt to container size without breakpoint media queries.
+  - Adding a new component reuses existing primitives, doesn't add new CSS.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Stack — Vertical or Horizontal
+
+    The most-used primitive. Children flow in one direction with consistent gap:
+
+    ```css
+    .stack {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space);
+    }
+    .stack-row {
+        display: flex;
+        flex-direction: row;
+        gap: var(--space);
+        align-items: center;
+    }
+    ```
+
+    Replace `margin-bottom: 1rem` chains with one Stack. Every layout has Stacks at the outer levels.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Grid — Declarative 2D
+
+    Use when you have a fixed-column or auto-flowing grid:
+
+    ```css
+    .grid-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 1.5rem;
+    }
+    ```
+
+    `auto-fill` + `minmax()` is the responsive-grid pattern: as many 280-wide columns as fit, growing to share leftover space.
+
+    For 12-column-style grids:
+
+    ```css
+    .grid-12 {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 1rem;
+    }
+    .col-span-4 { grid-column: span 4; }
+    ```
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Cluster — Wrapping Inline
+
+    Tags, buttons, badges that wrap:
+
+    ```css
+    .cluster {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    ```
+
+    Looks trivial but solves a real problem: items wrap to new lines without `<br>` or fixed widths, gaps stay consistent.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Sidebar
+
+    Two columns where one is fixed-width, the other fills:
+
+    ```css
+    .sidebar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.5rem;
+    }
+    .sidebar > :first-child {
+        flex-basis: 18rem;
+        flex-grow: 1;
+    }
+    .sidebar > :last-child {
+        flex-basis: 0;
+        flex-grow: 999;  /* takes leftover space */
+        min-inline-size: 60%;
+    }
+    ```
+
+    Wraps to vertical stack on narrow screens. No media query needed.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Switcher — Side-by-Side Until Threshold
+
+    Two equal columns that stack on narrow screens:
+
+    ```css
+    .switcher {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+    .switcher > * {
+        flex-basis: calc((40rem - 100%) * 999);
+        flex-grow: 1;
+    }
+    ```
+
+    The math: when the container is <40rem, items stack; >40rem they share the row. Pure CSS, no breakpoint variable.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Cover — Centered Card with Header/Footer
+
+    ```css
+    .cover {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        padding: 1rem;
+    }
+    .cover > * { margin-block: 1rem; }
+    .cover > .center {
+        margin-block: auto;
+    }
+    ```
+
+    The `auto` margin pushes the centered child to vertical center. Header/footer hug their edges.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Container Queries
+
+    Modern primitive — components query their container, not the viewport:
+
+    ```css
+    .card-list {
+        container-type: inline-size;
+    }
+
+    @container (min-width: 600px) {
+        .card { display: grid; grid-template-columns: 1fr 1fr; }
+    }
+    ```
+
+    Lets the same component lay out differently in a sidebar vs a full-width section. Available in Chrome 105+, Safari 16+, Firefox 110+.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Composing Primitives
+
+    A typical card layout:
+
+    ```jsx
+    <Stack gap="lg">                       {/* outer vertical */}
+        <Stack gap="sm">
+            <h2>Card title</h2>
+            <p>Subtitle</p>
+        </Stack>
+        <Cluster gap="xs">                  {/* tags wrap */}
+            <Badge>react</Badge>
+            <Badge>typescript</Badge>
+        </Cluster>
+        <Stack gap="md" direction="row">    {/* button row */}
+            <Button>Open</Button>
+            <Button variant="ghost">Cancel</Button>
+        </Stack>
+    </Stack>
+    ```
+
+    No one-off CSS; everything composed from primitives. Adding a new card variant is propagating, not authoring.
+- fragment_type: guardrail
+  sequence: 9
+  content: |-
+    ## Common Pitfalls
+
+    - **Margin bottom for spacing.** Use `gap` with Stack or Grid; margins create accumulation bugs and `.first-child` exceptions.
+    - **Hand-coding flex everywhere.** Wrap in primitives; consistent gap and direction across components.
+    - **CSS Grid for everything.** Grid is for 2D; flex/Stack is for 1D. Both have their place.
+    - **Forgetting wrap.** A flex row that overflows breaks small screens. `flex-wrap: wrap` or use Cluster.
+- fragment_type: verification
+  sequence: 10
+  content: |-
+    ## Verification
+
+    A primitive-based layout system:
+
+    - Most components assemble from <8 layout primitives.
+    - No `margin-bottom: 16px` chains anywhere.
+    - Layouts adapt to container size without breakpoint media queries.
+    - Adding a new component reuses existing primitives, doesn't add new CSS.

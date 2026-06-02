@@ -1,0 +1,71 @@
+language: TypeScript
+version_anchor: TypeScript 5.7
+generated_at: 2026-05-01
+canonical:
+  language_reference: https://www.typescriptlang.org/docs/handbook/intro.html
+  library_reference: https://www.typescriptlang.org/tsconfig/
+  spec_or_standard: null
+  release_notes: https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-7.html
+topics:
+  typing_and_generics:
+    description: Generic types, conditional types, infer, mapped types, and template literals
+    urls:
+      - https://www.typescriptlang.org/docs/handbook/2/generics.html
+      - https://www.typescriptlang.org/docs/handbook/2/conditional-types.html
+      - https://www.typescriptlang.org/docs/handbook/2/mapped-types.html
+      - https://www.typescriptlang.org/docs/handbook/2/template-literal-types.html
+      - https://www.typescriptlang.org/docs/handbook/2/types-from-types.html
+  error_handling_and_exceptions:
+    description: Type-safe error patterns, unknown catch variables, and discriminated unions
+    urls:
+      - https://www.typescriptlang.org/docs/handbook/2/narrowing.html
+      - https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-0.html
+  concurrency_and_async:
+    description: async/await, Promise types, and async iterators in TypeScript
+    urls:
+      - https://www.typescriptlang.org/docs/handbook/release-notes/typescript-1-7.html
+      - https://www.typescriptlang.org/docs/handbook/2/functions.html
+  memory_and_performance:
+    description: Project references, incremental compilation, and isolatedModules
+    urls:
+      - https://www.typescriptlang.org/docs/handbook/project-references.html
+      - https://www.typescriptlang.org/tsconfig/#isolatedModules
+  packaging_and_dependency_management:
+    description: Declaration files, .d.ts authoring, and module resolution strategies
+    urls:
+      - https://www.typescriptlang.org/docs/handbook/declaration-files/introduction.html
+      - https://www.typescriptlang.org/docs/handbook/module-resolution.html
+      - https://www.typescriptlang.org/docs/handbook/2/modules.html
+  testing_idioms:
+    description: TypeScript typing considerations for test frameworks (no stdlib test runner)
+    urls:
+      - https://www.typescriptlang.org/docs/handbook/2/narrowing.html
+  security_and_crypto_primitives:
+    description: TypeScript has no stdlib crypto — wraps Node.js crypto or Web Crypto API
+    urls:
+      - https://www.typescriptlang.org/docs/handbook/declaration-files/do-s-and-don-ts.html
+  io_and_filesystem:
+    description: TypeScript I/O delegates to Node.js or browser APIs; tsconfig paths matter
+    urls:
+      - https://www.typescriptlang.org/tsconfig/#paths
+      - https://www.typescriptlang.org/tsconfig/#rootDir
+  serialization_json_binary:
+    description: JSON typing with satisfies, as const, and unknown parse patterns
+    urls:
+      - https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-9.html
+      - https://www.typescriptlang.org/docs/handbook/2/narrowing.html#using-type-predicates
+  logging_and_observability:
+    description: No stdlib logging; TypeScript concern is typing for structured log objects
+    urls:
+      - https://www.typescriptlang.org/docs/handbook/2/objects.html
+  language_evolution_and_deprecation:
+    description: Release notes index for tracking breaking changes and new features
+    urls:
+      - https://www.typescriptlang.org/docs/handbook/release-notes/overview.html
+      - https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-7.html
+      - https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-6.html
+known_gaps:
+  - TypeScript has no stdlib; all runtime behavior is Node.js or browser — supplement with Node.js curated list
+  - Formal spec is archived; current language behavior tracked only via release notes and playground
+  - Declaration file authoring docs are incomplete for complex generic patterns
+  - No canonical guide for decorators (experimental → stage 3 transition is ongoing)

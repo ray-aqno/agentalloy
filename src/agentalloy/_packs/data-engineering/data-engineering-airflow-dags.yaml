@@ -1,0 +1,363 @@
+skill_type: domain
+skill_id: data-engineering-airflow-dags
+canonical_name: Airflow — DAGs, Tasks, and Operators
+category: engineering
+skill_class: domain
+domain_tags:
+  - airflow
+  - dags
+  - tasks
+  - operators
+always_apply: false
+phase_scope: []
+category_scope: []
+author: authoring-agent
+change_summary: initial authoring draft
+raw_prose: |
+  # Airflow — DAGs, Tasks, and Operators
+
+  ## Overview
+
+  Airflow DAGs are Python files declaring tasks and their ordering. Operators are the unit of work; sensors wait for external conditions; dependencies flow with >>. This skill covers DAG + task + operator authoring.
+
+  Sourced from apache/airflow github docs (core-concepts/dags, tasks, operators).
+
+  .. Licensed to the Apache Software Foundation (ASF) under one
+     or more contributor license agreements.  See the NOTICE file
+     distributed with this work for additional information
+     regarding copyright ownership.  The ASF licenses this file
+     to you under the Apache License, Version 2.0 (the
+     "License"); you may not use this file except in compliance
+     with the License.  You may obtain a copy of the License at
+
+  ..   http://www.apache.org/licenses/LICENSE-2.0
+
+  .. Unless required by applicable law or agreed to in writing,
+     software distributed under the License is distributed on an
+     "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+     KIND, either express or implied.  See the License for the
+     specific language governing permissions and limitations
+     under the License.
+
+  .. _concepts-dags:
+
+  # Dags
+
+
+  .. include:: /../../devel-common/src/sphinx_exts/includes/dag-definition.rst
+      :start-after: .. dag-definition-start
+      :end-before: .. dag-definition-end
+
+  Here's a basic example Dag:
+
+  .. image:: /img/ui-light/basic_dag.png
+
+  It defines four Tasks - A, B, C, and D - and dictates the order in which they have to run, and which tasks depend on what others. It will also say how often to run the Dag - maybe "every 5 minutes starting tomorrow", or "every day since January 1st, 2020".
+
+  The Dag itself doesn't care about *what* is happening inside the tasks; it is merely concerned with *how* to execute them - the order to run them in, how many times to retry them, if they have timeouts, and so on.
+
+  .. include:: /../../devel-common/src/sphinx_exts/includes/dag-definition.rst
+      :start-after: .. dag-etymology-start
+      :end-before: .. dag-etymology-end
+
+  ## Declaring a Dag
+
+
+  There are three ways to declare a Dag - either you can use ``with`` statement (context manager),
+  which will add anything inside it to the Dag implicitly:
+
+  .. code-block:: python
+     :emphasize-lines: 6-10
+
+      import datetime
+
+      from airflow.sdk import DAG
+      from airflow.providers.standard.operators.empty import EmptyOperator
+
+      with DAG(
+          dag_id="my_dag_name",
+          start_date=datetime.datetime(2021, 1, 1),
+          schedule="@daily",
+      ):
+          EmptyOperator(task_id="task")
+
+
+  Or, you can use a standard constructor, passing the Dag into any operators you use:
+
+  .. code-block:: python
+     :emphasize-lines: 6-11
+
+      import datetime
+
+      from airflow.sdk import DAG
+      from airflow.providers.standard.operators.empty import EmptyOperator
+
+      my_dag = DAG(
+          dag_id="my_dag_name",
+          start_date=datetime.datetime(2021, 1, 1),
+          schedule="@daily",
+      )
+      EmptyOperator(task_id="task", dag=my_dag)
+
+
+  Or, you can use the ``@dag`` decorator to `turn a function into a Dag generator <concepts-dag-decorator>`:
+
+  .. code-block:: python
+      :emphasize-lines: 7,8,12
+
+      import datetime
+
+      from airflow.sdk import dag
+      from airflow.providers.standard.operators.empty import EmptyOperator
+
+
+      @dag(start_date=datetime.datetime(2021, 1, 1), schedule="@daily")
+      def generate_dag():
+          EmptyOperator(task_id="task")
+
+
+      generate_dag()
+
+
+  Dags are nothing without `tasks` to run, and those will usually come in the form of either `operators`, `sensors` or `taskflow`.
+
+
+  ### Task Dependencies
+
+
+  A Task/Operator does not usually live alone; it has dependencies on other tasks (those *upstream* of it), and other tasks depend on it (those *downstream* of it). Declaring these dependencies between tasks is what makes up the Dag structure.
+
+  There are two main ways to declare individual task dependencies. The recommended one is to use the ``>>`` and ``<<`` operators::
+
+      first_task >> [second_task, third_task]
+      third_task << fourth_task
+
+  Or, you can also use the more explicit ``set_upstream`` and ``set_downstream`` methods::
+
+      first_task.set_downstream([second_task, third_task])
+      third_task.set_upstream(fourth_task)
+
+  There are also shortcuts to declaring more complex dependencies. If you want to make a list of tasks de
+
+  .. Licensed to the Apache Software Foundation (ASF) under one
+     or more contributor license agreements.  See the NOTICE file
+     distributed with this work for additional information
+     regarding copyright ownership.  The ASF licenses this file
+     to you under the Apache License, Version 2.0 (the
+     "License"); you may not use this file except in compliance
+     with the License.  You may obtain a copy of the License at
+
+  ..   http://www.apache.org/licenses/LICENSE-2.0
+
+  .. Unless required by applicable law or agreed to in writing,
+     software distributed under the License is distributed on an
+     "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+     KIND, either express or implied.  See the License for the
+     specific language governing permissions and limitations
+     under the License.
+
+  # Tasks
+
+
+  A Task is the basic unit of execution in Airflow. Tasks are arranged into `dags`, and then have upstream and downstream dependencies set between them in order to express the order they should run in.
+
+  There are three basic kinds of Task:
+
+  * `operators`, predefined task templates that you can string together quickly to build most parts of your Dags.
+
+  * `sensors`, a special subclass of Operators which are entirely about waiting for an external event to happen.
+
+  * A `taskflow`-decorated ``@task``, which is a custom Python function packaged up as a Task.
+
+  Internally, these are all actually subclasses of Airflow's ``BaseOperator``, and the concepts of Task and Operator are somewhat interchangeable, but it's useful to think of them as separate concepts - essentially, Operators and Sensors are *templates*, and when you call one in a Dag file, you're making a Task.
+
+  .. Licensed to the Apache Software Foundation (ASF) under one
+     or more contributor license agreements.  See the NOTICE file
+     distributed with this work for additional information
+     regarding copyright ownership.  The ASF licenses this file
+     to you under the Apache License, Version 2.0 (the
+     "License"); you may not use this file except in compliance
+     with the License.  You may obtain a copy of the License at
+
+  ..   http://www.apache.org/licenses/LICENSE-2.0
+
+  .. Unless required by applicable law or agreed to in writing,
+     software distributed under the License is distributed on an
+     "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+     KIND, either express or implied.  See the License for the
+     specific language governing permissions and limitations
+     under the License.
+
+  # Operators
+
+
+  An Operator is conceptually a template for a predefined `Task <tasks>`, that you can just define declaratively inside your Dag::
+
+      with DAG("my-dag") as dag:
+          ping = HttpOperator(endpoint="http://example.com/update/")
+          email = EmailOperator(to="admin@example.com", subject="Update complete")
+
+          ping >> email
+
+  Airflow has a very extensive set of operators available, with some built-in to the core or pre-installed providers. Some popular operators from core include:
+
+  - `~airflow.providers.standard.operators.bash.BashOperator` - executes a bash command
+  - `~airflow.providers.standard.operators.python.PythonOperator` - calls an arbitrary Python function
+  - Use the ``@task`` decorator to execute an arbitrary Python function. It doesn't support rendering jinja templates passed as arguments.
+
+  .. note::
+      The ``@task`` decorator is recommended over the classic `~airflow.providers.standard.operators.python.PythonOperator`
+      to execute Python callables with no template rendering in its arguments.
+
+  For a list of all core operators, see: `Core Operators and Hooks Reference </operators-and-hooks-ref>`.
+
+  If the operator you need isn't installed with Airflow by default, you can probably find it as part of our huge set of community `providers <apache-airflow-providers:index>`. Some popular operators from here include:
+
+  - `~airflow.providers.smtp.operators.smtp.EmailOperator`
+  - `~airflow.providers.http.operators.http.HttpOperator`
+  - `~airflow.providers.common.sql.operators.sql.SQLExecuteQueryOperator`
+  - `~airflow.providers.docker.operators.docker.DockerOperator`
+  - `~airflow.providers.apache.hive.operators.hive.HiveOperator`
+  - `~airflow.pro
+
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      Airflow DAGs are Python files declaring tasks and their ordering. Operators are the unit of work; sensors wait for external conditions; dependencies flow with >>. This skill covers DAG + task + operator authoring.
+
+      Sourced from apache/airflow github docs (core-concepts/dags, tasks, operators).
+
+  - fragment_type: example
+    sequence: 2
+    content: |
+      Here's a basic example Dag:
+
+      .. image:: /img/ui-light/basic_dag.png
+
+      It defines four Tasks - A, B, C, and D - and dictates the order in which they have to run, and which tasks depend on what others. It will also say how often to run the Dag - maybe "every 5 minutes starting tomorrow", or "every day since January 1st, 2020".
+
+      The Dag itself doesn't care about *what* is happening inside the tasks; it is merely concerned with *how* to execute them - the order to run them in, how many times to retry them, if they have timeouts, and so on.
+
+  - fragment_type: execution
+    sequence: 3
+    content: |
+      There are three ways to declare a Dag - either you can use ``with`` statement (context manager),
+      which will add anything inside it to the Dag implicitly:
+
+      .. code-block:: python
+         :emphasize-lines: 6-10
+
+          import datetime
+
+          from airflow.sdk import DAG
+          from airflow.providers.standard.operators.empty import EmptyOperator
+
+          with DAG(
+              dag_id="my_dag_name",
+              start_date=datetime.datetime(2021, 1, 1),
+              schedule="@daily",
+          ):
+              EmptyOperator(task_id="task")
+
+      Or, you can use a standard constructor, passing the Dag into any operators you use:
+
+      .. code-block:: python
+         :emphasize-lines: 6-11
+
+          import datetime
+
+          from airflow.sdk import DAG
+          from airflow.providers.standard.operators.empty import EmptyOperator
+
+          my_dag = DAG(
+              dag_id="my_dag_name",
+              start_date=datetime.datetime(2021, 1, 1),
+              schedule="@daily",
+          )
+          EmptyOperator(task_id="task", dag=my_dag)
+
+      Or, you can use the ``@dag`` decorator to `turn a function into a Dag generator <concepts-dag-decorator>`:
+
+      .. code-block:: python
+          :emphasize-lines: 7,8,12
+
+          import datetime
+
+          from airflow.sdk import dag
+          from airflow.providers.standard.operators.empty import EmptyOperator
+
+
+          @dag(start_date=datetime.datetime(2021, 1, 1), schedule="@daily")
+          def generate_dag():
+              EmptyOperator(task_id="task")
+
+
+          generate_dag()
+
+      Dags are nothing without `tasks` to run, and those will usually come in the form of either `operators`, `sensors` or `taskflow`.
+
+  - fragment_type: execution
+    sequence: 4
+    content: |
+      A Task/Operator does not usually live alone; it has dependencies on other tasks (those *upstream* of it), and other tasks depend on it (those *downstream* of it). Declaring these dependencies between tasks is what makes up the Dag structure.
+
+      There are two main ways to declare individual task dependencies. The recommended one is to use the ``>>`` and ``<<`` operators::
+
+          first_task >> [second_task, third_task]
+          third_task << fourth_task
+
+      Or, you can also use the more explicit ``set_upstream`` and ``set_downstream`` methods::
+
+          first_task.set_downstream([second_task, third_task])
+          third_task.set_upstream(fourth_task)
+
+  - fragment_type: example
+    sequence: 5
+    content: |
+      A Task is the basic unit of execution in Airflow. Tasks are arranged into `dags`, and then have upstream and downstream dependencies set between them in order to express the order they should run in.
+
+      There are three basic kinds of Task:
+
+      * `operators`, predefined task templates that you can string together quickly to build most parts of your Dags.
+
+      * `sensors`, a special subclass of Operators which are entirely about waiting for an external event to happen.
+
+      * A `taskflow`-decorated ``@task``, which is a custom Python function packaged up as a Task.
+
+      Internally, these are all actually subclasses of Airflow's ``BaseOperator``, and the concepts of Task and Operator are somewhat interchangeable, but it's useful to think of them as separate concepts - essentially, Operators and Sensors are *templates*, and when you call one in a Dag file, you're making a Task.
+
+  - fragment_type: example
+    sequence: 6
+    content: |
+      An Operator is conceptually a template for a predefined `Task <tasks>`, that you can just define declaratively inside your Dag::
+
+          with DAG("my-dag") as dag:
+              ping = HttpOperator(endpoint="http://example.com/update/")
+              email = EmailOperator(to="admin@example.com", subject="Update complete")
+
+              ping >> email
+
+      Airflow has a very extensive set of operators available, with some built-in to the core or pre-installed providers. Some popular operators from core include:
+
+      - `~airflow.providers.standard.operators.bash.BashOperator` - executes a bash command
+      - `~airflow.providers.standard.operators.python.PythonOperator` - calls an arbitrary Python function
+      - Use the ``@task`` decorator to execute an arbitrary Python function. It doesn't support rendering jinja templates passed as arguments.
+
+      .. note::
+          The ``@task`` decorator is recommended over the classic `~airflow.providers.standard.operators.python.PythonOperator`
+          to execute Python callables with no template rendering in its arguments.
+
+      For a list of all core operators, see: `Core Operators and Hooks Reference </operators-and-hooks-ref>`.
+
+  - fragment_type: example
+    sequence: 7
+    content: |
+      If the operator you need isn't installed with Airflow by default, you can probably find it as part of our huge set of community `providers <apache-airflow-providers:index>`. Some popular operators from here include:
+
+      - `~airflow.providers.smtp.operators.smtp.EmailOperator`
+      - `~airflow.providers.http.operators.http.HttpOperator`
+      - `~airflow.providers.common.sql.operators.sql.SQLExecuteQueryOperator`
+      - `~airflow.providers.docker.operators.docker.DockerOperator`
+      - `~airflow.providers.apache.hive.operators.hive.HiveOperator`
+      - `~airflow.pro

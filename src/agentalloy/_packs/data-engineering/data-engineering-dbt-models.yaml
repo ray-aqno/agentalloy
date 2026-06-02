@@ -1,0 +1,472 @@
+skill_type: domain
+skill_id: data-engineering-dbt-models
+canonical_name: dbt — Models, Materializations, Sources
+category: engineering
+skill_class: domain
+domain_tags:
+  - dbt
+  - models
+  - materializations
+  - sources
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: initial authoring draft
+raw_prose: |
+  # dbt — Models, Materializations, Sources
+
+  ## Overview
+
+  dbt models are SQL files that define transformations; materializations decide whether they become tables, views, or incremental tables. Sources declare external data the project depends on. This skill covers the core authoring surface.
+
+  Sourced from https://docs.getdbt.com/docs/build/models, /materializations, and /sources.
+
+  ---
+
+  # About dbt models
+
+
+  dbt Core and Cloud are composed of different moving parts working harmoniously. All of them are important to what dbt does — transforming data—the 'T' in ELT. When you execute `dbt run`, you are running a model that will transform your data without that data ever leaving your warehouse.
+
+  Models are where your developers spend most of their time within a dbt environment. Models are primarily written as a `select` statement and saved as a `.sql` file. While the definition is straightforward, the complexity of the execution will vary from environment to environment.  Models will be written and rewritten as needs evolve and your organization finds new ways to maximize efficiency.
+
+  SQL is the language most dbt users will utilize, but it is not the only one for building models. Starting in version 1.3, dbt Core and <Constant name="dbt" /> support Python models. Python models are useful for training or deploying data science models, complex transformations, or where a specific Python package meets a need &mdash; such as using the `dateutil` library to parse dates.
+
+  ### Models and modern workflows
+
+  The top level of a dbt workflow is the project. A project is a directory of a `.yml` file (the project configuration) and either `.sql` or `.py` files (the models). The project file tells dbt the project context, and the models let dbt know how to build a specific data set. For more details on projects, refer to [About dbt projects](/docs/build/projects).
+
+  Your organization may need only a few models, but more likely you’ll need a complex structure of nested models to transform the required data. A model is a single file containing a final `select` statement, and a project can have multiple models, and models can even reference each other. Add to that, numerous projects and the level of effort required for transforming complex data sets can improve drastically compared to older methods.
+
+  Learn more about models in [SQL models](/docs/build/sql-models) and [Python models](/docs/build/python-models) pages. If you'd like to begin with a bit of practice, visit our [Getting Started Guide](/guides) for instructions on setting up the Jaffle_Shop sample data so yo
+
+  ---
+
+  # Materializations
+
+
+  ## Overview
+  <Term id="materialization">Materializations</Term> are strategies for persisting dbt models in a warehouse. There are five types of materializations built into dbt. They are:
+
+  - <Term id="table" />
+  - <Term id="view" />
+  - incremental
+  - ephemeral
+  - materialized view
+
+  You can also configure [custom materializations](/guides/create-new-materializations?step=1) in dbt. Custom materializations are a powerful way to extend dbt's functionality to meet your specific needs. 
+
+  For a detailed guide on materializations, refer to [Materializations best practices](/best-practices/materializations/1-guide-overview). For information about data streaming, refer to [How to handle real-time data](/best-practices/how-we-handle-real-time-data/1-intro).
+
+
+  import CourseCallout from '/snippets/_materialization-video-callout.md';
+
+  <CourseCallout resource="Materializations" 
+  url="https://learn.getdbt.com/courses/materializations-fundamentals" 
+  course="Materializations fundamentals" 
+  />
+
+  ## Configuring materializations
+  By default, dbt models are materialized as "views". Models can be configured with a different materialization by supplying the [`materialized` configuration](/reference/resource-configs/materialized) parameter as shown in the following tabs.
+
+  <Tabs>
+
+  <TabItem value="Project file">
+
+  <File name='dbt_project.yml'>
+
+  ```yaml
+  # The following dbt_project.yml configures a project that looks like this:
+  # .
+  # └── models
+  #     ├── csvs
+  #     │   ├── employees.sql
+  #     │   └── goals.sql
+  #     └── events
+  #         ├── stg_event_log.sql
+  #         └── stg_event_sessions.sql
+
+  name: my_project
+  version: 1.0.0
+  config-version: 2
+
+  models:
+    my_project:
+      events:
+        # materialize all models in models/events as tables
+        +materialized: table
+      csvs:
+        # this is redundant, and does not need to be set
+        +materialized: view
+  ```
+
+  </File>
+
+  </TabItem>
+
+  <TabItem value="Model file">
+
+  Alternatively, materializations can be configured directly inside of the model SQL files. This can be useful if you are also setting [Performance Optimization] configs for specific models (for example, [Redshift specific configurations](/reference/resource-configs/redshift-configs) or [BigQuery specific configurations](/reference/resource-configs/bigquery-configs)).
+
+  <File name='models/events/stg_event_log.sql'>
+
+  ```sql
+
+  {{ config(materialized='table', sort='timestamp', dist='user_id') }}
+
+  select *
+  from ...
+  ```
+
+  </File>
+
+  </TabItem>
+
+  <TabItem value="Property file">
+
+  Materializations can also be configured in the model's `properties.yml` file.  The following example shows the `table` materialization type. For a complete list of materialization types, refer to [materializations](/docs/build/materializations#materializations).
+
+  <File name='models/properties.yml'>
+
+  ```yaml
+
+  models:
+    - name: events
+      config:
+        materialized: table
+  ```
+
+  </File>
+
+  </TabItem>
+
+  </Tabs>
+
+  ---
+
+  # Add sources to your DAG
+
+
+  ## Related reference docs
+  * [Source properties](/reference/source-properties)
+  * [Source configurations](/reference/source-configs)
+  * [`{{ source() }}` Jinja function](/reference/dbt-jinja-functions/source)
+  * [`source freshness` command](/reference/commands/source)
+
+  ## Using sources
+  Sources make it possible to name and describe the data loaded into your warehouse by your Extract and Load tools. By declaring these tables as sources in dbt, you can then
+  - select from source tables in your models using the [`{{ source() }}` function,](/reference/dbt-jinja-functions/source) helping define the lineage of your data
+  - test your assumptions about your source data
+  - calculate the freshness of your source data
+
+  ### Declaring a source
+
+  Sources are defined in `.yml` files nested under a `sources:` key.
+
+  <File name='models/<filename>.yml'>
+
+  ```yaml
+
+  sources:
+    - name: jaffle_shop
+      database: raw  
+      schema: jaffle_shop  
+      tables:
+        - name: orders
+        - name: customers
+
+    - name: stripe
+      tables:
+        - name: payments
+  ```
+
+  </File>
+
+  *By default, `schema` will be the same as `name`. Add `schema` only if you want to use a source name that differs from the existing schema.
+
+  If you're not already familiar with these files, be sure to check out [the documentation on properties.yml files](/reference/configs-and-properties) before proceeding.
+
+  ### Selecting from a source
+
+  Once a source has been defined, it can be referenced from a model using the [`{{ source()}}` function](/reference/dbt-jinja-functions/source).
+
+
+  <File name='models/orders.sql'>
+
+  ```sql
+  select
+    ...
+
+  from {{ source('jaffle_shop', 'orders') }}
+
+  left join {{ source('jaffle_shop', 'customers') }} using (customer_id)
+
+  ```
+
+  </File>
+
+  dbt will compile this to the full <Term id="table" /> name:
+
+  <File name='target/compiled/jaffle_shop/models/my_model.sql'>
+
+  ```sql
+
+  select
+    ...
+
+  from raw.jaffle_shop.orders
+
+  left join raw.jaffle_shop.customers using (customer_id)
+
+  ```
+
+  </File>
+
+  Using the `{{ source () }}` function also creates a dependency between the model and the source table.
+
+  <Lightbox src="/img/docs/building-a-dbt-project/sources-dag.png" title="The source function tells dbt a model is dependent on a source "/>
+
+  ### Testing and documenting sources
+  You can also:
+  - Add data tests to sources
+  - Add descriptions to sources, that get rendered as part of your documentation site
+
+  These should be familiar concepts if you've already added data tests and descriptions to your models (if not check out the guides on [testing](/docs/build/data-tests) and [documentation](/docs/build/documentation)).
+
+  <File name='models/<filename>.yml'>
+
+  ```yaml
+
+  sources:
+    - name: jaffle_shop
+      description: This is a replica of the Postgres database used by our app
+      tables:
+        - name: orders
+          database: raw
+          description: >
+            One record per order. Includes cancelled and deleted orders.
+          columns:
+            - name: id
+              description: Primary key of the orders table
+              data_tests:
+                - unique
+                - not_null
+            - name: status
+              description: Note that the status can change over time
+
+        - name: ...
+
+    - name: ...
+  ```
+
+  </File>
+
+  You can find more details on the available properties for sources in the [reference section](/reference/source-properties).
+
+  ### FAQs
+  <FAQ path="Project/source-has-bad-name" />
+  <FAQ path="Project/source-in-different-database" />
+  <FAQ path="Models/source-quotes" />
+  <FAQ path="
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      dbt models are SQL files that define transformations; materializations decide whether they become tables, views, or incremental tables. Sources declare external data the project depends on. This skill covers the core authoring surface.
+
+      Sourced from https://docs.getdbt.com/docs/build/models, /materializations, and /sources.
+  - fragment_type: execution
+    sequence: 2
+    content: |
+      dbt Core and Cloud are composed of different moving parts working harmoniously. All of them are important to what dbt does — transforming data—the 'T' in ELT. When you execute `dbt run`, you are running a model that will transform your data without that data ever leaving your warehouse.
+
+      Models are where your developers spend most of their time within a dbt environment. Models are primarily written as a `select` statement and saved as a `.sql` file. While the definition is straightforward, the complexity of the execution will vary from environment to environment.  Models will be written and rewritten as needs evolve and your organization finds new ways to maximize efficiency.
+
+      SQL is the language most dbt users will utilize, but it is not the only one for building models. Starting in version 1.3, dbt Core and <Constant name="dbt" /> support Python models. Python models are useful for training or deploying data science models, complex transformations, or where a specific Python package meets a need &mdash; such as using the `dateutil` library to parse dates.
+  - fragment_type: execution
+    sequence: 3
+    content: |
+      The top level of a dbt workflow is the project. A project is a directory of a `.yml` file (the project configuration) and either `.sql` or `.py` files (the models). The project file tells dbt the project context, and the models let dbt know how to build a specific data set. For more details on projects, refer to [About dbt projects](/docs/build/projects).
+
+      Your organization may need only a few models, but more likely you’ll need a complex structure of nested models to transform the required data. A model is a single file containing a final `select` statement, and a project can have multiple models, and models can even reference each other. Add to that, numerous projects and the level of effort required for transforming complex data sets can improve drastically compared to older methods.
+
+      Learn more about models in [SQL models](/docs/build/sql-models) and [Python models](/docs/build/python-models) pages. If you'd like to begin with a bit of practice, visit our [Getting Started Guide](/guides) for instructions on setting up the Jaffle_Shop sample data so yo
+  - fragment_type: execution
+    sequence: 4
+    content: |
+      <Tabs>
+
+      <TabItem value="Project file">
+
+      <File name='dbt_project.yml'>
+
+      ```yaml
+      # The following dbt_project.yml configures a project that looks like this:
+      # .
+      # └── models
+      #     ├── csvs
+      #     │   ├── employees.sql
+      #     │   └── goals.sql
+      #     └── events
+      #         ├── stg_event_log.sql
+      #         └── stg_event_sessions.sql
+
+      name: my_project
+      version: 1.0.0
+      config-version: 2
+
+      models:
+        my_project:
+          events:
+            # materialize all models in models/events as tables
+            +materialized: table
+          csvs:
+            # this is redundant, and does not need to be set
+            +materialized: view
+      ```
+
+      </File>
+
+      </TabItem>
+
+      <TabItem value="Model file">
+
+      Alternatively, materializations can be configured directly inside of the model SQL files. This can be useful if you are also setting [Performance Optimization] configs for specific models (for example, [Redshift specific configurations](/reference/resource-configs/redshift-configs) or [BigQuery specific configurations](/reference/resource-configs/bigquery-configs)).
+
+      <File name='models/events/stg_event_log.sql'>
+
+      ```sql
+
+      {{ config(materialized='table', sort='timestamp', dist='user_id') }}
+
+      select *
+      from ...
+      ```
+
+      </File>
+
+      </TabItem>
+
+      <TabItem value="Property file">
+
+      Materializations can also be configured in the model's `properties.yml` file.  The following example shows the `table` materialization type. For a complete list of materialization types, refer to [materializations](/docs/build/materializations#materializations).
+
+      <File name='models/properties.yml'>
+
+      ```yaml
+
+      models:
+        - name: events
+          config:
+            materialized: table
+      ```
+
+      </File>
+
+      </TabItem>
+
+      </Tabs>
+  - fragment_type: execution
+    sequence: 5
+    content: |
+      Sources are defined in `.yml` files nested under a `sources:` key.
+
+      <File name='models/<filename>.yml'>
+
+      ```yaml
+
+      sources:
+        - name: jaffle_shop
+          database: raw  
+          schema: jaffle_shop  
+          tables:
+            - name: orders
+            - name: customers
+
+        - name: stripe
+          tables:
+            - name: payments
+      ```
+
+      </File>
+
+      *By default, `schema` will be the same as `name`. Add `schema` only if you want to use a source name that differs from the existing schema.
+
+      If you're not already familiar with these files, be sure to check out [the documentation on properties.yml files](/reference/configs-and-properties) before proceeding.
+  - fragment_type: execution
+    sequence: 6
+    content: |
+      Once a source has been defined, it can be referenced from a model using the [`{{ source()}}` function](/reference/dbt-jinja-functions/source).
+
+
+      <File name='models/orders.sql'>
+
+      ```sql
+      select
+        ...
+
+      from {{ source('jaffle_shop', 'orders') }}
+
+      left join {{ source('jaffle_shop', 'customers') }} using (customer_id)
+
+      ```
+
+      </File>
+
+      dbt will compile this to the full <Term id="table" /> name:
+
+      <File name='target/compiled/jaffle_shop/models/my_model.sql'>
+
+      ```sql
+
+      select
+        ...
+
+      from raw.jaffle_shop.orders
+
+      left join raw.jaffle_shop.customers using (customer_id)
+
+      ```
+
+      </File>
+
+      Using the `{{ source () }}` function also creates a dependency between the model and the source table.
+  - fragment_type: execution
+    sequence: 7
+    content: |
+      You can also:
+      - Add data tests to sources
+      - Add descriptions to sources, that get rendered as part of your documentation site
+
+      These should be familiar concepts if you've already added data tests and descriptions to your models (if not check out the guides on [testing](/docs/build/data-tests) and [documentation](/docs/build/documentation)).
+
+      <File name='models/<filename>.yml'>
+
+      ```yaml
+
+      sources:
+        - name: jaffle_shop
+          description: This is a replica of the Postgres database used by our app
+          tables:
+            - name: orders
+              database: raw
+              description: >
+                One record per order. Includes cancelled and deleted orders.
+              columns:
+                - name: id
+                  description: Primary key of the orders table
+                  data_tests:
+                    - unique
+                    - not_null
+                - name: status
+                  description: Note that the status can change over time
+
+            - name: ...
+
+        - name: ...
+      ```
+
+      </File>
+
+      You can find more details on the available properties for sources in the [reference section](/reference/source-properties).

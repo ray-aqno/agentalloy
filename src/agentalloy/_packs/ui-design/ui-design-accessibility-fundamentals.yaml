@@ -1,0 +1,241 @@
+skill_type: domain
+skill_id: ui-design-accessibility-fundamentals
+canonical_name: UI Accessibility Fundamentals — ARIA and WCAG
+category: design
+skill_class: domain
+domain_tags:
+  - accessibility
+  - aria
+  - wcag
+  - web-design
+  - user-experience
+always_apply: false
+phase_scope: []
+category_scope: []
+author: authoring-agent
+change_summary: initial authoring draft
+raw_prose: |
+  # UI Accessibility Fundamentals — ARIA and WCAG
+
+  ## Overview
+
+  Accessibility is built into HTML by default; ARIA augments where semantics fall short. WCAG 2.1+ defines the conformance bar. This skill covers ARIA basics, keyboard navigation conventions, and the WCAG mental model.
+
+  Sourced from https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA and https://developer.mozilla.org/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG.
+
+  ---
+
+
+  Accessible Rich Internet Applications **(<abbr>ARIA</abbr>)** is a set of [roles](/en-US/docs/Web/Accessibility/ARIA/Reference/Roles) and [attributes](/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes) that define ways to make web content and web applications (especially those developed with JavaScript) more accessible to people with disabilities.
+
+  ARIA supplements HTML so that interactions and widgets commonly used in applications can be passed to assistive technologies when there is not otherwise a mechanism. For example, ARIA enables accessible JavaScript widgets, form hints and error messages, live content updates, and more.
+
+  ## Before using ARIA
+
+  > [!WARNING]
+  > Many of these widgets are fully supported in modern browsers. **Developers should prefer using the correct semantic HTML element over using ARIA**, if such an element exists. For instance, native elements have built-in [keyboard accessibility](/en-US/docs/Web/Accessibility/Guides/Keyboard-navigable_JavaScript_widgets), roles and states. However, if you choose to use ARIA, you are responsible for mimicking the equivalent browser behavior in script.
+
+  [The first rule of ARIA](https://w3c.github.io/using-aria/#rule1) use is "If you can use a native HTML element or attribute with the semantics and behavior you require already built in, instead of re-purposing an element and adding an ARIA role, state or property to make it accessible, then do so."
+
+  > [!NOTE]
+  > There is a saying "No ARIA is better than bad ARIA." In [WebAim's survey of over one million home pages](https://webaim.org/projects/million/#aria), they found that Home pages with ARIA present averaged 41% more detected errors than those without ARIA. While ARIA is designed to make web pages more accessible, if used incorrectly, it can do more harm than good.
+
+  Here's the markup for a progress bar widget:
+
+  ```html
+  <div
+    id="percent-loaded"
+    role="progressbar"
+    aria-valuenow="75"
+    aria-valuemin="0"
+    aria-valuemax="100"></div>
+  ```
+
+  This progress bar is built using a {{HTMLElement("div")}}, which has no meaning. We include ARIA roles and properties to add meaning. In this example, the [`role="progressbar"`](/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/progressbar_role) attribute informs the browser that this element is actually a JavaScript-powered progress bar widget. The [`aria-valuemin`](/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-valuemin) and [`aria-valuemax`](/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-valuemax) attributes specify the minimum and maximum values for the progress bar, and the [`aria-valuenow`](/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-valuenow) describes the current state of it and therefore must be kept updated with JavaScript.
+
+  Along with placing them directly in the markup, ARIA attributes can be added to the element and updated dynamically using JavaScript code like this:
+
+  ```js
+  // Find the progress bar <div> in the DOM.
+  const progressBar = document.getElementById("percent-loaded");
+
+  // Set its ARIA roles and states,
+  // so that assistive technologies know what kind of widget it is.
+  progressBar.setAttribute("role", "progressbar");
+  progressBar.setAttribute("aria-valuemin", 0);
+  progressBar.setAttribute("aria-valuemax", 100);
+
+  // Create a function that can be called at any time to update
+  // the value of the progress bar.
+  function updateProgress(percentComplete) {
+    progressBar.setAttribute("aria-valuenow", percentComplete);
+  }
+  ```
+
+  All content that is available to non-assistive technology users must be made available to assistive technologies. Similarly, no features should be included targeting assistive technology users that aren't also accessible to those not using assistive technologies. The above progressbar needs to be styled to make it look like a progressbar.
+
+  It would have been much simpler to use the native {{HTMLElement('progress')}} element instead:
+
+  ```html
+  <progress id="percent-loaded" value="75" max="100">75 %</progress>
+  ```
+
+  > [!NOTE]
+  > The `min` attribute is not allowed for the {{HTMLElement('progress')}} element; its minimum value is always `0`.
+
+  > [!NOTE]
+  > HTML landmark elements ({{HTMLElement("main")}}, {{HTMLElement("header")}}, {{HTMLElement("nav")}}, etc.) have built-in implicit ARIA roles, so there is no need to duplicate them.
+
+  ## Support
+
+  Like any other web technology, there are varying degrees of support for ARIA. Support is based on the operating system and browser being used, as well as the kind of assistive technology interfacing with it. In addition, the version of the operating system, browser, and assistive technology are contributing factors. Older software versions may not support certain ARIA roles, have only partial support, or misreport its functionality.
+
+  It is also important to acknowledge that some people who rely on assistive technology are reluctant to upgrade their software, for fear of losing the ability to interact with their computer and browser. Because of this, it is important to [use semantic HTML elements](/en-US/docs/Learn_web_development/Core/Accessibility/HTML) whenever possible, as semantic HTML has far better support for assistive technology.
+
+  It is also important to test your authored ARIA with actual assistive technology. This is because browser emulators and simulators are not really effective for testing full support. Similarly, proxy assistive technology solutions are not sufficient to fully guarantee functionality.
+
+  ---
+
+
+  This set of articles provides quick explanations to help you understand the steps that need to be taken to conform to the recommendations outlined in the {{glossary("WCAG", "Web Content Accessibility Guidelines")}} (WCAG).
+
+  The WCAG guidelines are a set of recommendations for making web content more accessible developed by W3C's {{Glossary("WAI")}}, primarily for people with disabilities — but also for all user agents, including some highly limited devices or services, such as digital assistants.
+
+  WCAG 2.2 is the most recent version of the guidelines with WCAG 2.1 and 2.0 also widely used. WCAG 3.0 is the working draft.
+  Newer versions of WCAG are not meant to supersede previous versions, but WAI recommends using the most recent version to ensure the best possible accessibility for your website.
+
+  ## The four principles
+
+  WCAG is broadly broken down into four principles — major things that web content **must be** to be considered accessible (see [Understanding the Four Principles of Accessibility](https://www.w3.org/WAI/WCAG22/Understanding/intro#understanding-the-four-principles-of-accessibility) for the WCAG definitions).
+
+  Each of the links below will take you to pages that further expand on these areas, giving you practical advice on how to write your web content so it conforms to the success criteria outlined in the WCAG 2 four guiding principles.
+
+  - [Perceivable](/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG/Perceivable): Users must be able to perceive it in some way, using one or more of their senses.
+  - [Operable](/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG/Operable): Users must be able to control UI elements (e.g., buttons must be clickable in some way — mouse, keyboard, voice command, etc.).
+  - [Understandable](/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG/Understandable): The content must be understandable to its users.
+  - [Robust](/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG/Robust): The content must be developed using well-adopted web standards that will work across different browsers, now and in the future.
+
+  We also included two additional WCAG resources focused on making sites [keyboard accessible](/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG/Keyboard) and provided descriptive names or labels with [text labels and names](/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG/Text_labels_and_names).
+
+  ## Legal standing
+
+  This introductory documentation is intended to provide practical information to help you build better, more accessible websites. However, we are not lawyers, and none of this constitutes legal advice. If you are worried about the legal implications of web accessibility, we recommend that you check the specific legislation governing accessibility for the web and public resources in your country or locale and seek the advice of a qualified lawyer.
+
+  [What is accessibility?](/en-US/docs/Learn_web_development/Core/Accessibility/What_is_accessibility) and particularity the [Accessibility guidelines and the law](/en-US/docs/Learn_web_development/Core/Accessibility/What_is_accessibility#accessibility_guidelines_and_the_law) section provide more related information.
+
+  ---END SOURCE---
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      Accessibility is built into HTML by default; ARIA augments where semantics fall short. WCAG 2.1+ defines the conformance bar. This skill covers ARIA basics, keyboard navigation conventions, and the WCAG mental model.
+
+      Sourced from https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA and https://developer.mozilla.org/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG.
+  - fragment_type: execution
+    sequence: 2
+    content: |
+      Accessible Rich Internet Applications **(<abbr>ARIA</abbr>)** is a set of [roles](/en-US/docs/Web/Accessibility/ARIA/Reference/Roles) and [attributes](/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes) that define ways to make web content and web applications (especially those developed with JavaScript) more accessible to people with disabilities.
+
+      ARIA supplements HTML so that interactions and widgets commonly used in applications can be passed to assistive technologies when there is not otherwise a mechanism. For example, ARIA enables accessible JavaScript widgets, form hints and error messages, live content updates, and more.
+  - fragment_type: guardrail
+    sequence: 3
+    content: |
+      > [!WARNING]
+      > Many of these widgets are fully supported in modern browsers. **Developers should prefer using the correct semantic HTML element over using ARIA**, if such an element exists. For instance, native elements have built-in [keyboard accessibility](/en-US/docs/Web/Accessibility/Guides/Keyboard-navigable_JavaScript_widgets), roles and states. However, if you choose to use ARIA, you are responsible for mimicking the equivalent browser behavior in script.
+
+      [The first rule of ARIA](https://w3c.github.io/using-aria/#rule1) use is "If you can use a native HTML element or attribute with the semantics and behavior you require already built in, instead of re-purposing an element and adding an ARIA role, state or property to make it accessible, then do so."
+  - fragment_type: rationale
+    sequence: 4
+    content: |
+      > [!NOTE]
+      > There is a saying "No ARIA is better than bad ARIA." In [WebAim's survey of over one million home pages](https://webaim.org/projects/million/#aria), they found that Home pages with ARIA present averaged 41% more detected errors than those without ARIA. While ARIA is designed to make web pages more accessible, if used incorrectly, it can do more harm than good.
+  - fragment_type: example
+    sequence: 5
+    content: |
+      Here's the markup for a progress bar widget:
+
+      ```html
+      <div
+        id="percent-loaded"
+        role="progressbar"
+        aria-valuenow="75"
+        aria-valuemin="0"
+        aria-valuemax="100"></div>
+      ```
+
+      This progress bar is built using a {{HTMLElement("div")}}, which has no meaning. We include ARIA roles and properties to add meaning. In this example, the [`role="progressbar"`](/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/progressbar_role) attribute informs the browser that this element is actually a JavaScript-powered progress bar widget. The [`aria-valuemin`](/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-valuemin) and [`aria-valuemax`](/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-valuemax) attributes specify the minimum and maximum values for the progress bar, and the [`aria-valuenow`](/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-valuenow) describes the current state of it and therefore must be kept updated with JavaScript.
+  - fragment_type: example
+    sequence: 6
+    content: |
+      Along with placing them directly in the markup, ARIA attributes can be added to the element and updated dynamically using JavaScript code like this:
+
+      ```js
+      // Find the progress bar <div> in the DOM.
+      const progressBar = document.getElementById("percent-loaded");
+
+      // Set its ARIA roles and states,
+      // so that assistive technologies know what kind of widget it is.
+      progressBar.setAttribute("role", "progressbar");
+      progressBar.setAttribute("aria-valuemin", 0);
+      progressBar.setAttribute("aria-valuemax", 100);
+
+      // Create a function that can be called at any time to update
+      // the value of the progress bar.
+      function updateProgress(percentComplete) {
+        progressBar.setAttribute("aria-valuenow", percentComplete);
+      }
+      ```
+
+      All content that is available to non-assistive technology users must be made available to assistive technologies. Similarly, no features should be included targeting assistive technology users that aren't also accessible to those not using assistive technologies. The above progressbar needs to be styled to make it look like a progressbar.
+  - fragment_type: example
+    sequence: 7
+    content: |
+      It would have been much simpler to use the native {{HTMLElement('progress')}} element instead:
+
+      ```html
+      <progress id="percent-loaded" value="75" max="100">75 %</progress>
+      ```
+
+      > [!NOTE]
+      > The `min` attribute is not allowed for the {{HTMLElement('progress')}} element; its minimum value is always `0`.
+
+      > [!NOTE]
+      > HTML landmark elements ({{HTMLElement("main")}}, {{HTMLElement("header")}}, {{HTMLElement("nav")}}, etc.) have built-in implicit ARIA roles, so there is no need to duplicate them.
+  - fragment_type: guardrail
+    sequence: 8
+    content: |
+      Like any other web technology, there are varying degrees of support for ARIA. Support is based on the operating system and browser being used, as well as the kind of assistive technology interfacing with it. In addition, the version of the operating system, browser, and assistive technology are contributing factors. Older software versions may not support certain ARIA roles, have only partial support, or misreport its functionality.
+
+      It is also important to acknowledge that some people who rely on assistive technology are reluctant to upgrade their software, for fear of losing the ability to interact with their computer and browser. Because of this, it is important to [use semantic HTML elements](/en-US/docs/Learn_web_development/Core/Accessibility/HTML) whenever possible, as semantic HTML has far better support for assistive technology.
+  - fragment_type: guardrail
+    sequence: 9
+    content: |
+      It is also important to test your authored ARIA with actual assistive technology. This is because browser emulators and simulators are not really effective for testing full support. Similarly, proxy assistive technology solutions are not sufficient to fully guarantee functionality.
+  - fragment_type: rationale
+    sequence: 10
+    content: |
+      This set of articles provides quick explanations to help you understand the steps that need to be taken to conform to the recommendations outlined in the {{glossary("WCAG", "Web Content Accessibility Guidelines")}} (WCAG).
+
+      The WCAG guidelines are a set of recommendations for making web content more accessible developed by W3C's {{Glossary("WAI")}}, primarily for people with disabilities — but also for all user agents, including some highly limited devices or services, such as digital assistants.
+
+      WCAG 2.2 is the most recent version of the guidelines with WCAG 2.1 and 2.0 also widely used. WCAG 3.0 is the working draft.
+      Newer versions of WCAG are not meant to supersede previous versions, but WAI recommends using the most recent version to ensure the best possible accessibility for your website.
+  - fragment_type: rationale
+    sequence: 11
+    content: |
+      WCAG is broadly broken down into four principles — major things that web content **must be** to be considered accessible (see [Understanding the Four Principles of Accessibility](https://www.w3.org/WAI/WCAG22/Understanding/intro#understanding-the-four-principles-of-accessibility) for the WCAG definitions).
+
+      Each of the links below will take you to pages that further expand on these areas, giving you practical advice on how to write your web content so it conforms to the success criteria outlined in the WCAG 2 four guiding principles.
+
+      - [Perceivable](/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG/Perceivable): Users must be able to perceive it in some way, using one or more of their senses.
+      - [Operable](/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG/Operable): Users must be able to control UI elements (e.g., buttons must be clickable in some way — mouse, keyboard, voice command, etc.).
+      - [Understandable](/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG/Understandable): The content must be understandable to its users.
+      - [Robust](/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG/Robust): The content must be developed using well-adopted web standards that will work across different browsers, now and in the future.
+
+      We also included two additional WCAG resources focused on making sites [keyboard accessible](/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG/Keyboard) and provided descriptive names or labels with [text labels and names](/en-US/docs/Web/Accessibility/Guides/Understanding_WCAG/Text_labels_and_names).
+  - fragment_type: rationale
+    sequence: 12
+    content: |
+      This introductory documentation is intended to provide practical information to help you build better, more accessible websites. However, we are not lawyers, and none of this constitutes legal advice. If you are worried about the legal implications of web accessibility, we recommend that you check the specific legislation governing accessibility for the web and public resources in your country or locale and seek the advice of a qualified lawyer.
+
+      [What is accessibility?](/en-US/docs/Learn_web_development/Core/Accessibility/What_is_accessibility) and particularity the [Accessibility guidelines and the law](/en-US/docs/Learn_web_development/Core/Accessibility/What_is_accessibility#accessibility_guidelines_and_the_law) section provide more related information.

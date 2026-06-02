@@ -1,0 +1,82 @@
+language: PHP
+version_anchor: PHP 8.4
+generated_at: 2026-05-01
+canonical:
+  language_reference: https://www.php.net/manual/en/langref.php
+  library_reference: https://www.php.net/manual/en/funcref.php
+  spec_or_standard: null
+  release_notes: https://www.php.net/releases/8.4/en.php
+topics:
+  concurrency_and_async:
+    description: Fibers (PHP 8.1+), pcntl for multi-process, and stream_select
+    urls:
+      - https://www.php.net/manual/en/language.fibers.php
+      - https://www.php.net/manual/en/book.pcntl.php
+      - https://www.php.net/manual/en/function.stream-select.php
+  error_handling_and_exceptions:
+    description: Exception/Error hierarchy, set_error_handler, and try/catch/finally
+    urls:
+      - https://www.php.net/manual/en/language.exceptions.php
+      - https://www.php.net/manual/en/class.throwable.php
+      - https://www.php.net/manual/en/class.error.php
+      - https://www.php.net/manual/en/function.set-error-handler.php
+  typing_and_generics:
+    description: Union types, intersection types, enums, named arguments, and readonly
+    urls:
+      - https://www.php.net/manual/en/language.types.declarations.php
+      - https://www.php.net/manual/en/language.enumerations.php
+      - https://www.php.net/manual/en/language.oop5.properties.php#language.oop5.properties.readonly-properties
+  memory_and_performance:
+    description: Memory limit configuration, gc_collect_cycles, and OPcache
+    urls:
+      - https://www.php.net/manual/en/ini.core.php
+      - https://www.php.net/manual/en/book.opcache.php
+      - https://www.php.net/manual/en/function.memory-get-usage.php
+  packaging_and_dependency_management:
+    description: Composer autoloading and PSR-4 are community-standard (not php.net)
+    urls:
+      - https://www.php.net/manual/en/function.spl-autoload-register.php
+  testing_idioms:
+    description: No stdlib test framework; PHPUnit is community standard
+    urls:
+      - https://www.php.net/manual/en/function.assert.php
+  security_and_crypto_primitives:
+    description: password_hash, random_bytes, openssl_*, and filter_var for input sanitization
+    urls:
+      - https://www.php.net/manual/en/function.password-hash.php
+      - https://www.php.net/manual/en/function.random-bytes.php
+      - https://www.php.net/manual/en/book.openssl.php
+      - https://www.php.net/manual/en/function.filter-var.php
+      - https://www.php.net/manual/en/function.hash.php
+  io_and_filesystem:
+    description: fopen/fread/fwrite, SplFileInfo, and stream wrappers
+    urls:
+      - https://www.php.net/manual/en/book.filesystem.php
+      - https://www.php.net/manual/en/class.splfileinfo.php
+      - https://www.php.net/manual/en/book.stream.php
+  networking_and_http_client:
+    description: cURL extension and file_get_contents with HTTP context
+    urls:
+      - https://www.php.net/manual/en/book.curl.php
+      - https://www.php.net/manual/en/function.stream-context-create.php
+  serialization_json_binary:
+    description: json_encode/json_decode, serialize/unserialize, and pack/unpack
+    urls:
+      - https://www.php.net/manual/en/book.json.php
+      - https://www.php.net/manual/en/function.serialize.php
+      - https://www.php.net/manual/en/function.pack.php
+  logging_and_observability:
+    description: error_log, syslog, and PSR-3 logging (interface only — no stdlib impl)
+    urls:
+      - https://www.php.net/manual/en/function.error-log.php
+      - https://www.php.net/manual/en/function.syslog.php
+  language_evolution_and_deprecation:
+    description: Migration guides per major version and deprecation notices
+    urls:
+      - https://www.php.net/manual/en/migration84.php
+      - https://www.php.net/manual/en/appendices.php
+known_gaps:
+  - No formal language specification; php.net/manual is authoritative
+  - Composer and PSR standards are hosted outside php.net (packagist.org, php-fig.org)
+  - Testing: PHPUnit docs not on php.net
+  - Async HTTP (Amphp, ReactPHP) entirely outside php.net

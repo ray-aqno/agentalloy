@@ -1,0 +1,51 @@
+skill_id: py-sqlite-migrations
+canonical_name: Python SQLite migrations
+category: build
+skill_class: domain
+domain_tags: [python, sqlite, sqlalchemy]
+deprecated: false
+always_apply: false
+phase_scope: null
+category_scope: null
+versions:
+  - version_id: py-sqlite-migrations-v1
+    version_number: 1
+    authored_at: 2026-01-15T00:00:00Z
+    author: fixture-seed
+    change_summary: initial version
+    status: superseded
+    raw_prose: Early notes on SQLAlchemy migrations.
+    fragments: []
+  - version_id: py-sqlite-migrations-v2
+    version_number: 2
+    authored_at: 2026-03-05T00:00:00Z
+    author: fixture-seed
+    change_summary: v2 adds idempotence guidance
+    status: active
+    raw_prose: |
+      Use SQLAlchemy 2.0 declarative models with Base.metadata.create_all for
+      small services. create_all is idempotent by design. Introduce Alembic only
+      when schema changes require targeted migrations.
+    fragments:
+      - fragment_id: py-sqlite-migrations-v2-f1
+        fragment_type: setup
+        sequence: 1
+        content: |
+          Declare a DeclarativeBase subclass per logical store. Annotate columns
+          with Mapped[...] and mapped_column(...). Put models in a single module
+          so metadata discovery is deterministic.
+      - fragment_id: py-sqlite-migrations-v2-f2
+        fragment_type: execution
+        sequence: 2
+        content: |
+          Build the engine with create_engine(f"sqlite:///{path}", future=True)
+          and call Base.metadata.create_all(engine). This is idempotent; repeated
+          calls won't drop or recreate existing tables.
+      - fragment_id: py-sqlite-migrations-v2-f3
+        fragment_type: rationale
+        sequence: 3
+        content: |
+          Avoid Alembic for greenfield services with a single writer. The
+          operational surface of create_all is zero; Alembic adds a config file,
+          a versions directory, and a dependency on the autogen diff. Introduce
+          it only when real migrations (ALTER TABLE, data backfill) appear.

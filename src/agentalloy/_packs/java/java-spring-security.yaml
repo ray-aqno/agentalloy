@@ -1,0 +1,333 @@
+skill_type: domain
+skill_id: java-spring-security
+canonical_name: Spring Security
+category: engineering
+skill_class: domain
+domain_tags:
+- java
+- spring-security
+- authentication
+- authorization
+- oauth2
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Spring Security
+
+  ## Overview
+
+  Spring Security is a chain of servlet filters that authenticate and authorize requests. Modern config uses `SecurityFilterChain` beans (the @EnableWebSecurity + WebSecurityConfigurerAdapter pattern is deprecated). The filter chain decides who can access what.
+
+  ---
+
+  ## Modern SecurityFilterChain Config
+
+  ```java
+  @Configuration
+  @EnableWebSecurity
+  public class SecurityConfig {
+
+      @Bean
+      public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+          return http
+              .authorizeHttpRequests(auth -> auth
+                  .requestMatchers("/health", "/public/**").permitAll()
+                  .requestMatchers("/admin/**").hasRole("ADMIN")
+                  .anyRequest().authenticated()
+              )
+              .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()))
+              .csrf(csrf -> csrf.disable())  // for stateless APIs only
+              .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+              .build();
+      }
+  }
+  ```
+
+  `requestMatchers` defines URL → policy. `oauth2ResourceServer` validates incoming JWTs. Stateless session = no JSESSIONID; pure token auth.
+
+  ## OAuth2 Resource Server with JWT
+
+  ```yaml
+  spring:
+    security:
+      oauth2:
+        resourceserver:
+          jwt:
+            issuer-uri: https://auth.example.com
+            # OR jwk-set-uri for explicit key fetching
+  ```
+
+  Spring Security fetches the JWKS from the issuer, validates incoming tokens against the keys, populates `Authentication.principal` from claims.
+
+  Convert claims to authorities:
+
+  ```java
+  @Bean
+  public JwtAuthenticationConverter jwtAuthConverter() {
+      JwtGrantedAuthoritiesConverter granted = new JwtGrantedAuthoritiesConverter();
+      granted.setAuthoritiesClaimName("permissions");
+      granted.setAuthorityPrefix("");
+
+      JwtAuthenticationConverter conv = new JwtAuthenticationConverter();
+      conv.setJwtGrantedAuthoritiesConverter(granted);
+      return conv;
+  }
+  ```
+
+  ## Method-Level Security
+
+  Enable globally:
+
+  ```java
+  @Configuration
+  @EnableMethodSecurity
+  public class SecurityConfig { }
+  ```
+
+  Then use annotations:
+
+  ```java
+  @Service
+  public class OrderService {
+      @PreAuthorize("hasRole('ADMIN') or #order.userId == authentication.name")
+      public void cancel(Order order) { }
+
+      @PreAuthorize("hasAuthority('orders:write')")
+      public Order create(OrderRequest req) { }
+  }
+  ```
+
+  `#order.userId` references the parameter; `authentication` references the current user. Powerful for ownership checks.
+
+  ## Username/Password Authentication
+
+  For traditional form login:
+
+  ```java
+  @Bean
+  public UserDetailsService users(DataSource ds) {
+      JdbcUserDetailsManager mgr = new JdbcUserDetailsManager(ds);
+      return mgr;
+  }
+
+  @Bean
+  public PasswordEncoder passwordEncoder() {
+      return new BCryptPasswordEncoder();
+  }
+  ```
+
+  Always use BCrypt or Argon2 for password hashing. Spring Security's defaults handle this.
+
+  ## CSRF
+
+  CSRF protection is enabled by default for browser-based apps. For pure JSON APIs called from non-browser clients (mobile, server-to-server), disable:
+
+  ```java
+  http.csrf(csrf -> csrf.disable())
+  ```
+
+  For browser apps that include both server-rendered pages and APIs, configure CSRF token repository instead of disabling.
+
+  ## CORS
+
+  ```java
+  http.cors(cors -> cors.configurationSource(corsConfig()));
+
+  @Bean
+  public CorsConfigurationSource corsConfig() {
+      CorsConfiguration config = new CorsConfiguration();
+      config.setAllowedOrigins(List.of("https://app.example.com"));
+      config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE"));
+      config.setAllowedHeaders(List.of("*"));
+      config.setAllowCredentials(true);
+      UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+      source.registerCorsConfiguration("/**", config);
+      return source;
+  }
+  ```
+
+  CORS in Spring Security is separate from MVC's CORS — set it in the security chain to avoid filter-order surprises.
+
+  ## Common Pitfalls
+
+  - **Disabling CSRF without thinking.** OK for stateless APIs; not OK for browser-rendered apps with cookie sessions.
+  - **Wrong filter order.** Custom filters added with the wrong reference filter run at unexpected times. Use the existing chain order as a reference.
+  - **`@PreAuthorize` without `@EnableMethodSecurity`.** Annotations get ignored silently. Always enable.
+  - **Storing passwords without encoding.** Always use a PasswordEncoder; never plain text or MD5/SHA1.
+  - **Catching AuthenticationException in business code.** It's meant to bubble to the security chain's exception handler.
+
+  ## Verification
+
+  A working Spring Security setup:
+
+  - Unauthenticated requests to protected endpoints return 401.
+  - Authenticated requests with insufficient privileges return 403.
+  - Tokens get validated against the issuer's JWKS automatically.
+  - Method-level annotations enforce per-resource ownership rules.
+  - Security headers (X-Content-Type-Options, X-Frame-Options) are present on responses.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Modern SecurityFilterChain Config
+
+    ```java
+    @Configuration
+    @EnableWebSecurity
+    public class SecurityConfig {
+
+        @Bean
+        public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+            return http
+                .authorizeHttpRequests(auth -> auth
+                    .requestMatchers("/health", "/public/**").permitAll()
+                    .requestMatchers("/admin/**").hasRole("ADMIN")
+                    .anyRequest().authenticated()
+                )
+                .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()))
+                .csrf(csrf -> csrf.disable())  // for stateless APIs only
+                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .build();
+        }
+    }
+    ```
+
+    `requestMatchers` defines URL → policy. `oauth2ResourceServer` validates incoming JWTs. Stateless session = no JSESSIONID; pure token auth.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## OAuth2 Resource Server with JWT
+
+    ```yaml
+    spring:
+      security:
+        oauth2:
+          resourceserver:
+            jwt:
+              issuer-uri: https://auth.example.com
+              # OR jwk-set-uri for explicit key fetching
+    ```
+
+    Spring Security fetches the JWKS from the issuer, validates incoming tokens against the keys, populates `Authentication.principal` from claims.
+
+    Convert claims to authorities:
+
+    ```java
+    @Bean
+    public JwtAuthenticationConverter jwtAuthConverter() {
+        JwtGrantedAuthoritiesConverter granted = new JwtGrantedAuthoritiesConverter();
+        granted.setAuthoritiesClaimName("permissions");
+        granted.setAuthorityPrefix("");
+
+        JwtAuthenticationConverter conv = new JwtAuthenticationConverter();
+        conv.setJwtGrantedAuthoritiesConverter(granted);
+        return conv;
+    }
+    ```
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Method-Level Security
+
+    Enable globally:
+
+    ```java
+    @Configuration
+    @EnableMethodSecurity
+    public class SecurityConfig { }
+    ```
+
+    Then use annotations:
+
+    ```java
+    @Service
+    public class OrderService {
+        @PreAuthorize("hasRole('ADMIN') or #order.userId == authentication.name")
+        public void cancel(Order order) { }
+
+        @PreAuthorize("hasAuthority('orders:write')")
+        public Order create(OrderRequest req) { }
+    }
+    ```
+
+    `#order.userId` references the parameter; `authentication` references the current user. Powerful for ownership checks.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Username/Password Authentication
+
+    For traditional form login:
+
+    ```java
+    @Bean
+    public UserDetailsService users(DataSource ds) {
+        JdbcUserDetailsManager mgr = new JdbcUserDetailsManager(ds);
+        return mgr;
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+    ```
+
+    Always use BCrypt or Argon2 for password hashing. Spring Security's defaults handle this.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## CSRF
+
+    CSRF protection is enabled by default for browser-based apps. For pure JSON APIs called from non-browser clients (mobile, server-to-server), disable:
+
+    ```java
+    http.csrf(csrf -> csrf.disable())
+    ```
+
+    For browser apps that include both server-rendered pages and APIs, configure CSRF token repository instead of disabling.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## CORS
+
+    ```java
+    http.cors(cors -> cors.configurationSource(corsConfig()));
+
+    @Bean
+    public CorsConfigurationSource corsConfig() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOrigins(List.of("https://app.example.com"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setAllowCredentials(true);
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
+    }
+    ```
+
+    CORS in Spring Security is separate from MVC's CORS — set it in the security chain to avoid filter-order surprises.
+- fragment_type: guardrail
+  sequence: 7
+  content: |-
+    ## Common Pitfalls
+
+    - **Disabling CSRF without thinking.** OK for stateless APIs; not OK for browser-rendered apps with cookie sessions.
+    - **Wrong filter order.** Custom filters added with the wrong reference filter run at unexpected times. Use the existing chain order as a reference.
+    - **`@PreAuthorize` without `@EnableMethodSecurity`.** Annotations get ignored silently. Always enable.
+    - **Storing passwords without encoding.** Always use a PasswordEncoder; never plain text or MD5/SHA1.
+    - **Catching AuthenticationException in business code.** It's meant to bubble to the security chain's exception handler.
+- fragment_type: verification
+  sequence: 8
+  content: |-
+    ## Verification
+
+    A working Spring Security setup:
+
+    - Unauthenticated requests to protected endpoints return 401.
+    - Authenticated requests with insufficient privileges return 403.
+    - Tokens get validated against the issuer's JWKS automatically.
+    - Method-level annotations enforce per-resource ownership rules.
+    - Security headers (X-Content-Type-Options, X-Frame-Options) are present on responses.

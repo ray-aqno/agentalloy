@@ -1,0 +1,367 @@
+skill_type: domain
+skill_id: data-engineering-slowly-changing-dimensions
+canonical_name: Slowly Changing Dimensions (SCD)
+category: engineering
+skill_class: domain
+domain_tags:
+- data-engineering
+- scd
+- dimensional-modeling
+- history-tracking
+- type-2
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Slowly Changing Dimensions (SCD)
+
+  ## Overview
+
+  Dimensions evolve — a customer changes plan, a product gets renamed, a store relocates. SCD types describe how to handle the change. The choice depends on whether history matters and how queries should resolve to which version.
+
+  ---
+
+  ## Type 1 — Overwrite
+
+  Just update the row. Loses history.
+
+  ```sql
+  UPDATE dim_customer SET plan = 'pro' WHERE customer_id = 1234;
+  ```
+
+  When to use:
+  - Attributes you don't need to track historically (typo fixes, name corrections).
+  - Reference data updates that should retroactively apply (a country code mapping fix).
+
+  When NOT to use:
+  - Anything you'd want to slice 'as it was' historically.
+
+  ## Type 2 — Versioned Rows
+
+  The standard. Each change creates a new row; old rows get an end date:
+
+  ```sql
+  CREATE TABLE dim_customer (
+      customer_key INT PRIMARY KEY,  -- surrogate, new per version
+      customer_id BIGINT,            -- natural key, same across versions
+      name STRING,
+      country STRING,
+      plan STRING,
+      valid_from DATE,
+      valid_to DATE,
+      is_current BOOLEAN
+  );
+
+  -- Initial load:
+  INSERT INTO dim_customer VALUES (1, 1234, 'Alice', 'US', 'free', '2024-01-01', '9999-12-31', true);
+
+  -- Plan change on 2026-05-01:
+  UPDATE dim_customer SET valid_to = '2026-04-30', is_current = false WHERE customer_id = 1234 AND is_current = true;
+  INSERT INTO dim_customer VALUES (2, 1234, 'Alice', 'US', 'pro', '2026-05-01', '9999-12-31', true);
+  ```
+
+  The fact table FK points to whichever `customer_key` was current at the time of the event:
+
+  ```sql
+  SELECT f.*, c.plan
+  FROM fact_orders f
+  JOIN dim_customer c ON f.customer_key = c.customer_key
+  WHERE f.date BETWEEN '2026-04' AND '2026-06';
+  -- April orders see plan='free', May+ orders see plan='pro'
+  ```
+
+  This is what makes Type 2 powerful: queries naturally resolve to the right historical version.
+
+  ## Type 3 — Previous Value Column
+
+  Track only the most recent change in a separate column:
+
+  ```sql
+  CREATE TABLE dim_customer (
+      customer_id BIGINT,
+      name STRING,
+      plan STRING,
+      previous_plan STRING,
+      plan_changed_at DATE
+  );
+  ```
+
+  When to use:
+  - Limited history needed (just before/after).
+  - Want to avoid Type 2 complexity.
+
+  When NOT to use:
+  - Multiple historical versions matter.
+  - Multiple attributes change independently.
+
+  Limited applicability. Type 2 is usually better.
+
+  ## Type 4 — Historical Table
+
+  Current data in the dimension; history in a separate audit table:
+
+  ```sql
+  CREATE TABLE dim_customer (...);  -- current only
+  CREATE TABLE dim_customer_history (...);  -- all versions
+  ```
+
+  When to use:
+  - Most queries don't need history; queries that do are willing to join a separate table.
+  - Type 2 makes the main dimension table inconveniently large.
+
+  ## Type 6 — Hybrid (Type 2 + Type 1 + Type 3)
+
+  Track full history (Type 2), but also expose 'current' attributes that always reflect the latest:
+
+  ```sql
+  CREATE TABLE dim_customer (
+      customer_key INT,           -- new per version
+      customer_id BIGINT,
+      plan STRING,                -- Type 2: as of this version
+      plan_current STRING,        -- Type 1: always latest
+      valid_from DATE,
+      valid_to DATE
+  );
+  ```
+
+  Query for 'what plan when' uses `plan`; query for 'what plan now' uses `plan_current`. Powerful but doubles the maintenance.
+
+  ## Implementing in dbt
+
+  dbt's snapshot is purpose-built for Type 2:
+
+  ```sql
+  -- snapshots/customers.sql
+  {% snapshot customers_snapshot %}
+
+  {{
+      config(
+          target_schema='snapshots',
+          unique_key='customer_id',
+          strategy='timestamp',
+          updated_at='updated_at',
+      )
+  }}
+
+  SELECT * FROM {{ source('app', 'customers') }}
+
+  {% endsnapshot %}
+  ```
+
+  Each `dbt snapshot` run reads the current source, compares to the snapshot's last state, inserts new versions for changed rows, sets valid_to for previous versions. Schedule it (often hourly).
+
+  ## When Source Doesn't Have Change Timestamps
+
+  If the source table doesn't have `updated_at`, use the `check` strategy in dbt:
+
+  ```sql
+  {{
+      config(
+          target_schema='snapshots',
+          unique_key='customer_id',
+          strategy='check',
+          check_cols=['name', 'plan', 'country'],
+      )
+  }}
+  ```
+
+  dbt detects changes by comparing column values. Slower than timestamp-based but doesn't require source cooperation.
+
+  ## Common Pitfalls
+
+  - **Updating fact-table FKs on Type 2 change.** Don't — fact rows should keep their original `customer_key`. The whole point of Type 2 is preserving the historical association.
+  - **No `is_current` flag.** Queries for 'current customers' have to filter `valid_to IS NULL OR valid_to >= NOW()`. Easier with a precomputed flag.
+  - **Tracking every column as Type 2.** Over-engineered. Most attributes are fine as Type 1 (corrections); only track Type 2 on the columns where history actually matters.
+  - **Inconsistent valid_to handling.** Some teams use `9999-12-31`, some use NULL. Pick one and document; queries get confused otherwise.
+
+  ## Verification
+
+  A working SCD implementation:
+
+  - Type 2 dimension has multiple versions for entities that have changed.
+  - Fact joins to the right version based on event timestamp.
+  - 'Current' queries return only one row per natural key.
+  - Snapshot job is idempotent (re-running with no changes produces no new versions).
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Type 1 — Overwrite
+
+    Just update the row. Loses history.
+
+    ```sql
+    UPDATE dim_customer SET plan = 'pro' WHERE customer_id = 1234;
+    ```
+
+    When to use:
+    - Attributes you don't need to track historically (typo fixes, name corrections).
+    - Reference data updates that should retroactively apply (a country code mapping fix).
+
+    When NOT to use:
+    - Anything you'd want to slice 'as it was' historically.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Type 2 — Versioned Rows
+
+    The standard. Each change creates a new row; old rows get an end date:
+
+    ```sql
+    CREATE TABLE dim_customer (
+        customer_key INT PRIMARY KEY,  -- surrogate, new per version
+        customer_id BIGINT,            -- natural key, same across versions
+        name STRING,
+        country STRING,
+        plan STRING,
+        valid_from DATE,
+        valid_to DATE,
+        is_current BOOLEAN
+    );
+
+    -- Initial load:
+    INSERT INTO dim_customer VALUES (1, 1234, 'Alice', 'US', 'free', '2024-01-01', '9999-12-31', true);
+
+    -- Plan change on 2026-05-01:
+    UPDATE dim_customer SET valid_to = '2026-04-30', is_current = false WHERE customer_id = 1234 AND is_current = true;
+    INSERT INTO dim_customer VALUES (2, 1234, 'Alice', 'US', 'pro', '2026-05-01', '9999-12-31', true);
+    ```
+
+    The fact table FK points to whichever `customer_key` was current at the time of the event:
+
+    ```sql
+    SELECT f.*, c.plan
+    FROM fact_orders f
+    JOIN dim_customer c ON f.customer_key = c.customer_key
+    WHERE f.date BETWEEN '2026-04' AND '2026-06';
+    -- April orders see plan='free', May+ orders see plan='pro'
+    ```
+
+    This is what makes Type 2 powerful: queries naturally resolve to the right historical version.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Type 3 — Previous Value Column
+
+    Track only the most recent change in a separate column:
+
+    ```sql
+    CREATE TABLE dim_customer (
+        customer_id BIGINT,
+        name STRING,
+        plan STRING,
+        previous_plan STRING,
+        plan_changed_at DATE
+    );
+    ```
+
+    When to use:
+    - Limited history needed (just before/after).
+    - Want to avoid Type 2 complexity.
+
+    When NOT to use:
+    - Multiple historical versions matter.
+    - Multiple attributes change independently.
+
+    Limited applicability. Type 2 is usually better.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Type 4 — Historical Table
+
+    Current data in the dimension; history in a separate audit table:
+
+    ```sql
+    CREATE TABLE dim_customer (...);  -- current only
+    CREATE TABLE dim_customer_history (...);  -- all versions
+    ```
+
+    When to use:
+    - Most queries don't need history; queries that do are willing to join a separate table.
+    - Type 2 makes the main dimension table inconveniently large.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Type 6 — Hybrid (Type 2 + Type 1 + Type 3)
+
+    Track full history (Type 2), but also expose 'current' attributes that always reflect the latest:
+
+    ```sql
+    CREATE TABLE dim_customer (
+        customer_key INT,           -- new per version
+        customer_id BIGINT,
+        plan STRING,                -- Type 2: as of this version
+        plan_current STRING,        -- Type 1: always latest
+        valid_from DATE,
+        valid_to DATE
+    );
+    ```
+
+    Query for 'what plan when' uses `plan`; query for 'what plan now' uses `plan_current`. Powerful but doubles the maintenance.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Implementing in dbt
+
+    dbt's snapshot is purpose-built for Type 2:
+
+    ```sql
+    -- snapshots/customers.sql
+    {% snapshot customers_snapshot %}
+
+    {{
+        config(
+            target_schema='snapshots',
+            unique_key='customer_id',
+            strategy='timestamp',
+            updated_at='updated_at',
+        )
+    }}
+
+    SELECT * FROM {{ source('app', 'customers') }}
+
+    {% endsnapshot %}
+    ```
+
+    Each `dbt snapshot` run reads the current source, compares to the snapshot's last state, inserts new versions for changed rows, sets valid_to for previous versions. Schedule it (often hourly).
+- fragment_type: rationale
+  sequence: 7
+  content: |-
+    ## When Source Doesn't Have Change Timestamps
+
+    If the source table doesn't have `updated_at`, use the `check` strategy in dbt:
+
+    ```sql
+    {{
+        config(
+            target_schema='snapshots',
+            unique_key='customer_id',
+            strategy='check',
+            check_cols=['name', 'plan', 'country'],
+        )
+    }}
+    ```
+
+    dbt detects changes by comparing column values. Slower than timestamp-based but doesn't require source cooperation.
+- fragment_type: guardrail
+  sequence: 8
+  content: |-
+    ## Common Pitfalls
+
+    - **Updating fact-table FKs on Type 2 change.** Don't — fact rows should keep their original `customer_key`. The whole point of Type 2 is preserving the historical association.
+    - **No `is_current` flag.** Queries for 'current customers' have to filter `valid_to IS NULL OR valid_to >= NOW()`. Easier with a precomputed flag.
+    - **Tracking every column as Type 2.** Over-engineered. Most attributes are fine as Type 1 (corrections); only track Type 2 on the columns where history actually matters.
+    - **Inconsistent valid_to handling.** Some teams use `9999-12-31`, some use NULL. Pick one and document; queries get confused otherwise.
+- fragment_type: verification
+  sequence: 9
+  content: |-
+    ## Verification
+
+    A working SCD implementation:
+
+    - Type 2 dimension has multiple versions for entities that have changed.
+    - Fact joins to the right version based on event timestamp.
+    - 'Current' queries return only one row per natural key.
+    - Snapshot job is idempotent (re-running with no changes produces no new versions).

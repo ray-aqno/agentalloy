@@ -1,0 +1,391 @@
+skill_type: domain
+skill_id: linting-ci-integration
+canonical_name: Linting in CI — Speed and Failure Modes
+category: tooling
+skill_class: domain
+domain_tags:
+- linting
+- ci
+- github-actions
+- performance
+- cache
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Linting in CI — Speed and Failure Modes
+
+  ## Overview
+
+  Lint in CI catches what slipped past local hooks. The discipline: lint should be fast (under 30 seconds for most repos) and reliable (no flakes). Caching, incremental linting, and parallel jobs are the levers.
+
+  ---
+
+  ## A Minimal Lint Workflow
+
+  ```yaml
+  # .github/workflows/lint.yml
+  on: [push, pull_request]
+
+  jobs:
+    lint:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-node@v4
+          with:
+            node-version: 22
+            cache: npm
+        - run: npm ci
+        - run: npm run lint
+  ```
+
+  `cache: npm` caches `~/.npm`. `npm ci` is faster than `npm install` for clean builds.
+
+  ## Caching node_modules
+
+  ```yaml
+  - uses: actions/cache@v4
+    with:
+      path: node_modules
+      key: ${{ runner.os }}-modules-${{ hashFiles('package-lock.json') }}
+
+  - run: npm ci  # only restores if cache miss
+  ```
+
+  Beats cached `~/.npm` for large dep trees. Cache hits save 30s+ per run.
+
+  ## ESLint Cache
+
+  ```bash
+  eslint . --cache --cache-location node_modules/.cache/eslint
+  ```
+
+  Cached results skip files that haven't changed. Cache invalidates on rule config changes. Persist across CI runs:
+
+  ```yaml
+  - uses: actions/cache@v4
+    with:
+      path: node_modules/.cache/eslint
+      key: eslint-${{ github.sha }}
+      restore-keys: eslint-
+  ```
+
+  Result: <5 second lint on PRs that touch a few files.
+
+  ## Running on Changed Files Only
+
+  For monorepos where full lint takes minutes:
+
+  ```yaml
+  - name: Get changed files
+    id: changed
+    uses: tj-actions/changed-files@v45
+
+  - name: Lint changed files
+    run: |
+      if [ -n "${{ steps.changed.outputs.all_changed_files }}" ]; then
+        npx eslint ${{ steps.changed.outputs.all_changed_files }}
+      fi
+  ```
+
+  Trade-off: doesn't catch new violations introduced by a removed file. Mitigate with weekly full lint.
+
+  ## Parallelism
+
+  If you have multiple linters, run in parallel jobs:
+
+  ```yaml
+  jobs:
+    eslint:
+      steps:
+        - run: npm run eslint
+
+    prettier:
+      steps:
+        - run: npm run prettier:check
+
+    typecheck:
+      steps:
+        - run: npm run typecheck
+  ```
+
+  Each job is a separate runner — they execute concurrently. The slowest determines total wall-clock.
+
+  ## Matrix for Multi-Linter
+
+  ```yaml
+  jobs:
+    lint:
+      strategy:
+        matrix:
+          check: [eslint, prettier, typecheck, stylelint]
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-node@v4
+        - run: npm ci
+        - run: npm run ${{ matrix.check }}
+  ```
+
+  Each matrix value is a job. Failure in one doesn't block others — clearer error reports.
+
+  ## Errors vs Warnings
+
+  In CI, treat warnings as errors:
+
+  ```bash
+  eslint . --max-warnings 0
+  ```
+
+  Without this, warnings accumulate forever. Either fix them or downgrade the rule.
+
+  ## Required Status Checks
+
+  In GitHub branch protection, mark lint jobs as required:
+
+  ```
+  Settings → Branches → Protect main → Required status checks
+    ☑ lint
+    ☑ test
+  ```
+
+  PRs can't merge until lint passes. Without this, devs can merge through failures.
+
+  ## Failing Fast
+
+  ```yaml
+  - run: npm run lint
+    continue-on-error: false  # default; fail the job
+
+  - run: npm run typecheck
+    if: success()  # only run if previous passed
+  ```
+
+  Skip subsequent steps on lint failure to surface the error fast.
+
+  ## Pinning Tool Versions
+
+  ```json
+  "devDependencies": {
+      "eslint": "8.45.0",
+      "prettier": "3.0.0"
+  }
+  ```
+
+  Exact versions in package.json prevent CI from picking up a new minor that changes rules. Use Renovate / Dependabot to bump deliberately.
+
+  ## Common Pitfalls
+
+  - **No cache.** Every run installs deps from scratch. 30+ seconds per CI run = $.
+  - **Lint and test in same job.** If lint fails, tests don't run; if you want both reports, separate jobs.
+  - **Different rule versions locally vs CI.** Lock-file mismatch. Always commit the lock file.
+  - **Lint runs on docs-only PRs.** Wastes compute. Use `paths-ignore` or `paths` filter.
+  - **Treating lint failures as advisory.** Without required status checks, code that violates rules ships.
+
+  ## Verification
+
+  A healthy lint CI setup:
+
+  - Pre-commit catches most issues before push.
+  - CI runs in <60 seconds with caching.
+  - Lint, format check, and typecheck are required status checks.
+  - Same versions locally and in CI (lockfile pinned).
+  - New rules adoption is staged: warn → error over time.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## A Minimal Lint Workflow
+
+    ```yaml
+    # .github/workflows/lint.yml
+    on: [push, pull_request]
+
+    jobs:
+      lint:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-node@v4
+            with:
+              node-version: 22
+              cache: npm
+          - run: npm ci
+          - run: npm run lint
+    ```
+
+    `cache: npm` caches `~/.npm`. `npm ci` is faster than `npm install` for clean builds.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Caching node_modules
+
+    ```yaml
+    - uses: actions/cache@v4
+      with:
+        path: node_modules
+        key: ${{ runner.os }}-modules-${{ hashFiles('package-lock.json') }}
+
+    - run: npm ci  # only restores if cache miss
+    ```
+
+    Beats cached `~/.npm` for large dep trees. Cache hits save 30s+ per run.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## ESLint Cache
+
+    ```bash
+    eslint . --cache --cache-location node_modules/.cache/eslint
+    ```
+
+    Cached results skip files that haven't changed. Cache invalidates on rule config changes. Persist across CI runs:
+
+    ```yaml
+    - uses: actions/cache@v4
+      with:
+        path: node_modules/.cache/eslint
+        key: eslint-${{ github.sha }}
+        restore-keys: eslint-
+    ```
+
+    Result: <5 second lint on PRs that touch a few files.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Running on Changed Files Only
+
+    For monorepos where full lint takes minutes:
+
+    ```yaml
+    - name: Get changed files
+      id: changed
+      uses: tj-actions/changed-files@v45
+
+    - name: Lint changed files
+      run: |
+        if [ -n "${{ steps.changed.outputs.all_changed_files }}" ]; then
+          npx eslint ${{ steps.changed.outputs.all_changed_files }}
+        fi
+    ```
+
+    Trade-off: doesn't catch new violations introduced by a removed file. Mitigate with weekly full lint.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Parallelism
+
+    If you have multiple linters, run in parallel jobs:
+
+    ```yaml
+    jobs:
+      eslint:
+        steps:
+          - run: npm run eslint
+
+      prettier:
+        steps:
+          - run: npm run prettier:check
+
+      typecheck:
+        steps:
+          - run: npm run typecheck
+    ```
+
+    Each job is a separate runner — they execute concurrently. The slowest determines total wall-clock.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Matrix for Multi-Linter
+
+    ```yaml
+    jobs:
+      lint:
+        strategy:
+          matrix:
+            check: [eslint, prettier, typecheck, stylelint]
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-node@v4
+          - run: npm ci
+          - run: npm run ${{ matrix.check }}
+    ```
+
+    Each matrix value is a job. Failure in one doesn't block others — clearer error reports.
+- fragment_type: rationale
+  sequence: 7
+  content: |-
+    ## Errors vs Warnings
+
+    In CI, treat warnings as errors:
+
+    ```bash
+    eslint . --max-warnings 0
+    ```
+
+    Without this, warnings accumulate forever. Either fix them or downgrade the rule.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Required Status Checks
+
+    In GitHub branch protection, mark lint jobs as required:
+
+    ```
+    Settings → Branches → Protect main → Required status checks
+      ☑ lint
+      ☑ test
+    ```
+
+    PRs can't merge until lint passes. Without this, devs can merge through failures.
+- fragment_type: execution
+  sequence: 9
+  content: |-
+    ## Failing Fast
+
+    ```yaml
+    - run: npm run lint
+      continue-on-error: false  # default; fail the job
+
+    - run: npm run typecheck
+      if: success()  # only run if previous passed
+    ```
+
+    Skip subsequent steps on lint failure to surface the error fast.
+- fragment_type: execution
+  sequence: 10
+  content: |-
+    ## Pinning Tool Versions
+
+    ```json
+    "devDependencies": {
+        "eslint": "8.45.0",
+        "prettier": "3.0.0"
+    }
+    ```
+
+    Exact versions in package.json prevent CI from picking up a new minor that changes rules. Use Renovate / Dependabot to bump deliberately.
+- fragment_type: guardrail
+  sequence: 11
+  content: |-
+    ## Common Pitfalls
+
+    - **No cache.** Every run installs deps from scratch. 30+ seconds per CI run = $.
+    - **Lint and test in same job.** If lint fails, tests don't run; if you want both reports, separate jobs.
+    - **Different rule versions locally vs CI.** Lock-file mismatch. Always commit the lock file.
+    - **Lint runs on docs-only PRs.** Wastes compute. Use `paths-ignore` or `paths` filter.
+    - **Treating lint failures as advisory.** Without required status checks, code that violates rules ships.
+- fragment_type: verification
+  sequence: 12
+  content: |-
+    ## Verification
+
+    A healthy lint CI setup:
+
+    - Pre-commit catches most issues before push.
+    - CI runs in <60 seconds with caching.
+    - Lint, format check, and typecheck are required status checks.
+    - Same versions locally and in CI (lockfile pinned).
+    - New rules adoption is staged: warn → error over time.

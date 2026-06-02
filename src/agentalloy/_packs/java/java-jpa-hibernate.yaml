@@ -1,0 +1,329 @@
+skill_type: domain
+skill_id: java-jpa-hibernate
+canonical_name: JPA and Hibernate Patterns
+category: engineering
+skill_class: domain
+domain_tags:
+- java
+- jpa
+- hibernate
+- spring-data
+- orm
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # JPA and Hibernate Patterns
+
+  ## Overview
+
+  JPA is the standard Java persistence API; Hibernate is its most-used implementation. Spring Data JPA wraps Hibernate with repository abstractions. The hard parts: avoiding N+1, picking fetch strategies, and managing transaction boundaries cleanly.
+
+  ---
+
+  ## Entity Mapping Basics
+
+  ```java
+  @Entity
+  @Table(name = "users")
+  public class User {
+      @Id
+      @GeneratedValue(strategy = GenerationType.IDENTITY)
+      private Long id;
+
+      @Column(nullable = false, unique = true)
+      private String email;
+
+      @Column(name = "created_at")
+      private Instant createdAt = Instant.now();
+
+      // getters, setters, equals based on id
+  }
+  ```
+
+  `@Entity` marks the class as JPA-managed. `@Id` + `@GeneratedValue` for the primary key. `@Column` customizes column-level mapping.
+
+  ## Relationships
+
+  ```java
+  @Entity
+  public class Order {
+      @Id @GeneratedValue Long id;
+
+      @ManyToOne(fetch = FetchType.LAZY)
+      @JoinColumn(name = "user_id")
+      private User user;
+
+      @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
+      private List<OrderItem> items = new ArrayList<>();
+
+      @ManyToMany
+      @JoinTable(name = "order_tags",
+          joinColumns = @JoinColumn(name = "order_id"),
+          inverseJoinColumns = @JoinColumn(name = "tag_id"))
+      private Set<Tag> tags = new HashSet<>();
+  }
+  ```
+
+  - `@ManyToOne` — most common; the FK side.
+  - `@OneToMany(mappedBy = "...")` — the inverse, owned by the @ManyToOne side.
+  - `@ManyToMany` — explicit join table.
+  - `cascade = ALL` — operations propagate (save the order, save items).
+  - `orphanRemoval = true` — removing from the collection deletes from DB.
+
+  ## LAZY vs EAGER
+
+  Default fetch:
+  - `@ManyToOne` and `@OneToOne` → EAGER.
+  - `@OneToMany` and `@ManyToMany` → LAZY.
+
+  Override with `fetch = FetchType.LAZY`. Generally: prefer LAZY for everything. EAGER causes giant JOINs that can't be turned off.
+
+  ## The N+1 Problem
+
+  Iterating a collection that has lazy-loaded children triggers a query per child:
+
+  ```java
+  // 1 query for orders
+  List<Order> orders = orderRepo.findAll();
+  for (Order o : orders) {
+      // N queries — one per order
+      o.getItems().forEach(System.out::println);
+  }
+  ```
+
+  Fix with fetch joins:
+
+  ```java
+  @Query("SELECT o FROM Order o JOIN FETCH o.items")
+  List<Order> findAllWithItems();
+  ```
+
+  Or `@EntityGraph`:
+
+  ```java
+  @EntityGraph(attributePaths = {"items", "user"})
+  List<Order> findAll();
+  ```
+
+  Always look at SQL output during dev (`spring.jpa.show-sql=true`) to catch N+1.
+
+  ## Spring Data JPA Repositories
+
+  ```java
+  public interface OrderRepository extends JpaRepository<Order, Long> {
+      List<Order> findByUserEmail(String email);
+
+      @Query("SELECT o FROM Order o WHERE o.total > :min")
+      List<Order> findExpensive(@Param("min") BigDecimal min);
+
+      @Modifying
+      @Query("UPDATE Order o SET o.status = :status WHERE o.id IN :ids")
+      int updateStatus(@Param("ids") List<Long> ids, @Param("status") OrderStatus status);
+  }
+  ```
+
+  Method names get translated to queries; `@Query` for explicit JPQL; `@Modifying` for updates/deletes.
+
+  ## Transactions
+
+  ```java
+  @Service
+  public class OrderService {
+      @Transactional
+      public Order placeOrder(OrderRequest req) {
+          // Everything here in one transaction
+          User u = userRepo.findById(req.userId()).orElseThrow();
+          Order o = new Order(u, req.items());
+          return orderRepo.save(o);
+      }
+
+      @Transactional(readOnly = true)
+      public Order getOrder(Long id) {
+          return orderRepo.findById(id).orElseThrow();
+      }
+  }
+  ```
+
+  `readOnly = true` for read-only methods — Hibernate skips dirty checks, slight performance win.
+
+  Transactions roll back on `RuntimeException` by default. Checked exceptions don't trigger rollback; either declare `rollbackFor = Exception.class` or convert to runtime.
+
+  ## Common Pitfalls
+
+  - **EAGER everywhere causing huge JOINs.** Prefer LAZY; use fetch joins per query.
+  - **N+1 not caught in tests.** Most tests use small fixtures and don't trigger it. Add a query-counter assertion (e.g., `@Sql` + `Statistics`) for hot paths.
+  - **Open Session in View leaking transactions.** Spring's `OpenEntityManagerInViewInterceptor` (default in Spring Boot) extends the session past the @Transactional method. Disable via `spring.jpa.open-in-view=false`.
+  - **Equals/hashCode on managed fields.** Use the ID for equality, but only if it's set. Pre-persist entities have null IDs.
+
+  ## Verification
+
+  A healthy JPA setup:
+
+  - `spring.jpa.show-sql=true` in dev shows expected query counts (no N+1 surprises).
+  - Lazy loading errors don't leak to web layer (means transactions are scoped right).
+  - Slow-query log catches expensive queries before they reach prod.
+  - Each `@Transactional` method either commits cleanly or rolls back on error.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Entity Mapping Basics
+
+    ```java
+    @Entity
+    @Table(name = "users")
+    public class User {
+        @Id
+        @GeneratedValue(strategy = GenerationType.IDENTITY)
+        private Long id;
+
+        @Column(nullable = false, unique = true)
+        private String email;
+
+        @Column(name = "created_at")
+        private Instant createdAt = Instant.now();
+
+        // getters, setters, equals based on id
+    }
+    ```
+
+    `@Entity` marks the class as JPA-managed. `@Id` + `@GeneratedValue` for the primary key. `@Column` customizes column-level mapping.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Relationships
+
+    ```java
+    @Entity
+    public class Order {
+        @Id @GeneratedValue Long id;
+
+        @ManyToOne(fetch = FetchType.LAZY)
+        @JoinColumn(name = "user_id")
+        private User user;
+
+        @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
+        private List<OrderItem> items = new ArrayList<>();
+
+        @ManyToMany
+        @JoinTable(name = "order_tags",
+            joinColumns = @JoinColumn(name = "order_id"),
+            inverseJoinColumns = @JoinColumn(name = "tag_id"))
+        private Set<Tag> tags = new HashSet<>();
+    }
+    ```
+
+    - `@ManyToOne` — most common; the FK side.
+    - `@OneToMany(mappedBy = "...")` — the inverse, owned by the @ManyToOne side.
+    - `@ManyToMany` — explicit join table.
+    - `cascade = ALL` — operations propagate (save the order, save items).
+    - `orphanRemoval = true` — removing from the collection deletes from DB.
+- fragment_type: rationale
+  sequence: 3
+  content: |-
+    ## LAZY vs EAGER
+
+    Default fetch:
+    - `@ManyToOne` and `@OneToOne` → EAGER.
+    - `@OneToMany` and `@ManyToMany` → LAZY.
+
+    Override with `fetch = FetchType.LAZY`. Generally: prefer LAZY for everything. EAGER causes giant JOINs that can't be turned off.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## The N+1 Problem
+
+    Iterating a collection that has lazy-loaded children triggers a query per child:
+
+    ```java
+    // 1 query for orders
+    List<Order> orders = orderRepo.findAll();
+    for (Order o : orders) {
+        // N queries — one per order
+        o.getItems().forEach(System.out::println);
+    }
+    ```
+
+    Fix with fetch joins:
+
+    ```java
+    @Query("SELECT o FROM Order o JOIN FETCH o.items")
+    List<Order> findAllWithItems();
+    ```
+
+    Or `@EntityGraph`:
+
+    ```java
+    @EntityGraph(attributePaths = {"items", "user"})
+    List<Order> findAll();
+    ```
+
+    Always look at SQL output during dev (`spring.jpa.show-sql=true`) to catch N+1.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Spring Data JPA Repositories
+
+    ```java
+    public interface OrderRepository extends JpaRepository<Order, Long> {
+        List<Order> findByUserEmail(String email);
+
+        @Query("SELECT o FROM Order o WHERE o.total > :min")
+        List<Order> findExpensive(@Param("min") BigDecimal min);
+
+        @Modifying
+        @Query("UPDATE Order o SET o.status = :status WHERE o.id IN :ids")
+        int updateStatus(@Param("ids") List<Long> ids, @Param("status") OrderStatus status);
+    }
+    ```
+
+    Method names get translated to queries; `@Query` for explicit JPQL; `@Modifying` for updates/deletes.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Transactions
+
+    ```java
+    @Service
+    public class OrderService {
+        @Transactional
+        public Order placeOrder(OrderRequest req) {
+            // Everything here in one transaction
+            User u = userRepo.findById(req.userId()).orElseThrow();
+            Order o = new Order(u, req.items());
+            return orderRepo.save(o);
+        }
+
+        @Transactional(readOnly = true)
+        public Order getOrder(Long id) {
+            return orderRepo.findById(id).orElseThrow();
+        }
+    }
+    ```
+
+    `readOnly = true` for read-only methods — Hibernate skips dirty checks, slight performance win.
+
+    Transactions roll back on `RuntimeException` by default. Checked exceptions don't trigger rollback; either declare `rollbackFor = Exception.class` or convert to runtime.
+- fragment_type: guardrail
+  sequence: 7
+  content: |-
+    ## Common Pitfalls
+
+    - **EAGER everywhere causing huge JOINs.** Prefer LAZY; use fetch joins per query.
+    - **N+1 not caught in tests.** Most tests use small fixtures and don't trigger it. Add a query-counter assertion (e.g., `@Sql` + `Statistics`) for hot paths.
+    - **Open Session in View leaking transactions.** Spring's `OpenEntityManagerInViewInterceptor` (default in Spring Boot) extends the session past the @Transactional method. Disable via `spring.jpa.open-in-view=false`.
+    - **Equals/hashCode on managed fields.** Use the ID for equality, but only if it's set. Pre-persist entities have null IDs.
+- fragment_type: verification
+  sequence: 8
+  content: |-
+    ## Verification
+
+    A healthy JPA setup:
+
+    - `spring.jpa.show-sql=true` in dev shows expected query counts (no N+1 surprises).
+    - Lazy loading errors don't leak to web layer (means transactions are scoped right).
+    - Slow-query log catches expensive queries before they reach prod.
+    - Each `@Transactional` method either commits cleanly or rolls back on error.

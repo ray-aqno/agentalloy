@@ -1,0 +1,304 @@
+skill_type: domain
+skill_id: github-actions-caching-and-artifacts
+canonical_name: GitHub Actions Caching and Artifacts
+category: ops
+skill_class: domain
+domain_tags:
+  - caching
+  - artifacts
+  - github-actions
+  - workflow
+  - dependency-management
+always_apply: false
+phase_scope: []
+category_scope: []
+author: authoring-agent
+change_summary: initial authoring draft
+raw_prose: |
+  # GitHub Actions Caching and Artifacts
+
+  ## Overview
+
+  `actions/cache` reduces install time on subsequent runs. `actions/upload-artifact` + `actions/download-artifact` pass files between jobs in the same run or to subsequent workflow_run consumers. This skill covers both data-flow primitives.
+
+  Sourced from https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching.
+
+  ## `cache` action usage
+
+  The [`cache` action](https://github.com/actions/cache) will attempt the following sequence when restoring a cache:
+
+  1. First, it searches for an exact match to your provided `key`.
+  1. If no exact match is found, it will search for partial matches of the `key`.
+  1. If there is still no match found, and you've provided `restore-keys`, these keys will be checked sequentially for partial matches. For more information, see [Cache key matching](#cache-key-matching).
+
+  If there is an exact match to the provided `key`, this is considered a cache hit. If no cache exactly matches the provided `key`, this is considered a cache miss. On a cache miss, the action automatically creates a new cache if the job completes successfully. The new cache will use the `key` you provided and contains the files you specify in `path`. For more information about how this is handled, see [Cache hits and misses](#cache-hits-and-misses).
+
+  You cannot change the contents of an existing cache. Instead, you can create a new cache with a new key.
+
+  ### Input parameters for the `cache` action
+
+  * `key`: **Required** The key created when saving a cache and the key used to search for a cache. It can be any combination of variables, context values, static strings, and functions. Keys have a maximum length of 512 characters, and keys longer than the maximum length will cause the action to fail.
+  * `path`: **Required** The path(s) on the runner to cache or restore.
+    * You can specify a single path, or you can add multiple paths on separate lines. For example:
+
+      ```yaml
+      - name: Cache Gradle packages
+        uses: 
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+      ```
+
+    * You can specify either directories or single files, and glob patterns are supported.
+    * You can specify absolute paths, or paths relative to the workspace directory.
+  * `restore-keys`: **Optional** A string containing alternative restore keys, with each restore key placed on a new line. If no cache hit occurs for `key`, these restore keys are used sequentially in the order provided to find and restore a cache. For example:
+
+      ```yaml
+      restore-keys: |
+        npm-feature-$
+        npm-feature-
+        npm-
+      ```
+
+  * `enableCrossOsArchive`: **Optional** A boolean value that when enabled, allows Windows runners to save or restore caches independent of the operating system the cache was created on. If this parameter is not set, it defaults to `false`. For more information, see [Cross OS cache](https://github.com/actions/cache/blob/main/tips-and-workarounds.md#cross-os-cache) in the Actions Cache documentation.
+
+  > [!NOTE]
+  > We recommend that you don't store any sensitive information, such as access tokens or login credentials, in files in the cache path. Anyone with read access can create a pull request on a repository and access the contents of a cache. Additionally, forks of a repository can create pull requests on the base branch and access caches on the base branch.
+
+  ### Output parameters for the `cache` action
+
+  * `cache-hit`: A boolean value to indicate an exact match was found for the key.
+
+  ### Cache hits and misses
+
+  When `key` exactly matches an existing cache, it's called a _cache hit_, and the action restores the cached files to the `path` directory.
+
+  When `key` doesn't match an existing cache, it's called a _cache miss_, and a new cache is automatically created if the job completes successfully.
+
+  When a cache miss occurs, the action also searches your specified `restore-keys` for any matches:
+
+  1. If you provide `restore-keys`, the `cache` action sequentially searches for any caches that match the list of `restore-keys`.
+     * When there is an exact match, the action restores the files in the cache to the `path` directory.
+     * If there are no exact matches, the action searches for partial matches of the restore keys. When the action finds a partial match, the most recent cache is restored to the `path` directory.
+  1. The `cache` action completes and the next step in the job runs.
+  1. If the job completes successfully, the action automatically creates a new cache with the contents of the `path` directory.
+
+  For a more detailed explanation of the cache matching process, see [Cache key matching](#cache-key-matching).
+
+  ### Example using the `cache` action
+
+  This example creates a new cache when the packages in `package-lock.json` file change, or when the runner's operating system changes. The cache key uses contexts and expressions to generate a key that includes the runner's operating system and a SHA-256 hash of the `package-lock.json` file.
+
+  ```yaml copy
+  name: Caching with npm
+  on: push
+  jobs:
+    build:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: 
+
+        - name: Cache node modules
+          id: cache-npm
+          uses: 
+          env:
+            cache-name: cache-node-modules
+          with:
+            # npm cache files are stored in `~/.npm` on Linux/macOS
+            path: ~/.npm
+            key: $-build-$-$
+            restore-keys: |
+              $-build-$-
+              $-build-
+              $-
+
+        - if: $
+          name: List the state of node modules
+          continue-on-error: true
+          run: npm list
+
+        - name: Install dependencies
+          run: npm install
+
+        - name: Build
+          run: npm run build
+
+        - name: Test
+          run: npm test
+  ```
+
+  ### Using contexts to create cache keys
+
+  A cache key can include any of the contexts, functions, literals, and operators supported by . For more information, see [AUTOTITLE](/actions/learn-github-actions/contexts) and [AUTOTITLE](/actions/learn-github-actions/expressions).
+
+  Using expressions to create a `key` allows you to automatically create a new cache when dependencies change.
+
+  For example, you can create a `key` using an expression that calculates the hash of an npm `package-lock.json` file. So, when the dependencies that make up the `package-lock.json` file change, the cache key changes and a new cache is automatically created.
+
+
+
+  ```yaml
+  npm-$
+  ```
+
+  
+
+   evaluates the expression `hash "package-lock.json"` to derive the final `key`.
+
+  ```yaml
+  npm-d5ea0750
+  ```
+
+  ### Using the output of the `cache` action
+
+  You can use the output of the `cache` action to do something based on whether a cache hit or miss occurred. When an exact match is found for a cache for the specified `key`, the `cache-hit` output is set to `true`.
+
+  In the example workflow above, there is a step that lists the state of the Node modules if a cache miss occurred:
+
+  ```yaml
+  - if: $
+    name: List the state of node modules
+    continue-on-error: true
+    run: npm list
+  ```
+
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      ## Overview
+
+      `actions/cache` reduces install time on subsequent runs. `actions/upload-artifact` + `actions/download-artifact` pass files between jobs in the same run or to subsequent workflow_run consumers. This skill covers both data-flow primitives.
+
+      Sourced from https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching.
+  - fragment_type: execution
+    sequence: 2
+    content: |
+      ## `cache` action usage
+
+      The [`cache` action](https://github.com/actions/cache) will attempt the following sequence when restoring a cache:
+
+      1. First, it searches for an exact match to your provided `key`.
+      1. If no exact match is found, it will search for partial matches of the `key`.
+      1. If there is still no match found, and you've provided `restore-keys`, these keys will be checked sequentially for partial matches. For more information, see [Cache key matching](#cache-key-matching).
+
+      If there is an exact match to the provided `key`, this is considered a cache hit. If no cache exactly matches the provided `key`, this is considered a cache miss. On a cache miss, the action automatically creates a new cache if the job completes successfully. The new cache will use the `key` you provided and contains the files you specify in `path`. For more information about how this is handled, see [Cache hits and misses](#cache-hits-and-misses).
+
+      You cannot change the contents of an existing cache. Instead, you can create a new cache with a new key.
+  - fragment_type: rationale
+    sequence: 3
+    content: |
+      ### Input parameters for the `cache` action
+
+      * `key`: **Required** The key created when saving a cache and the key used to search for a cache. It can be any combination of variables, context values, static strings, and functions. Keys have a maximum length of 512 characters, and keys longer than the maximum length will cause the action to fail.
+      * `path`: **Required** The path(s) on the runner to cache or restore.
+        * You can specify a single path, or you can add multiple paths on separate lines. For example:
+
+          ```yaml
+          - name: Cache Gradle packages
+            uses: 
+            with:
+              path: |
+                ~/.gradle/caches
+                ~/.gradle/wrapper
+          ```
+
+        * You can specify either directories or single files, and glob patterns are supported.
+        * You can specify absolute paths, or paths relative to the workspace directory.
+      * `restore-keys`: **Optional** A string containing alternative restore keys, with each restore key placed on a new line. If no cache hit occurs for `key`, these restore keys are used sequentially in the order provided to find and restore a cache. For example:
+
+          ```yaml
+          restore-keys: |
+            npm-feature-$
+            npm-feature-
+            npm-
+          ```
+
+      * `enableCrossOsArchive`: **Optional** A boolean value that when enabled, allows Windows runners to save or restore caches independent of the operating system the cache was created on. If this parameter is not set, it defaults to `false`. For more information, see [Cross OS cache](https://github.com/actions/cache/blob/main/tips-and-workarounds.md#cross-os-cache) in the Actions Cache documentation.
+
+      > [!NOTE]
+      > We recommend that you don't store any sensitive information, such as access tokens or login credentials, in files in the cache path. Anyone with read access can create a pull request on a repository and access the contents of a cache. Additionally, forks of a repository can create pull requests on the base branch and access caches on the base branch.
+  - fragment_type: example
+    sequence: 4
+    content: |
+      ### Example using the `cache` action
+
+      This example creates a new cache when the packages in `package-lock.json` file change, or when the runner's operating system changes. The cache key uses contexts and expressions to generate a key that includes the runner's operating system and a SHA-256 hash of the `package-lock.json` file.
+
+      ```yaml copy
+      name: Caching with npm
+      on: push
+      jobs:
+        build:
+          runs-on: ubuntu-latest
+          steps:
+            - uses: 
+
+            - name: Cache node modules
+              id: cache-npm
+              uses: 
+              env:
+                cache-name: cache-node-modules
+              with:
+                # npm cache files are stored in `~/.npm` on Linux/macOS
+                path: ~/.npm
+                key: $-build-$-$
+                restore-keys: |
+                  $-build-$-
+                  $-build-
+                  $-
+
+            - if: $
+              name: List the state of node modules
+              continue-on-error: true
+              run: npm list
+
+            - name: Install dependencies
+              run: npm install
+
+            - name: Build
+              run: npm run build
+
+            - name: Test
+              run: npm test
+      ```
+  - fragment_type: rationale
+    sequence: 5
+    content: |
+      ### Using contexts to create cache keys
+
+      A cache key can include any of the contexts, functions, literals, and operators supported by . For more information, see [AUTOTITLE](/actions/learn-github-actions/contexts) and [AUTOTITLE](/actions/learn-github-actions/expressions).
+
+      Using expressions to create a `key` allows you to automatically create a new cache when dependencies change.
+
+      For example, you can create a `key` using an expression that calculates the hash of an npm `package-lock.json` file. So, when the dependencies that make up the `package-lock.json` file change, the cache key changes and a new cache is automatically created.
+
+
+
+      ```yaml
+      npm-$
+      ```
+
+      
+
+       evaluates the expression `hash "package-lock.json"` to derive the final `key`.
+
+      ```yaml
+      npm-d5ea0750
+      ```
+  - fragment_type: example
+    sequence: 6
+    content: |
+      ### Using the output of the `cache` action
+
+      You can use the output of the `cache` action to do something based on whether a cache hit or miss occurred. When an exact match is found for a cache for the specified `key`, the `cache-hit` output is set to `true`.
+
+      In the example workflow above, there is a step that lists the state of the Node modules if a cache miss occurred:
+
+      ```yaml
+      - if: $
+        name: List the state of node modules
+        continue-on-error: true
+        run: npm list
+      ```

@@ -1,0 +1,179 @@
+skill_type: domain
+skill_id: temporal-workers
+canonical_name: Temporal Workers
+category: engineering
+skill_class: domain
+domain_tags:
+  - temporal
+  - python
+  - worker
+  - task-queue
+  - workflow
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: initial authoring draft
+raw_prose: |
+  # Temporal Workers
+
+  ## Overview
+
+  A Temporal worker is the long-running process that polls a task queue and executes workflow + activity code. Workers are constructed via the Python SDK's `Worker` class, which takes a client, task queue name, and the registered workflows/activities. This skill covers worker setup and lifecycle.
+
+  Sourced from https://docs.temporal.io/develop/python/core-application#run-a-dev-worker.
+
+  ---
+
+  # workers / index
+
+  ![Python SDK Banner](/img/assets/banner-python-temporal.png)
+
+  ## Workers
+
+  - [Worker processes](/develop/python/workers/run-worker-process)
+  - [Interceptors](/develop/python/workers/interceptors)
+
+  # workers / run-process
+
+  ## Run a Worker Process {#run-a-dev-worker}
+
+  **How to run a Worker Process using the Temporal Python SDK.**
+
+  The [Worker Process](/workers#worker-process) is where Workflow Functions and Activity Functions are executed.
+
+  - Each [Worker Entity](/workers#worker-entity) in the Worker Process must register the exact Workflow Types and Activity
+    Types it may execute.
+  - Each Worker Entity must also associate itself with exactly one [Task Queue](/task-queue).
+  - Each Worker Entity polling the same Task Queue must be registered with the same Workflow Types and Activity Types.
+
+  A [Worker Entity](/workers#worker-entity) is the component within a Worker Process that listens to a specific Task
+  Queue.
+
+  Although multiple Worker Entities can be in a single Worker Process, a single Worker Entity Worker Process may be
+  perfectly sufficient. For more information, see the [Worker tuning guide](/develop/worker-performance).
+
+  A Worker Entity contains a Workflow Worker and/or an Activity Worker, which makes progress on Workflow Executions and
+  Activity Executions, respectively.
+
+  To develop a Worker, use the `Worker()` constructor and add your Client, Task Queue, Workflows, and Activities as
+  arguments. The following code example creates a Worker that polls for tasks from the Task Queue and executes the
+  Workflow. When a Worker is created, it accepts a list of Workflows in the workflows parameter, a list of Activities in
+  the activities parameter, or both.
+
+  <div className="copycode-notice-container">
+    <a href="https://github.com/temporalio/documentation/blob/main/sample-apps/python/your_app/run_worker_dacx.py">
+      View the source code
+    </a>{' '}
+    in the context of the rest of the application code.
+  </div>
+
+  ```python
+  from temporalio.client import Client
+  from temporalio.worker import Worker
+  # ...
+  # ...
+  async def main():
+      client = await Client.connect("localhost:7233")
+      worker = Worker(
+          client,
+          task_queue="your-task-queue",
+          workflows=[YourWorkflow],
+          activities=[your_activity],
+      )
+      await worker.run()
+
+  if __name__ == "__main__":
+      asyncio.run(main())
+  ```
+
+  ### Register types {#register-types}
+
+  **How to register types using the Temporal Python SDK.**
+
+  All Workers listening to the same Task Queue name must be registered to handle the exact same Workflows Types and
+  Activity Types.
+
+  If a Worker polls a Task for a Workflow Type or Activity Type it does not know about, it fails that Task. However, the
+  failure of the Task does not cause the associated Workflow Execution to fail.
+
+  When a `Worker` is created, it accepts a list of Workflows in the `workflows` parameter, a list of Activities in the
+  `activities` parameter, or both.
+
+  <div className="copycode-notice-container">
+    <a href="https://github.com/temporalio/documentation/blob/main/sample-apps/python/your_app/run_worker_dacx.py">
+      View the source code
+    </a>{' '}
+    in the context of the rest of the application code.
+  </div>
+
+  ```python
+  # ...
+  async def main():
+      client = await Client.connect("localhost:7233")
+      worker = Worker(
+          client,
+          task_queue="your-task-queue",
+          workflows=[YourWorkflow],
+          activities=[your_activity],
+      )
+      await worker.run()
+
+  if __name__ == "__main__":
+      asyncio.run(main())
+  ```
+
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      A Temporal worker is the long-running process that polls a task queue and executes workflow + activity code. Workers are constructed via the Python SDK's `Worker` class, which takes a client, task queue name, and the registered workflows/activities. This skill covers worker setup and lifecycle.
+
+      Sourced from https://docs.temporal.io/develop/python/core-application#run-a-dev-worker.
+  - fragment_type: execution
+    sequence: 2
+    content: |
+      To develop a Worker, use the `Worker()` constructor and add your Client, Task Queue, Workflows, and Activities as arguments. The following code example creates a Worker that polls for tasks from the Task Queue and executes the Workflow. When a Worker is created, it accepts a list of Workflows in the workflows parameter, a list of Activities in the activities parameter, or both.
+
+      ```python
+      from temporalio.client import Client
+      from temporalio.worker import Worker
+      # ...
+      # ...
+      async def main():
+          client = await Client.connect("localhost:7233")
+          worker = Worker(
+              client,
+              task_queue="your-task-queue",
+              workflows=[YourWorkflow],
+              activities=[your_activity],
+          )
+          await worker.run()
+
+      if __name__ == "__main__":
+          asyncio.run(main())
+      ```
+  - fragment_type: rationale
+    sequence: 3
+    content: |
+      All Workers listening to the same Task Queue name must be registered to handle the exact same Workflows Types and Activity Types.
+
+      If a Worker polls a Task for a Workflow Type or Activity Type it does not know about, it fails that Task. However, the failure of the Task does not cause the associated Workflow Execution to fail.
+  - fragment_type: example
+    sequence: 4
+    content: |
+      ```python
+      # ...
+      async def main():
+          client = await Client.connect("localhost:7233")
+          worker = Worker(
+              client,
+              task_queue="your-task-queue",
+              workflows=[YourWorkflow],
+              activities=[your_activity],
+          )
+          await worker.run()
+
+      if __name__ == "__main__":
+          asyncio.run(main())
+      ```

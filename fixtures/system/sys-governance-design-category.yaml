@@ -1,0 +1,42 @@
+skill_id: sys-governance-design-category
+canonical_name: Design-category governance
+category: governance
+skill_class: system
+domain_tags: []
+deprecated: false
+always_apply: false
+phase_scope: null
+category_scope: [design]
+versions:
+  - version_id: sys-governance-design-category-v1
+    version_number: 1
+    authored_at: 2026-01-03T00:00:00Z
+    author: fixture-seed
+    change_summary: initial version
+    status: superseded
+    raw_prose: Legacy version.
+    fragments: []
+  - version_id: sys-governance-design-category-v2
+    version_number: 2
+    authored_at: 2026-03-02T00:00:00Z
+    author: fixture-seed
+    change_summary: v2 with reversibility and blast-radius framing
+    status: active
+    raw_prose: |
+      Rules that apply when the task touches design work — architecture, API
+      contracts, data models, interface shapes.
+    fragments:
+      - fragment_id: sys-governance-design-category-v2-f1
+        fragment_type: guardrail
+        sequence: 1
+        content: |
+          Prefer reversible decisions. If a proposed design makes a later
+          change expensive, document the tradeoff explicitly before committing
+          to the path.
+      - fragment_id: sys-governance-design-category-v2-f2
+        fragment_type: rationale
+        sequence: 2
+        content: |
+          Most design errors are caught by articulating the blast radius of a
+          change before it ships. A one-paragraph risk statement per
+          non-trivial interface change pays for itself many times over.

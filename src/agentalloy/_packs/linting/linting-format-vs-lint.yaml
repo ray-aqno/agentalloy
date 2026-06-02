@@ -1,0 +1,298 @@
+skill_type: domain
+skill_id: linting-format-vs-lint
+canonical_name: Format vs Lint — Separation of Concerns
+category: tooling
+skill_class: domain
+domain_tags:
+- linting
+- formatting
+- prettier
+- tooling-philosophy
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Format vs Lint — Separation of Concerns
+
+  ## Overview
+
+  Format and lint are different jobs. Formatting is opinionated whitespace/quote/comma decisions; linting is correctness/style rules. Mixing them in one tool creates conflicts and slows builds. The modern split: Prettier for format, ESLint for lint.
+
+  ---
+
+  ## Why They're Different
+
+  **Formatting** — purely cosmetic. 'Should the comma be at the end of the line or the beginning?' No bug-finding value. Either choice is fine; consistency is the win.
+
+  **Linting** — semantic. 'Is this `if (x = 5)` (assignment) when you meant `==` (comparison)?' Catches bugs.
+
+  If you ask Prettier whether `if (x = 5)` is a problem, it says 'no, formatting is fine'. If you ask ESLint, it says 'yes, that's a bug' (`no-cond-assign` rule).
+
+  ## The ESLint + Prettier Split
+
+  ```
+  ESLint:    catches bugs, enforces semantic conventions
+  Prettier:  decides where commas go, max line length, indent
+  ```
+
+  When both run, they conflict on overlapping rules (e.g., `quotes`, `indent`, `comma-style`). Resolve by disabling those rules in ESLint:
+
+  ```bash
+  npm install -D eslint-config-prettier
+  ```
+
+  `.eslintrc.json`:
+
+  ```json
+  {
+      "extends": ["eslint:recommended", "prettier"]
+  }
+  ```
+
+  `'prettier'` extends last; turns off all formatting-related rules in ESLint. Prettier handles them.
+
+  ## Run Order
+
+  ```bash
+  # 1. Format first
+  prettier --write .
+
+  # 2. Lint after
+  eslint .
+  ```
+
+  This way, format-related ESLint rules (if any remain) operate on already-formatted code. Reverse order causes ESLint to flag formatting that Prettier will then change anyway.
+
+  In CI, run both; if either errors, build fails:
+
+  ```yaml
+  - run: prettier --check .
+  - run: eslint .
+  ```
+
+  ## What Belongs to Format
+
+  Prettier's domain:
+
+  - Indentation, line length, line breaks.
+  - Quote style, comma trailing, semicolons.
+  - Spacing around operators, keywords, brackets.
+  - Wrapping long expressions.
+
+  Configurable via `.prettierrc` but the defaults are intentional. Don't bikeshed.
+
+  ## What Belongs to Lint
+
+  ESLint's domain:
+
+  - Bug patterns: `no-cond-assign`, `no-unused-vars`, `no-implicit-coercion`.
+  - Best practices: `prefer-const`, `eqeqeq`, `no-var`.
+  - Stylistic: `naming-convention`, `no-magic-numbers`.
+  - Framework rules: `react/jsx-key`, `vue/no-unused-vars`.
+
+  Some style rules are arguably formatting (e.g., `comma-dangle`); when both tools handle one rule, defer to Prettier.
+
+  ## Newer Tools — Biome
+
+  Biome (formerly Rome) does both formatting and linting in one binary. Faster than ESLint + Prettier (Rust-based, 10-100x faster). Less mature plugin ecosystem.
+
+  Trade-off: speed for plugin breadth. Biome covers most of what Prettier and ESLint's recommended set do, but if you depend on `eslint-plugin-jest` or `eslint-plugin-react-hooks`, you're not switching to Biome yet.
+
+  For greenfield projects, Biome is reasonable. For existing projects with extensive plugin use, ESLint + Prettier remains the choice.
+
+  ## Lint-Stage and Format
+
+  ```json
+  {
+      "lint-staged": {
+          "*.{js,ts}": ["eslint --fix", "prettier --write"]
+      }
+  }
+  ```
+
+  Run order matters: ESLint --fix first (fixes its rules), then Prettier (fixes formatting). Prettier always wins on formatting; ESLint only fixes its non-formatting rules.
+
+  ## Organization-Level Configs
+
+  For consistency across repos:
+
+  - `@myorg/eslint-config` — bundles ESLint rules.
+  - `@myorg/prettier-config` — bundles Prettier options.
+
+  Repos install both:
+
+  ```json
+  {
+      "extends": "@myorg/eslint-config",
+      "prettier": "@myorg/prettier-config"
+  }
+  ```
+
+  Updates propagate via version bumps.
+
+  ## Common Pitfalls
+
+  - **Configuring ESLint with formatting rules.** Conflicts with Prettier; rules drift over time. Use `eslint-config-prettier` to disable.
+  - **Running ESLint on the formatter's output and getting different results next run.** Means ESLint and Prettier disagree somewhere. Let `eslint-config-prettier` resolve.
+  - **Disabling Prettier rules to allow personal preferences.** Defeats the purpose. The whole point is no debate.
+  - **Format on save fighting with lint on save.** If both editor extensions run on save and each uses different rules, you get format-lint-format-lint cycles. Run formatter first, then linter.
+  - **Treating Biome as a drop-in replacement.** It's mostly compatible but plugin support is partial. Audit before migrating.
+
+  ## Verification
+
+  A clean format+lint setup:
+
+  - Prettier produces consistent output on every machine, every editor.
+  - ESLint catches bugs and patterns; doesn't fight Prettier.
+  - CI runs both; PRs that fail either are blocked.
+  - Editor integration formats and lints on save without flicker.
+fragments:
+- fragment_type: rationale
+  sequence: 1
+  content: |-
+    ## Why They're Different
+
+    **Formatting** — purely cosmetic. 'Should the comma be at the end of the line or the beginning?' No bug-finding value. Either choice is fine; consistency is the win.
+
+    **Linting** — semantic. 'Is this `if (x = 5)` (assignment) when you meant `==` (comparison)?' Catches bugs.
+
+    If you ask Prettier whether `if (x = 5)` is a problem, it says 'no, formatting is fine'. If you ask ESLint, it says 'yes, that's a bug' (`no-cond-assign` rule).
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## The ESLint + Prettier Split
+
+    ```
+    ESLint:    catches bugs, enforces semantic conventions
+    Prettier:  decides where commas go, max line length, indent
+    ```
+
+    When both run, they conflict on overlapping rules (e.g., `quotes`, `indent`, `comma-style`). Resolve by disabling those rules in ESLint:
+
+    ```bash
+    npm install -D eslint-config-prettier
+    ```
+
+    `.eslintrc.json`:
+
+    ```json
+    {
+        "extends": ["eslint:recommended", "prettier"]
+    }
+    ```
+
+    `'prettier'` extends last; turns off all formatting-related rules in ESLint. Prettier handles them.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Run Order
+
+    ```bash
+    # 1. Format first
+    prettier --write .
+
+    # 2. Lint after
+    eslint .
+    ```
+
+    This way, format-related ESLint rules (if any remain) operate on already-formatted code. Reverse order causes ESLint to flag formatting that Prettier will then change anyway.
+
+    In CI, run both; if either errors, build fails:
+
+    ```yaml
+    - run: prettier --check .
+    - run: eslint .
+    ```
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## What Belongs to Format
+
+    Prettier's domain:
+
+    - Indentation, line length, line breaks.
+    - Quote style, comma trailing, semicolons.
+    - Spacing around operators, keywords, brackets.
+    - Wrapping long expressions.
+
+    Configurable via `.prettierrc` but the defaults are intentional. Don't bikeshed.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## What Belongs to Lint
+
+    ESLint's domain:
+
+    - Bug patterns: `no-cond-assign`, `no-unused-vars`, `no-implicit-coercion`.
+    - Best practices: `prefer-const`, `eqeqeq`, `no-var`.
+    - Stylistic: `naming-convention`, `no-magic-numbers`.
+    - Framework rules: `react/jsx-key`, `vue/no-unused-vars`.
+
+    Some style rules are arguably formatting (e.g., `comma-dangle`); when both tools handle one rule, defer to Prettier.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Newer Tools — Biome
+
+    Biome (formerly Rome) does both formatting and linting in one binary. Faster than ESLint + Prettier (Rust-based, 10-100x faster). Less mature plugin ecosystem.
+
+    Trade-off: speed for plugin breadth. Biome covers most of what Prettier and ESLint's recommended set do, but if you depend on `eslint-plugin-jest` or `eslint-plugin-react-hooks`, you're not switching to Biome yet.
+
+    For greenfield projects, Biome is reasonable. For existing projects with extensive plugin use, ESLint + Prettier remains the choice.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Lint-Stage and Format
+
+    ```json
+    {
+        "lint-staged": {
+            "*.{js,ts}": ["eslint --fix", "prettier --write"]
+        }
+    }
+    ```
+
+    Run order matters: ESLint --fix first (fixes its rules), then Prettier (fixes formatting). Prettier always wins on formatting; ESLint only fixes its non-formatting rules.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Organization-Level Configs
+
+    For consistency across repos:
+
+    - `@myorg/eslint-config` — bundles ESLint rules.
+    - `@myorg/prettier-config` — bundles Prettier options.
+
+    Repos install both:
+
+    ```json
+    {
+        "extends": "@myorg/eslint-config",
+        "prettier": "@myorg/prettier-config"
+    }
+    ```
+
+    Updates propagate via version bumps.
+- fragment_type: guardrail
+  sequence: 9
+  content: |-
+    ## Common Pitfalls
+
+    - **Configuring ESLint with formatting rules.** Conflicts with Prettier; rules drift over time. Use `eslint-config-prettier` to disable.
+    - **Running ESLint on the formatter's output and getting different results next run.** Means ESLint and Prettier disagree somewhere. Let `eslint-config-prettier` resolve.
+    - **Disabling Prettier rules to allow personal preferences.** Defeats the purpose. The whole point is no debate.
+    - **Format on save fighting with lint on save.** If both editor extensions run on save and each uses different rules, you get format-lint-format-lint cycles. Run formatter first, then linter.
+    - **Treating Biome as a drop-in replacement.** It's mostly compatible but plugin support is partial. Audit before migrating.
+- fragment_type: verification
+  sequence: 10
+  content: |-
+    ## Verification
+
+    A clean format+lint setup:
+
+    - Prettier produces consistent output on every machine, every editor.
+    - ESLint catches bugs and patterns; doesn't fight Prettier.
+    - CI runs both; PRs that fail either are blocked.
+    - Editor integration formats and lints on save without flicker.

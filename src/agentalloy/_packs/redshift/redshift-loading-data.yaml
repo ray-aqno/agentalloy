@@ -1,0 +1,238 @@
+skill_type: domain
+skill_id: redshift-loading-data
+canonical_name: Amazon Redshift Loading Data — COPY
+category: engineering
+skill_class: domain
+domain_tags:
+  - redshift
+  - copy-command
+  - data-loading
+  - s3
+  - emr
+  - dynamodb
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: initial authoring draft
+raw_prose: |
+  # Amazon Redshift Loading Data — COPY
+
+  ## Overview
+
+  Redshift loads data via the COPY command — running in parallel across all compute slices, optimized for S3-staged files. COPY supports many source types and formats and exposes detailed error reporting via STL_LOAD_ERRORS. This skill covers COPY end-to-end.
+
+  Sourced from https://docs.aws.amazon.com/redshift/latest/dg/r_COPY.html and the Redshift loading-data best-practices guide.
+
+  ---
+
+
+  # COPY
+
+
+
+  |  | 
+  | --- |
+  |  Client-side encryption for COPY and UNLOAD commands will no longer be open to new customers starting April 30, 2025. If you used client-side encryption with COPY and UNLOAD commands in the 12 months before April 30, 2025, you can continue to use client side encryption with COPY or UNLOAD commands until April 30, 2026. After April 30, 2026, you won't be able to use client-side encryption for COPY and UNLOAD. We recommend that you switch to using server-side encryption for COPY and UNLOAD as soon as possible. If you're already using server-side encryption for COPY and UNLOAD, there's no change and you can continue to use it without altering your queries. For more information on encryption for COPY and UNLOAD, see the ENCRYPTED parameter below.  | 
+
+  Loads data into a table from data files or from an Amazon DynamoDB table. The files can be located in an Amazon Simple Storage Service (Amazon S3) bucket, an Amazon EMR cluster, or a remote host that is accessed using a Secure Shell (SSH) connection.
+
+  **Note**  
+  Amazon Redshift Spectrum external tables are read-only. You can't COPY to an external table.
+
+  The COPY command appends the input data as additional rows to the table.
+
+  The maximum size of a single input row from any source is 4 MB.
+
+  **Topics**
+  + [Required permissions](#r_COPY-permissions)
+  + [COPY syntax](#r_COPY-syntax)
+  + [Required parameters](#r_COPY-syntax-required-parameters)
+  + [Optional parameters](#r_COPY-syntax-overview-optional-parameters)
+  + [Usage notes and additional resources for the COPY command](#r_COPY-using-the-copy-command)
+  + [COPY command examples](#r_COPY-using-the-copy-command-examples)
+  + [COPY JOB](r_COPY-JOB.md)
+  + [COPY with TEMPLATE](r_COPY-WITH-TEMPLATE.md)
+  + [COPY parameter reference](r_COPY-parameters.md)
+  + [Usage notes](r_COPY_usage_notes.md)
+  + [COPY examples](r_COPY_command_examples.md)
+
+  ## Required permissions
+
+
+  To use the COPY command, you must have [INSERT](r_GRANT.md#grant-insert) privilege for the Amazon Redshift table.
+
+  ## COPY syntax
+
+
+  ```
+  COPY table-name 
+  [ column-list ]
+  FROM data_source
+  authorization
+  [ [ FORMAT ] [ AS ] data_format ] 
+  [ parameter [ argument ] [, ... ] ]
+  ```
+
+  You can perform a COPY operation with as few as three parameters: a table name, a data source, and authorization to access the data. 
+
+  Amazon Redshift extends the functionality of the COPY command to enable you to load data in several data formats from multiple data sources, control access to load data, manage data transformations, and manage the load operation. 
+
+  The following sections present the required COPY command parameters, grouping the optional parameters by function. They also describe each parameter and explain how various options work together. You can go directly to a parameter description by using the alphabetical parameter list. 
+
+  ## Required parameters
+
+
+  The COPY command requires three elements: 
+  + [Table Name](#r_COPY-syntax-overview-table-name)
+  + [Data Source](#r_COPY-syntax-overview-data-source)
+  + [Authorization](#r_COPY-syntax-overview-credentials)
+
+  The simplest COPY command uses the following format. 
+
+  ```
+  COPY table-name 
+  FROM data-source
+  authorization;
+  ```
+
+  The following example creates a table named CATDEMO, and then loads the table with sample data from a data file in Amazon S3 named `category_pipe.txt`. 
+
+  ```
+  create table catdemo(catid smallint, catgroup varchar(10), catname varchar(10), catdesc varchar(50));
+  ```
+
+  In the following example, the data source for the COPY command is a data file named `category_pipe.txt` in the `tickit` folder of an Amazon S3 bucket named `redshift-downloads`. The COPY command is authorized to access the Amazon S3 bucket through an AWS Identity and Access Management (IAM) role. If your cluster has an existing IAM role with permission to access Amazon S3 attached, you can substitute your role's Amazon Resource Name (ARN) in the following COPY command and run it.
+
+  ```
+  copy catdemo
+  from 's3://redshift-downloads/tickit/category_pipe.txt'
+  iam_role 'arn:aws:iam::<aws-account-id>:role/<role-name>'
+  region 'us-east-1';
+  ```
+
+  For complete instructions on how to use COPY commands to load sample data, including instructions for loading data from other AWS regions, see [Load Sample Data from Amazon S3](https://docs.aws.amazon.com/redshift/latest/gsg/rs-gsg-create-sample-db.html) in the Amazon Redshift Getting Started Guide.
+
+  *table-name*  
+  The name of the target table for the COPY command. The table must already exist in the database. The table can be temporary or persistent. The COPY command appends the new input data to any existing rows in the table.
+
+  FROM *data-source*  
+  The location of the source data to be loaded into the target table. A manifest file can be specified with some data sources.   
+  The most commonly used data repository is an Amazon S3 bucket. You can also load from data files located in an Amazon EMR cluster, an Amazon EC2 instance, or a remote host that your cluster can access using an SSH connection, or you can load directly from a DynamoDB table.   
+  + [COPY from Amazon S3](copy-parameters-data-source-s3.md)
+  + [COPY from Amazon EMR](copy-parameters-data-source-emr.md) 
+  + [COPY from remote host (SSH)](copy-parameters-data-source-ssh.md)
+  + [COPY from Amazon DynamoDB](copy-parameters-data-source-dynamodb.md)
+
+  Authorization  
+  A clause that indicates the method that your cluster uses for authentication and authorization to access other AWS resources. The COPY command needs authorization to access data in another AWS resource, including in Amazon S3, Amazon EMR, Amazon DynamoDB, and Amazon EC2. You can provide that authorization by referencing an IAM role that is attached to your cluster or by providing the access key ID and secret access key for an IAM user.   
+  + [Authorization parameters](copy-parameters-authorization.md) 
+  + [Role-based access control](copy-usage_notes-access-permissions.md#copy-usage_notes-access-role-based) 
+  + [Key-based access control](copy-usage_notes-access-permissions.md#copy-usage_notes-access-key-based)
+
+  ---
+
+  # Amazon Redshift best practices for loading data
+
+
+  Loading very large datasets can take a long time and consume a lot of computing resources. How your data is loaded can also affect query performance. This section presents best practices for loading data efficiently using COPY commands, bulk inserts, and staging tables. 
+
+  **Topics**
+  + [Learn how to load data with a tutorial](c_best-practices-loading-take-loading-data-tutorial.md)
+  + [Use a COPY command to load data](c_best-practices-use-copy.md)
+  + [Use a single COPY command to load from multiple files](c_best-practices-single-copy-command.md)
+  + [Loading data files](c_best-practices-use-multiple-files.md)
+  + [Compressing your data files](c_best-practices-compress-data-files.md)
+  + [Verify data files before and after a load](c_best-practices-verifying-data-files.md)
+  + [Use a multi-row insert](c_best-practices-multi-row-inserts.md)
+  + [Use a bulk insert](c_best-practices-bulk-inserts.md)
+  + [Load data in sort key order](c_best-practices-sort-key-order.md)
+  + [Load data in sequential blocks](c_best-practices-load-data-in-sequential-blocks.md)
+  + [Use time-series tables](c_best-practices-time-series-tables.md)
+  + [Schedule around maintenance windows](c_best-practices-avoid-maintenance.md)
+
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      Redshift loads data via the COPY command — running in parallel across all compute slices, optimized for S3-staged files. COPY supports many source types and formats and exposes detailed error reporting via STL_LOAD_ERRORS. This skill covers COPY end-to-end.
+
+      Sourced from https://docs.aws.amazon.com/redshift/latest/dg/r_COPY.html and the Redshift loading-data best-practices guide.
+  - fragment_type: setup
+    sequence: 2
+    content: |
+      Loads data into a table from data files or from an Amazon DynamoDB table. The files can be located in an Amazon Simple Storage Service (Amazon S3) bucket, an Amazon EMR cluster, or a remote host that is accessed using a Secure Shell (SSH) connection.
+
+      **Note**  
+      Amazon Redshift Spectrum external tables are read-only. You can't COPY to an external table.
+
+      The COPY command appends the input data as additional rows to the table.
+
+      The maximum size of a single input row from any source is 4 MB.
+  - fragment_type: execution
+    sequence: 3
+    content: |
+      ```
+      COPY table-name 
+      [ column-list ]
+      FROM data_source
+      authorization
+      [ [ FORMAT ] [ AS ] data_format ] 
+      [ parameter [ argument ] [, ... ] ]
+      ```
+
+      You can perform a COPY operation with as few as three parameters: a table name, a data source, and authorization to access the data. 
+
+      Amazon Redshift extends the functionality of the COPY command to enable you to load data in several data formats from multiple data sources, control access to load data, manage data transformations, and manage the load operation. 
+  - fragment_type: execution
+    sequence: 4
+    content: |
+      The simplest COPY command uses the following format. 
+
+      ```
+      COPY table-name 
+      FROM data-source
+      authorization;
+      ```
+
+      The following example creates a table named CATDEMO, and then loads the table with sample data from a data file in Amazon S3 named `category_pipe.txt`. 
+
+      ```
+      create table catdemo(catid smallint, catgroup varchar(10), catname varchar(10), catdesc varchar(50));
+      ```
+
+      In the following example, the data source for the COPY command is a data file named `category_pipe.txt` in the `tickit` folder of an Amazon S3 bucket named `redshift-downloads`. The COPY command is authorized to access the Amazon S3 bucket through an AWS Identity and Access Management (IAM) role. If your cluster has an existing IAM role with permission to access Amazon S3 attached, you can substitute your role's Amazon Resource Name (ARN) in the following COPY command and run it.
+
+      ```
+      copy catdemo
+      from 's3://redshift-downloads/tickit/category_pipe.txt'
+      iam_role 'arn:aws:iam::<aws-account-id>:role/<role-name>'
+      region 'us-east-1';
+      ```
+
+      For complete instructions on how to use COPY commands to load sample data, including instructions for loading data from other AWS regions, see [Load Sample Data from Amazon S3](https://docs.aws.amazon.com/redshift/latest/gsg/rs-gsg-create-sample-db.html) in the Amazon Redshift Getting Started Guide.
+  - fragment_type: setup
+    sequence: 5
+    content: |
+      *table-name*  
+      The name of the target table for the COPY command. The table must already exist in the database. The table can be temporary or persistent. The COPY command appends the new input data to any existing rows in the table.
+
+      FROM *data-source*  
+      The location of the source data to be loaded into the target table. A manifest file can be specified with some data sources.   
+      The most commonly used data repository is an Amazon S3 bucket. You can also load from data files located in an Amazon EMR cluster, an Amazon EC2 instance, or a remote host that your cluster can access using an SSH connection, or you can load directly from a DynamoDB table.   
+      + [COPY from Amazon S3](copy-parameters-data-source-s3.md)
+      + [COPY from Amazon EMR](copy-parameters-data-source-emr.md) 
+      + [COPY from remote host (SSH)](copy-parameters-data-source-ssh.md)
+      + [COPY from Amazon DynamoDB](copy-parameters-data-source-dynamodb.md)
+  - fragment_type: setup
+    sequence: 6
+    content: |
+      Authorization  
+      A clause that indicates the method that your cluster uses for authentication and authorization to access other AWS resources. The COPY command needs authorization to access data in another AWS resource, including in Amazon S3, Amazon EMR, Amazon DynamoDB, and Amazon EC2. You can provide that authorization by referencing an IAM role that is attached to your cluster or by providing the access key ID and secret access key for an IAM user.   
+      + [Authorization parameters](copy-parameters-authorization.md) 
+      + [Role-based access control](copy-usage_notes-access-permissions.md#copy-usage_notes-access-role-based) 
+      + [Key-based access control](copy-usage_notes-access-permissions.md#copy-usage_notes-access-key-based)
+  - fragment_type: setup
+    sequence: 7
+    content: |
+      Loading very large datasets can take a long time and consume a lot of computing resources. How your data is loaded can also affect query performance. This section presents best practices for loading data efficiently using COPY commands, bulk inserts, and staging tables. 

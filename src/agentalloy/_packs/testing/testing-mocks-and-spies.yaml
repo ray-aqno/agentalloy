@@ -1,0 +1,249 @@
+skill_type: domain
+skill_id: testing-mocks-and-spies
+canonical_name: Test Mocks, Spies, and Module Mocking
+category: quality
+skill_class: domain
+domain_tags:
+- testing
+- mocks
+- spies
+- stubs
+- vitest
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus source after 14B failed structural authoring
+raw_prose: |-
+  # Test Mocks, Spies, and Module Mocking
+
+  ## Overview
+
+  This skill covers testing mocks and spies patterns end-to-end.
+
+  ---
+
+  ## The Four Kinds of Test Double
+
+  Test doubles let you isolate the unit under test from its collaborators. They come in four flavors with distinct purposes:
+
+  - **Dummy** — a value passed in to satisfy a parameter but never used. Often `null` or `undefined`.
+  - **Stub** — returns canned values. Used when the test needs the collaborator to return something specific so the test can exercise a branch.
+  - **Mock** — records calls so the test can assert *that* a call happened with specific arguments. Used when the collaboration itself is the behavior under test.
+  - **Fake** — a working but simplified implementation (in-memory database, fake HTTP server). Used when stubbing every method would be tedious or fragile.
+
+  Pick the lightest-weight double that solves the problem. Reach for fakes only when stubs/mocks become unwieldy.
+
+  ## Stubs — Return Canned Values
+
+  Use a stub when the test needs a specific return from a collaborator to drive the unit under test down a particular path.
+
+  ```js
+  // Stub: getUser returns a known user
+  const getUser = vi.fn().mockResolvedValue({ id: '1', name: 'Alice' });
+
+  // Test the unit that consumes getUser
+  const greeting = await welcomeUser(getUser);
+  expect(greeting).toBe('Hello, Alice');
+  ```
+
+  Stubs answer 'when X is called with Y, return Z'. Don't assert on a stub's calls — that turns it into a mock and couples the test to implementation details.
+
+  ## Mocks — Assert That A Call Happened
+
+  Use a mock when the act of calling the collaborator IS the behavior under test (e.g., 'on user delete, the service should send a goodbye email').
+
+  ```js
+  const sendEmail = vi.fn();
+
+  await deleteUser('user-1', { sendEmail });
+
+  expect(sendEmail).toHaveBeenCalledOnce();
+  expect(sendEmail).toHaveBeenCalledWith('user-1', 'goodbye');
+  ```
+
+  Mock assertions: `toHaveBeenCalled`, `toHaveBeenCalledTimes(n)`, `toHaveBeenCalledWith(...)`, `toHaveBeenLastCalledWith(...)`, `toHaveReturnedWith(...)`.
+
+  ## Spies — Wrap A Real Function
+
+  Use a spy when you want to record calls but keep the real implementation running. Common case: you're testing that a method delegates correctly to a helper, but the helper's real behavior is fine.
+
+  ```js
+  const spy = vi.spyOn(userService, 'audit');
+
+  await userService.delete('user-1');
+
+  expect(spy).toHaveBeenCalledWith('user-1', 'delete');
+  spy.mockRestore();  // restore original behavior after test
+  ```
+
+  Spies are reversible. Always restore them in teardown to avoid leaking spy behavior into other tests.
+
+  ## Module-Level Mocking — Replace An Import
+
+  Sometimes you need to replace a whole imported module — typically because the unit under test imports it directly and there's no parameter to inject through.
+
+  ```js
+  vi.mock('./email-service', () => ({
+    sendEmail: vi.fn().mockResolvedValue({ ok: true })
+  }));
+
+  import { deleteUser } from './user-service';
+  import { sendEmail } from './email-service';
+
+  await deleteUser('user-1');
+  expect(sendEmail).toHaveBeenCalled();
+  ```
+
+  Module mocks are hoisted by Vitest's transformer to run before imports. They replace the module for the entire test file. Reset between tests with `vi.resetAllMocks()` or `mockReset()`.
+
+  ## Mocking Time
+
+  `vi.useFakeTimers()` replaces `setTimeout`, `setInterval`, and `Date.now()` with controllable versions. Tests that depend on real time are flaky; fake timers make them deterministic.
+
+  ```js
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+
+  scheduleEmail(user, '1h');
+  vi.advanceTimersByTime(60 * 60 * 1000);
+
+  expect(sendEmail).toHaveBeenCalled();
+  vi.useRealTimers();
+  ```
+
+  ## When Doubles Become A Smell
+
+  If your test setup is dominated by mock setup, the unit under test has too many collaborators. Refactor toward fewer dependencies — the mock-heavy test is signaling design pressure.
+
+  If your tests pass but the code breaks in production, your mocks may be drifting from the real collaborator. Periodically swap a mock for the real thing in a higher-level integration test as a sanity check.
+
+  ## Verification
+
+  A test using doubles should:
+
+  - Replace only the dependencies needed for isolation, not all of them.
+  - Restore real behavior in teardown (especially for spies and timer mocks).
+  - Assert on the unit's behavior, not on the mock's setup.
+  - Pass for the right reason — a stub returning the wrong value should still fail the test.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## The Four Kinds of Test Double
+
+    Test doubles let you isolate the unit under test from its collaborators. They come in four flavors with distinct purposes:
+
+    - **Dummy** — a value passed in to satisfy a parameter but never used. Often `null` or `undefined`.
+    - **Stub** — returns canned values. Used when the test needs the collaborator to return something specific so the test can exercise a branch.
+    - **Mock** — records calls so the test can assert *that* a call happened with specific arguments. Used when the collaboration itself is the behavior under test.
+    - **Fake** — a working but simplified implementation (in-memory database, fake HTTP server). Used when stubbing every method would be tedious or fragile.
+
+    Pick the lightest-weight double that solves the problem. Reach for fakes only when stubs/mocks become unwieldy.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Stubs — Return Canned Values
+
+    Use a stub when the test needs a specific return from a collaborator to drive the unit under test down a particular path.
+
+    ```js
+    // Stub: getUser returns a known user
+    const getUser = vi.fn().mockResolvedValue({ id: '1', name: 'Alice' });
+
+    // Test the unit that consumes getUser
+    const greeting = await welcomeUser(getUser);
+    expect(greeting).toBe('Hello, Alice');
+    ```
+
+    Stubs answer 'when X is called with Y, return Z'. Don't assert on a stub's calls — that turns it into a mock and couples the test to implementation details.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Mocks — Assert That A Call Happened
+
+    Use a mock when the act of calling the collaborator IS the behavior under test (e.g., 'on user delete, the service should send a goodbye email').
+
+    ```js
+    const sendEmail = vi.fn();
+
+    await deleteUser('user-1', { sendEmail });
+
+    expect(sendEmail).toHaveBeenCalledOnce();
+    expect(sendEmail).toHaveBeenCalledWith('user-1', 'goodbye');
+    ```
+
+    Mock assertions: `toHaveBeenCalled`, `toHaveBeenCalledTimes(n)`, `toHaveBeenCalledWith(...)`, `toHaveBeenLastCalledWith(...)`, `toHaveReturnedWith(...)`.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Spies — Wrap A Real Function
+
+    Use a spy when you want to record calls but keep the real implementation running. Common case: you're testing that a method delegates correctly to a helper, but the helper's real behavior is fine.
+
+    ```js
+    const spy = vi.spyOn(userService, 'audit');
+
+    await userService.delete('user-1');
+
+    expect(spy).toHaveBeenCalledWith('user-1', 'delete');
+    spy.mockRestore();  // restore original behavior after test
+    ```
+
+    Spies are reversible. Always restore them in teardown to avoid leaking spy behavior into other tests.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Module-Level Mocking — Replace An Import
+
+    Sometimes you need to replace a whole imported module — typically because the unit under test imports it directly and there's no parameter to inject through.
+
+    ```js
+    vi.mock('./email-service', () => ({
+      sendEmail: vi.fn().mockResolvedValue({ ok: true })
+    }));
+
+    import { deleteUser } from './user-service';
+    import { sendEmail } from './email-service';
+
+    await deleteUser('user-1');
+    expect(sendEmail).toHaveBeenCalled();
+    ```
+
+    Module mocks are hoisted by Vitest's transformer to run before imports. They replace the module for the entire test file. Reset between tests with `vi.resetAllMocks()` or `mockReset()`.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Mocking Time
+
+    `vi.useFakeTimers()` replaces `setTimeout`, `setInterval`, and `Date.now()` with controllable versions. Tests that depend on real time are flaky; fake timers make them deterministic.
+
+    ```js
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+
+    scheduleEmail(user, '1h');
+    vi.advanceTimersByTime(60 * 60 * 1000);
+
+    expect(sendEmail).toHaveBeenCalled();
+    vi.useRealTimers();
+    ```
+- fragment_type: rationale
+  sequence: 7
+  content: |-
+    ## When Doubles Become A Smell
+
+    If your test setup is dominated by mock setup, the unit under test has too many collaborators. Refactor toward fewer dependencies — the mock-heavy test is signaling design pressure.
+
+    If your tests pass but the code breaks in production, your mocks may be drifting from the real collaborator. Periodically swap a mock for the real thing in a higher-level integration test as a sanity check.
+- fragment_type: verification
+  sequence: 8
+  content: |-
+    ## Verification
+
+    A test using doubles should:
+
+    - Replace only the dependencies needed for isolation, not all of them.
+    - Restore real behavior in teardown (especially for spies and timer mocks).
+    - Assert on the unit's behavior, not on the mock's setup.
+    - Pass for the right reason — a stub returning the wrong value should still fail the test.

@@ -1,0 +1,372 @@
+skill_type: domain
+skill_id: go-error-handling
+canonical_name: Go Error Handling (Wrapping, errors.Is/As, Sentinel Values, Panic/Recover)
+category: engineering
+skill_class: domain
+domain_tags: [error-wrapping, sentinel-values, typed-errors, panic-recover, error-inspection]
+always_apply: false
+phase_scope: null
+category_scope: language
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-05. Sources — errors package https://pkg.go.dev/errors (verified 2026-05-05 against fixtures/upstream/curated/go.yaml topic `error_handling_and_exceptions`); Go 1.13 errors blog https://go.dev/blog/go1.13-errors; Error handling and Go https://go.dev/blog/error-handling-and-go; Go spec on panic recovery https://go.dev/ref/spec#Handling_panics. Skill scope: how to return, wrap, and inspect errors idiomatically; when to use sentinel errors vs typed errors vs `fmt.Errorf` with `%w`; the limits of `panic`/`recover`; not error reporting/observability (covered separately), not language-comparison error semantics (covered in foundation tier).
+
+raw_prose: |
+  # Go Error Handling
+
+  Go does not have exceptions. Functions that can fail return an `error` as their last value, the caller checks it, and decisions about retry, logging, and propagation happen explicitly at every layer. The rule is one sentence: return errors as values, wrap them with `fmt.Errorf("...: %w", err)` when adding context, inspect them with `errors.Is` for sentinel values and `errors.As` for typed errors, and reserve `panic` for genuinely unrecoverable programmer errors. Most production Go error bugs come from swallowing errors silently, comparing wrapped errors with `==`, building string-only errors that lose programmatic structure, or using `panic` for ordinary failure flow.
+
+  ## The error interface
+
+  `error` is a single-method interface:
+
+  ```go
+  type error interface {
+      Error() string
+  }
+  ```
+
+  Any type whose pointer (or value) implements `Error() string` satisfies it. The `errors.New` and `fmt.Errorf` constructors return implementations of this interface; you rarely need to define your own type unless you want to attach structured fields or distinguish error kinds programmatically.
+
+  The standard idiom returns an error as the last value:
+
+  ```go
+  func ReadConfig(path string) (*Config, error) {
+      data, err := os.ReadFile(path)
+      if err != nil {
+          return nil, fmt.Errorf("read config %q: %w", path, err)
+      }
+      // ...
+  }
+  ```
+
+  ## Wrapping with `%w`
+
+  `fmt.Errorf` with the `%w` verb wraps an error — the new error remembers the original as its cause. Wrap when crossing a layer boundary that adds context the caller needs. Do not wrap when the inner error already says everything; do not wrap with the same context twice.
+
+  ```go
+  if err := db.QueryRow(...).Scan(&user); err != nil {
+      return fmt.Errorf("load user %d: %w", id, err)
+  }
+  ```
+
+  Wrapping preserves the chain so `errors.Is` and `errors.As` can walk it. String concatenation (`fmt.Errorf("...: %v", err)`) loses the chain — the resulting error is opaque, only useful as a log line. Use `%w` unless you specifically want to flatten.
+
+  Multi-error wrapping (Go 1.20+): `fmt.Errorf("...: %w; %w", a, b)` or `errors.Join(a, b)` produces an error that wraps multiple causes. `errors.Is` and `errors.As` walk all branches. Useful for "close all connections, collect errors" cleanup paths.
+
+  ## Sentinel errors
+
+  A sentinel is a package-level error variable used as a known signal:
+
+  ```go
+  package store
+
+  import "errors"
+
+  var ErrNotFound = errors.New("store: not found")
+  ```
+
+  Callers check with `errors.Is`, *not* `==`:
+
+  ```go
+  if errors.Is(err, store.ErrNotFound) {
+      // 404 path
+  }
+  ```
+
+  `errors.Is` walks the wrap chain — so if `store.Get` wrapped `ErrNotFound` with extra context, the caller still matches. Comparing with `==` only matches the exact value and breaks the moment any layer wraps.
+
+  Sentinels are appropriate when there is a small fixed set of distinguishable error conditions. They become awkward when error variants have parameters; switch to typed errors there.
+
+  ## Typed errors
+
+  When an error carries data — an HTTP status, a field name, a remote request ID — define a struct type:
+
+  ```go
+  type ValidationError struct {
+      Field string
+      Reason string
+  }
+
+  func (e *ValidationError) Error() string {
+      return fmt.Sprintf("validation: %s: %s", e.Field, e.Reason)
+  }
+  ```
+
+  Callers extract with `errors.As`:
+
+  ```go
+  var verr *ValidationError
+  if errors.As(err, &verr) {
+      // verr.Field, verr.Reason available
+  }
+  ```
+
+  `errors.As` walks the wrap chain just like `errors.Is`, matching the first error in the chain whose type is assignable to the target.
+
+  Convention: name typed errors `XxxError` and export them when callers need to type-switch on them. Use pointer receivers so two `*ValidationError` values can be distinguished by identity if needed.
+
+  ## When to use `panic`
+
+  `panic` aborts normal control flow and unwinds the stack until a `recover` catches it (or the program exits). Reserve `panic` for:
+
+  - **Programmer errors that indicate a bug.** Index out of range, nil pointer dereference, "this should be impossible" branches.
+  - **`init()` failures** where the program cannot meaningfully start (missing required config, failed dependency injection).
+  - **Library functions where a compile-time invariant is violated** by the caller (e.g., `regexp.MustCompile`).
+
+  Do *not* `panic` for:
+
+  - **IO failures, network errors, validation errors.** These are normal operational outcomes — return them.
+  - **"I do not feel like writing error returns".** This is the most common abuse.
+  - **Across API boundaries.** A library that panics on bad input is a library people stop using.
+
+  `recover` is only useful inside a deferred function. The standard use case is at the top of a goroutine's lifetime to keep one bad request from killing the process — *not* as a general-purpose try/catch.
+
+  ```go
+  func handler(w http.ResponseWriter, r *http.Request) {
+      defer func() {
+          if r := recover(); r != nil {
+              log.Printf("panic: %v\n%s", r, debug.Stack())
+              http.Error(w, "internal error", 500)
+          }
+      }()
+      // handler body
+  }
+  ```
+
+  ## Errors at API boundaries
+
+  Document which errors a function returns in its doc comment. List sentinels by name (`Returns ErrNotFound if the key does not exist`). Document error types whose fields callers need.
+
+  Do not return `error` types whose package the caller cannot import (a common bug when error types live in `internal/`). If the caller cannot construct or check for the error, the contract is broken.
+
+  Wrap at *meaningful* boundaries — a single function call rarely needs three layers of `fmt.Errorf`. A good heuristic: wrap once when crossing a logical layer (storage → service → transport), with context the *next* layer up cannot reconstruct on its own. The error message should read top-down as "high-level intent: mid-level operation: root cause," each segment adding distinct information.
+
+  ## Anti-patterns
+
+  - **Ignoring `err`.** `data, _ := os.ReadFile(path)` is almost always a bug. The compiler does not warn because the underscore is explicit; `errcheck` or `golangci-lint` will.
+  - **Using `==` on wrapped errors.** `if err == ErrNotFound` fails the moment any layer wraps. Use `errors.Is`.
+  - **Wrapping the same context repeatedly.** `fmt.Errorf("read user: %w", fmt.Errorf("read user: %w", err))` produces ugly errors. Each wrap should add new information.
+  - **Returning a `string` for "not found" cases.** Loses programmatic detection. Return a sentinel.
+  - **`log.Fatal` deep in library code.** Fatal calls `os.Exit`, deferred functions do not run, callers cannot recover. Return errors; let `main` decide whether to exit.
+  - **Panicking on user input.** A request handler that panics on a malformed JSON body is a denial-of-service vector. Validate, return a 400.
+  - **`recover()` outside a deferred function.** It returns `nil` and does nothing useful. Always inside `defer func(){ ... }()`.
+  - **Hiding errors with `%v` when the caller needs to inspect.** `%v` produces a string-only error; chain inspection breaks. Use `%w` unless you specifically want to flatten.
+
+  ## Verification
+
+  - [ ] No `_ = someCall()` or `data, _ := os.ReadFile(...)` ignoring an `error` return.
+  - [ ] All wrapping uses `%w`, not `%v`, when the chain should be inspectable.
+  - [ ] Comparisons against sentinel errors use `errors.Is`, not `==`.
+  - [ ] Type assertions on errors use `errors.As`, not direct type assertion.
+  - [ ] Sentinel error variables are package-level and named `ErrXxx`.
+  - [ ] No `panic` in normal operational paths (IO, network, validation).
+  - [ ] `recover` only appears inside deferred functions, with surrounding logging.
+  - [ ] Doc comments on exported functions list which sentinel/typed errors they may return.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Go Error Handling
+
+      Go does not have exceptions. Functions that can fail return an `error` as their last value, the caller checks it, and decisions about retry, logging, and propagation happen explicitly at every layer. The rule is one sentence: return errors as values, wrap them with `fmt.Errorf("...: %w", err)` when adding context, inspect them with `errors.Is` for sentinel values and `errors.As` for typed errors, and reserve `panic` for genuinely unrecoverable programmer errors. Most production Go error bugs come from swallowing errors silently, comparing wrapped errors with `==`, building string-only errors that lose programmatic structure, or using `panic` for ordinary failure flow.
+
+  - sequence: 2
+    fragment_type: rationale
+    content: |
+      ## The error interface
+
+      `error` is a single-method interface:
+
+      ```go
+      type error interface {
+          Error() string
+      }
+      ```
+
+      Any type whose pointer (or value) implements `Error() string` satisfies it. The `errors.New` and `fmt.Errorf` constructors return implementations of this interface; you rarely need to define your own type unless you want to attach structured fields or distinguish error kinds programmatically.
+
+      The standard idiom returns an error as the last value:
+
+      ```go
+      import (
+          "fmt"
+          "os"
+      )
+
+      func ReadConfig(path string) (*Config, error) {
+          data, err := os.ReadFile(path)
+          if err != nil {
+              return nil, fmt.Errorf("read config %q: %w", path, err)
+          }
+          // ...
+      }
+      ```
+
+  - sequence: 3
+    fragment_type: example
+    content: |
+      ## Wrapping with `%w`
+
+      `fmt.Errorf` with the `%w` verb wraps an error — the new error remembers the original as its cause. Wrap when crossing a layer boundary that adds context the caller needs. Do not wrap when the inner error already says everything; do not wrap with the same context twice.
+
+      ```go
+      import "fmt"
+
+      if err := db.QueryRow(...).Scan(&user); err != nil {
+          return fmt.Errorf("load user %d: %w", id, err)
+      }
+      ```
+
+      Wrapping preserves the chain so `errors.Is` and `errors.As` can walk it. String concatenation (`fmt.Errorf("...: %v", err)`) loses the chain — the resulting error is opaque, only useful as a log line. Use `%w` unless you specifically want to flatten.
+
+      Multi-error wrapping (Go 1.20+): `fmt.Errorf("...: %w; %w", a, b)` or `errors.Join(a, b)` produces an error that wraps multiple causes. `errors.Is` and `errors.As` walk all branches. Useful for "close all connections, collect errors" cleanup paths.
+
+  - sequence: 4
+    fragment_type: example
+    content: |
+      ## Sentinel errors
+
+      A sentinel is a package-level error variable used as a known signal:
+
+      ```go
+      package store
+
+      import "errors"
+
+      var ErrNotFound = errors.New("store: not found")
+      ```
+
+      Callers check with `errors.Is`, *not* `==`:
+
+      ```go
+      import (
+          "errors"
+          "myapp/store"
+      )
+
+      if errors.Is(err, store.ErrNotFound) {
+          // 404 path
+      }
+      ```
+
+      `errors.Is` walks the wrap chain — so if `store.Get` wrapped `ErrNotFound` with extra context, the caller still matches. Comparing with `==` only matches the exact value and breaks the moment any layer wraps.
+
+      Sentinels are appropriate when there is a small fixed set of distinguishable error conditions. They become awkward when error variants have parameters; switch to typed errors there.
+
+  - sequence: 5
+    fragment_type: example
+    content: |
+      ## Typed errors with `errors.As`
+
+      When an error carries data — an HTTP status, a field name, a remote request ID — define a struct type:
+
+      ```go
+      import "fmt"
+
+      type ValidationError struct {
+          Field string
+          Reason string
+      }
+
+      func (e *ValidationError) Error() string {
+          return fmt.Sprintf("validation: %s: %s", e.Field, e.Reason)
+      }
+      ```
+
+      Callers extract with `errors.As`:
+
+      ```go
+      import "errors"
+
+      var verr *ValidationError
+      if errors.As(err, &verr) {
+          // verr.Field, verr.Reason available
+      }
+      ```
+
+      `errors.As` walks the wrap chain just like `errors.Is`, matching the first error in the chain whose type is assignable to the target. Convention: name typed errors `XxxError` and export them when callers need to type-switch on them. Use pointer receivers so two `*ValidationError` values can be distinguished by identity if needed.
+
+  - sequence: 6
+    fragment_type: execution
+    content: |
+      ## When to use `panic`
+
+      `panic` aborts normal control flow and unwinds the stack until a `recover` catches it (or the program exits). Reserve `panic` for:
+
+      - **Programmer errors that indicate a bug.** Index out of range, nil pointer dereference, "this should be impossible" branches.
+      - **`init()` failures** where the program cannot meaningfully start (missing required config, failed dependency injection).
+      - **Library functions where a compile-time invariant is violated** by the caller (e.g., `regexp.MustCompile`).
+
+      Do *not* `panic` for:
+
+      - **IO failures, network errors, validation errors.** These are normal operational outcomes — return them.
+      - **"I do not feel like writing error returns".** This is the most common abuse.
+      - **Across API boundaries.** A library that panics on bad input is a library people stop using.
+
+      `recover` is only useful inside a deferred function. The standard use case is at the top of a goroutine's lifetime to keep one bad request from killing the process — *not* as a general-purpose try/catch.
+
+  - sequence: 7
+    fragment_type: example
+    content: |
+      ## `recover` at the goroutine boundary
+
+      ```go
+      import (
+          "log"
+          "net/http"
+          "runtime/debug"
+      )
+
+      func handler(w http.ResponseWriter, r *http.Request) {
+          defer func() {
+              if rec := recover(); rec != nil {
+                  log.Printf("panic: %v\n%s", rec, debug.Stack())
+                  http.Error(w, "internal error", 500)
+              }
+          }()
+          // handler body
+      }
+      ```
+
+      The recover is inside a deferred closure — that is the only place it works. It logs the panic value and the stack, returns a 500, and lets the rest of the server keep running. Do not use this pattern as a general try/catch substitute; do use it as a last-line-of-defense in long-lived servers and worker pools.
+
+  - sequence: 8
+    fragment_type: rationale
+    content: |
+      ## Errors at API boundaries
+
+      Document which errors a function returns in its doc comment. List sentinels by name (`Returns ErrNotFound if the key does not exist`). Document error types whose fields callers need.
+
+      Do not return `error` types whose package the caller cannot import (a common bug when error types live in `internal/`). If the caller cannot construct or check for the error, the contract is broken.
+
+      Wrap at *meaningful* boundaries — a single function call rarely needs three layers of `fmt.Errorf`. A good heuristic: wrap once when crossing a logical layer (storage → service → transport), with context the *next* layer up cannot reconstruct on its own. The error message should read top-down as "high-level intent: mid-level operation: root cause," each segment adding distinct information.
+
+  - sequence: 9
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      - **Ignoring `err`.** `data, _ := os.ReadFile(path)` is almost always a bug. The compiler does not warn because the underscore is explicit; `errcheck` or `golangci-lint` will.
+      - **Using `==` on wrapped errors.** `if err == ErrNotFound` fails the moment any layer wraps. Use `errors.Is`.
+      - **Wrapping the same context repeatedly.** `fmt.Errorf("read user: %w", fmt.Errorf("read user: %w", err))` produces ugly errors. Each wrap should add new information.
+      - **Returning a `string` for "not found" cases.** Loses programmatic detection. Return a sentinel.
+      - **`log.Fatal` deep in library code.** Fatal calls `os.Exit`, deferred functions do not run, callers cannot recover. Return errors; let `main` decide whether to exit.
+      - **Panicking on user input.** A request handler that panics on a malformed JSON body is a denial-of-service vector. Validate, return a 400.
+      - **`recover()` outside a deferred function.** It returns `nil` and does nothing useful. Always inside `defer func(){ ... }()`.
+      - **Hiding errors with `%v` when the caller needs to inspect.** `%v` produces a string-only error; chain inspection breaks. Use `%w` unless you specifically want to flatten.
+
+  - sequence: 10
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] No `_ = someCall()` or `data, _ := os.ReadFile(...)` ignoring an `error` return.
+      - [ ] All wrapping uses `%w`, not `%v`, when the chain should be inspectable.
+      - [ ] Comparisons against sentinel errors use `errors.Is`, not `==`.
+      - [ ] Type assertions on errors use `errors.As`, not direct type assertion.
+      - [ ] Sentinel error variables are package-level and named `ErrXxx`.
+      - [ ] No `panic` in normal operational paths (IO, network, validation).
+      - [ ] `recover` only appears inside deferred functions, with surrounding logging.
+      - [ ] Doc comments on exported functions list which sentinel/typed errors they may return.

@@ -1,0 +1,449 @@
+skill_type: domain
+skill_id: linting-eslint-plugin-authoring
+canonical_name: ESLint Plugin Authoring — Custom Rules
+category: tooling
+skill_class: domain
+domain_tags:
+- linting
+- eslint
+- plugin
+- custom-rules
+- ast
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # ESLint Plugin Authoring — Custom Rules
+
+  ## Overview
+
+  ESLint plugins are how you automate codebase-specific rules: 'no internal-API imports outside this directory', 'all routes must have OpenAPI metadata', 'enforce custom error class hierarchy'. The mechanics: write a rule that visits AST nodes and reports violations.
+
+  ---
+
+  ## Plugin Structure
+
+  ```
+  my-eslint-plugin/
+  ├── package.json
+  ├── lib/
+  │   ├── index.js          # plugin entry
+  │   └── rules/
+  │       └── no-x.js       # individual rule
+  └── tests/
+      └── no-x.test.js
+  ```
+
+  `package.json`:
+
+  ```json
+  {
+      "name": "eslint-plugin-myorg",
+      "version": "1.0.0",
+      "main": "lib/index.js",
+      "peerDependencies": { "eslint": ">=8" }
+  }
+  ```
+
+  `lib/index.js`:
+
+  ```js
+  module.exports = {
+      rules: {
+          'no-x': require('./rules/no-x'),
+      },
+      configs: {
+          recommended: {
+              plugins: ['myorg'],
+              rules: { 'myorg/no-x': 'error' },
+          },
+      },
+  };
+  ```
+
+  ## A Minimal Rule
+
+  ```js
+  // lib/rules/no-x.js
+  module.exports = {
+      meta: {
+          type: 'problem',  // or 'suggestion' or 'layout'
+          docs: {
+              description: 'disallow uppercase X in identifiers',
+              url: 'https://example.com/eslint-plugin-myorg/no-x',
+          },
+          messages: {
+              forbiddenX: 'Identifiers cannot contain uppercase X',
+          },
+          schema: [],  // no options
+      },
+      create(context) {
+          return {
+              Identifier(node) {
+                  if (node.name.includes('X')) {
+                      context.report({
+                          node,
+                          messageId: 'forbiddenX',
+                      });
+                  }
+              },
+          };
+      },
+  };
+  ```
+
+  The `create` function returns visitor methods keyed by AST node type. ESLint calls them as it walks the AST.
+
+  ## Use it in a Project
+
+  ```yaml
+  # eslint.config.js
+  import myorg from 'eslint-plugin-myorg';
+
+  export default [
+      {
+          plugins: { myorg },
+          rules: { 'myorg/no-x': 'error' },
+      },
+  ];
+  ```
+
+  ## AST Node Types
+
+  ESLint exposes ESTree-compliant AST. Common nodes:
+
+  - `Identifier` — variable/function names.
+  - `Literal` — strings, numbers, booleans.
+  - `CallExpression` — function calls.
+  - `MemberExpression` — `obj.prop`.
+  - `ImportDeclaration` — imports.
+  - `FunctionDeclaration`, `ArrowFunctionExpression` — function definitions.
+  - `JSXElement` — JSX tags.
+
+  Use astexplorer.net to inspect what AST your code parses to.
+
+  ## Fixers
+
+  ```js
+  context.report({
+      node,
+      messageId: 'forbiddenX',
+      fix(fixer) {
+          return fixer.replaceText(node, node.name.replace(/X/g, 'x'));
+      },
+  });
+  ```
+
+  The `fix` returns a `Fixer` operation. ESLint applies it when run with `--fix`. Be conservative — fixers must produce semantically identical code.
+
+  ## Suggestions
+
+  For non-safe transforms, use suggestions instead of fixers:
+
+  ```js
+  context.report({
+      node,
+      messageId: 'forbiddenX',
+      suggest: [
+          {
+              messageId: 'replaceWithLowercase',
+              fix(fixer) {
+                  return fixer.replaceText(node, node.name.toLowerCase());
+              },
+          },
+      ],
+  });
+  ```
+
+  Suggestions don't auto-apply on `--fix`; editors show them as quick-fix actions.
+
+  ## Testing with RuleTester
+
+  ```js
+  const { RuleTester } = require('eslint');
+  const rule = require('../lib/rules/no-x');
+
+  const tester = new RuleTester();
+  tester.run('no-x', rule, {
+      valid: [
+          'const foo = 1',
+          'function bar() {}',
+      ],
+      invalid: [
+          {
+              code: 'const fooX = 1',
+              errors: [{ messageId: 'forbiddenX' }],
+          },
+          {
+              code: 'const fooX = 1',
+              errors: 1,
+              output: 'const foox = 1',  // expected after --fix
+          },
+      ],
+  });
+  ```
+
+  `valid` cases must not error; `invalid` must error and (if a fixer is set) produce the expected output.
+
+  ## Rule Options
+
+  ```js
+  meta: {
+      schema: [
+          {
+              type: 'object',
+              properties: {
+                  allowed: { type: 'array', items: { type: 'string' } },
+              },
+          },
+      ],
+  },
+  create(context) {
+      const { allowed = [] } = context.options[0] || {};
+      // use allowed in rule logic
+  },
+  ```
+
+  Schema is JSON Schema — ESLint validates user config against it.
+
+  ## Common Pitfalls
+
+  - **Reporting on the wrong node.** The `node` in `context.report` controls where the error squiggle appears. Make it specific.
+  - **Fixers that change semantics.** A fixer that 'simplifies' code that wasn't equivalent breaks builds silently.
+  - **Forgetting RuleTester for edge cases.** Empty inputs, async functions, JSX — test all.
+  - **Not setting `messages` schema.** Inline `message: '...'` works but doesn't internationalize. Use `messageId`.
+
+  ## Verification
+
+  A working ESLint plugin:
+
+  - Plugin installs as a dependency in target repo.
+  - Rule fires on real-world bad code; passes on good code.
+  - Fixer (if any) produces semantically identical code.
+  - RuleTester covers all branches.
+  - Plugin docs explain each rule with examples.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Plugin Structure
+
+    ```
+    my-eslint-plugin/
+    ├── package.json
+    ├── lib/
+    │   ├── index.js          # plugin entry
+    │   └── rules/
+    │       └── no-x.js       # individual rule
+    └── tests/
+        └── no-x.test.js
+    ```
+
+    `package.json`:
+
+    ```json
+    {
+        "name": "eslint-plugin-myorg",
+        "version": "1.0.0",
+        "main": "lib/index.js",
+        "peerDependencies": { "eslint": ">=8" }
+    }
+    ```
+
+    `lib/index.js`:
+
+    ```js
+    module.exports = {
+        rules: {
+            'no-x': require('./rules/no-x'),
+        },
+        configs: {
+            recommended: {
+                plugins: ['myorg'],
+                rules: { 'myorg/no-x': 'error' },
+            },
+        },
+    };
+    ```
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## A Minimal Rule
+
+    ```js
+    // lib/rules/no-x.js
+    module.exports = {
+        meta: {
+            type: 'problem',  // or 'suggestion' or 'layout'
+            docs: {
+                description: 'disallow uppercase X in identifiers',
+                url: 'https://example.com/eslint-plugin-myorg/no-x',
+            },
+            messages: {
+                forbiddenX: 'Identifiers cannot contain uppercase X',
+            },
+            schema: [],  // no options
+        },
+        create(context) {
+            return {
+                Identifier(node) {
+                    if (node.name.includes('X')) {
+                        context.report({
+                            node,
+                            messageId: 'forbiddenX',
+                        });
+                    }
+                },
+            };
+        },
+    };
+    ```
+
+    The `create` function returns visitor methods keyed by AST node type. ESLint calls them as it walks the AST.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Use it in a Project
+
+    ```yaml
+    # eslint.config.js
+    import myorg from 'eslint-plugin-myorg';
+
+    export default [
+        {
+            plugins: { myorg },
+            rules: { 'myorg/no-x': 'error' },
+        },
+    ];
+    ```
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## AST Node Types
+
+    ESLint exposes ESTree-compliant AST. Common nodes:
+
+    - `Identifier` — variable/function names.
+    - `Literal` — strings, numbers, booleans.
+    - `CallExpression` — function calls.
+    - `MemberExpression` — `obj.prop`.
+    - `ImportDeclaration` — imports.
+    - `FunctionDeclaration`, `ArrowFunctionExpression` — function definitions.
+    - `JSXElement` — JSX tags.
+
+    Use astexplorer.net to inspect what AST your code parses to.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Fixers
+
+    ```js
+    context.report({
+        node,
+        messageId: 'forbiddenX',
+        fix(fixer) {
+            return fixer.replaceText(node, node.name.replace(/X/g, 'x'));
+        },
+    });
+    ```
+
+    The `fix` returns a `Fixer` operation. ESLint applies it when run with `--fix`. Be conservative — fixers must produce semantically identical code.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Suggestions
+
+    For non-safe transforms, use suggestions instead of fixers:
+
+    ```js
+    context.report({
+        node,
+        messageId: 'forbiddenX',
+        suggest: [
+            {
+                messageId: 'replaceWithLowercase',
+                fix(fixer) {
+                    return fixer.replaceText(node, node.name.toLowerCase());
+                },
+            },
+        ],
+    });
+    ```
+
+    Suggestions don't auto-apply on `--fix`; editors show them as quick-fix actions.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Testing with RuleTester
+
+    ```js
+    const { RuleTester } = require('eslint');
+    const rule = require('../lib/rules/no-x');
+
+    const tester = new RuleTester();
+    tester.run('no-x', rule, {
+        valid: [
+            'const foo = 1',
+            'function bar() {}',
+        ],
+        invalid: [
+            {
+                code: 'const fooX = 1',
+                errors: [{ messageId: 'forbiddenX' }],
+            },
+            {
+                code: 'const fooX = 1',
+                errors: 1,
+                output: 'const foox = 1',  // expected after --fix
+            },
+        ],
+    });
+    ```
+
+    `valid` cases must not error; `invalid` must error and (if a fixer is set) produce the expected output.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Rule Options
+
+    ```js
+    meta: {
+        schema: [
+            {
+                type: 'object',
+                properties: {
+                    allowed: { type: 'array', items: { type: 'string' } },
+                },
+            },
+        ],
+    },
+    create(context) {
+        const { allowed = [] } = context.options[0] || {};
+        // use allowed in rule logic
+    },
+    ```
+
+    Schema is JSON Schema — ESLint validates user config against it.
+- fragment_type: guardrail
+  sequence: 9
+  content: |-
+    ## Common Pitfalls
+
+    - **Reporting on the wrong node.** The `node` in `context.report` controls where the error squiggle appears. Make it specific.
+    - **Fixers that change semantics.** A fixer that 'simplifies' code that wasn't equivalent breaks builds silently.
+    - **Forgetting RuleTester for edge cases.** Empty inputs, async functions, JSX — test all.
+    - **Not setting `messages` schema.** Inline `message: '...'` works but doesn't internationalize. Use `messageId`.
+- fragment_type: verification
+  sequence: 10
+  content: |-
+    ## Verification
+
+    A working ESLint plugin:
+
+    - Plugin installs as a dependency in target repo.
+    - Rule fires on real-world bad code; passes on good code.
+    - Fixer (if any) produces semantically identical code.
+    - RuleTester covers all branches.
+    - Plugin docs explain each rule with examples.

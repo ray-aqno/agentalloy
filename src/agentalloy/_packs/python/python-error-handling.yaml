@@ -1,0 +1,422 @@
+skill_type: domain
+skill_id: python-error-handling
+canonical_name: Python Error Handling (EAFP, Exception Hierarchy, Chaining)
+category: engineering
+skill_class: domain
+domain_tags: [eafp-vs-lbyl, exception-chaining, raise-from, exceptiongroup, narrow-except]
+always_apply: false
+phase_scope: null
+category_scope: language
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-04. Sources — Python 3.13 exceptions docs https://docs.python.org/3.13/library/exceptions.html (verified 2026-05-04 against fixtures/upstream/curated/python.yaml topic `error_handling_and_exceptions`); errors tutorial https://docs.python.org/3.13/tutorial/errors.html; PEP 654 https://peps.python.org/pep-0654/ for ExceptionGroup (Python 3.11+). Skill scope: Python's exception model and idiomatic patterns; not generic error-handling philosophy (covered in engineering/error-handling-patterns).
+
+raw_prose: |
+  # Python Error Handling
+
+  Python error handling is built on exceptions: most failures raise, callers catch what they can act on, and the rest propagates. The rule is one sentence: catch narrowly, chain with `raise X from err`, prefer EAFP over LBYL, and use `ExceptionGroup` (Python 3.11+) for concurrent failures. Most Python error-handling bugs come from `except Exception:` swallowing real bugs, replacing exceptions instead of chaining them (losing root cause), or pre-checking conditions that race against the actual operation. The cost is silent and compounds — caught-and-ignored exceptions become invisible misbehavior, and lost root causes turn ten-minute debugging sessions into hours of guessing.
+
+  ## EAFP — Easier to Ask Forgiveness than Permission
+
+  Python idiom prefers EAFP (Easier to Ask Forgiveness than Permission) over LBYL (Look Before You Leap). Try the operation; catch the exception if it fails.
+
+  ```python
+  # Pythonic — EAFP
+  try:
+      value = d["key"]
+  except KeyError:
+      value = default
+
+  # Less Pythonic — LBYL
+  if "key" in d:
+      value = d["key"]
+  else:
+      value = default
+  ```
+
+  Why EAFP wins:
+
+  - **No race condition.** Between the LBYL check and the access, the dict could change (in a multi-threaded program) or the file could be deleted. EAFP eliminates the gap.
+  - **Faster on the common path.** `try` has near-zero cost when no exception is raised; LBYL pays for the check every time.
+  - **Idiomatic.** Reads as "do the thing; handle failure."
+
+  Exceptions: when the cost of the failure is high (a database write that needs a transaction rollback) or when the check is pure computation (like `isinstance`), LBYL can be cleaner. Default to EAFP and use LBYL when there is a reason.
+
+  ## The exception hierarchy
+
+  Python's built-in exceptions form a tree rooted at `BaseException`, with `Exception` as the conventional parent for catchable application errors:
+
+  ```
+  BaseException
+   ├── SystemExit
+   ├── KeyboardInterrupt
+   ├── GeneratorExit
+   └── Exception
+       ├── ValueError
+       ├── TypeError
+       ├── KeyError
+       ├── IndexError
+       ├── FileNotFoundError (subclass of OSError)
+       ├── ConnectionError
+       └── ... many more
+  ```
+
+  Two practical rules:
+
+  - **Catch `Exception`, not `BaseException`.** `BaseException` includes `KeyboardInterrupt` and `SystemExit`, which the user wants to use to actually stop the program. Catching them silently breaks ctrl-C and `sys.exit()`.
+  - **Catch the narrowest type that captures the failures you can handle.** `except FileNotFoundError:` is better than `except OSError:` is better than `except Exception:`.
+
+  Custom exceptions extend `Exception` (or a more specific subclass). A library that raises `MyLibError` and subclasses (`MyLibConfigError`, `MyLibConnectionError`) lets callers catch by category at any level.
+
+  ## Chain exceptions with `raise X from err`
+
+  When you catch one exception and raise another, use `raise X from err` to preserve the chain:
+
+  ```python
+  try:
+      response = http.get(url)
+  except httpx.HTTPError as err:
+      raise UserFetchError(f"could not fetch user {user_id}") from err
+  ```
+
+  The `from err` clause sets `__cause__` on the new exception, so the traceback shows both exceptions and the relationship. Without it, you lose the original error context, and the traceback shows only the wrapper.
+
+  Two related forms:
+
+  - **`raise X from err`** — explicit cause; "this exception was caused by that one." Use this when you intentionally translate.
+  - **`raise X` (no `from`) inside `except`** — implicit chain; the original exception is recorded in `__context__`. The traceback shows "during handling of the above exception, another exception occurred." Useful when the new exception is incidental, but `from err` is more honest about intent.
+  - **`raise X from None`** — explicit suppression; do this only when the original exception is genuinely irrelevant and would just confuse the reader.
+
+  Replacing without chaining (`raise X` directly inside `except` and intending to hide the original) is the worst pattern — root-cause information is lost from the traceback.
+
+  ## Catch narrowly; never bare `except:`
+
+  Bare `except:` catches everything, including `KeyboardInterrupt` and `SystemExit`. Almost never correct.
+
+  Three increasingly-narrow forms:
+
+  ```python
+  try:
+      ...
+  except:                    # never — catches BaseException
+      ...
+  except Exception:          # rarely — catches programming bugs you did not anticipate
+      ...
+  except (ValueError, KeyError):   # right — catches what you can handle
+      ...
+  ```
+
+  `except Exception:` has a place: top-level error reporters, the outer loop of a long-running process, retry middleware. Anywhere else, it usually catches programming errors (`AttributeError` from a typo, `TypeError` from a refactor) that should fail loudly. Catching them silently turns crashes into silent misbehavior.
+
+  When you must catch broadly, log the exception (`logger.exception("...")` includes traceback) so the bug is visible to monitoring even if the program continues.
+
+  ## `ExceptionGroup` for concurrent failures (Python 3.11+)
+
+  PEP 654 added `ExceptionGroup` and the `except*` syntax. They handle the case where multiple exceptions arise concurrently — the most common source is `asyncio.TaskGroup`, where any number of tasks can fail.
+
+  ```python
+  try:
+      async with asyncio.TaskGroup() as tg:
+          tg.create_task(fetch_user(1))
+          tg.create_task(fetch_user(2))
+  except* httpx.HTTPError as eg:
+      # eg is an ExceptionGroup of all HTTPErrors raised by tasks
+      for err in eg.exceptions:
+          log_error(err)
+  except* ValueError as eg:
+      # separately, all ValueErrors
+      ...
+  ```
+
+  `except*` matches any exception in the group of the named type and re-raises the rest. For non-async code, `ExceptionGroup` can be raised manually when you accumulate errors during validation:
+
+  ```python
+  errors = []
+  for item in items:
+      try:
+          validate(item)
+      except ValueError as err:
+          errors.append(err)
+  if errors:
+      raise ExceptionGroup("validation failed", errors)
+  ```
+
+  Use `ExceptionGroup` when "multiple things failed" is the actual story; do not use it for single-failure cases (it is overhead without benefit).
+
+  ## `try`/`finally` and resource cleanup
+
+  Resources (files, locks, connections) need cleanup on success and failure. Two patterns:
+
+  - **`try`/`finally`.** Most general. The `finally` block runs whether the try succeeded, raised, or was returned-from.
+  - **Context managers (`with`).** Cleaner for the common case. See `python-context-managers-and-with`.
+
+  ```python
+  # try/finally
+  conn = open_connection()
+  try:
+      use(conn)
+  finally:
+      conn.close()
+
+  # context manager — same effect, less code
+  with open_connection() as conn:
+      use(conn)
+  ```
+
+  Use `with` whenever the resource supports it. Use `try`/`finally` when the cleanup is custom (e.g., conditional, or runs only on failure via `try`/`except` plus re-raise).
+
+  ## Anti-patterns
+
+  - **Bare `except:`.** Catches `BaseException`, hides ctrl-C, swallows SystemExit. Almost never right.
+  - **`except Exception` outside top-level reporters or retry middleware.** Catches bugs as if they were expected failures.
+  - **Re-raising without chaining.** `raise NewError("...")` inside `except OldError`, no `from err`. Root cause vanishes from the traceback.
+  - **Catching and logging without re-raising or recovering.** "Logged the error and continued" usually means the program is now in a wrong state; the logger entry is just a warning the developer is hiding.
+  - **LBYL with race conditions.** Checking `if os.path.exists(path)` then opening — between the check and the open, the file could be deleted. Just open and catch `FileNotFoundError`.
+  - **Custom exceptions that subclass `BaseException` instead of `Exception`.** Breaks the standard catch pattern; users have to change `except Exception:` to `except BaseException:` to catch your error.
+  - **Using exceptions for control flow on hot paths.** `try`/`except` is cheap for the no-exception case but expensive when raising. Do not use it as a goto in tight loops.
+
+  ## Exception messages should describe the failure
+
+  When you raise, include enough context for the caller (or the logs) to know what failed and why:
+
+  ```python
+  # bad
+  raise ValueError("bad input")
+
+  # better
+  raise ValueError(f"expected positive integer, got {value!r} (type {type(value).__name__})")
+  ```
+
+  Include the offending value, the expected shape, and any IDs that let the receiver correlate. The traceback line number tells the reader where; the message tells them what.
+
+  Avoid PII in exception messages — they end up in logs, error trackers, and sometimes user-facing surfaces. Sanitize or hash where appropriate.
+
+  ## Verification
+
+  - [ ] No bare `except:` blocks; all `except` clauses name a specific exception type or tuple.
+  - [ ] `except Exception` is used only in top-level error reporters, retry middleware, or with explicit logging-and-rethrow.
+  - [ ] Exceptions caught and re-raised use `raise NewError(...) from err` to preserve the chain.
+  - [ ] Custom exception classes extend `Exception` (or a more specific subclass), not `BaseException`.
+  - [ ] EAFP is preferred over LBYL where it eliminates a race; LBYL only when there is a specific reason.
+  - [ ] Exception messages include the offending value, expected shape, and correlatable identifiers.
+  - [ ] `ExceptionGroup` / `except*` is used for concurrent failure aggregation on Python 3.11+ where appropriate (e.g., `TaskGroup`); not used for single-failure cases.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Python Error Handling
+
+      Python error handling is built on exceptions: most failures raise, callers catch what they can act on, and the rest propagates. The rule is one sentence: catch narrowly, chain with `raise X from err`, prefer EAFP over LBYL, and use `ExceptionGroup` (Python 3.11+) for concurrent failures. Most Python error-handling bugs come from `except Exception:` swallowing real bugs, replacing exceptions instead of chaining them (losing root cause), or pre-checking conditions that race against the actual operation. The cost is silent and compounds — caught-and-ignored exceptions become invisible misbehavior, and lost root causes turn ten-minute debugging sessions into hours of guessing.
+
+  - sequence: 2
+    fragment_type: example
+    content: |
+      ## EAFP — Easier to Ask Forgiveness than Permission
+
+      Python idiom prefers EAFP (Easier to Ask Forgiveness than Permission) over LBYL (Look Before You Leap). Try the operation; catch the exception if it fails.
+
+      ```python
+      # Pythonic — EAFP
+      try:
+          value = d["key"]
+      except KeyError:
+          value = default
+
+      # Less Pythonic — LBYL
+      if "key" in d:
+          value = d["key"]
+      else:
+          value = default
+      ```
+
+      Why EAFP wins:
+
+      - **No race condition.** Between the LBYL check and the access, the dict could change (in a multi-threaded program) or the file could be deleted. EAFP eliminates the gap.
+      - **Faster on the common path.** `try` has near-zero cost when no exception is raised; LBYL pays for the check every time.
+      - **Idiomatic.** Reads as "do the thing; handle failure."
+
+      Exceptions: when the cost of the failure is high (a database write that needs a transaction rollback) or when the check is pure computation (like `isinstance`), LBYL can be cleaner. Default to EAFP and use LBYL when there is a reason.
+
+  - sequence: 3
+    fragment_type: rationale
+    content: |
+      ## The exception hierarchy
+
+      Python's built-in exceptions form a tree rooted at `BaseException`, with `Exception` as the conventional parent for catchable application errors:
+
+      ```
+      BaseException
+       ├── SystemExit
+       ├── KeyboardInterrupt
+       ├── GeneratorExit
+       └── Exception
+           ├── ValueError
+           ├── TypeError
+           ├── KeyError
+           ├── IndexError
+           ├── FileNotFoundError (subclass of OSError)
+           ├── ConnectionError
+           └── ... many more
+      ```
+
+      Two practical rules:
+
+      - **Catch `Exception`, not `BaseException`.** `BaseException` includes `KeyboardInterrupt` and `SystemExit`, which the user wants to use to actually stop the program. Catching them silently breaks ctrl-C and `sys.exit()`.
+      - **Catch the narrowest type that captures the failures you can handle.** `except FileNotFoundError:` is better than `except OSError:` is better than `except Exception:`.
+
+      Custom exceptions extend `Exception` (or a more specific subclass). A library that raises `MyLibError` and subclasses (`MyLibConfigError`, `MyLibConnectionError`) lets callers catch by category at any level.
+
+  - sequence: 4
+    fragment_type: execution
+    content: |
+      ## Chain exceptions with `raise X from err`
+
+      When you catch one exception and raise another, use `raise X from err` to preserve the chain:
+
+      ```python
+      try:
+          response = http.get(url)
+      except httpx.HTTPError as err:
+          raise UserFetchError(f"could not fetch user {user_id}") from err
+      ```
+
+      The `from err` clause sets `__cause__` on the new exception, so the traceback shows both exceptions and the relationship. Without it, you lose the original error context, and the traceback shows only the wrapper.
+
+      Two related forms:
+
+      - **`raise X from err`** — explicit cause; "this exception was caused by that one." Use this when you intentionally translate.
+      - **`raise X` (no `from`) inside `except`** — implicit chain; the original exception is recorded in `__context__`. The traceback shows "during handling of the above exception, another exception occurred." Useful when the new exception is incidental, but `from err` is more honest about intent.
+      - **`raise X from None`** — explicit suppression; do this only when the original exception is genuinely irrelevant and would just confuse the reader.
+
+      Replacing without chaining (`raise X` directly inside `except` and intending to hide the original) is the worst pattern — root-cause information is lost from the traceback.
+
+  - sequence: 5
+    fragment_type: example
+    content: |
+      ## Catch narrowly; never bare `except:`
+
+      Bare `except:` catches everything, including `KeyboardInterrupt` and `SystemExit`. Almost never correct.
+
+      Three increasingly-narrow forms:
+
+      ```python
+      try:
+          ...
+      except:                    # never — catches BaseException
+          ...
+      except Exception:          # rarely — catches programming bugs you did not anticipate
+          ...
+      except (ValueError, KeyError):   # right — catches what you can handle
+          ...
+      ```
+
+      `except Exception:` has a place: top-level error reporters, the outer loop of a long-running process, retry middleware. Anywhere else, it usually catches programming errors (`AttributeError` from a typo, `TypeError` from a refactor) that should fail loudly. Catching them silently turns crashes into silent misbehavior.
+
+      When you must catch broadly, log the exception (`logger.exception("...")` includes traceback) so the bug is visible to monitoring even if the program continues.
+
+  - sequence: 6
+    fragment_type: example
+    content: |
+      ## `ExceptionGroup` for concurrent failures (Python 3.11+)
+
+      PEP 654 added `ExceptionGroup` and the `except*` syntax. They handle the case where multiple exceptions arise concurrently — the most common source is `asyncio.TaskGroup`, where any number of tasks can fail.
+
+      ```python
+      try:
+          async with asyncio.TaskGroup() as tg:
+              tg.create_task(fetch_user(1))
+              tg.create_task(fetch_user(2))
+      except* httpx.HTTPError as eg:
+          # eg is an ExceptionGroup of all HTTPErrors raised by tasks
+          for err in eg.exceptions:
+              log_error(err)
+      except* ValueError as eg:
+          # separately, all ValueErrors
+          ...
+      ```
+
+      `except*` matches any exception in the group of the named type and re-raises the rest. For non-async code, `ExceptionGroup` can be raised manually when you accumulate errors during validation:
+
+      ```python
+      errors = []
+      for item in items:
+          try:
+              validate(item)
+          except ValueError as err:
+              errors.append(err)
+      if errors:
+          raise ExceptionGroup("validation failed", errors)
+      ```
+
+      Use `ExceptionGroup` when "multiple things failed" is the actual story; do not use it for single-failure cases (it is overhead without benefit).
+
+  - sequence: 7
+    fragment_type: example
+    content: |
+      ## `try`/`finally` and resource cleanup
+
+      Resources (files, locks, connections) need cleanup on success and failure. Two patterns:
+
+      - **`try`/`finally`.** Most general. The `finally` block runs whether the try succeeded, raised, or was returned-from.
+      - **Context managers (`with`).** Cleaner for the common case. See `python-context-managers-and-with`.
+
+      ```python
+      # try/finally
+      conn = open_connection()
+      try:
+          use(conn)
+      finally:
+          conn.close()
+
+      # context manager — same effect, less code
+      with open_connection() as conn:
+          use(conn)
+      ```
+
+      Use `with` whenever the resource supports it. Use `try`/`finally` when the cleanup is custom (e.g., conditional, or runs only on failure via `try`/`except` plus re-raise).
+
+  - sequence: 8
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      - **Bare `except:`.** Catches `BaseException`, hides ctrl-C, swallows SystemExit. Almost never right.
+      - **`except Exception` outside top-level reporters or retry middleware.** Catches bugs as if they were expected failures.
+      - **Re-raising without chaining.** `raise NewError("...")` inside `except OldError`, no `from err`. Root cause vanishes from the traceback.
+      - **Catching and logging without re-raising or recovering.** "Logged the error and continued" usually means the program is now in a wrong state; the logger entry is just a warning the developer is hiding.
+      - **LBYL with race conditions.** Checking `if os.path.exists(path)` then opening — between the check and the open, the file could be deleted. Just open and catch `FileNotFoundError`.
+      - **Custom exceptions that subclass `BaseException` instead of `Exception`.** Breaks the standard catch pattern; users have to change `except Exception:` to `except BaseException:` to catch your error.
+      - **Using exceptions for control flow on hot paths.** `try`/`except` is cheap for the no-exception case but expensive when raising. Do not use it as a goto in tight loops.
+
+  - sequence: 9
+    fragment_type: rationale
+    content: |
+      ## Exception messages should describe the failure
+
+      When you raise, include enough context for the caller (or the logs) to know what failed and why:
+
+      ```python
+      # bad
+      raise ValueError("bad input")
+
+      # better
+      raise ValueError(f"expected positive integer, got {value!r} (type {type(value).__name__})")
+      ```
+
+      Include the offending value, the expected shape, and any IDs that let the receiver correlate. The traceback line number tells the reader where; the message tells them what.
+
+      Avoid PII in exception messages — they end up in logs, error trackers, and sometimes user-facing surfaces. Sanitize or hash where appropriate.
+
+  - sequence: 10
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] No bare `except:` blocks; all `except` clauses name a specific exception type or tuple.
+      - [ ] `except Exception` is used only in top-level error reporters, retry middleware, or with explicit logging-and-rethrow.
+      - [ ] Exceptions caught and re-raised use `raise NewError(...) from err` to preserve the chain.
+      - [ ] Custom exception classes extend `Exception` (or a more specific subclass), not `BaseException`.
+      - [ ] EAFP is preferred over LBYL where it eliminates a race; LBYL only when there is a specific reason.
+      - [ ] Exception messages include the offending value, expected shape, and correlatable identifiers.
+      - [ ] `ExceptionGroup` / `except*` is used for concurrent failure aggregation on Python 3.11+ where appropriate (e.g., `TaskGroup`); not used for single-failure cases.

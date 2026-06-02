@@ -1,0 +1,227 @@
+skill_type: domain
+skill_id: webhooks-documentation
+canonical_name: Webhooks — Documentation Patterns
+category: design
+skill_class: domain
+domain_tags:
+- webhooks
+- api-documentation
+- event-types
+- schemas
+- developer-experience
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus source after 14B failed structural authoring
+raw_prose: |-
+  # Webhooks — Documentation Patterns
+
+  ## Overview
+
+  This skill covers webhooks documentation patterns end-to-end.
+
+  ---
+
+  ## Why Webhook Docs Are Their Own Genre
+
+  Webhook documentation is different from REST API docs in three ways: consumers integrate by writing handlers (not by making calls), payload shapes drive their database schema, and security is non-optional from day one. Generic API doc structures don't surface the right information.
+
+  Good webhook docs answer four questions for the consumer:
+
+  1. What events fire? (event-type catalog)
+  2. When does each event fire? (trigger conditions)
+  3. What does the payload look like? (schema + examples)
+  4. How do I verify and process safely? (signing + idempotency)
+
+  ## Event-Type Catalog
+
+  Document every event with a stable name, trigger description, payload schema, and example.
+
+  ```
+  event: order.created
+  fires when: a new order is placed and accepted
+  payload schema: { id: string, customer_id: string, total_cents: int, line_items: [...] }
+  example payload: { "id": "ord_abc", "customer_id": "cus_123", "total_cents": 5000, ... }
+  ```
+
+  Group events by resource (`order.*`, `customer.*`) so consumers can scan the relevant subset quickly.
+
+  ## Schema Definitions
+
+  Use JSON Schema or OpenAPI for payload schemas. Two reasons:
+
+  - Consumers can generate types for their language of choice.
+  - A schema doc is contract-y in a way prose isn't — fewer ambiguity bugs.
+
+  Mark fields as `required` vs optional explicitly. Document field meaning, not just type. `customer_id: string` is less useful than `customer_id: string — the unique customer identifier; references the Customer object`.
+
+  ## Signature Verification — Show the Code
+
+  Every webhook doc page should have a copy-pasteable verification snippet for the top 3-4 consumer languages (typically Node, Python, Ruby, Go). Don't just describe the algorithm — show the code.
+
+  ```js
+  // Node example
+  const expectedSignature = crypto
+    .createHmac('sha256', WEBHOOK_SECRET)
+    .update(`${timestamp}.${rawBody}`)
+    .digest('hex');
+  if (!crypto.timingSafeEqual(Buffer.from(receivedSignature), Buffer.from(expectedSignature))) {
+    return res.status(401).end();
+  }
+  ```
+
+  Include the timestamp tolerance window (typically 5 minutes) and explain why constant-time comparison matters.
+
+  ## Retry and Delivery Semantics
+
+  Document the retry schedule explicitly:
+
+  - Initial retries (e.g., immediate, then 5s, 30s, 2min).
+  - Backoff curve (exponential with jitter).
+  - Total retry window (e.g., 24 hours, 7 days).
+  - Final-failure behavior (drop? alert? quarantine?).
+
+  Consumers need this to size their dead-letter queues and to know when to stop expecting an event.
+
+  ## Cookbook for Common Use Cases
+
+  A 'How do I X with webhooks?' section short-circuits the most-asked questions:
+
+  - *How do I keep my database in sync with the source?* — show the upsert pattern with idempotency keys.
+  - *How do I handle out-of-order events?* — show event_id + sequence-aware reconciliation.
+  - *How do I test locally?* — point to a tunneling tool (ngrok, smee, svix CLI replay).
+  - *How do I replay missed events?* — the polling endpoint or admin replay flow.
+
+  These pages convert badly without code samples — show the pattern in 10-20 lines.
+
+  ## Versioning the Catalog
+
+  Event schemas evolve. The catalog needs versioning that doesn't break consumers:
+
+  - New fields: additive, backward compatible. Document as 'available since YYYY-MM-DD'.
+  - Renamed/removed fields: breaking. Bump event version and run the old version in parallel for a deprecation window.
+  - New event types: backward compatible — consumers ignore unknown types.
+
+  Document the versioning policy itself so consumers know what to expect.
+
+  ## Verification
+
+  Run the docs through the eyes of a consumer integrating cold:
+
+  - Can a developer ship a working handler in under an hour with only the docs?
+  - Are signature verification snippets copy-pasteable into their stack?
+  - Is the retry schedule clear enough that they can size their queue?
+  - If they hit a payload field they don't understand, can they look it up?
+
+  If any answer is no, the docs are short of working.
+fragments:
+- fragment_type: rationale
+  sequence: 1
+  content: |-
+    ## Why Webhook Docs Are Their Own Genre
+
+    Webhook documentation is different from REST API docs in three ways: consumers integrate by writing handlers (not by making calls), payload shapes drive their database schema, and security is non-optional from day one. Generic API doc structures don't surface the right information.
+
+    Good webhook docs answer four questions for the consumer:
+
+    1. What events fire? (event-type catalog)
+    2. When does each event fire? (trigger conditions)
+    3. What does the payload look like? (schema + examples)
+    4. How do I verify and process safely? (signing + idempotency)
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Event-Type Catalog
+
+    Document every event with a stable name, trigger description, payload schema, and example.
+
+    ```
+    event: order.created
+    fires when: a new order is placed and accepted
+    payload schema: { id: string, customer_id: string, total_cents: int, line_items: [...] }
+    example payload: { "id": "ord_abc", "customer_id": "cus_123", "total_cents": 5000, ... }
+    ```
+
+    Group events by resource (`order.*`, `customer.*`) so consumers can scan the relevant subset quickly.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Schema Definitions
+
+    Use JSON Schema or OpenAPI for payload schemas. Two reasons:
+
+    - Consumers can generate types for their language of choice.
+    - A schema doc is contract-y in a way prose isn't — fewer ambiguity bugs.
+
+    Mark fields as `required` vs optional explicitly. Document field meaning, not just type. `customer_id: string` is less useful than `customer_id: string — the unique customer identifier; references the Customer object`.
+- fragment_type: verification
+  sequence: 4
+  content: |-
+    ## Signature Verification — Show the Code
+
+    Every webhook doc page should have a copy-pasteable verification snippet for the top 3-4 consumer languages (typically Node, Python, Ruby, Go). Don't just describe the algorithm — show the code.
+
+    ```js
+    // Node example
+    const expectedSignature = crypto
+      .createHmac('sha256', WEBHOOK_SECRET)
+      .update(`${timestamp}.${rawBody}`)
+      .digest('hex');
+    if (!crypto.timingSafeEqual(Buffer.from(receivedSignature), Buffer.from(expectedSignature))) {
+      return res.status(401).end();
+    }
+    ```
+
+    Include the timestamp tolerance window (typically 5 minutes) and explain why constant-time comparison matters.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Retry and Delivery Semantics
+
+    Document the retry schedule explicitly:
+
+    - Initial retries (e.g., immediate, then 5s, 30s, 2min).
+    - Backoff curve (exponential with jitter).
+    - Total retry window (e.g., 24 hours, 7 days).
+    - Final-failure behavior (drop? alert? quarantine?).
+
+    Consumers need this to size their dead-letter queues and to know when to stop expecting an event.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Cookbook for Common Use Cases
+
+    A 'How do I X with webhooks?' section short-circuits the most-asked questions:
+
+    - *How do I keep my database in sync with the source?* — show the upsert pattern with idempotency keys.
+    - *How do I handle out-of-order events?* — show event_id + sequence-aware reconciliation.
+    - *How do I test locally?* — point to a tunneling tool (ngrok, smee, svix CLI replay).
+    - *How do I replay missed events?* — the polling endpoint or admin replay flow.
+
+    These pages convert badly without code samples — show the pattern in 10-20 lines.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Versioning the Catalog
+
+    Event schemas evolve. The catalog needs versioning that doesn't break consumers:
+
+    - New fields: additive, backward compatible. Document as 'available since YYYY-MM-DD'.
+    - Renamed/removed fields: breaking. Bump event version and run the old version in parallel for a deprecation window.
+    - New event types: backward compatible — consumers ignore unknown types.
+
+    Document the versioning policy itself so consumers know what to expect.
+- fragment_type: verification
+  sequence: 8
+  content: |-
+    ## Verification
+
+    Run the docs through the eyes of a consumer integrating cold:
+
+    - Can a developer ship a working handler in under an hour with only the docs?
+    - Are signature verification snippets copy-pasteable into their stack?
+    - Is the retry schedule clear enough that they can size their queue?
+    - If they hit a payload field they don't understand, can they look it up?
+
+    If any answer is no, the docs are short of working.

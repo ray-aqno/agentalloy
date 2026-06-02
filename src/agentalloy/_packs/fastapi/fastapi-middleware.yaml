@@ -1,0 +1,259 @@
+skill_type: domain
+skill_id: fastapi-middleware
+canonical_name: FastAPI Middleware
+category: engineering
+skill_class: domain
+domain_tags:
+- fastapi
+- middleware
+- asgi
+- request-pipeline
+- cross-cutting
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # FastAPI Middleware
+
+  ## Overview
+
+  FastAPI middleware runs around every request. The decorator approach wraps a function that takes (request, call_next); ASGI middleware integrates via app.add_middleware. This skill covers both patterns.
+
+  ---
+
+  ## The @app.middleware Decorator
+
+  The most common form — a function-based middleware:
+
+  ```python
+  from fastapi import FastAPI, Request
+  from time import time
+
+  app = FastAPI()
+
+  @app.middleware("http")
+  async def add_process_time_header(request: Request, call_next):
+      start = time()
+      response = await call_next(request)
+      response.headers["X-Process-Time"] = f"{time() - start:.4f}"
+      return response
+  ```
+
+  The middleware function receives the incoming request and a `call_next` callable. Calling `await call_next(request)` runs the rest of the pipeline (other middleware + the route handler) and returns the Response. You can mutate the request before, the response after, or short-circuit by returning a Response without calling `call_next`.
+
+  ## ASGI Middleware via add_middleware
+
+  For middleware that needs to wrap the entire ASGI lifecycle (not just HTTP), use `app.add_middleware`:
+
+  ```python
+  from fastapi.middleware.cors import CORSMiddleware
+  from fastapi.middleware.gzip import GZipMiddleware
+  from fastapi.middleware.trustedhost import TrustedHostMiddleware
+
+  app.add_middleware(GZipMiddleware, minimum_size=1000)
+  app.add_middleware(CORSMiddleware, allow_origins=["https://example.com"])
+  app.add_middleware(TrustedHostMiddleware, allowed_hosts=["example.com", "*.example.com"])
+  ```
+
+  This is how you integrate Starlette's built-in middleware and most third-party ASGI middleware.
+
+  ## Order Matters
+
+  Middleware runs in registration order on the way in, reverse on the way out. The first one added is the outermost wrapper:
+
+  ```python
+  app.add_middleware(GZipMiddleware)         # outermost — sees compressed responses last
+  app.add_middleware(AuthMiddleware)         # inner
+  @app.middleware("http")
+  async def logging(request, call_next):     # innermost — closest to the handler
+      ...
+  ```
+
+  A request hits GZipMiddleware → AuthMiddleware → logging → handler. The response goes the reverse path. Order auth before logging if you want unauthenticated requests not to log; order logging before auth if you want all attempts logged.
+
+  ## Short-Circuiting
+
+  Return a Response without calling `call_next` to bypass downstream middleware and the handler:
+
+  ```python
+  @app.middleware("http")
+  async def feature_flag(request: Request, call_next):
+      if request.url.path.startswith("/disabled-feature"):
+          return JSONResponse({"error": "feature disabled"}, status_code=503)
+      return await call_next(request)
+  ```
+
+  Common use: maintenance mode, feature flags, IP allowlists, rate limits.
+
+  ## Mutating the Request
+
+  You can read or annotate the request before calling next:
+
+  ```python
+  @app.middleware("http")
+  async def add_user_id(request: Request, call_next):
+      request.state.user_id = parse_jwt(request.headers.get("Authorization"))
+      return await call_next(request)
+  ```
+
+  Downstream code reads `request.state.user_id`. Don't mutate request body — that's not safe across middleware.
+
+  ## Mutating the Response
+
+  Most common — add headers, modify status, wrap content:
+
+  ```python
+  @app.middleware("http")
+  async def security_headers(request, call_next):
+      response = await call_next(request)
+      response.headers["X-Content-Type-Options"] = "nosniff"
+      response.headers["X-Frame-Options"] = "DENY"
+      response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+      return response
+  ```
+
+  For streaming responses you can't easily modify the body without buffering — keep this scoped to header manipulation.
+
+  ## Common Pitfalls
+
+  - **Forgetting `await call_next(request)`.** The handler never runs; clients see no response.
+  - **Catching exceptions in middleware without re-raising.** Hides errors from FastAPI's exception handlers; clients see undefined behavior.
+  - **Heavy work in middleware that should be a dependency.** Middleware runs on every request including health checks. Use route-scoped dependencies for per-route logic.
+  - **Order accidents.** CORSMiddleware should usually be the outermost; if it's inner, it can't fix CORS errors that come from earlier middleware rejecting requests.
+
+  ## Verification
+
+  Working middleware:
+
+  - Adds expected headers to all responses (or only the scoped ones).
+  - Short-circuits cleanly without leaving the request half-processed.
+  - Doesn't add measurable latency to health-check responses (kept lean).
+  - Handles exceptions by re-raising or producing a coherent error response.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## The @app.middleware Decorator
+
+    The most common form — a function-based middleware:
+
+    ```python
+    from fastapi import FastAPI, Request
+    from time import time
+
+    app = FastAPI()
+
+    @app.middleware("http")
+    async def add_process_time_header(request: Request, call_next):
+        start = time()
+        response = await call_next(request)
+        response.headers["X-Process-Time"] = f"{time() - start:.4f}"
+        return response
+    ```
+
+    The middleware function receives the incoming request and a `call_next` callable. Calling `await call_next(request)` runs the rest of the pipeline (other middleware + the route handler) and returns the Response. You can mutate the request before, the response after, or short-circuit by returning a Response without calling `call_next`.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## ASGI Middleware via add_middleware
+
+    For middleware that needs to wrap the entire ASGI lifecycle (not just HTTP), use `app.add_middleware`:
+
+    ```python
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.middleware.gzip import GZipMiddleware
+    from fastapi.middleware.trustedhost import TrustedHostMiddleware
+
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
+    app.add_middleware(CORSMiddleware, allow_origins=["https://example.com"])
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["example.com", "*.example.com"])
+    ```
+
+    This is how you integrate Starlette's built-in middleware and most third-party ASGI middleware.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Order Matters
+
+    Middleware runs in registration order on the way in, reverse on the way out. The first one added is the outermost wrapper:
+
+    ```python
+    app.add_middleware(GZipMiddleware)         # outermost — sees compressed responses last
+    app.add_middleware(AuthMiddleware)         # inner
+    @app.middleware("http")
+    async def logging(request, call_next):     # innermost — closest to the handler
+        ...
+    ```
+
+    A request hits GZipMiddleware → AuthMiddleware → logging → handler. The response goes the reverse path. Order auth before logging if you want unauthenticated requests not to log; order logging before auth if you want all attempts logged.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Short-Circuiting
+
+    Return a Response without calling `call_next` to bypass downstream middleware and the handler:
+
+    ```python
+    @app.middleware("http")
+    async def feature_flag(request: Request, call_next):
+        if request.url.path.startswith("/disabled-feature"):
+            return JSONResponse({"error": "feature disabled"}, status_code=503)
+        return await call_next(request)
+    ```
+
+    Common use: maintenance mode, feature flags, IP allowlists, rate limits.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Mutating the Request
+
+    You can read or annotate the request before calling next:
+
+    ```python
+    @app.middleware("http")
+    async def add_user_id(request: Request, call_next):
+        request.state.user_id = parse_jwt(request.headers.get("Authorization"))
+        return await call_next(request)
+    ```
+
+    Downstream code reads `request.state.user_id`. Don't mutate request body — that's not safe across middleware.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Mutating the Response
+
+    Most common — add headers, modify status, wrap content:
+
+    ```python
+    @app.middleware("http")
+    async def security_headers(request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        return response
+    ```
+
+    For streaming responses you can't easily modify the body without buffering — keep this scoped to header manipulation.
+- fragment_type: guardrail
+  sequence: 7
+  content: |-
+    ## Common Pitfalls
+
+    - **Forgetting `await call_next(request)`.** The handler never runs; clients see no response.
+    - **Catching exceptions in middleware without re-raising.** Hides errors from FastAPI's exception handlers; clients see undefined behavior.
+    - **Heavy work in middleware that should be a dependency.** Middleware runs on every request including health checks. Use route-scoped dependencies for per-route logic.
+    - **Order accidents.** CORSMiddleware should usually be the outermost; if it's inner, it can't fix CORS errors that come from earlier middleware rejecting requests.
+- fragment_type: verification
+  sequence: 8
+  content: |-
+    ## Verification
+
+    Working middleware:
+
+    - Adds expected headers to all responses (or only the scoped ones).
+    - Short-circuits cleanly without leaving the request half-processed.
+    - Doesn't add measurable latency to health-check responses (kept lean).
+    - Handles exceptions by re-raising or producing a coherent error response.

@@ -1,0 +1,49 @@
+skill_id: git-commit-discipline
+canonical_name: Git commit discipline
+category: ops
+skill_class: domain
+domain_tags: [git]
+deprecated: false
+always_apply: false
+phase_scope: null
+category_scope: null
+versions:
+  - version_id: git-commit-discipline-v1
+    version_number: 1
+    authored_at: 2026-01-05T00:00:00Z
+    author: fixture-seed
+    change_summary: initial version
+    status: superseded
+    raw_prose: Early draft.
+    fragments: []
+  - version_id: git-commit-discipline-v2
+    version_number: 2
+    authored_at: 2026-02-20T00:00:00Z
+    author: fixture-seed
+    change_summary: v2 with conventional-commits guidance
+    status: active
+    raw_prose: |
+      Each commit should represent one coherent unit of change. Use the
+      conventional-commits prefix (feat, fix, chore, docs, refactor, test) and
+      keep the subject under 70 characters.
+    fragments:
+      - fragment_id: git-commit-discipline-v2-f1
+        fragment_type: execution
+        sequence: 1
+        content: |
+          Prefer small, self-contained commits. If the diff contains two unrelated
+          changes, split them with git add -p or a fresh checkout.
+      - fragment_id: git-commit-discipline-v2-f2
+        fragment_type: guardrail
+        sequence: 2
+        content: |
+          Never use --no-verify to skip hooks without an explicit reason. Hooks
+          exist to catch bad commits before they hit review. Bypassing them
+          silently shifts the cost to reviewers.
+      - fragment_id: git-commit-discipline-v2-f3
+        fragment_type: rationale
+        sequence: 3
+        content: |
+          Small commits make bisect cheap and reviews tractable. A large "fix
+          everything" commit buries the relevant change and makes revert
+          dangerous.

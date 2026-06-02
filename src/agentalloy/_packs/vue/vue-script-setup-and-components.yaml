@@ -1,0 +1,483 @@
+skill_type: domain
+skill_id: vue-script-setup-and-components
+canonical_name: Vue script setup and Component Communication
+category: engineering
+skill_class: domain
+domain_tags:
+  - vue-3
+  - single-file-components
+  - script-setup
+  - component-communication
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: initial authoring draft
+raw_prose: |
+  # Vue script setup and Component Communication
+
+  ## Overview
+
+  `<script setup>` is the recommended syntax for Vue 3 SFCs. Variables, functions, and imports declared at the top level are exposed to the template. Compile-time macros — `defineProps`, `defineEmits`, `defineModel`, `defineExpose`, `defineSlots` — declare the component's public surface. This skill covers component communication patterns inside `<script setup>`.
+
+  Sourced from https://vuejs.org/api/sfc-script-setup.html and https://vuejs.org/guide/components/events.html (Vue 3.5+).
+
+  ## \<script setup>
+
+  `<script setup>` is a compile-time syntactic sugar for using Composition API inside Single-File Components (SFCs). It is the recommended syntax if you are using both SFCs and Composition API. It provides a number of advantages over the normal `<script>` syntax:
+
+  * More succinct code with less boilerplate
+  * Ability to declare props and emitted events using pure TypeScript
+  * Better runtime performance (the template is compiled into a render function in the same scope, without an intermediate proxy)
+  * Better IDE type-inference performance (less work for the language server to extract types from code)
+
+  ## Basic Syntax
+
+  To opt-in to the syntax, add the `setup` attribute to the `<script>` block:
+
+  ```vue
+  <script setup>
+  console.log('hello script setup')
+  </script>
+  ```
+
+  The code inside is compiled as the content of the component's `setup()` function. This means that unlike normal `<script>`, which only executes once when the component is first imported, code inside `<script setup>` will **execute every time an instance of the component is created**.
+
+  ### Top-level bindings are exposed to template
+
+  When using `<script setup>`, any top-level bindings (including variables, function declarations, and imports) declared inside `<script setup>` are directly usable in the template:
+
+  ```vue
+  <script setup>
+  // variable
+  const msg = 'Hello!'
+
+  // functions
+  function log() {
+    console.log(msg)
+  }
+  </script>
+
+  <template>
+    <button @click="log">{{ msg }}</button>
+  </template>
+  ```
+
+  Imports are exposed in the same fashion. This means you can directly use an imported helper function in template expressions without having to expose it via the `methods` option:
+
+  ```vue
+  <script setup>
+  import { capitalize } from './helpers'
+  </script>
+
+  <template>
+    <div>{{ capitalize('hello') }}</div>
+  </template>
+  ```
+
+  ## Reactivity
+
+  Reactive state needs to be explicitly created using [Reactivity APIs](./reactivity-core). Similar to values returned from a `setup()` function, refs are automatically unwrapped when referenced in templates:
+
+  ```vue
+  <script setup>
+  import { ref } from 'vue'
+
+  const count = ref(0)
+  </script>
+
+  <template>
+    <button @click="count++">{{ count }}</button>
+  </template>
+  ```
+
+  ## Using Components
+
+  Values in the scope of `<script setup>` can also be used directly as custom component tag names:
+
+  ```vue
+  <script setup>
+  import MyComponent from './MyComponent.vue'
+  </script>
+
+  <template>
+    <MyComponent />
+  </template>
+  ```
+
+  Think of `MyComponent` as being referenced as a variable. If you have used JSX, the mental model is similar here. The kebab-case equivalent `<my-component>` also works in the template - however PascalCase component tags are strongly recommended for consistency. It also helps differentiating from native custom elements.
+
+  ### Dynamic Components
+
+  Since components are referenced as variables instead of registered under string keys, we should use dynamic `:is` binding when using dynamic components inside `<script setup>`:
+
+  ```vue
+  <script setup>
+  import Foo from './Foo.vue'
+  import Bar from './Bar.vue'
+  </script>
+
+  <template>
+    <component :is="Foo" />
+    <component :is="someCondition ? Foo : Bar" />
+  </template>
+  ```
+
+  Note how the components can be used as variables in a ternary expression.
+
+  ### Recursive Components
+
+  An SFC can implicitly refer to itself via its filename. E.g. a file named `FooBar.vue` can refer to itself as `<FooBar/>` in its template.
+
+  Note this has lower priority than imported components. If you have a named import that conflicts with the component's inferred name, you can alias the import:
+
+  ```js
+  import { FooBar as FooBarChild } from './components'
+  ```
+
+  ### Namespaced Components
+
+  You can use component tags with dots like `<Foo.Bar>` to refer to components nested under object properties. This is useful when you import multiple components from a single file:
+
+  ```vue
+  <script setup>
+  import * as Form from './form-components'
+  </script>
+
+  <template>
+    <Form.Input>
+      <Form.Label>label</Form.Label>
+    </Form.Input>
+  </template>
+  ```
+
+  ## Using Custom Directives
+
+  Globally registered custom directives just work as normal. Local custom directives don't need to be explicitly registered with `<script setup>`, but they must follow the naming scheme `vNameOfDirective`:
+
+  ```vue
+  <script setup>
+  const vMyDirective = {
+    beforeMount: (el) => {
+      // do something with the element
+    }
+  }
+  </script>
+  <template>
+    <h1 v-my-directive>This is a Heading</h1>
+  </template>
+  ```
+
+  If you're importing a directive from elsewhere, it can be renamed to fit the required naming scheme:
+
+  ```vue
+  <script setup>
+  import { myDirective as vMyDirective } from './MyDirective.js'
+  </script>
+  ```
+
+  # Component Events
+
+  > This page assumes you've already read the [Components Basics](/guide/essentials/component-basics). Read that first if you are new to components.
+
+  ## Emitting and Listening to Events
+
+  A component can emit custom events directly in template expressions (e.g. in a `v-on` handler) using the built-in `$emit` method:
+
+  ```vue-html
+  <!-- MyComponent -->
+  <button @click="$emit('someEvent')">Click Me</button>
+  ```
+
+  The `$emit()` method is also available on the component instance as `this.$emit()`:
+
+  ```js
+  export default {
+    methods: {
+      submit() {
+        this.$emit('someEvent')
+      }
+    }
+  }
+  ```
+
+  The parent can then listen to it using `v-on`:
+
+  ```vue-html
+  <MyComponent @some-event="callback" />
+  ```
+
+  The `.once` modifier is also supported on component event listeners:
+
+  ```vue-html
+  <MyComponent @some-event.once="callback" />
+  ```
+
+  Like components and props, event names provide an automatic case transformation. Notice we emitted a camelCase event, but can listen for it using a kebab-cased listener in the parent. As with [props casing](/guide/components/props#prop-name-casing), we recommend using kebab-cased event listeners in templates.
+
+  ::::tip
+  Unlike native DOM events, component emitted events do **not** bubble. You can only listen to the events emitted by a direct child component. If there is a need to communicate between sibling or deeply nested components, use an external event bus or a [global state management solution](/guide/scaling-up/state-management).
+  ::::
+
+  ## Event Arguments
+
+  It's sometimes useful to emit a specific value with an event. For example, we may want the `<BlogPost>` component to be in charge of how much to enlarge the text by. In those cases, we can pass extra arguments to `$emit` to provide this value:
+
+  ```vue-html
+  <button @click="$emit('increaseBy', 1)">
+    Increase by 1
+  </button>
+  ```
+
+  Then, when we listen to the event in the parent, we can use an inline arrow function as the listener, which allows us to access the event argument:
+
+  ```vue-html
+  <MyButton @increase-by="(n) => count += n" />
+  ```
+
+  Or, if the event handler is a method:
+
+  ```vue-html
+  <MyButton @increase-by="increaseCount" />
+  ```
+
+  Then the value will be passed as the first parameter of that method:
+
+  ```js
+  methods: {
+    increaseCount(n) {
+      this.count += n
+    }
+  }
+  ```
+
+  ```js
+  function increaseCount(n) {
+    count.value += n
+  }
+  ```
+
+  ::::tip
+  All extra arguments passed to `$emit()` after the event name will be forwarded to the listener. For example, with `$emit('foo', 1, 2, 3)` the listener function will receive three arguments.
+  ::::
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      `<script setup>` is the recommended syntax for Vue 3 SFCs. Variables, functions, and imports declared at the top level are exposed to the template. Compile-time macros — `defineProps`, `defineEmits`, `defineModel`, `defineExpose`, `defineSlots` — declare the component's public surface. This skill covers component communication patterns inside `<script setup>`.
+  - fragment_type: execution
+    sequence: 2
+    content: |
+      To opt-in to the syntax, add the `setup` attribute to the `<script>` block:
+
+      ```vue
+      <script setup>
+      console.log('hello script setup')
+      </script>
+      ```
+
+      The code inside is compiled as the content of the component's `setup()` function. This means that unlike normal `<script>`, which only executes once when the component is first imported, code inside `<script setup>` will **execute every time an instance of the component is created**.
+  - fragment_type: execution
+    sequence: 3
+    content: |
+      When using `<script setup>`, any top-level bindings (including variables, function declarations, and imports) declared inside `<script setup>` are directly usable in the template:
+
+      ```vue
+      <script setup>
+      // variable
+      const msg = 'Hello!'
+
+      // functions
+      function log() {
+        console.log(msg)
+      }
+      </script>
+
+      <template>
+        <button @click="log">{{ msg }}</button>
+      </template>
+      ```
+
+      Imports are exposed in the same fashion. This means you can directly use an imported helper function in template expressions without having to expose it via the `methods` option:
+
+      ```vue
+      <script setup>
+      import { capitalize } from './helpers'
+      </script>
+
+      <template>
+        <div>{{ capitalize('hello') }}</div>
+      </template>
+      ```
+  - fragment_type: execution
+    sequence: 4
+    content: |
+      Reactive state needs to be explicitly created using [Reactivity APIs](./reactivity-core). Similar to values returned from a `setup()` function, refs are automatically unwrapped when referenced in templates:
+
+      ```vue
+      <script setup>
+      import { ref } from 'vue'
+
+      const count = ref(0)
+      </script>
+
+      <template>
+        <button @click="count++">{{ count }}</button>
+      </template>
+      ```
+  - fragment_type: execution
+    sequence: 5
+    content: |
+      Values in the scope of `<script setup>` can also be used directly as custom component tag names:
+
+      ```vue
+      <script setup>
+      import MyComponent from './MyComponent.vue'
+      </script>
+
+      <template>
+        <MyComponent />
+      </template>
+      ```
+
+      Think of `MyComponent` as being referenced as a variable. If you have used JSX, the mental model is similar here. The kebab-case equivalent `<my-component>` also works in the template - however PascalCase component tags are strongly recommended for consistency. It also helps differentiating from native custom elements.
+  - fragment_type: execution
+    sequence: 6
+    content: |
+      Since components are referenced as variables instead of registered under string keys, we should use dynamic `:is` binding when using dynamic components inside `<script setup>`:
+
+      ```vue
+      <script setup>
+      import Foo from './Foo.vue'
+      import Bar from './Bar.vue'
+      </script>
+
+      <template>
+        <component :is="Foo" />
+        <component :is="someCondition ? Foo : Bar" />
+      </template>
+      ```
+
+      Note how the components can be used as variables in a ternary expression.
+  - fragment_type: execution
+    sequence: 7
+    content: |
+      An SFC can implicitly refer to itself via its filename. E.g. a file named `FooBar.vue` can refer to itself as `<FooBar/>` in its template.
+
+      Note this has lower priority than imported components. If you have a named import that conflicts with the component's inferred name, you can alias the import:
+
+      ```js
+      import { FooBar as FooBarChild } from './components'
+      ```
+  - fragment_type: execution
+    sequence: 8
+    content: |
+      You can use component tags with dots like `<Foo.Bar>` to refer to components nested under object properties. This is useful when you import multiple components from a single file:
+
+      ```vue
+      <script setup>
+      import * as Form from './form-components'
+      </script>
+
+      <template>
+        <Form.Input>
+          <Form.Label>label</Form.Label>
+        </Form.Input>
+      </template>
+      ```
+  - fragment_type: execution
+    sequence: 9
+    content: |
+      Globally registered custom directives just work as normal. Local custom directives don't need to be explicitly registered with `<script setup>`, but they must follow the naming scheme `vNameOfDirective`:
+
+      ```vue
+      <script setup>
+      const vMyDirective = {
+        beforeMount: (el) => {
+          // do something with the element
+        }
+      }
+      </script>
+      <template>
+        <h1 v-my-directive>This is a Heading</h1>
+      </template>
+      ```
+
+      If you're importing a directive from elsewhere, it can be renamed to fit the required naming scheme:
+
+      ```vue
+      <script setup>
+      import { myDirective as vMyDirective } from './MyDirective.js'
+      </script>
+      ```
+  - fragment_type: execution
+    sequence: 10
+    content: |
+      A component can emit custom events directly in template expressions (e.g. in a `v-on` handler) using the built-in `$emit` method:
+
+      ```vue-html
+      <!-- MyComponent -->
+      <button @click="$emit('someEvent')">Click Me</button>
+      ```
+
+      The `$emit()` method is also available on the component instance as `this.$emit()`:
+
+      ```js
+      export default {
+        methods: {
+          submit() {
+            this.$emit('someEvent')
+          }
+        }
+      }
+      ```
+
+      The parent can then listen to it using `v-on`:
+
+      ```vue-html
+      <MyComponent @some-event="callback" />
+      ```
+
+      The `.once` modifier is also supported on component event listeners:
+
+      ```vue-html
+      <MyComponent @some-event.once="callback" />
+      ```
+  - fragment_type: execution
+    sequence: 11
+    content: |
+      It's sometimes useful to emit a specific value with an event. For example, we may want the `<BlogPost>` component to be in charge of how much to enlarge the text by. In those cases, we can pass extra arguments to `$emit` to provide this value:
+
+      ```vue-html
+      <button @click="$emit('increaseBy', 1)">
+        Increase by 1
+      </button>
+      ```
+
+      Then, when we listen to the event in the parent, we can use an inline arrow function as the listener, which allows us to access the event argument:
+
+      ```vue-html
+      <MyButton @increase-by="(n) => count += n" />
+      ```
+
+      Or, if the event handler is a method:
+
+      ```vue-html
+      <MyButton @increase-by="increaseCount" />
+      ```
+
+      Then the value will be passed as the first parameter of that method:
+
+      ```js
+      methods: {
+        increaseCount(n) {
+          this.count += n
+        }
+      }
+      ```
+
+      ```js
+      function increaseCount(n) {
+        count.value += n
+      }
+      ```

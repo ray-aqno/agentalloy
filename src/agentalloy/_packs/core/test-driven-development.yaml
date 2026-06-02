@@ -1,0 +1,174 @@
+skill_type: domain
+skill_id: test-driven-development
+canonical_name: Test-Driven Development (Red, Green, Refactor)
+category: engineering
+skill_class: domain
+domain_tags: [red-green-refactor, failing-test-first, regression-trap, pytest, vitest]
+always_apply: false
+phase_scope: null
+category_scope: null
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-04. Sources — Kent Beck's *Test-Driven Development By Example* (2002) for the red/green/refactor cadence; pytest docs https://docs.python.org/3.13/library/unittest.html and curated/python.yaml `topics.testing_idioms` for Python framework conventions; vitest llms-full.txt https://vitest.dev/llms-full.txt for JS/TS framework conventions. Skill scope: discipline of writing the failing test first, not framework-specific test setup (covered in language packs).
+raw_prose: |
+  # Test-Driven Development (Red, Green, Refactor)
+
+  Test-driven development is the discipline of writing a failing test before the production code that makes it pass. The cadence is three steps: red (write a failing test that asserts the desired behavior), green (write the minimum production code that flips the test to passing), refactor (clean up the design with tests still green). The unit of work is one test at a time. Bigger units are not TDD — they are write-then-test, which loses the cadence's central guarantee that every line of production code traces to a failing test.
+
+  ## Why the cadence matters
+
+  Two failure modes the cadence prevents. First, regression-trap code: production logic written without a corresponding test passes today and breaks silently next month when a refactor moves the code. Without a failing-then-passing test on record, you cannot prove the behavior was ever covered. Second, over-design: writing all the abstractions first and bolting tests on after produces structures the tests never demanded. The red step forces you to articulate the behavior in concrete terms — input, output, edge case — before the implementation can hide it.
+
+  TDD is also a debugging accelerator. When a regression hits production, the first move is to write a failing test that reproduces the bug. The fix is then validated by flipping the test to green. The test stays as a guard against the same regression returning.
+
+  ## The red step
+
+  Write one test. The test must fail for the right reason — meaning the assertion fails because the behavior is missing, not because the code has a syntax error or an import problem. Run the test. Read the failure message. If the failure says "module not found" or "AttributeError", the test is not yet asserting the behavior — fix the scaffolding first, then re-run until the failure is the assertion itself.
+
+  Keep the test small. One behavior per test. A test that asserts five conditions buries the failure signal: when it goes red later, you cannot tell which condition broke.
+
+  ## The green step
+
+  Write the minimum production code that flips the test to green. "Minimum" includes hard-coded return values if that is what makes the test pass — Beck calls this fake-it-till-you-make-it. The hard-coded value forces the next test to be the one that demands generalization. Resist the urge to write the full algorithm in the green step; the design should emerge from successive red-green cycles, not be smuggled in.
+
+  When the test goes green, run the entire test suite. If any other test went red, you broke an invariant the suite was guarding — back out, take a smaller step, retry.
+
+  ## The refactor step
+
+  Refactor with tests green. Clean up names, extract helpers, dedupe duplication. The tests are your safety net — every five to ten seconds you should be able to run them and see green. If a refactor takes longer than that to verify, the step is too big; back up and split.
+
+  Do not add behavior in the refactor step. New behavior demands a new red test. Refactor changes structure with the same external behavior; that is the contract that lets the suite remain green.
+
+  ## When to write a test first
+
+  Always, with two narrow exceptions. First, exploratory spikes — when you genuinely do not know what the API should look like, a throwaway spike without tests is acceptable, but the spike code does not get committed. After the spike, restart with a red test. Second, infrastructure code where the test setup cost dominates — wiring a brand-new framework into a project may require a working integration before the unit-test seam exists. In that case, write the test as soon as the seam appears and treat the gap as technical debt to close in the next session.
+
+  ## When TDD does not apply
+
+  TDD is for production code with deterministic behavior at a definable seam. It does not fit:
+
+  - One-off scripts or notebooks where the output is the artifact, not the behavior.
+  - UI rendering at the pixel level — write integration or visual-regression tests at a higher level instead.
+  - Code with non-deterministic external dependencies (network, time, randomness) until you have isolated the dependency behind a fakeable interface.
+
+  In those cases, write tests at the level of granularity that is deterministic and skip the unit-level red-green cycle.
+
+  ## Test naming
+
+  A test name is a sentence. `test_user_with_invalid_email_is_rejected` reads as the behavior. `test_user_invalid_email` does not. The first form survives a year; the second has to be re-read. Name tests as `test_<subject>_<condition>_<expected_outcome>` or in BDD form `it("rejects users with invalid emails", ...)`. The name is the documentation; the body is the proof.
+
+  ## Mock discipline
+
+  Mock the boundary, not the internals. A test that mocks every collaborator inside the system under test verifies that you wrote the test you wrote, not that the system works. Mock external services (HTTP, database, filesystem) at the adapter boundary — the seam between your code and the world. Internals stay real.
+
+  When a test requires extensive mocking, that is a design signal, not a test problem. The system under test is reaching too far through its dependencies. Refactor the design — pass the dependency in, do not look it up — and the test gets simpler.
+
+  ## Verification
+
+  - [ ] Run the test BEFORE writing production code. Confirm it fails for the right reason (assertion failure, not import error).
+  - [ ] Run the entire test suite after each green step. Suite is green or you back out.
+  - [ ] Each test asserts one behavior. Multi-assertion tests get split.
+  - [ ] Test names are full sentences describing the behavior under test.
+  - [ ] Mocks are at the system boundary, not at internal collaborators.
+  - [ ] Refactor steps add no new behavior — only structure.
+
+  ## Frameworks (verified 2026-05-04)
+
+  - Python: `pytest` is the standard third-party runner; `unittest` ships in the stdlib (https://docs.python.org/3.13/library/unittest.html). Use `pytest-mock` for the boundary-mock discipline described above. `pytest --lf` re-runs only the last failures, which is the inner-loop equivalent of the red step. `pytest --ff` runs failures first, then the rest — useful when the suite is large and you want the failing case to surface quickly.
+  - JavaScript / TypeScript: `vitest` is the modern default (https://vitest.dev/llms-full.txt) with native ESM, TypeScript, and watch-mode support. `jest` is the legacy default and remains supported. Both honor the red/green/refactor cadence; vitest has noticeably faster feedback on TypeScript projects because it uses `esbuild` under the hood instead of Babel transforms.
+  - Go: `go test` is built in. The cadence is the same; table-driven tests are the idiomatic equivalent of one-test-per-behavior. Use `t.Run(name, ...)` subtests so each table row reports a separate red or green status.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Test-Driven Development (Red, Green, Refactor)
+
+      Test-driven development is the discipline of writing a failing test before the production code that makes it pass. The cadence is three steps: red (write a failing test that asserts the desired behavior), green (write the minimum production code that flips the test to passing), refactor (clean up the design with tests still green). The unit of work is one test at a time. Bigger units are not TDD — they are write-then-test, which loses the cadence's central guarantee that every line of production code traces to a failing test.
+
+      ## Why the cadence matters
+
+      Two failure modes the cadence prevents. First, regression-trap code: production logic written without a corresponding test passes today and breaks silently next month when a refactor moves the code. Without a failing-then-passing test on record, you cannot prove the behavior was ever covered. Second, over-design: writing all the abstractions first and bolting tests on after produces structures the tests never demanded. The red step forces you to articulate the behavior in concrete terms — input, output, edge case — before the implementation can hide it.
+
+      TDD is also a debugging accelerator. When a regression hits production, the first move is to write a failing test that reproduces the bug. The fix is then validated by flipping the test to green. The test stays as a guard against the same regression returning.
+
+  - sequence: 2
+    fragment_type: execution
+    content: |
+      ## The red step
+
+      Write one test. The test must fail for the right reason — meaning the assertion fails because the behavior is missing, not because the code has a syntax error or an import problem. Run the test. Read the failure message. If the failure says "module not found" or "AttributeError", the test is not yet asserting the behavior — fix the scaffolding first, then re-run until the failure is the assertion itself.
+
+      Keep the test small. One behavior per test. A test that asserts five conditions buries the failure signal: when it goes red later, you cannot tell which condition broke.
+
+  - sequence: 3
+    fragment_type: execution
+    content: |
+      ## The green step
+
+      Write the minimum production code that flips the test to green. "Minimum" includes hard-coded return values if that is what makes the test pass — Beck calls this fake-it-till-you-make-it. The hard-coded value forces the next test to be the one that demands generalization. Resist the urge to write the full algorithm in the green step; the design should emerge from successive red-green cycles, not be smuggled in.
+
+      When the test goes green, run the entire test suite. If any other test went red, you broke an invariant the suite was guarding — back out, take a smaller step, retry.
+
+  - sequence: 4
+    fragment_type: execution
+    content: |
+      ## The refactor step
+
+      Refactor with tests green. Clean up names, extract helpers, dedupe duplication. The tests are your safety net — every five to ten seconds you should be able to run them and see green. If a refactor takes longer than that to verify, the step is too big; back up and split.
+
+      Do not add behavior in the refactor step. New behavior demands a new red test. Refactor changes structure with the same external behavior; that is the contract that lets the suite remain green.
+
+  - sequence: 5
+    fragment_type: rationale
+    content: |
+      ## When to write a test first
+
+      Always, with two narrow exceptions. First, exploratory spikes — when you genuinely do not know what the API should look like, a throwaway spike without tests is acceptable, but the spike code does not get committed. After the spike, restart with a red test. Second, infrastructure code where the test setup cost dominates — wiring a brand-new framework into a project may require a working integration before the unit-test seam exists. In that case, write the test as soon as the seam appears and treat the gap as technical debt to close in the next session.
+
+      ## When TDD does not apply
+
+      TDD is for production code with deterministic behavior at a definable seam. It does not fit:
+
+      - One-off scripts or notebooks where the output is the artifact, not the behavior.
+      - UI rendering at the pixel level — write integration or visual-regression tests at a higher level instead.
+      - Code with non-deterministic external dependencies (network, time, randomness) until you have isolated the dependency behind a fakeable interface.
+
+      In those cases, write tests at the level of granularity that is deterministic and skip the unit-level red-green cycle.
+
+  - sequence: 6
+    fragment_type: example
+    content: |
+      ## Test naming
+
+      A test name is a sentence. `test_user_with_invalid_email_is_rejected` reads as the behavior. `test_user_invalid_email` does not. The first form survives a year; the second has to be re-read. Name tests as `test_<subject>_<condition>_<expected_outcome>` or in BDD form `it("rejects users with invalid emails", ...)`. The name is the documentation; the body is the proof.
+
+  - sequence: 7
+    fragment_type: guardrail
+    content: |
+      ## Mock discipline
+
+      Mock the boundary, not the internals. A test that mocks every collaborator inside the system under test verifies that you wrote the test you wrote, not that the system works. Mock external services (HTTP, database, filesystem) at the adapter boundary — the seam between your code and the world. Internals stay real.
+
+      When a test requires extensive mocking, that is a design signal, not a test problem. The system under test is reaching too far through its dependencies. Refactor the design — pass the dependency in, do not look it up — and the test gets simpler.
+
+  - sequence: 8
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] Run the test BEFORE writing production code. Confirm it fails for the right reason (assertion failure, not import error).
+      - [ ] Run the entire test suite after each green step. Suite is green or you back out.
+      - [ ] Each test asserts one behavior. Multi-assertion tests get split.
+      - [ ] Test names are full sentences describing the behavior under test.
+      - [ ] Mocks are at the system boundary, not at internal collaborators.
+      - [ ] Refactor steps add no new behavior — only structure.
+
+  - sequence: 9
+    fragment_type: setup
+    content: |
+      ## Frameworks (verified 2026-05-04)
+
+      - Python: `pytest` is the standard third-party runner; `unittest` ships in the stdlib (https://docs.python.org/3.13/library/unittest.html). Use `pytest-mock` for the boundary-mock discipline described above. `pytest --lf` re-runs only the last failures, which is the inner-loop equivalent of the red step. `pytest --ff` runs failures first, then the rest — useful when the suite is large and you want the failing case to surface quickly.
+      - JavaScript / TypeScript: `vitest` is the modern default (https://vitest.dev/llms-full.txt) with native ESM, TypeScript, and watch-mode support. `jest` is the legacy default and remains supported. Both honor the red/green/refactor cadence; vitest has noticeably faster feedback on TypeScript projects because it uses `esbuild` under the hood instead of Babel transforms.
+      - Go: `go test` is built in. The cadence is the same; table-driven tests are the idiomatic equivalent of one-test-per-behavior. Use `t.Run(name, ...)` subtests so each table row reports a separate red or green status.

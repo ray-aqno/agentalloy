@@ -1,0 +1,351 @@
+skill_type: domain
+skill_id: testing-fixture-libraries
+canonical_name: Test Fixture Libraries — Factories and Builders
+category: quality
+skill_class: domain
+domain_tags:
+- testing
+- fixtures
+- factories
+- builders
+- test-data
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |-
+  # Test Fixture Libraries — Factories and Builders
+
+  ## Overview
+
+  This skill covers testing fixture libraries patterns end-to-end.
+
+  ---
+
+  ## The Core Pattern
+
+  ```python
+  # factory_boy in Python
+  class UserFactory(factory.Factory):
+      class Meta:
+          model = User
+
+      name = factory.Faker('name')
+      email = factory.Faker('email')
+      plan = 'free'
+      created_at = factory.Faker('past_datetime')
+
+  # In tests
+  default_user = UserFactory()                          # all defaults
+  pro_user = UserFactory(plan='pro')                     # override one field
+  admin = UserFactory(plan='enterprise', is_admin=True)  # override several
+  batch = UserFactory.build_batch(5)                     # 5 distinct users
+  ```
+
+  The factory generates realistic data via `faker`. Each call produces a new instance with overridable defaults.
+
+  ## Factory vs Builder vs Fixture
+
+  - **Factory** (factory_boy, fishery) — class-based, generates new instances. Good for many objects with shared schema.
+  - **Builder pattern** — fluent API: `UserBuilder().name('Alice').plan('pro').build()`. More verbose but reads naturally for complex setup.
+  - **Fixture file** — static JSON/SQL dump loaded at test-setup time. Good for snapshots of realistic state; brittle to schema changes.
+
+  For most suites, factories are the sweet spot.
+
+  ## faker — Realistic Random Data
+
+  faker (Python) and @faker-js/faker (JS) generate realistic strings:
+
+  ```python
+  from faker import Faker
+  f = Faker()
+
+  f.name()      # 'Alice Walker'
+  f.email()     # 'alice.walker@example.com'
+  f.address()   # '123 Main St\nSpringfield, IL 62701'
+  f.text()      # 200-char paragraph
+  f.uuid4()     # uuid string
+  f.date_between(start_date='-1y', end_date='today')
+  ```
+
+  Locales are supported: `Faker('ja_JP')` for Japanese names, `Faker('de_DE')` for German addresses.
+
+  Always seed faker in CI for reproducibility:
+
+  ```python
+  Faker.seed(0)
+  ```
+
+  ## SubFactory and Related Objects
+
+  Generate related objects together:
+
+  ```python
+  class OrderFactory(factory.Factory):
+      class Meta:
+          model = Order
+
+      user = factory.SubFactory(UserFactory)
+      total_cents = factory.Faker('pyint', min_value=100, max_value=100000)
+      status = 'pending'
+
+  class OrderItemFactory(factory.Factory):
+      class Meta:
+          model = OrderItem
+
+      order = factory.SubFactory(OrderFactory)
+      product_id = factory.Faker('uuid4')
+      quantity = 1
+
+  # Creating an order with two items:
+  order = OrderFactory()
+  items = OrderItemFactory.build_batch(2, order=order)
+  ```
+
+  ## Database Persistence
+
+  For ORM tests, factory_boy provides Django and SQLAlchemy integrations:
+
+  ```python
+  class UserFactory(factory.django.DjangoModelFactory):
+      class Meta:
+          model = User
+
+  UserFactory.create()       # saved to DB
+  UserFactory.build()        # NOT saved
+  UserFactory.create_batch(3)
+  ```
+
+  Pair with transaction-rollback fixtures so each test sees a clean DB.
+
+  ## Traits — Named Variations
+
+  Predefine common variations:
+
+  ```python
+  class UserFactory(factory.Factory):
+      class Meta:
+          model = User
+
+      name = factory.Faker('name')
+      plan = 'free'
+      is_admin = False
+
+      class Params:
+          admin_user = factory.Trait(plan='enterprise', is_admin=True)
+          trial = factory.Trait(plan='trial', trial_ends_at=factory.Faker('future_date'))
+
+  # Use traits:
+  UserFactory(admin_user=True)  # sets plan + is_admin together
+  UserFactory(trial=True)
+  ```
+
+  This keeps tests readable: `UserFactory(admin_user=True)` says intent better than `UserFactory(plan='enterprise', is_admin=True)`.
+
+  ## Sequences — Unique Values
+
+  For unique fields:
+
+  ```python
+  class UserFactory(factory.Factory):
+      email = factory.Sequence(lambda n: f'user{n}@example.com')
+  ```
+
+  Each call increments. Avoids 'duplicate email' errors in tests that create many users.
+
+  ## When NOT to Use Factories
+
+  - **Tests that depend on specific values** — use inline data, not a factory. `UserFactory(name='alice')` is fine; expecting `factory.name()` to return 'alice' would be wrong.
+  - **Property-based tests** — use the framework's generators (Hypothesis strategies, fast-check arbitraries) instead.
+  - **Trivial tests** — don't pull in factory_boy for one test that creates one object inline.
+
+  ## Common Pitfalls
+
+  - **Faker drift.** A non-seeded Faker produces different data each run; tests that accidentally depend on specific values flake. Seed deterministically in CI.
+  - **Factory-of-factory chains that are too deep.** When `UserFactory()` triggers OrderFactory triggers OrderItemFactory triggers ProductFactory, debugging slow tests gets hard. Build only what each test needs.
+  - **Putting business logic in factories.** Factories generate valid data; they shouldn't compute derived state. Compute in production code or test helpers.
+  - **Sharing factory state across tests.** Factories should be stateless beyond sequences. Don't store anything on the factory class.
+
+  ## Verification
+
+  A healthy fixture setup:
+
+  - New tests can build a valid object in one line.
+  - Common variations (admin user, trial user, paid user) have named traits.
+  - Factories are deterministic in CI (faker seeded).
+  - Factories don't reach into the production code's internal state — they go through public constructors / repository APIs.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## The Core Pattern
+
+    ```python
+    # factory_boy in Python
+    class UserFactory(factory.Factory):
+        class Meta:
+            model = User
+
+        name = factory.Faker('name')
+        email = factory.Faker('email')
+        plan = 'free'
+        created_at = factory.Faker('past_datetime')
+
+    # In tests
+    default_user = UserFactory()                          # all defaults
+    pro_user = UserFactory(plan='pro')                     # override one field
+    admin = UserFactory(plan='enterprise', is_admin=True)  # override several
+    batch = UserFactory.build_batch(5)                     # 5 distinct users
+    ```
+
+    The factory generates realistic data via `faker`. Each call produces a new instance with overridable defaults.
+- fragment_type: rationale
+  sequence: 2
+  content: |-
+    ## Factory vs Builder vs Fixture
+
+    - **Factory** (factory_boy, fishery) — class-based, generates new instances. Good for many objects with shared schema.
+    - **Builder pattern** — fluent API: `UserBuilder().name('Alice').plan('pro').build()`. More verbose but reads naturally for complex setup.
+    - **Fixture file** — static JSON/SQL dump loaded at test-setup time. Good for snapshots of realistic state; brittle to schema changes.
+
+    For most suites, factories are the sweet spot.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## faker — Realistic Random Data
+
+    faker (Python) and @faker-js/faker (JS) generate realistic strings:
+
+    ```python
+    from faker import Faker
+    f = Faker()
+
+    f.name()      # 'Alice Walker'
+    f.email()     # 'alice.walker@example.com'
+    f.address()   # '123 Main St\nSpringfield, IL 62701'
+    f.text()      # 200-char paragraph
+    f.uuid4()     # uuid string
+    f.date_between(start_date='-1y', end_date='today')
+    ```
+
+    Locales are supported: `Faker('ja_JP')` for Japanese names, `Faker('de_DE')` for German addresses.
+
+    Always seed faker in CI for reproducibility:
+
+    ```python
+    Faker.seed(0)
+    ```
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## SubFactory and Related Objects
+
+    Generate related objects together:
+
+    ```python
+    class OrderFactory(factory.Factory):
+        class Meta:
+            model = Order
+
+        user = factory.SubFactory(UserFactory)
+        total_cents = factory.Faker('pyint', min_value=100, max_value=100000)
+        status = 'pending'
+
+    class OrderItemFactory(factory.Factory):
+        class Meta:
+            model = OrderItem
+
+        order = factory.SubFactory(OrderFactory)
+        product_id = factory.Faker('uuid4')
+        quantity = 1
+
+    # Creating an order with two items:
+    order = OrderFactory()
+    items = OrderItemFactory.build_batch(2, order=order)
+    ```
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Database Persistence
+
+    For ORM tests, factory_boy provides Django and SQLAlchemy integrations:
+
+    ```python
+    class UserFactory(factory.django.DjangoModelFactory):
+        class Meta:
+            model = User
+
+    UserFactory.create()       # saved to DB
+    UserFactory.build()        # NOT saved
+    UserFactory.create_batch(3)
+    ```
+
+    Pair with transaction-rollback fixtures so each test sees a clean DB.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Traits — Named Variations
+
+    Predefine common variations:
+
+    ```python
+    class UserFactory(factory.Factory):
+        class Meta:
+            model = User
+
+        name = factory.Faker('name')
+        plan = 'free'
+        is_admin = False
+
+        class Params:
+            admin_user = factory.Trait(plan='enterprise', is_admin=True)
+            trial = factory.Trait(plan='trial', trial_ends_at=factory.Faker('future_date'))
+
+    # Use traits:
+    UserFactory(admin_user=True)  # sets plan + is_admin together
+    UserFactory(trial=True)
+    ```
+
+    This keeps tests readable: `UserFactory(admin_user=True)` says intent better than `UserFactory(plan='enterprise', is_admin=True)`.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Sequences — Unique Values
+
+    For unique fields:
+
+    ```python
+    class UserFactory(factory.Factory):
+        email = factory.Sequence(lambda n: f'user{n}@example.com')
+    ```
+
+    Each call increments. Avoids 'duplicate email' errors in tests that create many users.
+- fragment_type: rationale
+  sequence: 8
+  content: |-
+    ## When NOT to Use Factories
+
+    - **Tests that depend on specific values** — use inline data, not a factory. `UserFactory(name='alice')` is fine; expecting `factory.name()` to return 'alice' would be wrong.
+    - **Property-based tests** — use the framework's generators (Hypothesis strategies, fast-check arbitraries) instead.
+    - **Trivial tests** — don't pull in factory_boy for one test that creates one object inline.
+- fragment_type: guardrail
+  sequence: 9
+  content: |-
+    ## Common Pitfalls
+
+    - **Faker drift.** A non-seeded Faker produces different data each run; tests that accidentally depend on specific values flake. Seed deterministically in CI.
+    - **Factory-of-factory chains that are too deep.** When `UserFactory()` triggers OrderFactory triggers OrderItemFactory triggers ProductFactory, debugging slow tests gets hard. Build only what each test needs.
+    - **Putting business logic in factories.** Factories generate valid data; they shouldn't compute derived state. Compute in production code or test helpers.
+    - **Sharing factory state across tests.** Factories should be stateless beyond sequences. Don't store anything on the factory class.
+- fragment_type: verification
+  sequence: 10
+  content: |-
+    ## Verification
+
+    A healthy fixture setup:
+
+    - New tests can build a valid object in one line.
+    - Common variations (admin user, trial user, paid user) have named traits.
+    - Factories are deterministic in CI (faker seeded).
+    - Factories don't reach into the production code's internal state — they go through public constructors / repository APIs.

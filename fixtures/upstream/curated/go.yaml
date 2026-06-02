@@ -1,0 +1,93 @@
+language: Go
+version_anchor: Go 1.23
+generated_at: 2026-05-01
+canonical:
+  language_reference: https://go.dev/ref/spec
+  library_reference: https://pkg.go.dev/std
+  spec_or_standard: https://go.dev/ref/spec
+  release_notes: https://go.dev/doc/go1.23
+topics:
+  concurrency_and_async:
+    description: Goroutines, channels, select, sync package, and context propagation
+    urls:
+      - https://go.dev/ref/spec#Go_statements
+      - https://pkg.go.dev/sync
+      - https://pkg.go.dev/context
+      - https://go.dev/doc/effective_go#concurrency
+      - https://go.dev/blog/pipelines
+  error_handling_and_exceptions:
+    description: Error interface, fmt.Errorf wrapping, errors.Is/As, and panic/recover
+    urls:
+      - https://pkg.go.dev/errors
+      - https://go.dev/blog/error-handling-and-go
+      - https://go.dev/blog/go1.13-errors
+      - https://go.dev/ref/spec#Handling_panics
+  typing_and_generics:
+    description: Type parameters, constraints, type inference, and comparable
+    urls:
+      - https://go.dev/ref/spec#Type_parameter_declarations
+      - https://pkg.go.dev/golang.org/x/exp/constraints
+      - https://go.dev/blog/intro-generics
+      - https://go.dev/doc/faq#generics
+  memory_and_performance:
+    description: Escape analysis, GC tuning, pprof profiling, and GOGC/GOMEMLIMIT
+    urls:
+      - https://pkg.go.dev/runtime
+      - https://pkg.go.dev/runtime/pprof
+      - https://go.dev/doc/gc-guide
+      - https://go.dev/blog/pprof
+  packaging_and_dependency_management:
+    description: Go modules, go.mod, go.sum, and module proxy
+    urls:
+      - https://go.dev/ref/mod
+      - https://go.dev/doc/modules/gomod-ref
+      - https://go.dev/doc/modules/managing-dependencies
+      - https://go.dev/doc/modules/publishing
+  testing_idioms:
+    description: testing package, table-driven tests, benchmarks, and fuzzing
+    urls:
+      - https://pkg.go.dev/testing
+      - https://go.dev/doc/code#Testing
+      - https://go.dev/doc/fuzz/
+  security_and_crypto_primitives:
+    description: crypto/* packages for hashing, signing, TLS, and random
+    urls:
+      - https://pkg.go.dev/crypto
+      - https://pkg.go.dev/crypto/tls
+      - https://pkg.go.dev/crypto/sha256
+      - https://pkg.go.dev/crypto/rand
+      - https://pkg.go.dev/crypto/hmac
+  io_and_filesystem:
+    description: io, os, bufio, and path/filepath for file and stream operations
+    urls:
+      - https://pkg.go.dev/io
+      - https://pkg.go.dev/os
+      - https://pkg.go.dev/bufio
+      - https://pkg.go.dev/path/filepath
+  networking_and_http_client:
+    description: net/http client and server, net package, and http.Transport
+    urls:
+      - https://pkg.go.dev/net/http
+      - https://pkg.go.dev/net
+      - https://go.dev/doc/articles/wiki/
+  serialization_json_binary:
+    description: encoding/json, encoding/binary, and encoding/gob
+    urls:
+      - https://pkg.go.dev/encoding/json
+      - https://pkg.go.dev/encoding/binary
+      - https://pkg.go.dev/encoding/gob
+  logging_and_observability:
+    description: log/slog (structured logging, Go 1.21+) and log package
+    urls:
+      - https://pkg.go.dev/log/slog
+      - https://pkg.go.dev/log
+      - https://go.dev/blog/slog
+  language_evolution_and_deprecation:
+    description: Go release notes index and compatibility guarantee
+    urls:
+      - https://go.dev/doc/devel/release
+      - https://go.dev/doc/go1compat
+known_gaps:
+  - No canonical dependency injection pattern; community uses wire (not stdlib)
+  - HTTP middleware patterns not formally documented; Effective Go guidance is minimal
+  - Database/sql patterns exist in stdlib but driver ecosystem docs are per-driver

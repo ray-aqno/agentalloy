@@ -1,0 +1,208 @@
+skill_type: domain
+skill_id: analytics-observability-primer
+canonical_name: Analytics — Observability Primer
+category: engineering
+skill_class: domain
+domain_tags:
+- observability
+- open-telemetry
+- logs
+- metrics
+- traces
+always_apply: false
+phase_scope: []
+category_scope: []
+author: authoring-agent
+change_summary: initial authoring draft
+raw_prose: |
+  # Analytics — Observability Primer
+
+  ## Overview
+
+  Observability is the property of a system that lets you ask new questions of its behavior without shipping new code. The three pillars (logs, metrics, traces) are the standard data types. OpenTelemetry provides a vendor-neutral instrumentation layer. This skill covers the conceptual primer.
+
+  Sourced from https://opentelemetry.io/docs/concepts/observability-primer.
+
+  ## What is Observability?
+
+  Observability lets you understand a system from the outside by letting you ask
+  questions about that system without knowing its inner workings. Furthermore, it
+  allows you to easily troubleshoot and handle novel problems, that is, "unknown
+  unknowns". It also helps you answer the question "Why is this happening?"
+
+  To ask those questions about your system, your application must be properly
+  instrumented. That is, the application code must emit
+  [signals](/docs/concepts/signals/) such as
+  [traces](/docs/concepts/signals/traces/),
+  [metrics](/docs/concepts/signals/metrics/), and
+  [logs](/docs/concepts/signals/logs/). An application is properly instrumented
+  when developers don't need to add more instrumentation to troubleshoot an issue,
+  because they have all of the information they need.
+
+  [OpenTelemetry](/docs/what-is-opentelemetry/) is the mechanism by which
+  application code is instrumented to help make a system observable.
+
+  ## Reliability and metrics
+
+  **Telemetry** refers to data emitted from a system and its behavior. The data
+  can come in the form of [traces](/docs/concepts/signals/traces/),
+  [metrics](/docs/concepts/signals/metrics/), and
+  [logs](/docs/concepts/signals/logs/).
+
+  **Reliability** answers the question: "Is the service doing what users expect it
+  to be doing?" A system could be up 100% of the time, but if, when a user clicks
+  "Add to Cart" to add a black pair of shoes to their shopping cart, the system
+  doesn't always add black shoes, then the system could be **un**reliable.
+
+  **Metrics** are aggregations over a period of time of numeric data about your
+  infrastructure or application. Examples include: system error rate, CPU
+  utilization, and request rate for a given service. For more on metrics and how
+  they relate to OpenTelemetry, see [Metrics](/docs/concepts/signals/metrics/).
+
+  **SLI**, or Service Level Indicator, represents a measurement of a service's
+  behavior. A good SLI measures your service from the perspective of your users.
+  An example SLI can be the speed at which a web page loads.
+
+  **SLO**, or Service Level Objective, represents the means by which reliability
+  is communicated to an organization/other teams. This is accomplished by
+  attaching one or more SLIs to business value.
+
+  ## Understanding distributed tracing
+
+  Distributed tracing lets you observe requests as they propagate through complex,
+  distributed systems. Distributed tracing improves the visibility of your
+  application or system's health and lets you debug behavior that is difficult to
+  reproduce locally. It is essential for distributed systems, which commonly have
+  nondeterministic problems or are too complicated to reproduce locally.
+
+  To understand distributed tracing, you need to understand the role of each of
+  its components: logs, spans, and traces.
+
+  ### Logs
+
+  A **log** is a timestamped message emitted by services or other components.
+  Unlike [traces](#distributed-traces), they aren't necessarily associated with
+  any particular user request or transaction. You can find logs almost everywhere
+  in software. Logs have been heavily relied on in the past by both developers and
+  operators to help them understand system behavior.
+
+  Sample log:
+
+  ```
+  I, [2021-02-23T13:26:23.505892 #22473]  INFO -- : [6459ffe1-ea53-4044-aaa3-bf902868f730] Started GET "/" for ::1 at 2021-02-23 13:26:23 -0800
+  ```
+
+  Logs aren't enough for tracking code execution, as they usually lack contextual
+  information, such as where they were called from.
+
+  They become far more useful when they are included as part of a [span](#spans),
+  or when they are correlated with a trace and a span.
+
+  For more on logs and how they pertain to OpenTelemetry, see
+  [Logs](/docs/concepts/signals/logs/).
+
+  ### Spans
+
+  A **span** represents a single unit of work or operation. Spans track specific
+  operations that a request makes, painting a picture of what happened during the
+  time in which that operation was executed.
+
+  A span contains name, time-related data,
+  [structured log messages](/docs/concepts/signals/traces/#span-events), and
+  [other metadata (that is, Attributes)](/docs/concepts/signals/traces/#attributes)
+  to provide information about the operation it tracks.
+
+  #### Span attributes
+
+  Span attributes are metadata attached to a span.
+
+  The following table contains examples of span attributes:
+
+  | Key                         | Value                                                                              |
+  | :-------------------------- | :--------------------------------------------------------------------------------- |
+  | `http.request.method`       | `"GET"`                                                                            |
+  | `network.protocol.version`  | `"1.1"`                                                                            |
+  | `url.path`                  | `"/webshop/articles/4"`                                                            |
+  | `url.query`                 | `"?s=1"`                                                                           |
+  | `server.address`            | `"example.com"`                                                                    |
+  | `server.port`               | `8080`                                                                             |
+  | `url.scheme`                | `"https"`                                                                          |
+  | `http.route`                | `"/webshop/articles/:article_id"`                                                  |
+  | `http.response.status_code`
+fragments:
+- fragment_type: setup
+  sequence: 1
+  content: |
+    Observability is the property of a system that lets you ask new questions of its behavior without shipping new code. The three pillars (logs, metrics, traces) are the standard data types. OpenTelemetry provides a vendor-neutral instrumentation layer. This skill covers the conceptual primer.
+
+    Sourced from https://opentelemetry.io/docs/concepts/observability-primer.
+- fragment_type: rationale
+  sequence: 2
+  content: |
+    Observability lets you understand a system from the outside by letting you ask questions about that system without knowing its inner workings. Furthermore, it allows you to easily troubleshoot and handle novel problems, that is, "unknown unknowns". It also helps you answer the question "Why is this happening?"
+- fragment_type: execution
+  sequence: 3
+  content: |
+    To ask those questions about your system, your application must be properly instrumented. That is, the application code must emit [signals](/docs/concepts/signals/) such as [traces](/docs/concepts/signals/traces/), [metrics](/docs/concepts/signals/metrics/), and [logs](/docs/concepts/signals/logs/). An application is properly instrumented when developers don't need to add more instrumentation to troubleshoot an issue, because they have all of the information they need.
+- fragment_type: rationale
+  sequence: 4
+  content: |
+    **Telemetry** refers to data emitted from a system and its behavior. The data can come in the form of [traces](/docs/concepts/signals/traces/), [metrics](/docs/concepts/signals/metrics/), and [logs](/docs/concepts/signals/logs/).
+- fragment_type: rationale
+  sequence: 5
+  content: |
+    **Reliability** answers the question: "Is the service doing what users expect it to be doing?" A system could be up 100% of the time, but if, when a user clicks "Add to Cart" to add a black pair of shoes to their shopping cart, the system doesn't always add black shoes, then the system could be **un**reliable.
+- fragment_type: example
+  sequence: 6
+  content: |
+    **Metrics** are aggregations over a period of time of numeric data about your infrastructure or application. Examples include: system error rate, CPU utilization, and request rate for a given service. For more on metrics and how they relate to OpenTelemetry, see [Metrics](/docs/concepts/signals/metrics/).
+- fragment_type: example
+  sequence: 7
+  content: |
+    **SLI**, or Service Level Indicator, represents a measurement of a service's behavior. A good SLI measures your service from the perspective of your users. An example SLI can be the speed at which a web page loads.
+- fragment_type: example
+  sequence: 8
+  content: |
+    **SLO**, or Service Level Objective, represents the means by which reliability is communicated to an organization/other teams. This is accomplished by attaching one or more SLIs to business value.
+- fragment_type: rationale
+  sequence: 9
+  content: |
+    Distributed tracing lets you observe requests as they propagate through complex, distributed systems. Distributed tracing improves the visibility of your application or system's health and lets you debug behavior that is difficult to reproduce locally. It is essential for distributed systems, which commonly have nondeterministic problems or are too complicated to reproduce locally.
+- fragment_type: example
+  sequence: 10
+  content: |
+    A **log** is a timestamped message emitted by services or other components. Unlike [traces](#distributed-traces), they aren't necessarily associated with any particular user request or transaction. You can find logs almost everywhere in software. Logs have been heavily relied on in the past by both developers and operators to help them understand system behavior.
+
+    Sample log:
+
+    ```
+    I, [2021-02-23T13:26:23.505892 #22473]  INFO -- : [6459ffe1-ea53-4044-aaa3-bf902868f730] Started GET "/" for ::1 at 2021-02-23 13:26:23 -0800
+    ```
+
+    Logs aren't enough for tracking code execution, as they usually lack contextual information, such as where they were called from.
+
+    They become far more useful when they are included as part of a [span](#spans), or when they are correlated with a trace and a span.
+- fragment_type: example
+  sequence: 11
+  content: |
+    A **span** represents a single unit of work or operation. Spans track specific operations that a request makes, painting a picture of what happened during the time in which that operation was executed.
+
+    A span contains name, time-related data, [structured log messages](/docs/concepts/signals/traces/#span-events), and [other metadata (that is, Attributes)](/docs/concepts/signals/traces/#attributes) to provide information about the operation it tracks.
+- fragment_type: example
+  sequence: 12
+  content: |-
+    Span attributes are metadata attached to a span.
+
+    The following table contains examples of span attributes:
+
+    | Key                         | Value                                                                              |
+    | :-------------------------- | :--------------------------------------------------------------------------------- |
+    | `http.request.method`       | `"GET"`                                                                            |
+    | `network.protocol.version`  | `"1.1"`                                                                            |
+    | `url.path`                  | `"/webshop/articles/4"`                                                            |
+    | `url.query`                 | `"?s=1"`                                                                           |
+    | `server.address`            | `"example.com"`                                                                    |
+    | `server.port`               | `8080`                                                                             |
+    | `url.scheme`                | `"https"`                                                                          |
+    | `http.route`                | `"/webshop/articles/:article_id"`                                                  |
+    | `http.response.status_code`

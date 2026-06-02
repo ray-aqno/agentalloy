@@ -1,0 +1,379 @@
+skill_type: domain
+skill_id: react-react-testing-library
+canonical_name: React Testing Library — User-Centric Testing
+category: engineering
+skill_class: domain
+domain_tags:
+- react
+- testing
+- react-testing-library
+- user-event
+- vitest
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion (wave 2)
+raw_prose: |
+  # React Testing Library — User-Centric Testing
+
+  ## Overview
+
+  React Testing Library (RTL) tests React components by simulating user interactions, not by inspecting internal state. Queries find elements by role/label/text — what users perceive. Encourages accessible markup because tests query through accessibility primitives.
+
+  ---
+
+  ## Setup
+
+  ```bash
+  npm install -D @testing-library/react @testing-library/user-event @testing-library/jest-dom vitest jsdom
+  ```
+
+  ```ts
+  // vitest.config.ts
+  test: { environment: 'jsdom', setupFiles: './src/test/setup.ts' }
+
+  // src/test/setup.ts
+  import '@testing-library/jest-dom/vitest';
+  ```
+
+  `@testing-library/jest-dom/vitest` extends expect with DOM matchers (`toBeInTheDocument`, `toHaveAccessibleName`, etc.).
+
+  ## Basic Test
+
+  ```tsx
+  import { render, screen } from '@testing-library/react';
+  import userEvent from '@testing-library/user-event';
+
+  test('counter increments on click', async () => {
+      render(<Counter initial={5} />);
+
+      expect(screen.getByText(/Count: 5/)).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole('button', { name: /increment/i }));
+
+      expect(screen.getByText(/Count: 6/)).toBeInTheDocument();
+  });
+  ```
+
+  `screen` provides queries scoped to the rendered output. `userEvent.click` simulates real user click (focus + click + events).
+
+  ## Query Priority — getByRole First
+
+  ```ts
+  // Best (accessible)
+  screen.getByRole('button', { name: /submit/i });
+  screen.getByLabelText('Email');
+  screen.getByPlaceholderText('Search...');
+  screen.getByText('Welcome');
+
+  // OK
+  screen.getByDisplayValue('alice@example.com');
+  screen.getByAltText('Profile picture');
+  screen.getByTitle('Tooltip text');
+
+  // Last resort
+  screen.getByTestId('submit-button');
+  ```
+
+  Roles map to ARIA roles. If `getByRole` fails, your markup is missing accessibility primitives. Fixing the markup is the right answer (accessibility + tests both win).
+
+  ## userEvent Over fireEvent
+
+  ```ts
+  // fireEvent: dispatches a single event
+  fireEvent.click(button);
+
+  // userEvent: simulates real user behavior
+  await userEvent.click(button);  // focus + click + events
+  await userEvent.type(input, 'hello');  // multiple keystrokes + events
+  ```
+
+  userEvent fires the same sequence of events a real user would. Catches bugs that fireEvent misses (focus issues, key handlers).
+
+  ## Async Queries
+
+  ```tsx
+  // findBy: waits up to 1s for the element
+  const dialog = await screen.findByRole('dialog');
+
+  // waitFor: waits for an assertion to pass
+  await waitFor(() => {
+      expect(screen.getByText(/loaded/i)).toBeInTheDocument();
+  });
+
+  // queryBy: returns null if not found (no throw)
+  expect(screen.queryByText(/error/i)).not.toBeInTheDocument();
+  ```
+
+  - `getBy*` — throws if missing. Use for elements that should exist.
+  - `findBy*` — async, retries until found or timeout. Use for elements that appear after async work.
+  - `queryBy*` — returns null if missing. Use to assert absence.
+
+  ## Custom Render with Providers
+
+  ```tsx
+  // src/test/render.tsx
+  import { render } from '@testing-library/react';
+  import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+  import { MemoryRouter } from 'react-router';
+
+  export function renderWithProviders(ui, options = {}) {
+      const queryClient = new QueryClient();
+      return render(
+          <QueryClientProvider client={queryClient}>
+              <MemoryRouter initialEntries={[options.route ?? '/']}>
+                  {ui}
+              </MemoryRouter>
+          </QueryClientProvider>,
+          options
+      );
+  }
+  ```
+
+  Wraps the component under test in your real provider tree. Avoids 'must be inside Provider' errors and keeps tests realistic.
+
+  ## Mocking Fetch
+
+  ```ts
+  import { vi } from 'vitest';
+
+  beforeEach(() => {
+      vi.spyOn(global, 'fetch').mockResolvedValue(
+          new Response(JSON.stringify({ id: 1, name: 'Alice' }))
+      );
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+  ```
+
+  Or use MSW (Mock Service Worker) for more realistic API mocking that doesn't tie tests to fetch implementation:
+
+  ```ts
+  import { http, HttpResponse } from 'msw';
+  import { setupServer } from 'msw/node';
+
+  const server = setupServer(
+      http.get('/api/users/:id', () => HttpResponse.json({ id: 1, name: 'Alice' }))
+  );
+
+  beforeAll(() => server.listen());
+  afterEach(() => server.resetHandlers());
+  afterAll(() => server.close());
+  ```
+
+  MSW intercepts at the network layer; works for fetch + axios + anything.
+
+  ## Snapshot Testing — Use Sparingly
+
+  ```ts
+  expect(container).toMatchSnapshot();
+  ```
+
+  Useful for layout regression. Avoid for behavior — snapshots that change frequently lose meaning.
+
+  ## Common Pitfalls
+
+  - **Querying by class name or test ID first.** Tests become tied to implementation. Prefer roles / labels.
+  - **Not using userEvent.** fireEvent skips real user behavior; subtle bugs slip through.
+  - **No `await` on user events.** RTL events return promises; missing await causes timing flakes.
+  - **Testing implementation details (`wrapper.state`, prop functions).** Tests should validate user-visible behavior.
+  - **Mocking too much.** A test that mocks every dependency proves the mock setup, not the component.
+
+  ## Verification
+
+  Healthy RTL tests:
+
+  - Most queries use `getByRole`, `getByLabelText`, or `getByText`.
+  - Async work uses `findBy` or `waitFor`.
+  - Custom render wraps real providers.
+  - API mocking via MSW or vi.spyOn.
+  - Tests describe user behavior in their names (`'submits form on Enter'`, not `'calls handleSubmit'`).
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Setup
+
+    ```bash
+    npm install -D @testing-library/react @testing-library/user-event @testing-library/jest-dom vitest jsdom
+    ```
+
+    ```ts
+    // vitest.config.ts
+    test: { environment: 'jsdom', setupFiles: './src/test/setup.ts' }
+
+    // src/test/setup.ts
+    import '@testing-library/jest-dom/vitest';
+    ```
+
+    `@testing-library/jest-dom/vitest` extends expect with DOM matchers (`toBeInTheDocument`, `toHaveAccessibleName`, etc.).
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Basic Test
+
+    ```tsx
+    import { render, screen } from '@testing-library/react';
+    import userEvent from '@testing-library/user-event';
+
+    test('counter increments on click', async () => {
+        render(<Counter initial={5} />);
+
+        expect(screen.getByText(/Count: 5/)).toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole('button', { name: /increment/i }));
+
+        expect(screen.getByText(/Count: 6/)).toBeInTheDocument();
+    });
+    ```
+
+    `screen` provides queries scoped to the rendered output. `userEvent.click` simulates real user click (focus + click + events).
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Query Priority — getByRole First
+
+    ```ts
+    // Best (accessible)
+    screen.getByRole('button', { name: /submit/i });
+    screen.getByLabelText('Email');
+    screen.getByPlaceholderText('Search...');
+    screen.getByText('Welcome');
+
+    // OK
+    screen.getByDisplayValue('alice@example.com');
+    screen.getByAltText('Profile picture');
+    screen.getByTitle('Tooltip text');
+
+    // Last resort
+    screen.getByTestId('submit-button');
+    ```
+
+    Roles map to ARIA roles. If `getByRole` fails, your markup is missing accessibility primitives. Fixing the markup is the right answer (accessibility + tests both win).
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## userEvent Over fireEvent
+
+    ```ts
+    // fireEvent: dispatches a single event
+    fireEvent.click(button);
+
+    // userEvent: simulates real user behavior
+    await userEvent.click(button);  // focus + click + events
+    await userEvent.type(input, 'hello');  // multiple keystrokes + events
+    ```
+
+    userEvent fires the same sequence of events a real user would. Catches bugs that fireEvent misses (focus issues, key handlers).
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Async Queries
+
+    ```tsx
+    // findBy: waits up to 1s for the element
+    const dialog = await screen.findByRole('dialog');
+
+    // waitFor: waits for an assertion to pass
+    await waitFor(() => {
+        expect(screen.getByText(/loaded/i)).toBeInTheDocument();
+    });
+
+    // queryBy: returns null if not found (no throw)
+    expect(screen.queryByText(/error/i)).not.toBeInTheDocument();
+    ```
+
+    - `getBy*` — throws if missing. Use for elements that should exist.
+    - `findBy*` — async, retries until found or timeout. Use for elements that appear after async work.
+    - `queryBy*` — returns null if missing. Use to assert absence.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Custom Render with Providers
+
+    ```tsx
+    // src/test/render.tsx
+    import { render } from '@testing-library/react';
+    import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+    import { MemoryRouter } from 'react-router';
+
+    export function renderWithProviders(ui, options = {}) {
+        const queryClient = new QueryClient();
+        return render(
+            <QueryClientProvider client={queryClient}>
+                <MemoryRouter initialEntries={[options.route ?? '/']}>
+                    {ui}
+                </MemoryRouter>
+            </QueryClientProvider>,
+            options
+        );
+    }
+    ```
+
+    Wraps the component under test in your real provider tree. Avoids 'must be inside Provider' errors and keeps tests realistic.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Mocking Fetch
+
+    ```ts
+    import { vi } from 'vitest';
+
+    beforeEach(() => {
+        vi.spyOn(global, 'fetch').mockResolvedValue(
+            new Response(JSON.stringify({ id: 1, name: 'Alice' }))
+        );
+    });
+
+    afterEach(() => vi.restoreAllMocks());
+    ```
+
+    Or use MSW (Mock Service Worker) for more realistic API mocking that doesn't tie tests to fetch implementation:
+
+    ```ts
+    import { http, HttpResponse } from 'msw';
+    import { setupServer } from 'msw/node';
+
+    const server = setupServer(
+        http.get('/api/users/:id', () => HttpResponse.json({ id: 1, name: 'Alice' }))
+    );
+
+    beforeAll(() => server.listen());
+    afterEach(() => server.resetHandlers());
+    afterAll(() => server.close());
+    ```
+
+    MSW intercepts at the network layer; works for fetch + axios + anything.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Snapshot Testing — Use Sparingly
+
+    ```ts
+    expect(container).toMatchSnapshot();
+    ```
+
+    Useful for layout regression. Avoid for behavior — snapshots that change frequently lose meaning.
+- fragment_type: guardrail
+  sequence: 9
+  content: |-
+    ## Common Pitfalls
+
+    - **Querying by class name or test ID first.** Tests become tied to implementation. Prefer roles / labels.
+    - **Not using userEvent.** fireEvent skips real user behavior; subtle bugs slip through.
+    - **No `await` on user events.** RTL events return promises; missing await causes timing flakes.
+    - **Testing implementation details (`wrapper.state`, prop functions).** Tests should validate user-visible behavior.
+    - **Mocking too much.** A test that mocks every dependency proves the mock setup, not the component.
+- fragment_type: verification
+  sequence: 10
+  content: |-
+    ## Verification
+
+    Healthy RTL tests:
+
+    - Most queries use `getByRole`, `getByLabelText`, or `getByText`.
+    - Async work uses `findBy` or `waitFor`.
+    - Custom render wraps real providers.
+    - API mocking via MSW or vi.spyOn.
+    - Tests describe user behavior in their names (`'submits form on Enter'`, not `'calls handleSubmit'`).

@@ -1,0 +1,409 @@
+skill_type: domain
+skill_id: typescript-jsx-types
+canonical_name: TypeScript JSX Types — React and Beyond
+category: engineering
+skill_class: domain
+domain_tags:
+- typescript
+- jsx
+- react
+- components
+- hooks
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion (wave 2)
+raw_prose: |
+  # TypeScript JSX Types — React and Beyond
+
+  ## Overview
+
+  JSX in TypeScript has subtleties beyond regular function typing. React.ReactNode vs JSX.Element, ref typing, forwardRef generics, polymorphic components — each has gotchas. Patterns shift slightly across React versions.
+
+  ---
+
+  ## Function Component Typing
+
+  ```tsx
+  // PREFERRED: explicit props
+  type ButtonProps = {
+      children: React.ReactNode;
+      onClick?: () => void;
+      disabled?: boolean;
+  };
+
+  function Button({ children, onClick, disabled }: ButtonProps) {
+      return <button onClick={onClick} disabled={disabled}>{children}</button>;
+  }
+
+  // LEGACY: React.FC (avoid in new code)
+  const Button: React.FC<ButtonProps> = ({ children, onClick }) => { ... };
+  ```
+
+  `React.FC` is the older pattern. Modern React+TS guides recommend explicit props because:
+  - React.FC implicitly adds `children: ReactNode`, even if your component doesn't accept children.
+  - React.FC was tied to React types' specific generics and can be inflexible.
+
+  Plain function with explicit props is simpler.
+
+  ## ReactNode vs ReactElement vs JSX.Element
+
+  - **React.ReactNode** — anything renderable: string, number, ReactElement, array, fragment, null, undefined, boolean.
+  - **React.ReactElement** — specifically a JSX element (`<div>...</div>`). More restrictive.
+  - **JSX.Element** — alias for ReactElement<any>.
+
+  For props that accept arbitrary children, use ReactNode. For props that must be a specific component, use a more specific type.
+
+  ```tsx
+  type Props = {
+      label: React.ReactNode;        // any renderable
+      icon: React.ReactElement;      // must be a JSX element
+      children: React.ReactNode;
+  };
+  ```
+
+  ## useRef Typing
+
+  ```tsx
+  // Mutable ref (typical for DOM nodes)
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Mutable ref (any value)
+  const timerRef = useRef<number | undefined>(undefined);
+
+  // Read-only ref (initialized once)
+  const config = useRef({ apiUrl: '...' });  // ref's current is the config
+  ```
+
+  For DOM refs, initialize with null; the type is `RefObject<HTMLInputElement>`. For mutable values, initialize with the value; the type is `MutableRefObject<T>`.
+
+  ## forwardRef + Generic Components
+
+  ```tsx
+  type ListProps<T> = {
+      items: T[];
+      renderItem: (item: T) => React.ReactNode;
+  };
+
+  const List = forwardRef<HTMLUListElement, ListProps<unknown>>(
+      function List({ items, renderItem }, ref) {
+          return (
+              <ul ref={ref}>
+                  {items.map((item, i) => <li key={i}>{renderItem(item)}</li>)}
+              </ul>
+          );
+      }
+  ) as <T>(props: ListProps<T> & { ref?: React.Ref<HTMLUListElement> }) => React.ReactElement;
+  ```
+
+  forwardRef + generics is awkward. The cast at the end re-adds the type parameter. React 19 (with ref-as-prop) lets you skip forwardRef entirely:
+
+  ```tsx
+  function List<T>({ items, renderItem, ref }: ListProps<T> & { ref?: React.Ref<HTMLUListElement> }) {
+      return <ul ref={ref}>...</ul>;
+  }
+  ```
+
+  Much cleaner.
+
+  ## Polymorphic Components — The `as` Prop
+
+  ```tsx
+  type BoxProps<As extends React.ElementType = 'div'> = {
+      as?: As;
+  } & React.ComponentPropsWithoutRef<As>;
+
+  function Box<As extends React.ElementType = 'div'>({ as, ...rest }: BoxProps<As>) {
+      const Component = as ?? 'div';
+      return <Component {...rest} />;
+  }
+
+  // Usage:
+  <Box as="section" />
+  <Box as="a" href="..." />  // href is typed because of As=a
+  ```
+
+  Polymorphic typing is one of TS's nastier patterns. Use `@radix-ui/react-slot` for production code; the typing is hard to get right.
+
+  ## Event Handler Typing
+
+  ```tsx
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+      console.log(e.target.value);
+  }
+
+  <input onChange={handleChange} />
+  ```
+
+  Specific event types include the target element. `React.MouseEvent<HTMLButtonElement>`, `React.KeyboardEvent`, etc.
+
+  For inline handlers, often inferred:
+
+  ```tsx
+  <input onChange={(e) => console.log(e.target.value)} />  // e is inferred
+  ```
+
+  ## Children Slots — Specific Types
+
+  ```tsx
+  type AccordionProps = {
+      children: React.ReactElement<typeof AccordionItem>[];
+  };
+
+  function Accordion({ children }: AccordionProps) {
+      return <div>{children}</div>;
+  }
+  ```
+
+  When children must be a specific component, use ReactElement<typeof Component>. Less permissive than ReactNode; catches misuse.
+
+  ## Hook Return Type Inference
+
+  ```tsx
+  function useCounter(initial: number) {
+      const [count, setCount] = useState(initial);
+      const increment = useCallback(() => setCount(c => c + 1), []);
+      return { count, increment } as const;
+  }
+
+  // Caller:
+  const { count, increment } = useCounter(0);
+  // count: number
+  // increment: () => void
+  ```
+
+  `as const` makes the returned object read-only and preserves literal types.
+
+  For tuple returns (like useState's pattern):
+
+  ```tsx
+  function useToggle(initial: boolean) {
+      const [on, setOn] = useState(initial);
+      const toggle = useCallback(() => setOn(o => !o), []);
+      return [on, toggle] as const;  // tuple, not array
+  }
+  ```
+
+  Without `as const`, the return is `Array<boolean | (() => void)>` — useless.
+
+  ## Common Pitfalls
+
+  - **Using React.FC for everything.** Implicit `children` causes issues; explicit props is cleaner.
+  - **forwardRef without generics, then needing them.** Migration to generic forwardRef is awkward. Use React 19 ref-as-prop if possible.
+  - **`children: React.ReactElement` when you accept multiple.** Need `ReactElement[]` or `ReactNode`.
+  - **Typing event as the global Event class.** It's `React.MouseEvent<HTMLButtonElement>` — React-specific.
+  - **Forgetting `as const` in custom hook tuple returns.** Loses tuple structure.
+
+  ## Verification
+
+  Solid JSX typing:
+
+  - Function components type props explicitly, no React.FC.
+  - ReactNode for arbitrary children; specific types for restrictive slots.
+  - Refs typed for DOM elements vs mutable values correctly.
+  - Custom hooks return precise types via `as const` where needed.
+  - Polymorphic components use proven libraries (Radix Slot) when possible.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Function Component Typing
+
+    ```tsx
+    // PREFERRED: explicit props
+    type ButtonProps = {
+        children: React.ReactNode;
+        onClick?: () => void;
+        disabled?: boolean;
+    };
+
+    function Button({ children, onClick, disabled }: ButtonProps) {
+        return <button onClick={onClick} disabled={disabled}>{children}</button>;
+    }
+
+    // LEGACY: React.FC (avoid in new code)
+    const Button: React.FC<ButtonProps> = ({ children, onClick }) => { ... };
+    ```
+
+    `React.FC` is the older pattern. Modern React+TS guides recommend explicit props because:
+    - React.FC implicitly adds `children: ReactNode`, even if your component doesn't accept children.
+    - React.FC was tied to React types' specific generics and can be inflexible.
+
+    Plain function with explicit props is simpler.
+- fragment_type: rationale
+  sequence: 2
+  content: |-
+    ## ReactNode vs ReactElement vs JSX.Element
+
+    - **React.ReactNode** — anything renderable: string, number, ReactElement, array, fragment, null, undefined, boolean.
+    - **React.ReactElement** — specifically a JSX element (`<div>...</div>`). More restrictive.
+    - **JSX.Element** — alias for ReactElement<any>.
+
+    For props that accept arbitrary children, use ReactNode. For props that must be a specific component, use a more specific type.
+
+    ```tsx
+    type Props = {
+        label: React.ReactNode;        // any renderable
+        icon: React.ReactElement;      // must be a JSX element
+        children: React.ReactNode;
+    };
+    ```
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## useRef Typing
+
+    ```tsx
+    // Mutable ref (typical for DOM nodes)
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    // Mutable ref (any value)
+    const timerRef = useRef<number | undefined>(undefined);
+
+    // Read-only ref (initialized once)
+    const config = useRef({ apiUrl: '...' });  // ref's current is the config
+    ```
+
+    For DOM refs, initialize with null; the type is `RefObject<HTMLInputElement>`. For mutable values, initialize with the value; the type is `MutableRefObject<T>`.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## forwardRef + Generic Components
+
+    ```tsx
+    type ListProps<T> = {
+        items: T[];
+        renderItem: (item: T) => React.ReactNode;
+    };
+
+    const List = forwardRef<HTMLUListElement, ListProps<unknown>>(
+        function List({ items, renderItem }, ref) {
+            return (
+                <ul ref={ref}>
+                    {items.map((item, i) => <li key={i}>{renderItem(item)}</li>)}
+                </ul>
+            );
+        }
+    ) as <T>(props: ListProps<T> & { ref?: React.Ref<HTMLUListElement> }) => React.ReactElement;
+    ```
+
+    forwardRef + generics is awkward. The cast at the end re-adds the type parameter. React 19 (with ref-as-prop) lets you skip forwardRef entirely:
+
+    ```tsx
+    function List<T>({ items, renderItem, ref }: ListProps<T> & { ref?: React.Ref<HTMLUListElement> }) {
+        return <ul ref={ref}>...</ul>;
+    }
+    ```
+
+    Much cleaner.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Polymorphic Components — The `as` Prop
+
+    ```tsx
+    type BoxProps<As extends React.ElementType = 'div'> = {
+        as?: As;
+    } & React.ComponentPropsWithoutRef<As>;
+
+    function Box<As extends React.ElementType = 'div'>({ as, ...rest }: BoxProps<As>) {
+        const Component = as ?? 'div';
+        return <Component {...rest} />;
+    }
+
+    // Usage:
+    <Box as="section" />
+    <Box as="a" href="..." />  // href is typed because of As=a
+    ```
+
+    Polymorphic typing is one of TS's nastier patterns. Use `@radix-ui/react-slot` for production code; the typing is hard to get right.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Event Handler Typing
+
+    ```tsx
+    function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+        console.log(e.target.value);
+    }
+
+    <input onChange={handleChange} />
+    ```
+
+    Specific event types include the target element. `React.MouseEvent<HTMLButtonElement>`, `React.KeyboardEvent`, etc.
+
+    For inline handlers, often inferred:
+
+    ```tsx
+    <input onChange={(e) => console.log(e.target.value)} />  // e is inferred
+    ```
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Children Slots — Specific Types
+
+    ```tsx
+    type AccordionProps = {
+        children: React.ReactElement<typeof AccordionItem>[];
+    };
+
+    function Accordion({ children }: AccordionProps) {
+        return <div>{children}</div>;
+    }
+    ```
+
+    When children must be a specific component, use ReactElement<typeof Component>. Less permissive than ReactNode; catches misuse.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Hook Return Type Inference
+
+    ```tsx
+    function useCounter(initial: number) {
+        const [count, setCount] = useState(initial);
+        const increment = useCallback(() => setCount(c => c + 1), []);
+        return { count, increment } as const;
+    }
+
+    // Caller:
+    const { count, increment } = useCounter(0);
+    // count: number
+    // increment: () => void
+    ```
+
+    `as const` makes the returned object read-only and preserves literal types.
+
+    For tuple returns (like useState's pattern):
+
+    ```tsx
+    function useToggle(initial: boolean) {
+        const [on, setOn] = useState(initial);
+        const toggle = useCallback(() => setOn(o => !o), []);
+        return [on, toggle] as const;  // tuple, not array
+    }
+    ```
+
+    Without `as const`, the return is `Array<boolean | (() => void)>` — useless.
+- fragment_type: guardrail
+  sequence: 9
+  content: |-
+    ## Common Pitfalls
+
+    - **Using React.FC for everything.** Implicit `children` causes issues; explicit props is cleaner.
+    - **forwardRef without generics, then needing them.** Migration to generic forwardRef is awkward. Use React 19 ref-as-prop if possible.
+    - **`children: React.ReactElement` when you accept multiple.** Need `ReactElement[]` or `ReactNode`.
+    - **Typing event as the global Event class.** It's `React.MouseEvent<HTMLButtonElement>` — React-specific.
+    - **Forgetting `as const` in custom hook tuple returns.** Loses tuple structure.
+- fragment_type: verification
+  sequence: 10
+  content: |-
+    ## Verification
+
+    Solid JSX typing:
+
+    - Function components type props explicitly, no React.FC.
+    - ReactNode for arbitrary children; specific types for restrictive slots.
+    - Refs typed for DOM elements vs mutable values correctly.
+    - Custom hooks return precise types via `as const` where needed.
+    - Polymorphic components use proven libraries (Radix Slot) when possible.

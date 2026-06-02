@@ -1,0 +1,339 @@
+skill_type: domain
+skill_id: java-maven
+canonical_name: Maven Build Tool
+category: engineering
+skill_class: domain
+domain_tags:
+- java
+- maven
+- build
+- pom
+- dependency-management
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Maven Build Tool
+
+  ## Overview
+
+  Maven is the standard JVM build tool. Declarative XML, conventional defaults, plugin-driven. The mental model: a project has a POM (Project Object Model); Maven runs lifecycle phases that delegate to plugins.
+
+  ---
+
+  ## A Minimal pom.xml
+
+  ```xml
+  <project xmlns="http://maven.apache.org/POM/4.0.0">
+      <modelVersion>4.0.0</modelVersion>
+      <groupId>com.example</groupId>
+      <artifactId>my-app</artifactId>
+      <version>1.0.0-SNAPSHOT</version>
+      <packaging>jar</packaging>
+
+      <properties>
+          <maven.compiler.source>21</maven.compiler.source>
+          <maven.compiler.target>21</maven.compiler.target>
+          <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+      </properties>
+
+      <dependencies>
+          <dependency>
+              <groupId>org.springframework.boot</groupId>
+              <artifactId>spring-boot-starter-web</artifactId>
+              <version>3.4.0</version>
+          </dependency>
+          <dependency>
+              <groupId>org.junit.jupiter</groupId>
+              <artifactId>junit-jupiter</artifactId>
+              <version>5.10.0</version>
+              <scope>test</scope>
+          </dependency>
+      </dependencies>
+  </project>
+  ```
+
+  GAV (groupId + artifactId + version) identifies an artifact. Scope (`compile`, `test`, `provided`, `runtime`) controls when the dep is on the classpath.
+
+  ## Lifecycle Phases
+
+  Maven runs phases in order; each phase delegates to plugin goals:
+
+  - `validate` → `compile` → `test` → `package` → `verify` → `install` → `deploy`
+
+  `mvn package` runs everything up to package. `mvn install` adds installing to the local repo. `mvn deploy` adds publishing to a remote repo.
+
+  Skip phases with `-Dmaven.test.skip=true` (skips compile + run) or `-DskipTests` (skips run only). The latter is preferred — at least the tests still compile.
+
+  ## Dependency Management with BOM
+
+  A BOM (Bill of Materials) centralizes versions:
+
+  ```xml
+  <dependencyManagement>
+      <dependencies>
+          <dependency>
+              <groupId>org.springframework.boot</groupId>
+              <artifactId>spring-boot-dependencies</artifactId>
+              <version>3.4.0</version>
+              <type>pom</type>
+              <scope>import</scope>
+          </dependency>
+      </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+      <dependency>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-starter-web</artifactId>
+          <!-- version comes from the BOM -->
+      </dependency>
+  </dependencies>
+  ```
+
+  BOMs prevent version drift across deps in the same ecosystem. Spring Boot, AWS SDK, Jackson all ship BOMs.
+
+  ## Multi-Module Projects
+
+  ```
+  parent/
+  ├── pom.xml          (packaging=pom)
+  ├── api/
+  │   └── pom.xml
+  ├── core/
+  │   └── pom.xml
+  └── web/
+      └── pom.xml
+  ```
+
+  Parent POM declares modules:
+
+  ```xml
+  <modules>
+      <module>api</module>
+      <module>core</module>
+      <module>web</module>
+  </modules>
+  ```
+
+  Children inherit dependency management and properties from the parent. `mvn install` at the parent builds all modules in dependency order.
+
+  ## Profiles
+
+  ```xml
+  <profiles>
+      <profile>
+          <id>prod</id>
+          <properties>
+              <db.url>jdbc:postgresql://prod:5432/db</db.url>
+          </properties>
+      </profile>
+  </profiles>
+  ```
+
+  Activate with `-Pprod`. Useful for environment-specific config or platform-specific deps (different JNI lib per OS).
+
+  ## The Maven Wrapper
+
+  `mvnw` (mvnw.cmd on Windows) downloads a specific Maven version on first run. Commit it to the repo — eliminates 'works on my machine' due to Maven version drift.
+
+  ```bash
+  ./mvnw clean install
+  ```
+
+  Generate via `mvn wrapper:wrapper -Dmaven=3.9.9`.
+
+  ## Common Plugins
+
+  - `maven-compiler-plugin` — Java compilation. Configure source/target.
+  - `maven-surefire-plugin` — runs unit tests.
+  - `maven-failsafe-plugin` — runs integration tests in the `verify` phase.
+  - `maven-jar-plugin` — builds the jar.
+  - `maven-shade-plugin` — builds an uber-jar (all deps inlined).
+  - `spring-boot-maven-plugin` — builds executable Spring Boot jars.
+
+  ## Common Pitfalls
+
+  - **Version drift across modules.** Use a parent POM + dependency management.
+  - **Snapshot deps in production builds.** `1.0.0-SNAPSHOT` resolves to whatever's latest. Use release versions.
+  - **`-DskipTests` in CI.** Catches no regressions. Run them.
+  - **Effective POM ignored.** Run `mvn help:effective-pom` to see what Maven actually uses after inheritance + profiles. Catches unexpected resolution.
+  - **Forgetting to commit `mvnw` and `.mvn/wrapper/`.** New contributors can't build until they run `mvn install` of the wrapper, defeating the wrapper's purpose.
+
+  ## Verification
+
+  A healthy Maven setup:
+
+  - `./mvnw verify` runs cleanly on a fresh checkout.
+  - Effective POM matches expectations (no surprise version overrides).
+  - Multi-module projects build in correct topological order.
+  - CI uses the wrapper, not a system-installed Maven.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## A Minimal pom.xml
+
+    ```xml
+    <project xmlns="http://maven.apache.org/POM/4.0.0">
+        <modelVersion>4.0.0</modelVersion>
+        <groupId>com.example</groupId>
+        <artifactId>my-app</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <packaging>jar</packaging>
+
+        <properties>
+            <maven.compiler.source>21</maven.compiler.source>
+            <maven.compiler.target>21</maven.compiler.target>
+            <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        </properties>
+
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-starter-web</artifactId>
+                <version>3.4.0</version>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>5.10.0</version>
+                <scope>test</scope>
+            </dependency>
+        </dependencies>
+    </project>
+    ```
+
+    GAV (groupId + artifactId + version) identifies an artifact. Scope (`compile`, `test`, `provided`, `runtime`) controls when the dep is on the classpath.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Lifecycle Phases
+
+    Maven runs phases in order; each phase delegates to plugin goals:
+
+    - `validate` → `compile` → `test` → `package` → `verify` → `install` → `deploy`
+
+    `mvn package` runs everything up to package. `mvn install` adds installing to the local repo. `mvn deploy` adds publishing to a remote repo.
+
+    Skip phases with `-Dmaven.test.skip=true` (skips compile + run) or `-DskipTests` (skips run only). The latter is preferred — at least the tests still compile.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Dependency Management with BOM
+
+    A BOM (Bill of Materials) centralizes versions:
+
+    ```xml
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>3.4.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+            <!-- version comes from the BOM -->
+        </dependency>
+    </dependencies>
+    ```
+
+    BOMs prevent version drift across deps in the same ecosystem. Spring Boot, AWS SDK, Jackson all ship BOMs.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Multi-Module Projects
+
+    ```
+    parent/
+    ├── pom.xml          (packaging=pom)
+    ├── api/
+    │   └── pom.xml
+    ├── core/
+    │   └── pom.xml
+    └── web/
+        └── pom.xml
+    ```
+
+    Parent POM declares modules:
+
+    ```xml
+    <modules>
+        <module>api</module>
+        <module>core</module>
+        <module>web</module>
+    </modules>
+    ```
+
+    Children inherit dependency management and properties from the parent. `mvn install` at the parent builds all modules in dependency order.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Profiles
+
+    ```xml
+    <profiles>
+        <profile>
+            <id>prod</id>
+            <properties>
+                <db.url>jdbc:postgresql://prod:5432/db</db.url>
+            </properties>
+        </profile>
+    </profiles>
+    ```
+
+    Activate with `-Pprod`. Useful for environment-specific config or platform-specific deps (different JNI lib per OS).
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## The Maven Wrapper
+
+    `mvnw` (mvnw.cmd on Windows) downloads a specific Maven version on first run. Commit it to the repo — eliminates 'works on my machine' due to Maven version drift.
+
+    ```bash
+    ./mvnw clean install
+    ```
+
+    Generate via `mvn wrapper:wrapper -Dmaven=3.9.9`.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Common Plugins
+
+    - `maven-compiler-plugin` — Java compilation. Configure source/target.
+    - `maven-surefire-plugin` — runs unit tests.
+    - `maven-failsafe-plugin` — runs integration tests in the `verify` phase.
+    - `maven-jar-plugin` — builds the jar.
+    - `maven-shade-plugin` — builds an uber-jar (all deps inlined).
+    - `spring-boot-maven-plugin` — builds executable Spring Boot jars.
+- fragment_type: guardrail
+  sequence: 8
+  content: |-
+    ## Common Pitfalls
+
+    - **Version drift across modules.** Use a parent POM + dependency management.
+    - **Snapshot deps in production builds.** `1.0.0-SNAPSHOT` resolves to whatever's latest. Use release versions.
+    - **`-DskipTests` in CI.** Catches no regressions. Run them.
+    - **Effective POM ignored.** Run `mvn help:effective-pom` to see what Maven actually uses after inheritance + profiles. Catches unexpected resolution.
+    - **Forgetting to commit `mvnw` and `.mvn/wrapper/`.** New contributors can't build until they run `mvn install` of the wrapper, defeating the wrapper's purpose.
+- fragment_type: verification
+  sequence: 9
+  content: |-
+    ## Verification
+
+    A healthy Maven setup:
+
+    - `./mvnw verify` runs cleanly on a fresh checkout.
+    - Effective POM matches expectations (no surprise version overrides).
+    - Multi-module projects build in correct topological order.
+    - CI uses the wrapper, not a system-installed Maven.

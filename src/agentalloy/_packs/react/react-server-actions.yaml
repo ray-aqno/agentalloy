@@ -1,0 +1,385 @@
+skill_type: domain
+skill_id: react-server-actions
+canonical_name: React Server Actions
+category: engineering
+skill_class: domain
+domain_tags:
+- react
+- server-actions
+- react-19
+- form-actions
+- next-actions
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion (wave 2)
+raw_prose: |
+  # React Server Actions
+
+  ## Overview
+
+  Server actions are async functions that run on the server but are callable from client components. The 'use server' directive marks them. The framework serializes the call across the network. Server actions replace 'API route + fetch from client' for most internal mutations.
+
+  ---
+
+  ## The Pattern
+
+  ```tsx
+  // actions.ts (server)
+  'use server';
+
+  export async function createOrder(formData: FormData) {
+      const userId = await getCurrentUser();
+      const order = await db.orders.create({
+          userId,
+          items: JSON.parse(formData.get('items') as string),
+      });
+      revalidatePath('/orders');  // refresh cached data
+      return order;
+  }
+
+  // Component (client)
+  'use client';
+  import { createOrder } from './actions';
+
+  export function OrderForm() {
+      return (
+          <form action={createOrder}>
+              <input name="items" />
+              <button>Create</button>
+          </form>
+      );
+  }
+  ```
+
+  The form's `action` is the server function. On submit, the framework serializes FormData, sends to the server, runs the function, returns the result.
+
+  ## Imperative Calls
+
+  ```tsx
+  'use client';
+
+  export function LikeButton({ postId }: { postId: string }) {
+      async function handleClick() {
+          await likePost(postId);  // server action call
+      }
+      return <button onClick={handleClick}>Like</button>;
+  }
+  ```
+
+  Server actions can be called from any client code — not just form actions. They look like normal async functions; framework handles the network.
+
+  ## Progressive Enhancement
+
+  The form action attribute works without JavaScript:
+
+  ```tsx
+  <form action={createOrder}>
+      <input name="title" />
+      <button>Create</button>
+  </form>
+  ```
+
+  If JS hasn't loaded (or is disabled), the browser submits the form natively to the server URL the framework generates. The server runs the action and re-renders the page. With JS, the framework intercepts and does the same call without page reload.
+
+  This is huge for accessibility, slow networks, and resilience.
+
+  ## With useActionState
+
+  ```tsx
+  'use client';
+  import { useActionState } from 'react';
+
+  const [state, formAction, isPending] = useActionState(createOrder, null);
+
+  return (
+      <form action={formAction}>
+          <input name="items" />
+          <button disabled={isPending}>{isPending ? 'Creating…' : 'Create'}</button>
+          {state?.error && <p>{state.error}</p>}
+      </form>
+  );
+  ```
+
+  `useActionState` tracks state + pending across submissions. Without it, you'd need ad-hoc useState.
+
+  ## Revalidation
+
+  After a mutation, cached data is stale:
+
+  ```ts
+  'use server';
+  export async function deleteOrder(id: string) {
+      await db.orders.delete(id);
+      revalidatePath('/orders');     // page level
+      revalidateTag('orders');        // tagged cache entries
+  }
+  ```
+
+  `revalidatePath` invalidates a Next.js page; `revalidateTag` invalidates by cache tag. Components re-render with fresh data automatically.
+
+  ## Error Handling
+
+  ```ts
+  'use server';
+  export async function transferFunds(fromId, toId, amount) {
+      try {
+          await db.transaction(async (tx) => {
+              await tx.accounts.decrement(fromId, amount);
+              await tx.accounts.increment(toId, amount);
+          });
+          return { success: true };
+      } catch (err) {
+          return { error: err.message };  // returned to client
+      }
+  }
+  ```
+
+  Returns serialize back to the client. Errors thrown out of the action become HTTP 500s — caught by error boundaries.
+
+  ## CSRF Protection
+
+  Frameworks build CSRF protection into server actions. Each call includes an opaque token tied to the user's session; the server validates before running the action.
+
+  This is the same protection you'd manually wire for an API route. With server actions, it's automatic.
+
+  ## Authentication
+
+  Server actions run server-side, so you can read cookies/headers/session directly:
+
+  ```ts
+  'use server';
+  import { cookies } from 'next/headers';
+  import { getServerSession } from 'next-auth';
+
+  export async function adminOnly() {
+      const session = await getServerSession();
+      if (!session?.user?.isAdmin) throw new Error('Forbidden');
+      // ... admin logic
+  }
+  ```
+
+  No JWT-in-header dance; the request comes with cookies the framework reads.
+
+  ## When Server Actions Win
+
+  - **Internal CRUD** — mutations only your app calls.
+  - **Form submissions** — natural progressive enhancement.
+  - **Mutations triggered from client components** — without writing an API route + fetch.
+
+  When NOT:
+
+  - **Public APIs consumed by other clients (mobile apps).** They expect REST/GraphQL.
+  - **Long-running operations.** Actions run on the request handler; use a queue for >30s.
+  - **Streaming responses.** Actions return one value; for SSE/WebSocket use route handlers.
+
+  ## Common Pitfalls
+
+  - **Forgetting 'use server'.** Module imported as a server action without the directive runs client-side; sensitive code leaks.
+  - **Returning non-serializable data.** Functions, class instances, etc. fail to serialize. Return plain objects.
+  - **Calling actions from server components.** Pointless — just call the function directly. Actions are for client → server.
+  - **Forgetting revalidation.** Mutation succeeds but UI shows stale data. Always revalidate.
+  - **Treating actions as RPC.** They're optimized for forms + mutations; for read-heavy RPC, use route handlers.
+
+  ## Verification
+
+  Working server actions:
+
+  - Forms submit without JS (progressive enhancement).
+  - Pending state shows during submission.
+  - Errors surface to the user via the returned state.
+  - Mutations trigger revalidation; UI shows fresh data.
+  - Server-side auth checks block unauthorized callers.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## The Pattern
+
+    ```tsx
+    // actions.ts (server)
+    'use server';
+
+    export async function createOrder(formData: FormData) {
+        const userId = await getCurrentUser();
+        const order = await db.orders.create({
+            userId,
+            items: JSON.parse(formData.get('items') as string),
+        });
+        revalidatePath('/orders');  // refresh cached data
+        return order;
+    }
+
+    // Component (client)
+    'use client';
+    import { createOrder } from './actions';
+
+    export function OrderForm() {
+        return (
+            <form action={createOrder}>
+                <input name="items" />
+                <button>Create</button>
+            </form>
+        );
+    }
+    ```
+
+    The form's `action` is the server function. On submit, the framework serializes FormData, sends to the server, runs the function, returns the result.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Imperative Calls
+
+    ```tsx
+    'use client';
+
+    export function LikeButton({ postId }: { postId: string }) {
+        async function handleClick() {
+            await likePost(postId);  // server action call
+        }
+        return <button onClick={handleClick}>Like</button>;
+    }
+    ```
+
+    Server actions can be called from any client code — not just form actions. They look like normal async functions; framework handles the network.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Progressive Enhancement
+
+    The form action attribute works without JavaScript:
+
+    ```tsx
+    <form action={createOrder}>
+        <input name="title" />
+        <button>Create</button>
+    </form>
+    ```
+
+    If JS hasn't loaded (or is disabled), the browser submits the form natively to the server URL the framework generates. The server runs the action and re-renders the page. With JS, the framework intercepts and does the same call without page reload.
+
+    This is huge for accessibility, slow networks, and resilience.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## With useActionState
+
+    ```tsx
+    'use client';
+    import { useActionState } from 'react';
+
+    const [state, formAction, isPending] = useActionState(createOrder, null);
+
+    return (
+        <form action={formAction}>
+            <input name="items" />
+            <button disabled={isPending}>{isPending ? 'Creating…' : 'Create'}</button>
+            {state?.error && <p>{state.error}</p>}
+        </form>
+    );
+    ```
+
+    `useActionState` tracks state + pending across submissions. Without it, you'd need ad-hoc useState.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Revalidation
+
+    After a mutation, cached data is stale:
+
+    ```ts
+    'use server';
+    export async function deleteOrder(id: string) {
+        await db.orders.delete(id);
+        revalidatePath('/orders');     // page level
+        revalidateTag('orders');        // tagged cache entries
+    }
+    ```
+
+    `revalidatePath` invalidates a Next.js page; `revalidateTag` invalidates by cache tag. Components re-render with fresh data automatically.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Error Handling
+
+    ```ts
+    'use server';
+    export async function transferFunds(fromId, toId, amount) {
+        try {
+            await db.transaction(async (tx) => {
+                await tx.accounts.decrement(fromId, amount);
+                await tx.accounts.increment(toId, amount);
+            });
+            return { success: true };
+        } catch (err) {
+            return { error: err.message };  // returned to client
+        }
+    }
+    ```
+
+    Returns serialize back to the client. Errors thrown out of the action become HTTP 500s — caught by error boundaries.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## CSRF Protection
+
+    Frameworks build CSRF protection into server actions. Each call includes an opaque token tied to the user's session; the server validates before running the action.
+
+    This is the same protection you'd manually wire for an API route. With server actions, it's automatic.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Authentication
+
+    Server actions run server-side, so you can read cookies/headers/session directly:
+
+    ```ts
+    'use server';
+    import { cookies } from 'next/headers';
+    import { getServerSession } from 'next-auth';
+
+    export async function adminOnly() {
+        const session = await getServerSession();
+        if (!session?.user?.isAdmin) throw new Error('Forbidden');
+        // ... admin logic
+    }
+    ```
+
+    No JWT-in-header dance; the request comes with cookies the framework reads.
+- fragment_type: rationale
+  sequence: 9
+  content: |-
+    ## When Server Actions Win
+
+    - **Internal CRUD** — mutations only your app calls.
+    - **Form submissions** — natural progressive enhancement.
+    - **Mutations triggered from client components** — without writing an API route + fetch.
+
+    When NOT:
+
+    - **Public APIs consumed by other clients (mobile apps).** They expect REST/GraphQL.
+    - **Long-running operations.** Actions run on the request handler; use a queue for >30s.
+    - **Streaming responses.** Actions return one value; for SSE/WebSocket use route handlers.
+- fragment_type: guardrail
+  sequence: 10
+  content: |-
+    ## Common Pitfalls
+
+    - **Forgetting 'use server'.** Module imported as a server action without the directive runs client-side; sensitive code leaks.
+    - **Returning non-serializable data.** Functions, class instances, etc. fail to serialize. Return plain objects.
+    - **Calling actions from server components.** Pointless — just call the function directly. Actions are for client → server.
+    - **Forgetting revalidation.** Mutation succeeds but UI shows stale data. Always revalidate.
+    - **Treating actions as RPC.** They're optimized for forms + mutations; for read-heavy RPC, use route handlers.
+- fragment_type: verification
+  sequence: 11
+  content: |-
+    ## Verification
+
+    Working server actions:
+
+    - Forms submit without JS (progressive enhancement).
+    - Pending state shows during submission.
+    - Errors surface to the user via the returned state.
+    - Mutations trigger revalidation; UI shows fresh data.
+    - Server-side auth checks block unauthorized callers.

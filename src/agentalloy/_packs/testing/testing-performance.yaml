@@ -1,0 +1,234 @@
+skill_type: domain
+skill_id: testing-performance
+canonical_name: Performance Testing — Load and Latency
+category: quality
+skill_class: domain
+domain_tags:
+  - performance-testing
+  - load-tests
+  - stress-tests
+  - latency-assertions
+  - k6
+always_apply: false
+phase_scope: []
+category_scope: []
+author: authoring-agent
+change_summary: initial authoring draft
+raw_prose: |
+  # Performance Testing — Load and Latency
+
+  ## Overview
+
+  Performance testing answers two questions: 'does it handle expected load?' and 'where does it break?' Functional tests check correctness; performance tests check scale. The discipline is measuring at the right percentiles (p95/p99, not average) and asserting against documented SLOs.
+
+  ## Test Types
+
+  - **Load test** — sustained traffic at expected production levels. Verifies the system handles normal load without degradation.
+  - **Stress test** — ramp traffic above expected to find the breaking point. Discovers capacity limits.
+  - **Spike test** — sudden traffic jump (10x expected). Verifies graceful degradation, not cascading failure.
+  - **Soak test** — sustained moderate load for hours/days. Catches memory leaks, connection-pool exhaustion, GC pressure that only show up over time.
+
+  Most teams need load + stress. Spike and soak come later when the basic capacity story is clear.
+
+  ## Pick Tools by Stack
+
+  - **k6** — JS-driven, Grafana-native, great for HTTP and gRPC. Default choice for new perf suites.
+  - **Locust** — Python, distributed, good for complex user journeys.
+  - **Gatling** — Scala/Java, high-performance, integrates with Java CI.
+  - **JMeter** — old-guard, GUI + XML scripts, broad protocol support but UX is dated.
+  - **Apache Bench / wrk** — quick one-off CLI checks, not for sustained suites.
+
+  ## A Minimal k6 Test
+
+  ```js
+  import http from 'k6/http';
+  import { check, sleep } from 'k6';
+
+  export const options = {
+    stages: [
+      { duration: '30s', target: 50 },   // ramp to 50 VUs
+      { duration: '5m',  target: 50 },   // hold
+      { duration: '30s', target: 0 },    // ramp down
+    ],
+    thresholds: {
+      http_req_duration: ['p(95)<200'],  // p95 under 200ms
+      http_req_failed:   ['rate<0.01'],  // <1% failures
+    },
+  };
+
+  export default function () {
+    const res = http.get('https://api.example.com/health');
+    check(res, { 'status 200': r => r.status === 200 });
+    sleep(1);
+  }
+  ```
+
+  `stages` defines the load profile; `thresholds` are pass/fail assertions. The test fails if any threshold is violated.
+
+  ## Measure Percentiles, Not Averages
+
+  Average latency hides tail behavior. A service averaging 100ms but with 5% of requests at 5 seconds is failing 5% of users.
+
+  Always assert on p95 or p99:
+
+  - p50 — typical user experience.
+  - p95 — most users; reasonable target.
+  - p99 — slowest 1%; for high-stakes APIs.
+  - p999 — only meaningful at high traffic; otherwise too noisy.
+
+  ## Set Thresholds From SLOs
+
+  The thresholds in your perf test should mirror your service-level objectives:
+
+  - 'API responds in <300ms p95 for 99% of the month' → p95 < 300ms in load test.
+  - 'Error rate <1%' → http_req_failed rate <0.01.
+
+  If your SLO doc and your perf-test thresholds disagree, one is wrong.
+
+  ## Test in Production-Like Environments
+
+  A perf test on localhost or a single-VM staging gives misleading numbers. The deployment topology matters: load balancers, connection pooling, database tier, network latency.
+
+  Best: run perf tests against a staging environment that mirrors production topology. Second best: model the differences explicitly in test thresholds.
+
+  ## Common Pitfalls
+
+  - **Asserting on average latency.** Hides tail issues. Always p95+.
+  - **Test machine bottleneck.** If the load generator is saturated, the system under test isn't being tested. Watch generator CPU/network.
+  - **Cold caches in every run.** Production runs warm; tests should warm up before measuring.
+  - **Counting connection establishment.** Reuse HTTP connections; otherwise you're measuring TCP handshake time, not the API.
+  - **Ignoring error rate.** A test that 'passes' p95 because 50% of requests errored at 5xx is failing.
+
+  ## CI Integration
+
+  Run perf tests on every PR? Probably not — too slow, too flaky for quick gates.
+
+  Run nightly against staging? Yes. Trend percentiles over time, alert on regressions.
+
+  Run before every prod deploy? For high-stakes systems, yes. Block deploy if p95 regresses >20%.
+
+  ## Verification
+
+  A working performance test:
+
+  - Reproducibly reports the same p50/p95/p99 within 5% across consecutive runs.
+  - Saturates the system under test, not the generator.
+  - Passes when SLOs are met; fails when they aren't.
+  - Runs in a CI/cron pipeline that posts results to a dashboard.
+  - Creates an incident-tier alert if percentile regression exceeds threshold.
+
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      ## Test Types
+
+      - **Load test** — sustained traffic at expected production levels. Verifies the system handles normal load without degradation.
+      - **Stress test** — ramp traffic above expected to find the breaking point. Discovers capacity limits.
+      - **Spike test** — sudden traffic jump (10x expected). Verifies graceful degradation, not cascading failure.
+      - **Soak test** — sustained moderate load for hours/days. Catches memory leaks, connection-pool exhaustion, GC pressure that only show up over time.
+
+      Most teams need load + stress. Spike and soak come later when the basic capacity story is clear.
+  - fragment_type: setup
+    sequence: 2
+    content: |
+      ## Pick Tools by Stack
+
+      - **k6** — JS-driven, Grafana-native, great for HTTP and gRPC. Default choice for new perf suites.
+      - **Locust** — Python, distributed, good for complex user journeys.
+      - **Gatling** — Scala/Java, high-performance, integrates with Java CI.
+      - **JMeter** — old-guard, GUI + XML scripts, broad protocol support but UX is dated.
+      - **Apache Bench / wrk** — quick one-off CLI checks, not for sustained suites.
+  - fragment_type: example
+    sequence: 3
+    content: |
+      ## A Minimal k6 Test
+
+      ```js
+      import http from 'k6/http';
+      import { check, sleep } from 'k6';
+
+      export const options = {
+        stages: [
+          { duration: '30s', target: 50 },   // ramp to 50 VUs
+          { duration: '5m',  target: 50 },   // hold
+          { duration: '30s', target: 0 },    // ramp down
+        ],
+        thresholds: {
+          http_req_duration: ['p(95)<200'],  // p95 under 200ms
+          http_req_failed:   ['rate<0.01'],  // <1% failures
+        },
+      };
+
+      export default function () {
+        const res = http.get('https://api.example.com/health');
+        check(res, { 'status 200': r => r.status === 200 });
+        sleep(1);
+      }
+      ```
+
+      `stages` defines the load profile; `thresholds` are pass/fail assertions. The test fails if any threshold is violated.
+  - fragment_type: rationale
+    sequence: 4
+    content: |
+      ## Measure Percentiles, Not Averages
+
+      Average latency hides tail behavior. A service averaging 100ms but with 5% of requests at 5 seconds is failing 5% of users.
+
+      Always assert on p95 or p99:
+
+      - p50 — typical user experience.
+      - p95 — most users; reasonable target.
+      - p99 — slowest 1%; for high-stakes APIs.
+      - p999 — only meaningful at high traffic; otherwise too noisy.
+  - fragment_type: rationale
+    sequence: 5
+    content: |
+      ## Set Thresholds From SLOs
+
+      The thresholds in your perf test should mirror your service-level objectives:
+
+      - 'API responds in <300ms p95 for 99% of the month' → p95 < 300ms in load test.
+      - 'Error rate <1%' → http_req_failed rate <0.01.
+
+      If your SLO doc and your perf-test thresholds disagree, one is wrong.
+  - fragment_type: rationale
+    sequence: 6
+    content: |
+      ## Test in Production-Like Environments
+
+      A perf test on localhost or a single-VM staging gives misleading numbers. The deployment topology matters: load balancers, connection pooling, database tier, network latency.
+
+      Best: run perf tests against a staging environment that mirrors production topology. Second best: model the differences explicitly in test thresholds.
+  - fragment_type: guardrail
+    sequence: 7
+    content: |
+      ## Common Pitfalls
+
+      - **Asserting on average latency.** Hides tail issues. Always p95+.
+      - **Test machine bottleneck.** If the load generator is saturated, the system under test isn't being tested. Watch generator CPU/network.
+      - **Cold caches in every run.** Production runs warm; tests should warm up before measuring.
+      - **Counting connection establishment.** Reuse HTTP connections; otherwise you're measuring TCP handshake time, not the API.
+      - **Ignoring error rate.** A test that 'passes' p95 because 50% of requests errored at 5xx is failing.
+  - fragment_type: execution
+    sequence: 8
+    content: |
+      ## CI Integration
+
+      Run perf tests on every PR? Probably not — too slow, too flaky for quick gates.
+
+      Run nightly against staging? Yes. Trend percentiles over time, alert on regressions.
+
+      Run before every prod deploy? For high-stakes systems, yes. Block deploy if p95 regresses >20%.
+  - fragment_type: verification
+    sequence: 9
+    content: |
+      ## Verification
+
+      A working performance test:
+
+      - Reproducibly reports the same p50/p95/p99 within 5% across consecutive runs.
+      - Saturates the system under test, not the generator.
+      - Passes when SLOs are met; fails when they aren't.
+      - Runs in a CI/cron pipeline that posts results to a dashboard.
+      - Creates an incident-tier alert if percentile regression exceeds threshold.

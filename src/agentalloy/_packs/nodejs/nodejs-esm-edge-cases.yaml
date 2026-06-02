@@ -1,0 +1,321 @@
+skill_type: domain
+skill_id: nodejs-esm-edge-cases
+canonical_name: Node.js ESM and CJS Interop
+category: engineering
+skill_class: domain
+domain_tags:
+- nodejs
+- esm
+- commonjs
+- module-system
+- interop
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Node.js ESM and CJS Interop
+
+  ## Overview
+
+  Node ESM is fully native but interoperates with CommonJS through specific rules. The most common gotchas: dual-package hazard, dynamic import() in CJS, JSON imports requiring import attributes, and `__dirname` not existing in ESM.
+
+  ---
+
+  ## Choosing ESM or CJS
+
+  The `package.json` `"type"` field decides what `.js` files mean:
+
+  ```json
+  { "type": "module" }   // .js is ESM
+  { "type": "commonjs" } // .js is CJS (default)
+  ```
+
+  Override per-file with explicit extensions: `.mjs` is always ESM, `.cjs` is always CJS. New projects should use `"type": "module"`.
+
+  ## Importing CJS from ESM
+
+  CJS modules import cleanly into ESM with named imports if Node detects the named exports. Otherwise, default-import the whole exports object:
+
+  ```js
+  // ESM file
+  import lodash from 'lodash';        // CJS default export
+  import { sortBy } from 'lodash';    // works because Node parses CJS exports
+  import express from 'express';
+  const app = express();
+  ```
+
+  When a CJS module's named exports aren't statically detectable, the named-import form fails. Fall back to default and destructure:
+
+  ```js
+  import pkg from 'some-cjs-pkg';
+  const { thing } = pkg;
+  ```
+
+  ## Importing ESM from CJS
+
+  Static `require()` of an ESM module throws `ERR_REQUIRE_ESM`. Use dynamic `import()` (returns a Promise):
+
+  ```js
+  // CJS file
+  async function main() {
+    const { thing } = await import('some-esm-pkg');
+  }
+  ```
+
+  Node 22+ added experimental `--experimental-require-module` for synchronous require of ESM that has no top-level await. Still experimental — don't depend on it for production.
+
+  ## __dirname and __filename in ESM
+
+  ESM has no `__dirname`. Use `import.meta.url`:
+
+  ```js
+  import { fileURLToPath } from 'node:url';
+  import { dirname } from 'node:path';
+
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+  ```
+
+  Node 20.11+ exposes `import.meta.dirname` and `import.meta.filename` directly:
+
+  ```js
+  console.log(import.meta.dirname);
+  console.log(import.meta.filename);
+  ```
+
+  ## JSON Imports
+
+  JSON imports require import attributes:
+
+  ```js
+  import config from './config.json' with { type: 'json' };
+  ```
+
+  Without the attribute, Node throws. Older syntax (`assert { type: 'json' }`) is deprecated.
+
+  ## Top-Level Await
+
+  ESM allows `await` at module top level:
+
+  ```js
+  const data = await fetch('https://example.com').then(r => r.json());
+  export { data };
+  ```
+
+  This blocks consumers' loading until the promise settles. Use sparingly — a slow top-level await blocks the entire module graph above it.
+
+  ## The Dual-Package Hazard
+
+  Publishing a library as both ESM and CJS can cause two copies of the same module to coexist — one loaded by ESM consumers, one by CJS consumers. Singletons break (separate state, separate `instanceof`).
+
+  Mitigations:
+
+  - Ship only one format and document clearly.
+  - Use conditional exports correctly:
+    ```json
+    {
+      "exports": {
+        ".": {
+          "import": "./dist/esm/index.js",
+          "require": "./dist/cjs/index.cjs"
+        }
+      }
+    }
+    ```
+  - Move state to a separate CJS-only module both formats import.
+
+  ## Conditional Exports
+
+  Map specifiers to different files based on context:
+
+  ```json
+  {
+    "exports": {
+      ".": {
+        "node": "./node.js",
+        "browser": "./browser.js",
+        "default": "./index.js"
+      }
+    }
+  }
+  ```
+
+  Order matters — first matching condition wins. `default` is the catch-all. Common conditions: `node`, `browser`, `import`, `require`, `types` (for TypeScript).
+
+  ## Common Pitfalls
+
+  - **Bare specifiers without a file extension in ESM.** `import './foo'` fails; needs `./foo.js`. Use `--experimental-specifier-resolution=node` to mimic CJS behavior, but it's experimental.
+  - **Hoping `require.cache` works in ESM.** It doesn't. ESM modules are cached by URL but the cache isn't directly accessible.
+  - **Top-level await with circular imports.** Can deadlock the module graph. Avoid awaiting modules that might import back into this one.
+  - **CJS package without `exports` field, ESM consumer.** Falls back to whole-package import; named imports may fail. Add `exports` to CJS packages for clean consumer compatibility.
+
+  ## Verification
+
+  A working ESM/CJS interop:
+
+  - ESM imports from CJS work for both default and named exports (when the CJS module is statically analyzable).
+  - CJS dynamic imports of ESM resolve.
+  - `import.meta.dirname` works without polyfills on Node 20.11+.
+  - JSON imports succeed with the `with { type: 'json' }` attribute.
+  - Conditional exports route to the right file per consumer.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Choosing ESM or CJS
+
+    The `package.json` `"type"` field decides what `.js` files mean:
+
+    ```json
+    { "type": "module" }   // .js is ESM
+    { "type": "commonjs" } // .js is CJS (default)
+    ```
+
+    Override per-file with explicit extensions: `.mjs` is always ESM, `.cjs` is always CJS. New projects should use `"type": "module"`.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Importing CJS from ESM
+
+    CJS modules import cleanly into ESM with named imports if Node detects the named exports. Otherwise, default-import the whole exports object:
+
+    ```js
+    // ESM file
+    import lodash from 'lodash';        // CJS default export
+    import { sortBy } from 'lodash';    // works because Node parses CJS exports
+    import express from 'express';
+    const app = express();
+    ```
+
+    When a CJS module's named exports aren't statically detectable, the named-import form fails. Fall back to default and destructure:
+
+    ```js
+    import pkg from 'some-cjs-pkg';
+    const { thing } = pkg;
+    ```
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Importing ESM from CJS
+
+    Static `require()` of an ESM module throws `ERR_REQUIRE_ESM`. Use dynamic `import()` (returns a Promise):
+
+    ```js
+    // CJS file
+    async function main() {
+      const { thing } = await import('some-esm-pkg');
+    }
+    ```
+
+    Node 22+ added experimental `--experimental-require-module` for synchronous require of ESM that has no top-level await. Still experimental — don't depend on it for production.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## __dirname and __filename in ESM
+
+    ESM has no `__dirname`. Use `import.meta.url`:
+
+    ```js
+    import { fileURLToPath } from 'node:url';
+    import { dirname } from 'node:path';
+
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    ```
+
+    Node 20.11+ exposes `import.meta.dirname` and `import.meta.filename` directly:
+
+    ```js
+    console.log(import.meta.dirname);
+    console.log(import.meta.filename);
+    ```
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## JSON Imports
+
+    JSON imports require import attributes:
+
+    ```js
+    import config from './config.json' with { type: 'json' };
+    ```
+
+    Without the attribute, Node throws. Older syntax (`assert { type: 'json' }`) is deprecated.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Top-Level Await
+
+    ESM allows `await` at module top level:
+
+    ```js
+    const data = await fetch('https://example.com').then(r => r.json());
+    export { data };
+    ```
+
+    This blocks consumers' loading until the promise settles. Use sparingly — a slow top-level await blocks the entire module graph above it.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## The Dual-Package Hazard
+
+    Publishing a library as both ESM and CJS can cause two copies of the same module to coexist — one loaded by ESM consumers, one by CJS consumers. Singletons break (separate state, separate `instanceof`).
+
+    Mitigations:
+
+    - Ship only one format and document clearly.
+    - Use conditional exports correctly:
+      ```json
+      {
+        "exports": {
+          ".": {
+            "import": "./dist/esm/index.js",
+            "require": "./dist/cjs/index.cjs"
+          }
+        }
+      }
+      ```
+    - Move state to a separate CJS-only module both formats import.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Conditional Exports
+
+    Map specifiers to different files based on context:
+
+    ```json
+    {
+      "exports": {
+        ".": {
+          "node": "./node.js",
+          "browser": "./browser.js",
+          "default": "./index.js"
+        }
+      }
+    }
+    ```
+
+    Order matters — first matching condition wins. `default` is the catch-all. Common conditions: `node`, `browser`, `import`, `require`, `types` (for TypeScript).
+- fragment_type: guardrail
+  sequence: 9
+  content: |-
+    ## Common Pitfalls
+
+    - **Bare specifiers without a file extension in ESM.** `import './foo'` fails; needs `./foo.js`. Use `--experimental-specifier-resolution=node` to mimic CJS behavior, but it's experimental.
+    - **Hoping `require.cache` works in ESM.** It doesn't. ESM modules are cached by URL but the cache isn't directly accessible.
+    - **Top-level await with circular imports.** Can deadlock the module graph. Avoid awaiting modules that might import back into this one.
+    - **CJS package without `exports` field, ESM consumer.** Falls back to whole-package import; named imports may fail. Add `exports` to CJS packages for clean consumer compatibility.
+- fragment_type: verification
+  sequence: 10
+  content: |-
+    ## Verification
+
+    A working ESM/CJS interop:
+
+    - ESM imports from CJS work for both default and named exports (when the CJS module is statically analyzable).
+    - CJS dynamic imports of ESM resolve.
+    - `import.meta.dirname` works without polyfills on Node 20.11+.
+    - JSON imports succeed with the `with { type: 'json' }` attribute.
+    - Conditional exports route to the right file per consumer.

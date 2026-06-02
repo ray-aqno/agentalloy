@@ -1,0 +1,447 @@
+<p align="center">
+  <img src="AgentAlloy_cover.png" alt="AgentAlloy — Just-in-Time Instruction Composer" width="720" />
+</p>
+
+<p align="center">
+  <b>Fuse your base model with the exact governance, workflows, and skills it needs — right now.</b>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/nrmeyers/agentalloy?color=blue" alt="license" /></a>
+  &nbsp;
+  <img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="python 3.12+" />
+  &nbsp;
+  <a href="https://github.com/astral-sh/uv"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json" alt="uv" /></a>
+  &nbsp;
+  <img src="https://img.shields.io/badge/runtime-no--LLM-success" alt="no LLM in runtime" />
+  &nbsp;
+  <img src="https://img.shields.io/badge/packs-35+-orange" alt="35+ packs" />
+  &nbsp;
+  <img src="https://img.shields.io/badge/skills-300+-orange" alt="300+ skills" />
+</p>
+
+`AGENTS.md`, `SKILL.md`, and giant static system prompts were a clever first attempt — and they're already breaking. They load once at session start, then suffer context rot as the conversation drags on and your agent drifts from the script. Reloading them every turn just trades drift for token waste. The real problem is structural: over a single session, the rules your agent must follow and the skills it needs change dozens of times — and static files can't keep up. Leave them out and a smaller model flounders on tasks its training never covered; cram them all in and you pay the token tax on every turn, or pay it again redoing the work it got wrong.
+
+**AgentAlloy** is a **just-in-time instruction composer**. A signal layer — a small local embed model (`qwen3-embedding:0.6b`) plus deterministic Python — wakes only when your agent's situation shifts: a phase transition, a new task contract, a meaningful file change. When nothing has changed, nothing is injected — your agent keeps working with the context it already has. When something *has* changed, AgentAlloy composes a fresh, highly targeted pre-prompt by fusing three instruction sets into the exact agent persona the moment calls for:
+
+- **System Governance** — hard boundaries and operational rules (Linear issue naming, PR branch conventions, CI/deployment gates).
+- **Workflow Directives** — process constraints (Spec-Driven Development rules, defining success criteria without solution wording).
+- **Domain Skills** — a focused slice of a curated 300+ skill corpus (languages, testing frameworks, discovery techniques) retrieved via hybrid BM25 + dense scoring.
+
+This gives smaller models the leverage to punch above their weight class, and gives larger models a runtime reminder of how they should be operating — both of which mean getting it right the first time, not the third.
+
+Phase-aware, intent-aware, and zero paid-LLM tokens spent on routing. No generative LLM in the hot path. No remote calls. No containers (unless you want them). The whole loop runs locally on one 0.6B embed model plus embedded [LadybugDB](https://docs.ladybugdb.com/) + DuckDB.
+
+Things your agent gets composed-and-injected without you pasting them into the prompt:
+
+- "How do I write a failing pytest before the implementation?" — TDD workflow + framework idioms, composed from `pytest` + `testing` packs.
+- "How do I structure an incremental dbt model so it stays correct across re-runs?" — data-engineering governance + domain skills, composed from `data-engineering` + `engineering` packs.
+- "Wire OpenTelemetry into this FastAPI app." — observability rules + framework patterns, composed from `fastapi` + `analytics` packs.
+- "I'm reviewing this PR — what should I check?" — review heuristics, composed phase-aware from `code-review` packs.
+
+**This is what zero-shot agentic development looks like.**
+
+---
+
+## Contents
+
+- [Quickstart](#quickstart)
+- [Demo](#demo)
+- [What makes the composition different](#what-makes-the-composition-different)
+- [How it works: phases, contracts, signal layer](#how-it-works-phases-contracts-signal-layer)
+- [How to use it](#how-to-use-it)
+- [Profiles](#profiles)
+- [Harness support](#harness-support)
+- [Standalone CLI](#standalone-cli)
+- [REST API](#rest-api)
+- [MCP Server](#mcp-server)
+- [Hardware presets](#hardware-presets)
+- [Packs shipping in-tree](#packs-shipping-in-tree)
+- [Architecture](#architecture)
+- [Telemetry](#telemetry)
+- [Configuration](#configuration)
+- [Development](#development)
+- [Contributing](#contributing)
+- [Benchmarks](#benchmarks)
+- [License](#license)
+
+---
+
+## Quickstart
+
+**Note:** Windows is not currently supported.
+
+```bash
+# Step 1: install uv (Linux / macOS)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Step 2: install agentalloy
+uv tool install git+https://github.com/nrmeyers/agentalloy.git
+
+# Step 3: configure and wire
+agentalloy setup
+```
+
+The setup wizard walks you through everything: hardware detection, runner selection (`ollama`, `lm-studio`, or `llama-server`), model and port, service mode, **skill pack selection** (with tier-grouped listing), IDE harness wiring, and hardware target. It then executes all install steps and validates the result. **3–5 minutes** on a warm machine.
+
+The pack selection screen groups packs by tier (Foundation, Languages, Frameworks, Tooling, etc.) and marks always-on packs. Select by pack name, tier name (e.g., `foundation`, `languages`), `all`, or leave blank for always-on packs only. You can always add more packs later with `agentalloy install-pack <name>`.
+
+Non-interactive / scripted installs: pass flags directly:
+
+```bash
+agentalloy setup -n --runner ollama --hardware nvidia --packs all --harness cursor
+```
+
+**Agent-driven install.** If you'd rather have your coding harness drive the install for you, clone the repo and tell it:
+
+```bash
+git clone https://github.com/nrmeyers/agentalloy.git && cd agentalloy
+# then in your coding harness:
+> Install this tool by following INSTALL.md
+```
+
+Works in any of the [supported harnesses](#harness-support).
+
+**Container alternative.** `agentalloy setup` → choose container. The default `compose.yaml` runs agentalloy + a bundled Ollama sidecar on the compose-internal network with `qwen3-embedding:0.6b` auto-pulled on first start. Port 47950 is the only external surface. Container inference is CPU-only on every host; for GPU acceleration (NVIDIA/AMD/Metal) pick the native install instead.
+
+> **Container install builds from source.** `compose.yaml` uses `build: { context: . }`, so the wizard needs the repo on disk for the build context. The wizard handles this automatically: if you ran `uv tool install agentalloy` without a manual `git clone`, setup falls back to a shallow clone of the repo into `~/.cache/agentalloy/repo` and uses that as the build context. The only extra host prereq beyond `podman` / `docker compose` is `git`.
+
+---
+
+## Demo
+
+```bash
+$ curl -s -X POST http://localhost:47950/compose \
+    -H 'Content-Type: application/json' \
+    -d '{"task": "write a failing pytest", "phase": "build"}' | jq .
+
+{
+  "output": "## TDD: write the failing test first\n\nIn pytest, ...",
+  "source_skills": ["test-driven-development", "pytest-fixtures"],
+  "tokens_returned": 1840,
+  "compose_ms": 47
+}
+```
+
+Your agent calls `/compose`, gets back the relevant raw skill prose, and assembles it inside its own prompt. No LLM-in-the-loop, no token tax, no API key roulette. Sub-50ms p95 on a warm cache.
+
+---
+
+## What makes the composition different
+
+- **Composed per task, not loaded every turn.** A skill that's irrelevant to the current task isn't in the prompt at all — RRF + applicability filtering picks the right subset for each request.
+- **Three instruction sets, fused.** Governance, workflow, and domain skills are composed together into one persona — not three files the agent has to reconcile on its own.
+- **Phase-aware.** Build-phase skills weight differently than QA-phase or review-phase skills. The same task gets a different composition at different points in the lifecycle.
+- **Hybrid retrieval, not lexical-only.** Token-literal queries (`"JWT"`, `"Prisma"`) hit BM25; semantic queries ("the auth handler") hit a 1024-dim dense leg. Phase-tuned Reciprocal Rank Fusion picks the better signal per query.
+- **No model variance.** Embeddings + lexical match + deterministic fusion. Same task → same composition, regardless of which agent model you swap in tomorrow.
+- **Versioned & validated.** Every skill is sourced from authoritative upstream docs and validated against the R1–R8 quality contract; reviewable history under `docs/skill-review-history/`.
+
+---
+
+## How it works: phases, contracts, signal layer
+
+Three small artifacts on disk drive everything AgentAlloy does. None of them belong to your agent's prompt — they're state files that the signal layer reads.
+
+### 1. The phase file
+
+```
+.agentalloy/phase       →  phase: build
+```
+
+A sticky, one-line YAML file under your project. Tracks where the agent is in the SDD lifecycle: `spec → design → build → qa → ship`. Each phase has a corresponding **workflow skill** (e.g., `sdd-build`) that ships persona prose and a set of declarative **exit gates**. When the agent enters a phase, that workflow skill's prose is injected as the persona for the duration; when the exit gates pass, the phase advances and the next workflow skill takes over.
+
+### 2. Task contracts
+
+```
+.agentalloy/contracts/build/add-auth-middleware.md
+```
+
+A short markdown file the agent writes when starting a task. The frontmatter declares intent:
+
+```yaml
+---
+phase: build
+task_slug: add-auth-middleware
+domain_tags: ["NestJS", "Express middleware", "JWT validation"]
+scope:
+  touches: ["src/auth/**", "tests/auth/**"]
+  avoids:  ["src/billing/**"]
+success_criteria:
+  - "Existing auth tests still pass"
+  - "Middleware tested with valid + invalid tokens"
+---
+
+# Add Auth Middleware
+<one paragraph of task prose>
+```
+
+The agent writes the contract once at task start. From then on, **`domain_tags` is the BM25 input for retrieval** — surgical, intent-aware, and stable across the conversation. No prompt engineering required; the agent just records what it's about to do.
+
+### 3. The signal layer
+
+A small Python module that wakes on three kinds of events: a user prompt arrives, a contract file is written, a tool is about to fire. It runs a cheap **pre-filter** (signal keywords, file-event scope checks) to decide if anything needs to happen. If nothing matches, it returns silently — no tokens spent, no injection. If something matches, it evaluates the active phase's **exit gates** (deterministic predicates like `artifact_exists`, `git_state`, `contract_has_tags`, plus a few semantic ones that cosine-similarity-score the prompt against named intents using the same 0.6B embed server). When gates pass, the phase file is updated atomically and the next workflow skill's prose is emitted as pre-prompt context.
+
+```
+        ┌───────────────────┐
+        │  prompt / event   │
+        └─────────┬─────────┘
+                  ▼
+        ┌───────────────────┐
+        │   pre-filter      │ ── no match ──► silent exit
+        │   (cheap)         │
+        └─────────┬─────────┘
+                  ▼ match
+        ┌───────────────────┐
+        │  evaluate gates   │
+        │  (deterministic + │
+        │   cosine sim)     │
+        └─────────┬─────────┘
+                  ▼
+   ┌──────────────┴──────────────┐
+   │                             │
+   ▼                             ▼
+phase transition          system skill fires
+  → next workflow            (commit-safety,
+    skill injected            secret-handling,
+                              etc.)
+```
+
+Everything between the agent and the embed model is deterministic Python. Zero paid-LLM tokens spent on "where am I?", "what should I be doing?", or "should I call AgentAlloy now?"
+
+---
+
+## How to use it
+
+Three paths, depending on how your harness integrates with external tools.
+
+### Standalone HTTP service
+
+Run AgentAlloy on its own port; your agent (or your script, or your CI) calls `POST /compose` and reads the response. Zero coupling to a specific harness — works with anything that can hit an HTTP endpoint.
+
+```bash
+python -m agentalloy                  # default :47950
+curl -s http://localhost:47950/health # {"status":"ok"}
+```
+
+### Wired into a proxy-wired harness (full integration)
+
+If your harness honors a custom API base URL (OpenAI / Anthropic / a config-file `apiBase`), AgentAlloy points it at the local proxy. Every LLM request flows through the proxy, which injects skill context, evaluates gates, and forwards to the real upstream. Phase transitions, contract retrieval, and system skill enforcement all happen automatically.
+
+```bash
+agentalloy wire --harness <name>
+```
+
+### Wired into a sidecar harness
+
+A few harnesses (Cursor, Windsurf, GitHub Copilot, Gemini CLI) route through their own backends and can't be intercepted. For those, AgentAlloy writes a static rules file and a file-watching sidecar regenerates that file within ~1s of a phase or contract change. You start the sidecar once per session:
+
+```bash
+agentalloy wire --harness <name>
+agentalloy watch start --harness <name>
+```
+
+The capability matrix and a fuller picture live in [Harness support](#harness-support) below.
+
+---
+
+## Profiles: user-scoped skill contexts
+
+Profiles let you maintain separate skill contexts for different kinds of work — e.g., a `work` profile with stricter CI gates and team governance rules, a `personal` profile with relaxed constraints and hobby-project domain skills. Profiles auto-resolve per-repo based on git remote URL, filesystem path, or an explicit project marker, so you never need to switch them manually.
+
+This is the key difference from `AGENTS.md` / `SKILL.md` approaches:
+
+- **AgentAlloy install is one-time and user-scoped.** A single install serves all your projects. State lives under `~/.config/agentalloy/` and data under `~/.local/share/agentalloy/`.
+- **Profiles determine skill overrides per-repo.** Configure once, and the active profile resolves automatically when you `cd` between projects.
+- **Wiring is still per-repo.** Each project needs `agentalloy wire` to inject sentinels into its harness config files (`.cursor/rules/`, `.clinerules`, etc.), but the skills those sentinels reference come from the user-scoped profile.
+
+See [profiles-and-overrides.md](docs/profiles-and-overrides.md) for full details.
+
+---
+
+## Harness support
+
+Harnesses fall into two categories:
+
+- **Proxy-wired** (Claude Code, Continue.dev, Aider, Cline, OpenCode, Hermes Agent) — full per-turn integration via the local proxy. The proxy intercepts LLM traffic, injects skill context, and evaluates gates automatically.
+- **Sidecar** (Cursor, Windsurf, GitHub Copilot, Gemini CLI) — static rules file kept current by a file watcher. Reduced capability: no enforcement, advisory text only.
+
+Proxy-wired is the preferred mode. Full per-harness catalog: [docs/install/harness-catalog.md](docs/install/harness-catalog.md).
+
+---
+
+## Standalone CLI
+
+The `agentalloy` CLI handles install, service management, phase control, and composition. Key commands:
+
+```bash
+agentalloy setup                          # Interactive install wizard
+agentalloy wire --harness <name>          # Wire a harness (or --mcp-fallback)
+agentalloy serve                          # Run the service
+agentalloy phase get|set|clear            # Manage project phase
+agentalloy compose --contract <path>      # One-shot composition
+agentalloy doctor                         # Diagnose install issues
+```
+
+Full command reference: [docs/operator.md](docs/operator.md).
+
+Each subcommand emits structured JSON on stdout; pair with `jq` for scripting.
+
+---
+
+## REST API
+
+AgentAlloy serves both OpenAI-compatible and Anthropic Messages API endpoints through the proxy:
+
+- `POST /v1/chat/completions` — OpenAI-compatible proxy
+- `POST /v1/messages` — Anthropic Messages API proxy (Claude Code, Cline)
+- `POST /compose` — Manual skill composition
+- `GET /health` — Liveness probe
+
+See [proxy-architecture.md](docs/proxy-architecture.md) for the full endpoint list and request/response schemas.
+
+---
+
+## MCP Server
+
+AgentAlloy ships a built-in MCP server for harnesses that support the Model Context Protocol. Instead of proxying LLM traffic, the MCP server exposes a single tool the harness calls on demand:
+
+- **`get_skill_for(task, phase)`** — forwards to the local `/compose` endpoint and returns composed skill fragments.
+
+The server is dependency-free (no MCP SDK) and runs via stdio JSON-RPC (MCP 2024-11-05 spec).
+
+```bash
+# Wire with MCP fallback instead of proxy:
+agentalloy wire --harness cursor --mcp-fallback
+```
+
+Supported harnesses: Claude Code, Cursor, Continue.dev. See [Harness Catalog § MCP Fallback](docs/install/harness-catalog.md) for per-harness configuration details.
+
+---
+
+## Hardware presets
+
+The runtime needs only an embedding service. The install agent picks one for you, but here's the matrix:
+
+| Preset | Hardware | Backend | VRAM / RAM |
+|---|---|---|---|
+| `cpu` | x86_64 / ARM64 | Ollama (CPU) | 8 GB RAM |
+| `apple-silicon` | M1 / M2 / M3 / M4 | Ollama (Metal) | 8 GB unified |
+| `nvidia` | NVIDIA + CUDA | Ollama (CUDA) | 4 GB VRAM |
+| `radeon` | AMD Radeon dGPU/iGPU | LM Studio (Vulkan) | 4 GB VRAM |
+
+All presets use **`qwen3-embedding:0.6b`** at 1024 dimensions. Default ports per runner: Ollama `localhost:11434`, LM Studio `localhost:1234`, llama-server `localhost:11434`. The on-disk index is portable across backends — switching is an env-var flip.
+
+```bash
+# Ollama presets
+ollama pull qwen3-embedding:0.6b
+
+# Radeon: open LM Studio → search qwen3-embedding:0.6b → Q8 → start server
+```
+
+---
+
+## Packs shipping in-tree
+
+The corpus is **packs** — opt-in groups of related skills. `main` ships **35+ packs / 300+ declared skills** organized across 9 tiers:
+
+<table>
+<tr><th>Tier</th><th>Packs</th></tr>
+<tr><td><b>foundation</b></td><td><code>core</code> · <code>documentation</code> · <code>engineering</code> · <code>performance</code> · <code>refactoring</code></td></tr>
+<tr><td><b>language</b></td><td><code>csharp-dotnet</code> · <code>go</code> · <code>java</code> · <code>nodejs</code> · <code>python</code> · <code>rust</code> · <code>typescript</code></td></tr>
+<tr><td><b>framework</b></td><td><code>fastapi</code> · <code>fastify</code> · <code>nestjs</code> · <code>nextjs</code> · <code>react</code> · <code>vue</code></td></tr>
+<tr><td><b>tooling</b></td><td><code>linting</code> · <code>pytest</code> · <code>testing</code></td></tr>
+<tr><td><b>workflow</b></td><td><code>code-review</code> · <code>design-review</code> · <code>intake</code> · <code>sdd</code></td></tr>
+<tr><td><b>domain</b></td><td><code>analytics</code> · <code>data-engineering</code> · <code>ui-design</code></td></tr>
+<tr><td><b>platform</b></td><td><code>github-actions</code></td></tr>
+<tr><td><b>protocol</b></td><td><code>rest</code> · <code>webhooks</code></td></tr>
+<tr><td><b>store</b></td><td><code>redis</code> · <code>redshift</code> · <code>snowflake</code> · <code>temporal</code></td></tr>
+</table>
+
+Every skill is sourced from authoritative upstream docs and validated against the **R1–R8 quality contract** in `src/agentalloy/_packs/meta/sys-skill-authoring-rules.md`. Each pack ships with `.qa.md` reports under `docs/skill-review-history/` documenting independent Critic verdicts.
+
+Pack authoring lives in a separate repo and tooling — see [agentalloy-authoring](../agentalloy-authoring). It uses a local-first author-critic pipeline that produces validated YAML packs; nothing about authoring is required to *use* AgentAlloy at runtime.
+
+---
+
+## Architecture
+
+AgentAlloy is a three-layer system:
+
+1. **Signal layer** — deterministic Python that wakes on phase transitions, contract writes, or tool fires. Pre-filters cheaply, evaluates exit gates, and composes skills only when needed.
+2. **Composition engine** — hybrid BM25 + dense retrieval over LadybugDB (skill graph) and DuckDB (vector index), fused via phase-tuned Reciprocal Rank Fusion.
+3. **Proxy** — OpenAI-compatible and Anthropic Messages API endpoints that intercept harness traffic, inject composed skills, and forward to the upstream LLM.
+
+Zero generative LLM in the runtime path. See [docs/proxy-architecture.md](docs/proxy-architecture.md) for the full design.
+
+---
+
+## Telemetry
+
+Every `/compose`, `/retrieve`, and signal evaluation writes a structured trace to DuckDB before the response returns — no async backlog, no dropped traces. Trace-write failures never propagate.
+
+Query via `GET /telemetry/traces` or `agentalloy telemetry`. See [docs/operator.md](docs/operator.md) for the full trace schema and filter options.
+
+---
+
+## Configuration
+
+Runtime environment variables are written automatically by `agentalloy write-env` to `~/.config/agentalloy/.env`. Key variables:
+
+- `RUNTIME_EMBED_BASE_URL` — embedding endpoint (default: Ollama at `localhost:11434`)
+- `RUNTIME_EMBEDDING_MODEL` — embedding model (default: `qwen3-embedding:0.6b`)
+- `PROFILE_ROOT` — per-profile datastores
+- `DEDUP_HARD_THRESHOLD` / `DEDUP_SOFT_THRESHOLD` — cosine dedup thresholds
+- `BOUNCE_BUDGET` — compose retry budget
+
+See [docs/operator.md](docs/operator.md) for the full configuration reference.
+
+---
+
+## Development
+
+```bash
+uv sync                          # install deps
+uv run ruff check .              # lint
+uv run ruff format --check .     # format
+uv run pyright                   # types
+uv run pytest                    # unit tests (fast)
+uv run pytest -m integration     # integration — requires Ollama with qwen3-embedding:0.6b
+```
+
+Tests live under `tests/` and cover the install pipeline (`tests/install/`), retrieval, composition, applicability filtering, telemetry, and the harness-wiring catalog.
+
+---
+
+## Contributing
+
+To contribute to the AgentAlloy codebase, use an editable install so your changes are reflected immediately:
+
+```bash
+git clone https://github.com/nrmeyers/agentalloy.git
+cd agentalloy
+uv sync
+uv tool install --editable .
+```
+
+### Migrating from pipx
+
+If you previously installed AgentAlloy via `pipx`, migrate to `uv`:
+
+```bash
+pipx uninstall agentalloy        # remove the legacy install
+uv tool install git+https://github.com/nrmeyers/agentalloy.git
+```
+
+User-scope state (`~/.config/agentalloy/`, corpus DB) is preserved across the swap — pipx and uv installs share the same state location.
+
+---
+
+## Benchmarks
+
+See [BENCHMARKS.md](BENCHMARKS.md) for the composed vs flat comparison experiment and retrieval recall harness.
+
+---
+
+## License
+
+MIT. See [LICENSE](LICENSE).

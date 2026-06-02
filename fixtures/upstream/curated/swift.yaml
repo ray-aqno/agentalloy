@@ -1,0 +1,74 @@
+language: Swift
+version_anchor: Swift 6.0
+generated_at: 2026-05-01
+canonical:
+  language_reference: https://docs.swift.org/swift-book/documentation/the-swift-programming-language/
+  library_reference: https://developer.apple.com/documentation/swift
+  spec_or_standard: https://docs.swift.org/swift-book/documentation/the-swift-programming-language/
+  release_notes: https://www.swift.org/blog/
+topics:
+  concurrency_and_async:
+    description: Swift concurrency — async/await, actors, structured concurrency, and Sendable
+    urls:
+      - https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/
+      - https://developer.apple.com/documentation/swift/actor
+      - https://developer.apple.com/documentation/swift/sendable
+  error_handling_and_exceptions:
+    description: Error protocol, throws/try/catch, Result type, and typed throws (Swift 6)
+    urls:
+      - https://docs.swift.org/swift-book/documentation/the-swift-programming-language/errorhandling/
+      - https://developer.apple.com/documentation/swift/result
+  typing_and_generics:
+    description: Generics, associated types, existentials (any), opaque types (some), and primary associated types
+    urls:
+      - https://docs.swift.org/swift-book/documentation/the-swift-programming-language/generics/
+      - https://docs.swift.org/swift-book/documentation/the-swift-programming-language/opaquetypes/
+      - https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/
+  memory_and_performance:
+    description: ARC, weak/unowned references, and value vs reference types
+    urls:
+      - https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/
+      - https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/
+  packaging_and_dependency_management:
+    description: Swift Package Manager — Package.swift, targets, and products
+    urls:
+      - https://www.swift.org/documentation/package-manager/
+      - https://developer.apple.com/documentation/packagedescription
+  testing_idioms:
+    description: Swift Testing framework (new in Xcode 16 / Swift 6) and XCTest
+    urls:
+      - https://developer.apple.com/documentation/testing
+      - https://developer.apple.com/documentation/xctest
+  security_and_crypto_primitives:
+    description: CryptoKit for hashing, HMAC, and symmetric encryption
+    urls:
+      - https://developer.apple.com/documentation/cryptokit
+  io_and_filesystem:
+    description: Foundation's FileManager, URL, and Data for file operations
+    urls:
+      - https://developer.apple.com/documentation/foundation/filemanager
+      - https://developer.apple.com/documentation/foundation/url
+  networking_and_http_client:
+    description: URLSession and async/await networking patterns
+    urls:
+      - https://developer.apple.com/documentation/foundation/urlsession
+  serialization_json_binary:
+    description: Codable (Encodable/Decodable) protocol and JSONEncoder/JSONDecoder
+    urls:
+      - https://developer.apple.com/documentation/swift/codable
+      - https://developer.apple.com/documentation/foundation/jsonencoder
+      - https://developer.apple.com/documentation/foundation/jsondecoder
+  logging_and_observability:
+    description: OSLog (os.Logger) for structured logging on Apple platforms
+    urls:
+      - https://developer.apple.com/documentation/os/logger
+  language_evolution_and_deprecation:
+    description: Swift Evolution proposals and changelog
+    urls:
+      - https://www.swift.org/swift-evolution/
+      - https://github.com/swiftlang/swift/blob/main/CHANGELOG.md
+known_gaps:
+  - Linux Swift stdlib docs are thinner than Apple platform docs at developer.apple.com
+  - Swift 6 strict concurrency checking is new; some guidance is in blog posts not TSPL
+  - Cross-platform Foundation (swift-foundation) docs are separate from Apple Foundation
+  - Swift Testing is new at Swift 6 / Xcode 16; docs may be incomplete

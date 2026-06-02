@@ -1,0 +1,217 @@
+skill_type: domain
+skill_id: redis-streams
+canonical_name: Redis Streams
+category: engineering
+skill_class: domain
+domain_tags:
+- redis
+- streams
+- consumer-groups
+- event-log
+- messaging
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus source after 14B over-fragmented
+raw_prose: |
+  # Redis Streams
+
+  ## Overview
+
+  Redis Streams are an append-only log data structure for messaging and event sourcing. Each entry has a stream ID and field/value pairs. Consumer groups partition delivery across workers with at-least-once guarantees backed by a pending-entries list. This skill covers Streams end-to-end.
+
+  ---
+
+  ## Why Streams Aren't Lists or Pub/Sub
+
+  Redis already has lists (queue with at-least-once via LMOVE) and Pub/Sub (broadcast, no persistence). Streams fill the middle: durable, persistent, append-only logs with consumer groups for parallel processing and tracked acknowledgement.
+
+  Each stream entry has a unique ID (timestamp-based by default: `1729012345000-0`), and a set of field/value pairs:
+
+  ```
+  XADD events * order_id 12345 amount 5000 currency USD
+  # returns "1729012345000-0"
+  ```
+
+  The `*` tells Redis to auto-generate the ID. You can also pass an explicit ID for deterministic insertion.
+
+  ## Reading a Stream
+
+  The simplest read is XRANGE (range scan, no consumer state):
+
+  ```
+  XRANGE events - +              # all entries from start to end
+  XRANGE events 1729012345000 +  # from a specific ID forward
+  XLEN events                    # entry count
+  ```
+
+  For real-time consumption, XREAD blocks until new entries arrive:
+
+  ```
+  XREAD BLOCK 5000 STREAMS events $   # block 5s waiting for new entries
+  ```
+
+  The `$` ID means 'only entries added after this call started'. Replace with a specific ID to read from a known checkpoint.
+
+  ## Consumer Groups — Parallel Processing With Acks
+
+  Consumer groups partition stream consumption across workers and track which entries each worker has acknowledged. This is the pattern for durable message queues.
+
+  ```
+  XGROUP CREATE events workers $ MKSTREAM       # create group, start at end
+  XREADGROUP GROUP workers worker-1 COUNT 10 STREAMS events >  # read 10 unread
+  # ... process ...
+  XACK events workers 1729012345000-0            # ack one entry
+  ```
+
+  Multiple workers in the same group will each receive a different subset of entries. Entries that aren't ACKed within the visibility window go into the pending-entries list (PEL) for retry.
+
+  ## The Pending-Entries List
+
+  Every consumer group tracks entries that have been delivered but not yet ACKed. This is how Streams provide at-least-once semantics: if a worker crashes mid-processing, the entry stays in the PEL and can be re-delivered.
+
+  ```
+  XPENDING events workers                              # PEL summary
+  XPENDING events workers - + 10 worker-1              # entries pending for worker-1
+  XCLAIM events workers worker-2 60000 1729012345000-0 # reassign stuck entry
+  ```
+
+  A common pattern: a 'reaper' job periodically checks XPENDING for entries idle longer than a threshold, then XCLAIMs them to a healthy worker.
+
+  ## Trimming Streams
+
+  Streams are append-only. Without trimming they grow forever. Two trim policies:
+
+  ```
+  XTRIM events MAXLEN 10000               # keep latest 10k entries
+  XTRIM events MINID 1729000000000        # keep entries newer than this ID
+  XADD events MAXLEN ~ 10000 * field val  # trim during write (~ for approximate)
+  ```
+
+  Use MAXLEN for capped-size logs (chat history, activity feeds). Use MINID for time-bounded retention (audit logs older than 30 days).
+
+  ## Streams vs. Other Patterns
+
+  - **vs Kafka**: Streams handle smaller scale (millions of events, not billions), single-region, no native cross-AZ replication. Easier to operate if Redis is already in your stack.
+  - **vs RabbitMQ**: Streams have simpler semantics (no exchanges/bindings) and work in the same Redis cluster as your cache. Less feature-rich for routing.
+  - **vs SQS**: Streams support replay (XRANGE from any ID); SQS is queue-only. SQS handles durability/HA out of the box; Streams need Redis cluster + persistence config.
+
+  ## Common Patterns
+
+  - **Worker pool**: One stream per task type, one consumer group per worker pool. Workers XREADGROUP and XACK.
+  - **Event sourcing**: Append every state change to a stream. Rebuild state by replaying with XRANGE.
+  - **Activity feed**: One stream per user; XADD on activity; XRANGE with LIMIT for the latest N items.
+  - **Cross-service messaging**: Producer XADDs; downstream services each have their own consumer group reading independently.
+
+  ## Verification
+
+  - Confirm consumer group reads: `XINFO GROUPS events` shows lag per group; lag should stay near zero for healthy consumers.
+  - Confirm entries are being ACKed: `XPENDING events workers` should not grow unbounded.
+  - Confirm trim is engaged: `XLEN events` should stabilize once the trim policy is hit.
+  - For at-least-once: deliberately kill a worker mid-process; verify the entry returns to PEL and can be reclaimed.
+fragments:
+- fragment_type: rationale
+  sequence: 1
+  content: |-
+    ## Why Streams Aren't Lists or Pub/Sub
+
+    Redis already has lists (queue with at-least-once via LMOVE) and Pub/Sub (broadcast, no persistence). Streams fill the middle: durable, persistent, append-only logs with consumer groups for parallel processing and tracked acknowledgement.
+
+    Each stream entry has a unique ID (timestamp-based by default: `1729012345000-0`), and a set of field/value pairs:
+
+    ```
+    XADD events * order_id 12345 amount 5000 currency USD
+    # returns "1729012345000-0"
+    ```
+
+    The `*` tells Redis to auto-generate the ID. You can also pass an explicit ID for deterministic insertion.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Reading a Stream
+
+    The simplest read is XRANGE (range scan, no consumer state):
+
+    ```
+    XRANGE events - +              # all entries from start to end
+    XRANGE events 1729012345000 +  # from a specific ID forward
+    XLEN events                    # entry count
+    ```
+
+    For real-time consumption, XREAD blocks until new entries arrive:
+
+    ```
+    XREAD BLOCK 5000 STREAMS events $   # block 5s waiting for new entries
+    ```
+
+    The `$` ID means 'only entries added after this call started'. Replace with a specific ID to read from a known checkpoint.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Consumer Groups — Parallel Processing With Acks
+
+    Consumer groups partition stream consumption across workers and track which entries each worker has acknowledged. This is the pattern for durable message queues.
+
+    ```
+    XGROUP CREATE events workers $ MKSTREAM       # create group, start at end
+    XREADGROUP GROUP workers worker-1 COUNT 10 STREAMS events >  # read 10 unread
+    # ... process ...
+    XACK events workers 1729012345000-0            # ack one entry
+    ```
+
+    Multiple workers in the same group will each receive a different subset of entries. Entries that aren't ACKed within the visibility window go into the pending-entries list (PEL) for retry.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## The Pending-Entries List
+
+    Every consumer group tracks entries that have been delivered but not yet ACKed. This is how Streams provide at-least-once semantics: if a worker crashes mid-processing, the entry stays in the PEL and can be re-delivered.
+
+    ```
+    XPENDING events workers                              # PEL summary
+    XPENDING events workers - + 10 worker-1              # entries pending for worker-1
+    XCLAIM events workers worker-2 60000 1729012345000-0 # reassign stuck entry
+    ```
+
+    A common pattern: a 'reaper' job periodically checks XPENDING for entries idle longer than a threshold, then XCLAIMs them to a healthy worker.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Trimming Streams
+
+    Streams are append-only. Without trimming they grow forever. Two trim policies:
+
+    ```
+    XTRIM events MAXLEN 10000               # keep latest 10k entries
+    XTRIM events MINID 1729000000000        # keep entries newer than this ID
+    XADD events MAXLEN ~ 10000 * field val  # trim during write (~ for approximate)
+    ```
+
+    Use MAXLEN for capped-size logs (chat history, activity feeds). Use MINID for time-bounded retention (audit logs older than 30 days).
+- fragment_type: rationale
+  sequence: 6
+  content: |-
+    ## Streams vs. Other Patterns
+
+    - **vs Kafka**: Streams handle smaller scale (millions of events, not billions), single-region, no native cross-AZ replication. Easier to operate if Redis is already in your stack.
+    - **vs RabbitMQ**: Streams have simpler semantics (no exchanges/bindings) and work in the same Redis cluster as your cache. Less feature-rich for routing.
+    - **vs SQS**: Streams support replay (XRANGE from any ID); SQS is queue-only. SQS handles durability/HA out of the box; Streams need Redis cluster + persistence config.
+- fragment_type: example
+  sequence: 7
+  content: |-
+    ## Common Patterns
+
+    - **Worker pool**: One stream per task type, one consumer group per worker pool. Workers XREADGROUP and XACK.
+    - **Event sourcing**: Append every state change to a stream. Rebuild state by replaying with XRANGE.
+    - **Activity feed**: One stream per user; XADD on activity; XRANGE with LIMIT for the latest N items.
+    - **Cross-service messaging**: Producer XADDs; downstream services each have their own consumer group reading independently.
+- fragment_type: verification
+  sequence: 8
+  content: |-
+    ## Verification
+
+    - Confirm consumer group reads: `XINFO GROUPS events` shows lag per group; lag should stay near zero for healthy consumers.
+    - Confirm entries are being ACKed: `XPENDING events workers` should not grow unbounded.
+    - Confirm trim is engaged: `XLEN events` should stabilize once the trim policy is hit.
+    - For at-least-once: deliberately kill a worker mid-process; verify the entry returns to PEL and can be reclaimed.

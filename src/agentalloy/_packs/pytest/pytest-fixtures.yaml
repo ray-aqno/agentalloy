@@ -1,0 +1,665 @@
+skill_type: domain
+skill_id: pytest-fixtures
+canonical_name: Pytest Fixtures
+category: tooling
+skill_class: domain
+domain_tags:
+  - pytest
+  - fixtures
+  - test-setup
+  - dependency-injection
+  - reusable-tests
+always_apply: false
+phase_scope: []
+category_scope: []
+author: authoring-agent
+change_summary: initial authoring draft
+raw_prose: |
+  # Pytest Fixtures
+
+  ## Overview
+
+  Fixtures provide a defined, reliable, and consistent context for tests. Pytest fixtures are functions decorated with `@pytest.fixture` that return values tests can request by parameter name. They support scopes, autouse mode, teardown via `yield`, and parametrization. This skill covers fixture authoring + usage.
+
+  Sourced from https://docs.pytest.org/en/stable/how-to/fixtures.html.
+
+  ## How to use fixtures
+
+  .. seealso:: `about-fixtures`
+  .. seealso:: `Fixtures reference <reference-fixtures>`
+
+  ## "Requesting" fixtures
+
+  At a basic level, test functions request fixtures they require by declaring them as arguments.
+
+  When pytest goes to run a test, it looks at the parameters in that test function's signature, and then searches for fixtures that have the same names as those parameters. Once pytest finds them, it runs those fixtures, captures what they returned (if anything), and passes those objects into the test function as arguments.
+
+  Quick example
+  ^^^^^^^^^^^^^
+
+  ```python
+  import pytest
+  ```
+
+      class Fruit:
+          def __init__(self, name):
+              self.name = name
+              self.cubed = False
+
+          def cube(self):
+              self.cubed = True
+
+
+      class FruitSalad:
+          def __init__(self, *fruit_bowl):
+              self.fruit = fruit_bowl
+              self._cube_fruit()
+
+          def _cube_fruit(self):
+              for fruit in self.fruit:
+                  fruit.cube()
+
+
+      # Arrange
+      @pytest.fixture
+      def fruit_bowl():
+          return [Fruit("apple"), Fruit("banana")]
+
+
+      def test_fruit_salad(fruit_bowl):
+          # Act
+          fruit_salad = FruitSalad(*fruit_bowl)
+
+          # Assert
+          assert all(fruit.cubed for fruit in fruit_salad.fruit)
+
+  In this example, ``test_fruit_salad`` "**requests**" ``fruit_bowl`` (i.e. ``def test_fruit_salad(fruit_bowl):``), and when pytest sees this, it will execute the ``fruit_bowl`` fixture function and pass the object it returns into ``test_fruit_salad`` as the ``fruit_bowl`` argument.
+
+  Here's roughly what's happening if we were to do it by hand:
+
+  ```python
+  def fruit_bowl():
+      return [Fruit("apple"), Fruit("banana")]
+  ```
+
+      def test_fruit_salad(fruit_bowl):
+          # Act
+          fruit_salad = FruitSalad(*fruit_bowl)
+
+          # Assert
+          assert all(fruit.cubed for fruit in fruit_salad.fruit)
+
+
+      # Arrange
+      bowl = fruit_bowl()
+      test_fruit_salad(fruit_bowl=bowl)
+
+  Fixtures can **request** other fixtures
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+  One of pytest's greatest strengths is its extremely flexible fixture system. It allows us to boil down complex requirements for tests into more simple and organized functions, where we only need to have each one describe the things they are dependent on. We'll get more into this further down, but for now, here's a quick example to demonstrate how fixtures can use other fixtures:
+
+  ```python
+  # contents of test_append.py
+  import pytest
+  ```
+
+      # Arrange
+      @pytest.fixture
+      def first_entry():
+          return "a"
+
+
+      # Arrange
+      @pytest.fixture
+      def order(first_entry):
+          return [first_entry]
+
+
+      def test_string(order):
+          # Act
+          order.append("b")
+
+          # Assert
+          assert order == ["a", "b"]
+
+  Notice that this is the same example from above, but very little changed. The fixtures in pytest **request** fixtures just like tests. All the same **requesting** rules apply to fixtures that do for tests. Here's how this example would work if we did it by hand:
+
+  ```python
+  def first_entry():
+      return "a"
+  ```
+
+      def order(first_entry):
+          return [first_entry]
+
+
+      def test_string(order):
+          # Act
+          order.append("b")
+
+          # Assert
+          assert order == ["a", "b"]
+
+
+      entry = first_entry()
+      the_list = order(first_entry=entry)
+      test_string(order=the_list)
+
+  Fixtures are reusable
+  ^^^^^^^^^^^^^^^^^^
+
+  One of the things that makes pytest's fixture system so powerful, is that it gives us the ability to define a generic setup step that can be reused over and over, just like a normal function would be used. Two different tests can request the same fixture and have pytest give each test their own result from that fixture.
+
+  This is extremely useful for making sure tests aren't affected by each other. We can use this system to make sure each test gets its own fresh batch of data and is starting from a clean state so it can provide consistent, repeatable results.
+
+  Here's an example of how this can come in handy:
+
+  ```python
+  # contents of test_append.py
+  import pytest
+  ```
+
+      # Arrange
+      @pytest.fixture
+      def first_entry():
+          return "a"
+
+
+      # Arrange
+      @pytest.fixture
+      def order(first_entry):
+          return [first_entry]
+
+
+      def test_string(order):
+          # Act
+          order.append("b")
+
+          # Assert
+          assert order == ["a", "b"]
+
+
+      def test_int(order):
+          # Act
+          order.append(2)
+
+          # Assert
+          assert order == ["a", 2]
+
+  Each test here is being given its own copy of that ``list`` object, which means the ``order`` fixture is getting executed twice (the same is true for the ``first_entry`` fixture). If we were to do this by hand as well, it would look something like this:
+
+  ```python
+  def first_entry():
+      return "a"
+  ```
+
+      def order(first_entry):
+          return [first_entry]
+
+
+      def test_string(order):
+          # Act
+          order.append("b")
+
+          # Assert
+          assert order == ["a", "b"]
+
+
+      def test_int(order):
+          # Act
+          order.append(2)
+
+          # Assert
+          assert order == ["a", 2]
+
+
+      entry = first_entry()
+      the_list = order(first_entry=entry)
+      test_string(order=the_list)
+
+      entry = first_entry()
+      the_list = order(first_entry=entry)
+      test_int(order=the_list)
+
+  A test/fixture can **request** more than one fixture at a time
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+  Tests and fixtures aren't limited to **requesting** a single fixture at a time. They can request as many as they like. Here's another quick example to demonstrate:
+
+  ```python
+  # contents of test_append.py
+  import pytest
+  ```
+
+      # Arrange
+      @pytest.fixture
+      def first_entry():
+          return "a"
+
+
+      # Arrange
+      @pytest.fixture
+      def second_entry():
+          return 2
+
+
+      # Arrange
+      @pytest.fixture
+      def order(first_entry, second_entry):
+          return [first_entry, second_entry]
+
+
+      # Arrange
+      @pytest.fixture
+      def expected_list():
+          return ["a", 2, 3.0]
+
+
+      def test_string(order, expected_list):
+          # Act
+          order.append(3.0)
+
+          # Assert
+          assert order == expected_list
+
+  Fixtures can be **requested** more than once per test (return values are cached)
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+  Fixtures can also be **requested** more than once during the same test, and pytest won't execute them again for that test. This means we can **request** fixtures in multiple fixtures that are dependent on them (and even again in the test itself) without those fixtures being executed more than once.
+
+  ```python
+  # contents of test_append.py
+  import pytest
+  ```
+
+      # Arrange
+      @pytest.fixture
+      def first_entry():
+          return "a"
+
+
+      # Arrange
+      @pytest.fixture
+      def order():
+          return []
+
+
+      # Act
+      @pytest.fixture
+      def append_first(order, first_entry):
+          return order.append(first_entry)
+
+
+      def test_string_only(append_first, order, first_entry):
+          # Assert
+          assert order == [first_entry]
+
+  If a **requested** fixture was executed once for every time it was **requested** during a test, then this test would fail because both ``append_first`` and ``test_string_only`` would see ``order`` as an empty list (i.e. ``[]``), but since the return value of ``order`` was cached (along with any side effects executing it may have had) after the first time it was called, both the test and ``append_first`` were referencing the same object, and the test saw the effect ``append_first`` had on that object.
+
+  .. _`autouse`:
+  .. _`autouse fixtures`:
+
+  ## Autouse fixtures (fixtures you don't have to request)
+
+  Sometimes you may want to have a fixture (or even several) that you know all your tests will depend on. "Autouse" fixtures are a convenient way to make all tests automatically **request** them. This can cut out a lot of redundant **requests**, and can even provide more advanced fixture usage (more on that further down).
+
+  We can make a fixture an autouse fixture by passing in ``autouse=True`` to the fixture's decorator. Here's a simple example for how they can be used:
+
+  ```python
+  # contents of test_append.py
+  import pytest
+  ```
+
+      @pytest.fixture
+      def first_entry():
+          return "a"
+
+
+      @pytest.fixture
+      def order(first_entry):
+          return []
+
+
+      @pytest.fixture(autouse=True)
+      def append_first(order, first_entry):
+          return order.append(first_entry)
+
+
+      def test_string_only(order, first_entry):
+          assert order == [first_entry]
+
+
+      def test_string_and_int(order, first_entry):
+          order.append(2)
+          assert order == [first_entry, 2]
+
+  In this example, the ``append_first`` fixture is an autouse fixture. Because it happens automatically, both tests are affected by it, even though neither test **requested** it. That doesn't mean they *can't* be **requested** though; just that it isn't *necessary*.
+
+  .. _smtpshared:
+
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      Fixtures provide a defined, reliable, and consistent context for tests. Pytest fixtures are functions decorated with `@pytest.fixture` that return values tests can request by parameter name. They support scopes, autouse mode, teardown via `yield`, and parametrization. This skill covers fixture authoring + usage.
+
+      Sourced from https://docs.pytest.org/en/stable/how-to/fixtures.html.
+  - fragment_type: execution
+    sequence: 2
+    content: |
+      At a basic level, test functions request fixtures they require by declaring them as arguments.
+
+      When pytest goes to run a test, it looks at the parameters in that test function's signature, and then searches for fixtures that have the same names as those parameters. Once pytest finds them, it runs those fixtures, captures what they returned (if anything), and passes those objects into the test function as arguments.
+  - fragment_type: example
+    sequence: 3
+    content: |
+      ```python
+      import pytest
+      ```
+
+          class Fruit:
+              def __init__(self, name):
+                  self.name = name
+                  self.cubed = False
+
+              def cube(self):
+                  self.cubed = True
+
+
+          class FruitSalad:
+              def __init__(self, *fruit_bowl):
+                  self.fruit = fruit_bowl
+                  self._cube_fruit()
+
+              def _cube_fruit(self):
+                  for fruit in self.fruit:
+                      fruit.cube()
+
+
+          # Arrange
+          @pytest.fixture
+          def fruit_bowl():
+              return [Fruit("apple"), Fruit("banana")]
+
+
+          def test_fruit_salad(fruit_bowl):
+              # Act
+              fruit_salad = FruitSalad(*fruit_bowl)
+
+              # Assert
+              assert all(fruit.cubed for fruit in fruit_salad.fruit)
+  - fragment_type: rationale
+    sequence: 4
+    content: |
+      In this example, ``test_fruit_salad`` "**requests**" ``fruit_bowl`` (i.e. ``def test_fruit_salad(fruit_bowl):``), and when pytest sees this, it will execute the ``fruit_bowl`` fixture function and pass the object it returns into ``test_fruit_salad`` as the ``fruit_bowl`` argument.
+
+      Here's roughly what's happening if we were to do it by hand:
+
+      ```python
+      def fruit_bowl():
+          return [Fruit("apple"), Fruit("banana")]
+      ```
+
+          def test_fruit_salad(fruit_bowl):
+              # Act
+              fruit_salad = FruitSalad(*fruit_bowl)
+
+              # Assert
+              assert all(fruit.cubed for fruit in fruit_salad.fruit)
+
+
+          # Arrange
+          bowl = fruit_bowl()
+          test_fruit_salad(fruit_bowl=bowl)
+  - fragment_type: execution
+    sequence: 5
+    content: |
+      One of pytest's greatest strengths is its extremely flexible fixture system. It allows us to boil down complex requirements for tests into more simple and organized functions, where we only need to have each one describe the things they are dependent on. We'll get more into this further down, but for now, here's a quick example to demonstrate how fixtures can use other fixtures:
+  - fragment_type: example
+    sequence: 6
+    content: |
+      ```python
+      # contents of test_append.py
+      import pytest
+      ```
+
+          # Arrange
+          @pytest.fixture
+          def first_entry():
+              return "a"
+
+
+          # Arrange
+          @pytest.fixture
+          def order(first_entry):
+              return [first_entry]
+
+
+          def test_string(order):
+              # Act
+              order.append("b")
+
+              # Assert
+              assert order == ["a", "b"]
+  - fragment_type: rationale
+    sequence: 7
+    content: |
+      Notice that this is the same example from above, but very little changed. The fixtures in pytest **request** fixtures just like tests. All the same **requesting** rules apply to fixtures that do for tests. Here's how this example would work if we did it by hand:
+
+      ```python
+      def first_entry():
+          return "a"
+      ```
+
+          def order(first_entry):
+              return [first_entry]
+
+
+          def test_string(order):
+              # Act
+              order.append("b")
+
+              # Assert
+              assert order == ["a", "b"]
+
+
+          entry = first_entry()
+          the_list = order(first_entry=entry)
+          test_string(order=the_list)
+  - fragment_type: execution
+    sequence: 8
+    content: |
+      One of the things that makes pytest's fixture system so powerful, is that it gives us the ability to define a generic setup step that can be reused over and over, just like a normal function would be used. Two different tests can request the same fixture and have pytest give each test their own result from that fixture.
+  - fragment_type: rationale
+    sequence: 9
+    content: |
+      This is extremely useful for making sure tests aren't affected by each other. We can use this system to make sure each test gets its own fresh batch of data and is starting from a clean state so it can provide consistent, repeatable results.
+  - fragment_type: example
+    sequence: 10
+    content: |
+      ```python
+      # contents of test_append.py
+      import pytest
+      ```
+
+          # Arrange
+          @pytest.fixture
+          def first_entry():
+              return "a"
+
+
+          # Arrange
+          @pytest.fixture
+          def order(first_entry):
+              return [first_entry]
+
+
+          def test_string(order):
+              # Act
+              order.append("b")
+
+              # Assert
+              assert order == ["a", "b"]
+
+
+          def test_int(order):
+              # Act
+              order.append(2)
+
+              # Assert
+              assert order == ["a", 2]
+  - fragment_type: rationale
+    sequence: 11
+    content: |
+      Each test here is being given its own copy of that ``list`` object, which means the ``order`` fixture is getting executed twice (the same is true for the ``first_entry`` fixture). If we were to do this by hand as well, it would look something like this:
+
+      ```python
+      def first_entry():
+          return "a"
+      ```
+
+          def order(first_entry):
+              return [first_entry]
+
+
+          def test_string(order):
+              # Act
+              order.append("b")
+
+              # Assert
+              assert order == ["a", "b"]
+
+
+          def test_int(order):
+              # Act
+              order.append(2)
+
+              # Assert
+              assert order == ["a", 2]
+
+
+          entry = first_entry()
+          the_list = order(first_entry=entry)
+          test_string(order=the_list)
+
+          entry = first_entry()
+          the_list = order(first_entry=entry)
+          test_int(order=the_list)
+  - fragment_type: execution
+    sequence: 12
+    content: |
+      Tests and fixtures aren't limited to **requesting** a single fixture at a time. They can request as many as they like. Here's another quick example to demonstrate:
+  - fragment_type: example
+    sequence: 13
+    content: |
+      ```python
+      # contents of test_append.py
+      import pytest
+      ```
+
+          # Arrange
+          @pytest.fixture
+          def first_entry():
+              return "a"
+
+
+          # Arrange
+          @pytest.fixture
+          def second_entry():
+              return 2
+
+
+          # Arrange
+          @pytest.fixture
+          def order(first_entry, second_entry):
+              return [first_entry, second_entry]
+
+
+          # Arrange
+          @pytest.fixture
+          def expected_list():
+              return ["a", 2, 3.0]
+
+
+          def test_string(order, expected_list):
+              # Act
+              order.append(3.0)
+
+              # Assert
+              assert order == expected_list
+  - fragment_type: execution
+    sequence: 14
+    content: |
+      Fixtures can also be **requested** more than once during the same test, and pytest won't execute them again for that test. This means we can **request** fixtures in multiple fixtures that are dependent on them (and even again in the test itself) without those fixtures being executed more than once.
+  - fragment_type: example
+    sequence: 15
+    content: |
+      ```python
+      # contents of test_append.py
+      import pytest
+      ```
+
+          # Arrange
+          @pytest.fixture
+          def first_entry():
+              return "a"
+
+
+          # Arrange
+          @pytest.fixture
+          def order():
+              return []
+
+
+          # Act
+          @pytest.fixture
+          def append_first(order, first_entry):
+              return order.append(first_entry)
+
+
+          def test_string_only(append_first, order, first_entry):
+              # Assert
+              assert order == [first_entry]
+  - fragment_type: rationale
+    sequence: 16
+    content: |
+      If a **requested** fixture was executed once for every time it was **requested** during a test, then this test would fail because both ``append_first`` and ``test_string_only`` would see ``order`` as an empty list (i.e. ``[]``), but since the return value of ``order`` was cached (along with any side effects executing it may have had) after the first time it was called, both the test and ``append_first`` were referencing the same object, and the test saw the effect ``append_first`` had on that object.
+  - fragment_type: execution
+    sequence: 17
+    content: |
+      Sometimes you may want to have a fixture (or even several) that you know all your tests will depend on. "Autouse" fixtures are a convenient way to make all tests automatically **request** them. This can cut out a lot of redundant **requests**, and can even provide more advanced fixture usage (more on that further down).
+  - fragment_type: example
+    sequence: 18
+    content: |
+      ```python
+      # contents of test_append.py
+      import pytest
+      ```
+
+          @pytest.fixture
+          def first_entry():
+              return "a"
+
+
+          @pytest.fixture
+          def order(first_entry):
+              return []
+
+
+          @pytest.fixture(autouse=True)
+          def append_first(order, first_entry):
+              return order.append(first_entry)
+
+
+          def test_string_only(order, first_entry):
+              assert order == [first_entry]
+
+
+          def test_string_and_int(order, first_entry):
+              order.append(2)
+              assert order == [first_entry, 2]
+  - fragment_type: rationale
+    sequence: 19
+    content: |
+      In this example, the ``append_first`` fixture is an autouse fixture. Because it happens automatically, both tests are affected by it, even though neither test **requested** it. That doesn't mean they *can't* be **requested** though; just that it isn't *necessary*.

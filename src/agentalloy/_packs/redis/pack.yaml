@@ -1,0 +1,60 @@
+name: redis
+version: 1.0.0
+tier: store
+description: |
+  Redis patterns — strings + key management (TTL, eviction policies, INCR/DECR atomic ops) and Pub/Sub messaging + client library wiring (connection pooling, async clients). Initial 2-skill release; hashes-and-sets, lists-and-sorted-sets, and streams skills currently in skill-source/needs-human/ pending hand-author or richer-source re-attempt (the 14B over-fragmented dense Redis command-reference pages). Sourced from redis.io/llms.txt per R1 tier-2 procedure (curated URL list, fetch indexed pages).
+author: navistone
+embed_model: qwen3-embedding:0.6b
+embedding_dim: 1024
+license: MIT
+homepage: https://github.com/nrmeyers/agentalloy
+always_install: false
+depends_on:
+- core
+- engineering
+skills:
+- skill_id: redis-pubsub-and-clients
+  file: redis-pubsub-and-clients.yaml
+  fragment_count: 8
+- skill_id: redis-strings-and-key-management
+  file: redis-strings-and-key-management.yaml
+  fragment_count: 3
+- skill_id: redis-hashes-and-sets
+  file: redis-hashes-and-sets.yaml
+  fragment_count: 7
+- skill_id: redis-lists-and-sorted-sets
+  file: redis-lists-and-sorted-sets.yaml
+  fragment_count: 8
+- skill_id: redis-streams
+  file: redis-streams.yaml
+  fragment_count: 8
+- skill_id: redis-acl-and-security
+  file: redis-acl-and-security.yaml
+  fragment_count: 3
+- skill_id: redis-cluster
+  file: redis-cluster.yaml
+  fragment_count: 6
+- skill_id: redis-json-module
+  file: redis-json-module.yaml
+  fragment_count: 8
+- skill_id: redis-lua-functions
+  file: redis-lua-functions.yaml
+  fragment_count: 4
+- skill_id: redis-lua-scripting
+  file: redis-lua-scripting.yaml
+  fragment_count: 4
+- skill_id: redis-persistence
+  file: redis-persistence.yaml
+  fragment_count: 9
+- skill_id: redis-pipelining
+  file: redis-pipelining.yaml
+  fragment_count: 10
+- skill_id: redis-replication
+  file: redis-replication.yaml
+  fragment_count: 6
+- skill_id: redis-sentinel
+  file: redis-sentinel.yaml
+  fragment_count: 9
+- skill_id: redis-transactions-multi-exec
+  file: redis-transactions-multi-exec.yaml
+  fragment_count: 7

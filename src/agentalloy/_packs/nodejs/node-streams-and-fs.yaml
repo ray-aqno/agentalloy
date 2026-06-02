@@ -1,0 +1,389 @@
+skill_type: domain
+skill_id: node-streams-and-fs
+canonical_name: Node.js Streams and Filesystem (fs/promises, pipeline, async iteration)
+category: engineering
+skill_class: domain
+domain_tags: [readable-stream, writable-stream, pipeline, fs-promises, backpressure]
+always_apply: false
+phase_scope: null
+category_scope: language
+author: navistone
+change_summary: |
+  Initial authoring 2026-05-04. Sources — Node.js 22 fs docs https://nodejs.org/docs/latest-v22.x/api/fs.html (verified 2026-05-04 against fixtures/upstream/curated/nodejs.yaml topic `io_and_filesystem`); stream docs https://nodejs.org/docs/latest-v22.x/api/stream.html; path docs https://nodejs.org/docs/latest-v22.x/api/path.html. Skill scope: filesystem and stream APIs for IO-bound work; not networking (covered separately), not language-level async patterns (covered in event-loop-and-async).
+
+raw_prose: |
+  # Node.js Streams and Filesystem
+
+  Streams are Node's primitive for moving data without loading it all into memory; the filesystem APIs (`node:fs`) build on them for files. The rule is one sentence: use `fs/promises` for one-shot file IO, use streams (with `pipeline`) for anything that does not fit in memory, and let backpressure be handled for you — never write to a stream without checking the return value or piping. Most production Node memory issues come from `fs.readFile` on large files, custom `readable.on('data', ...)` handlers that ignore backpressure, or stream chains assembled with `.pipe(...)` instead of `pipeline()`.
+
+  ## `fs/promises` for one-shot operations
+
+  When the file fits comfortably in memory and you need it as a value, use `fs/promises`:
+
+  ```js
+  import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
+
+  const data = await readFile("config.json", "utf8");
+  await writeFile("output.txt", data);
+  await mkdir("./tmp", { recursive: true });
+  await rm("./old", { recursive: true, force: true });
+  ```
+
+  All operations return Promises and integrate cleanly with `async`/`await`. The `node:fs/promises` import (added in v14) is the preferred form; the older `fs.promises` namespace also works.
+
+  Use this style for:
+
+  - Configuration files (under a few MB).
+  - One-shot reads of test fixtures.
+  - Writing modest output blobs.
+  - Simple file lifecycle operations (mkdir, rename, rm).
+
+  Do not use it for:
+
+  - Files larger than a few hundred MB. The whole file lands in memory.
+  - Streaming transformations (parsing, filtering, transforming).
+  - Pipelines that span network or process boundaries.
+
+  For those, use streams.
+
+  ## Streams in three flavors
+
+  Node has four base stream types but you mostly work with three:
+
+  - **Readable** — produces data. `fs.createReadStream`, HTTP request bodies, `process.stdin`.
+  - **Writable** — consumes data. `fs.createWriteStream`, HTTP response bodies, `process.stdout`.
+  - **Duplex / Transform** — both. Most middleware (gzip, encryption, parsing) is a Transform.
+
+  All implement the same backpressure protocol. When a writable's buffer is full, `.write()` returns `false`; the producer is supposed to stop and listen for `'drain'` before sending more. When you compose streams correctly with `pipeline`, this happens automatically.
+
+  ## `pipeline` is the modern composition primitive
+
+  ```js
+  import { pipeline } from "node:stream/promises";
+  import { createReadStream, createWriteStream } from "node:fs";
+  import { createGzip } from "node:zlib";
+
+  await pipeline(
+    createReadStream("input.txt"),
+    createGzip(),
+    createWriteStream("input.txt.gz")
+  );
+  ```
+
+  `pipeline` connects streams, propagates errors, handles cleanup on failure, and resolves the Promise when the chain completes. Use this in preference to:
+
+  - **`.pipe()`** — does not propagate errors. If any stream errors, the others remain dangling. Connection works, error handling does not.
+  - **Manual `'data'` and `'end'` listeners.** Re-implements what `pipeline` does, usually with bugs (skipped backpressure, missed errors, leaked handles).
+
+  The `node:stream/promises.pipeline` form is the modern shape. The older callback `stream.pipeline(streams..., cb)` works too — pick the promise form for new code.
+
+  ## Async iteration over streams
+
+  Modern Readable streams implement `Symbol.asyncIterator`, so you can iterate them with `for await`:
+
+  ```js
+  import { createReadStream } from "node:fs";
+  import { createInterface } from "node:readline";
+
+  const rl = createInterface({ input: createReadStream("data.txt") });
+  for await (const line of rl) {
+    process(line);
+  }
+  ```
+
+  This is more readable than callback-based stream consumption and integrates naturally with `try`/`catch` for errors. The async iterator form respects backpressure — the loop body decides when to consume the next value.
+
+  Use for line-by-line file processing, log tailing, network message consumption. Keeps code linear.
+
+  ## Backpressure — the key invariant
+
+  When a writable buffer is full, the writer should stop. The protocol:
+
+  ```js
+  // Manual backpressure handling
+  function writeAll(writable, chunks) {
+    return new Promise((resolve, reject) => {
+      writable.on("error", reject);
+      writable.on("drain", writeNext);
+
+      let i = 0;
+      function writeNext() {
+        while (i < chunks.length) {
+          const ok = writable.write(chunks[i++]);
+          if (!ok) return;  // wait for drain
+        }
+        writable.end();
+        resolve();
+      }
+      writeNext();
+    });
+  }
+  ```
+
+  This is what `pipeline()` (and `.pipe()`) implements internally. The reason to know it: when you write a custom Writable or transform, you need to respect the protocol or your stream will buffer unbounded.
+
+  Symptoms of backpressure violation: memory growing unboundedly during a file copy, slow consumers being overrun by fast producers, OOM on what should be a streaming pipeline. The cure: use `pipeline`; if you must roll your own, return `false` from `_write` correctly.
+
+  ## `path` for cross-platform path handling
+
+  Always use `node:path` for path manipulation. String concatenation with `/` works on POSIX but fails on Windows; `path.join`, `path.resolve`, `path.dirname` all DTRT on both.
+
+  ```js
+  import { join, resolve, dirname, extname } from "node:path";
+  import { fileURLToPath } from "node:url";
+
+  // ESM-safe __dirname equivalent
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+
+  const configPath = join(__dirname, "config.json");
+  const absoluteConfig = resolve(configPath);
+  ```
+
+  In ESM modules, `__dirname` and `__filename` are not defined. The pattern above (`fileURLToPath` + `dirname` on `import.meta.url`) is the modern equivalent. Some templates wrap it in a one-liner; use what your codebase already does.
+
+  Avoid `path.posix` and `path.win32` unless you need to construct paths for a specific OS regardless of where the code runs (rare).
+
+  ## File watching
+
+  `fs.watch` and `fs.watchFile` watch the filesystem for changes. They are platform-specific and have known footguns:
+
+  - **`fs.watch`** uses native OS notifications (inotify on Linux, FSEvents on macOS, ReadDirectoryChangesW on Windows). Fast but unreliable in some cases (events missed during heavy filesystem activity, weird behavior on network mounts).
+  - **`fs.watchFile`** polls. Reliable but slower and more CPU; reach for it when `fs.watch` does not work.
+  - **Third-party libraries** (`chokidar`) wrap both with normalization across platforms and useful debouncing. For non-trivial watching, use chokidar; for quick scripts, `fs.watch` is fine.
+
+  Watching is fine for development tooling; do not depend on it for production-critical paths (use a queue or message broker instead).
+
+  ## Anti-patterns
+
+  - **`fs.readFile` on a 5GB file.** OOM. Use `createReadStream` with `pipeline`.
+  - **`.pipe()` chains in production code.** Errors silently kill streams. Use `pipeline`.
+  - **Custom `'data'` / `'end'` listeners that do not handle backpressure.** Memory grows; consumers fall behind producers.
+  - **Sync fs calls inside request handlers.** Blocks the event loop. Always `fs/promises`.
+  - **String path concatenation.** Breaks on Windows. Use `path.join`.
+  - **`fs.exists` (deprecated).** Use `fs.access` or, more idiomatically, just attempt the operation and catch `ENOENT`.
+  - **Reading `__dirname` in ESM modules.** Not defined. Use `fileURLToPath(import.meta.url)`.
+
+  ## Streams API generations
+
+  Node has accumulated three generations of stream APIs:
+
+  - **Streams 1 (legacy)** — callback-based, predates Promises. Avoid.
+  - **Streams 2** — the `Readable`/`Writable`/`Duplex`/`Transform` classes. Still the foundation.
+  - **Streams 3 (modern)** — adds async iteration, `pipeline`, `node:stream/promises`. The current preferred surface.
+
+  Most application code today writes against the modern surface (pipeline, async iteration) and never directly subclasses Readable/Writable. When subclassing is unavoidable (custom transform), implement `_read` / `_write` per the v3 docs; the older `read()` / `write()` overrides are legacy.
+
+  ## Verification
+
+  - [ ] Single-shot file IO uses `node:fs/promises`; no `fs.readFileSync` or `fs.readFile` callback form in new code.
+  - [ ] Streaming pipelines use `node:stream/promises.pipeline`, not `.pipe()` chains.
+  - [ ] Files larger than a few hundred MB are streamed, not read into memory.
+  - [ ] Custom Writable streams implement backpressure correctly (`_write` returns proper signaling); custom Readable streams respect `highWaterMark`.
+  - [ ] Path manipulation uses `node:path`; no string concatenation with `/` or `\\`.
+  - [ ] ESM modules use `fileURLToPath(import.meta.url)` instead of `__dirname`.
+  - [ ] No `fs.exists` (deprecated); existence is checked via `fs.access` or by attempting the operation.
+
+fragments:
+  - sequence: 1
+    fragment_type: rationale
+    content: |
+      # Node.js Streams and Filesystem
+
+      Streams are Node's primitive for moving data without loading it all into memory; the filesystem APIs (`node:fs`) build on them for files. The rule is one sentence: use `fs/promises` for one-shot file IO, use streams (with `pipeline`) for anything that does not fit in memory, and let backpressure be handled for you — never write to a stream without checking the return value or piping. Most production Node memory issues come from `fs.readFile` on large files, custom `readable.on('data', ...)` handlers that ignore backpressure, or stream chains assembled with `.pipe(...)` instead of `pipeline()`.
+
+  - sequence: 2
+    fragment_type: example
+    content: |
+      ## `fs/promises` for one-shot operations
+
+      When the file fits comfortably in memory and you need it as a value, use `fs/promises`:
+
+      ```js
+      import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
+
+      const data = await readFile("config.json", "utf8");
+      await writeFile("output.txt", data);
+      await mkdir("./tmp", { recursive: true });
+      await rm("./old", { recursive: true, force: true });
+      ```
+
+      All operations return Promises and integrate cleanly with `async`/`await`. The `node:fs/promises` import (added in v14) is the preferred form; the older `fs.promises` namespace also works.
+
+      Use this style for:
+
+      - Configuration files (under a few MB).
+      - One-shot reads of test fixtures.
+      - Writing modest output blobs.
+      - Simple file lifecycle operations (mkdir, rename, rm).
+
+      Do not use it for:
+
+      - Files larger than a few hundred MB. The whole file lands in memory.
+      - Streaming transformations (parsing, filtering, transforming).
+      - Pipelines that span network or process boundaries.
+
+      For those, use streams.
+
+  - sequence: 3
+    fragment_type: rationale
+    content: |
+      ## Streams in three flavors
+
+      Node has four base stream types but you mostly work with three:
+
+      - **Readable** — produces data. `fs.createReadStream`, HTTP request bodies, `process.stdin`.
+      - **Writable** — consumes data. `fs.createWriteStream`, HTTP response bodies, `process.stdout`.
+      - **Duplex / Transform** — both. Most middleware (gzip, encryption, parsing) is a Transform.
+
+      All implement the same backpressure protocol. When a writable's buffer is full, `.write()` returns `false`; the producer is supposed to stop and listen for `'drain'` before sending more. When you compose streams correctly with `pipeline`, this happens automatically.
+
+  - sequence: 4
+    fragment_type: example
+    content: |
+      ## `pipeline` is the modern composition primitive
+
+      ```js
+      import { pipeline } from "node:stream/promises";
+      import { createReadStream, createWriteStream } from "node:fs";
+      import { createGzip } from "node:zlib";
+
+      await pipeline(
+        createReadStream("input.txt"),
+        createGzip(),
+        createWriteStream("input.txt.gz")
+      );
+      ```
+
+      `pipeline` connects streams, propagates errors, handles cleanup on failure, and resolves the Promise when the chain completes. Use this in preference to:
+
+      - **`.pipe()`** — does not propagate errors. If any stream errors, the others remain dangling. Connection works, error handling does not.
+      - **Manual `'data'` and `'end'` listeners.** Re-implements what `pipeline` does, usually with bugs (skipped backpressure, missed errors, leaked handles).
+
+      The `node:stream/promises.pipeline` form is the modern shape. The older callback `stream.pipeline(streams..., cb)` works too — pick the promise form for new code.
+
+  - sequence: 5
+    fragment_type: example
+    content: |
+      ## Async iteration over streams
+
+      Modern Readable streams implement `Symbol.asyncIterator`, so you can iterate them with `for await`:
+
+      ```js
+      import { createReadStream } from "node:fs";
+      import { createInterface } from "node:readline";
+
+      const rl = createInterface({ input: createReadStream("data.txt") });
+      for await (const line of rl) {
+        process(line);
+      }
+      ```
+
+      This is more readable than callback-based stream consumption and integrates naturally with `try`/`catch` for errors. The async iterator form respects backpressure — the loop body decides when to consume the next value.
+
+      Use for line-by-line file processing, log tailing, network message consumption. Keeps code linear.
+
+  - sequence: 6
+    fragment_type: execution
+    content: |
+      ## Backpressure — the key invariant
+
+      When a writable buffer is full, the writer should stop. The protocol:
+
+      ```js
+      // Manual backpressure handling
+      function writeAll(writable, chunks) {
+        return new Promise((resolve, reject) => {
+          writable.on("error", reject);
+          writable.on("drain", writeNext);
+
+          let i = 0;
+          function writeNext() {
+            while (i < chunks.length) {
+              const ok = writable.write(chunks[i++]);
+              if (!ok) return;  // wait for drain
+            }
+            writable.end();
+            resolve();
+          }
+          writeNext();
+        });
+      }
+      ```
+
+      This is what `pipeline()` (and `.pipe()`) implements internally. The reason to know it: when you write a custom Writable or transform, you need to respect the protocol or your stream will buffer unbounded.
+
+      Symptoms of backpressure violation: memory growing unboundedly during a file copy, slow consumers being overrun by fast producers, OOM on what should be a streaming pipeline. The cure: use `pipeline`; if you must roll your own, return `false` from `_write` correctly.
+
+  - sequence: 7
+    fragment_type: example
+    content: |
+      ## `path` for cross-platform path handling
+
+      Always use `node:path` for path manipulation. String concatenation with `/` works on POSIX but fails on Windows; `path.join`, `path.resolve`, `path.dirname` all DTRT on both.
+
+      ```js
+      import { join, resolve, dirname, extname } from "node:path";
+      import { fileURLToPath } from "node:url";
+
+      // ESM-safe __dirname equivalent
+      const __dirname = dirname(fileURLToPath(import.meta.url));
+
+      const configPath = join(__dirname, "config.json");
+      const absoluteConfig = resolve(configPath);
+      ```
+
+      In ESM modules, `__dirname` and `__filename` are not defined. The pattern above (`fileURLToPath` + `dirname` on `import.meta.url`) is the modern equivalent. Some templates wrap it in a one-liner; use what your codebase already does.
+
+      Avoid `path.posix` and `path.win32` unless you need to construct paths for a specific OS regardless of where the code runs (rare).
+
+  - sequence: 8
+    fragment_type: rationale
+    content: |
+      ## File watching
+
+      `fs.watch` and `fs.watchFile` watch the filesystem for changes. They are platform-specific and have known footguns:
+
+      - **`fs.watch`** uses native OS notifications (inotify on Linux, FSEvents on macOS, ReadDirectoryChangesW on Windows). Fast but unreliable in some cases (events missed during heavy filesystem activity, weird behavior on network mounts).
+      - **`fs.watchFile`** polls. Reliable but slower and more CPU; reach for it when `fs.watch` does not work.
+      - **Third-party libraries** (`chokidar`) wrap both with normalization across platforms and useful debouncing. For non-trivial watching, use chokidar; for quick scripts, `fs.watch` is fine.
+
+      Watching is fine for development tooling; do not depend on it for production-critical paths (use a queue or message broker instead).
+
+  - sequence: 9
+    fragment_type: guardrail
+    content: |
+      ## Anti-patterns
+
+      - **`fs.readFile` on a 5GB file.** OOM. Use `createReadStream` with `pipeline`.
+      - **`.pipe()` chains in production code.** Errors silently kill streams. Use `pipeline`.
+      - **Custom `'data'` / `'end'` listeners that do not handle backpressure.** Memory grows; consumers fall behind producers.
+      - **Sync fs calls inside request handlers.** Blocks the event loop. Always `fs/promises`.
+      - **String path concatenation.** Breaks on Windows. Use `path.join`.
+      - **`fs.exists` (deprecated).** Use `fs.access` or, more idiomatically, just attempt the operation and catch `ENOENT`.
+      - **Reading `__dirname` in ESM modules.** Not defined. Use `fileURLToPath(import.meta.url)`.
+
+  - sequence: 10
+    fragment_type: rationale
+    content: |
+      ## Streams API generations
+
+      Node has accumulated three generations of stream APIs:
+
+      - **Streams 1 (legacy)** — callback-based, predates Promises. Avoid.
+      - **Streams 2** — the `Readable`/`Writable`/`Duplex`/`Transform` classes. Still the foundation.
+      - **Streams 3 (modern)** — adds async iteration, `pipeline`, `node:stream/promises`. The current preferred surface.
+
+      Most application code today writes against the modern surface (pipeline, async iteration) and never directly subclasses Readable/Writable. When subclassing is unavoidable (custom transform), implement `_read` / `_write` per the v3 docs; the older `read()` / `write()` overrides are legacy.
+
+  - sequence: 11
+    fragment_type: verification
+    content: |
+      ## Verification
+
+      - [ ] Single-shot file IO uses `node:fs/promises`; no `fs.readFileSync` or `fs.readFile` callback form in new code.
+      - [ ] Streaming pipelines use `node:stream/promises.pipeline`, not `.pipe()` chains.
+      - [ ] Files larger than a few hundred MB are streamed, not read into memory.
+      - [ ] Custom Writable streams implement backpressure correctly (`_write` returns proper signaling); custom Readable streams respect `highWaterMark`.
+      - [ ] Path manipulation uses `node:path`; no string concatenation with `/` or `\\`.
+      - [ ] ESM modules use `fileURLToPath(import.meta.url)` instead of `__dirname`.
+      - [ ] No `fs.exists` (deprecated); existence is checked via `fs.access` or by attempting the operation.

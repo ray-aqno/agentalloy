@@ -1,0 +1,299 @@
+skill_type: domain
+skill_id: linting-pre-commit-hooks
+canonical_name: Pre-Commit Hooks — lint-staged and husky
+category: tooling
+skill_class: domain
+domain_tags:
+- linting
+- git-hooks
+- husky
+- lint-staged
+- pre-commit-framework
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Pre-Commit Hooks — lint-staged and husky
+
+  ## Overview
+
+  Pre-commit hooks catch lint errors before they hit CI. Two ecosystems: husky + lint-staged (JS-flavored, works for any language) and the pre-commit framework (Python-flavored, declarative). Both run only on changed files for speed.
+
+  ---
+
+  ## husky + lint-staged
+
+  ```bash
+  npm install -D husky lint-staged
+  npx husky init
+  ```
+
+  `.husky/pre-commit`:
+
+  ```
+  npx lint-staged
+  ```
+
+  `package.json`:
+
+  ```json
+  {
+      "lint-staged": {
+          "*.{js,ts,jsx,tsx}": ["eslint --fix", "prettier --write"],
+          "*.{css,scss}": ["stylelint --fix", "prettier --write"],
+          "*.{json,md,yml}": "prettier --write"
+      }
+  }
+  ```
+
+  On `git commit`, husky runs the hook → lint-staged identifies staged files → runs the matched commands. Auto-fix is applied; the resulting changes are restaged.
+
+  ## Why Lint Only Staged Files
+
+  A full repo lint takes 10-30 seconds. Linting only changed files is sub-second. Developers stop bypassing the hook.
+
+  The trade-off: a file you didn't touch may have lint errors that aren't caught here. CI catches those (running full lint). The hook is for the common case (your changes are clean).
+
+  ## The pre-commit Framework
+
+  Python ecosystem standard but works for any project:
+
+  ```bash
+  pip install pre-commit
+  pre-commit install  # writes .git/hooks/pre-commit
+  ```
+
+  `.pre-commit-config.yaml`:
+
+  ```yaml
+  repos:
+    - repo: https://github.com/pre-commit/pre-commit-hooks
+      rev: v5.0.0
+      hooks:
+        - id: trailing-whitespace
+        - id: end-of-file-fixer
+        - id: check-yaml
+    - repo: https://github.com/astral-sh/ruff-pre-commit
+      rev: v0.7.0
+      hooks:
+        - id: ruff
+          args: [--fix]
+        - id: ruff-format
+    - repo: https://github.com/pre-commit/mirrors-prettier
+      rev: v3.0.3
+      hooks:
+        - id: prettier
+          types_or: [json, yaml, markdown]
+  ```
+
+  Each hook runs against staged files matching its file types. Run manually: `pre-commit run --all-files` (full repo) or `pre-commit run` (staged only).
+
+  ## Mixing Languages
+
+  `pre-commit` is best for polyglot repos (Python + JS + Go in one repo). Each ecosystem brings its own hooks; one config orchestrates all.
+
+  `lint-staged` is best for JS-native repos with one or two languages.
+
+  ## Tools to Run in Pre-Commit
+
+  - **Formatters** (prettier, ruff format, gofmt) — auto-fix and commit. Cheap to run.
+  - **Linters** (eslint, stylelint, ruff lint) — cheap if only on staged files.
+  - **Type checkers** (tsc, mypy) — slow; usually skip in pre-commit and run in CI.
+  - **Tests** — too slow; let CI handle.
+  - **Secret scanners** (gitleaks, detect-secrets) — fast and high-value.
+
+  The principle: only what's fast enough to not annoy. Anything over 2 seconds total = skip.
+
+  ## Skipping the Hook
+
+  Sometimes you need to commit broken code (work-in-progress, urgent fix bypass):
+
+  ```bash
+  git commit --no-verify -m "WIP"
+  ```
+
+  Don't disable the hook globally; the bypass should require thought.
+
+  ## Editor Integration vs Pre-Commit
+
+  Editor integration catches issues at type time (best UX). Pre-commit catches what slipped past. CI catches what slipped past pre-commit. Defense in depth.
+
+  Don't rely solely on pre-commit — editors give faster feedback.
+
+  ## CI Should Still Run Linters
+
+  Pre-commit hooks can be bypassed (`--no-verify`). CI shouldn't. Run the same linters in CI on the full repo:
+
+  ```yaml
+  - run: npx eslint .
+  - run: npx prettier --check .
+  ```
+
+  If CI passes, the codebase is clean. If pre-commit always passed but CI fails, someone bypassed the hook.
+
+  ## Common Pitfalls
+
+  - **Slow hooks.** A 30-second hook gets bypassed. Keep it under 5 seconds; otherwise move to CI.
+  - **Hooks that modify files but don't restage.** lint-staged handles this; manual scripts may not.
+  - **No CI lint.** Pre-commit can be bypassed; CI is the source of truth.
+  - **Pre-commit on huge multi-file commits.** Migrations + bulk renames trigger lint on hundreds of files. Either accept the slowdown or split the commit.
+  - **Different lint config in editor, hook, and CI.** Three places to drift. Centralize config in one file.
+
+  ## Verification
+
+  A working pre-commit setup:
+
+  - A clean commit takes <5 seconds for the hook.
+  - Auto-fix applies and re-stages changes invisibly.
+  - CI runs the same linters on the full repo.
+  - New repo contributors don't get blocked by missing hook setup (init script handles it).
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## husky + lint-staged
+
+    ```bash
+    npm install -D husky lint-staged
+    npx husky init
+    ```
+
+    `.husky/pre-commit`:
+
+    ```
+    npx lint-staged
+    ```
+
+    `package.json`:
+
+    ```json
+    {
+        "lint-staged": {
+            "*.{js,ts,jsx,tsx}": ["eslint --fix", "prettier --write"],
+            "*.{css,scss}": ["stylelint --fix", "prettier --write"],
+            "*.{json,md,yml}": "prettier --write"
+        }
+    }
+    ```
+
+    On `git commit`, husky runs the hook → lint-staged identifies staged files → runs the matched commands. Auto-fix is applied; the resulting changes are restaged.
+- fragment_type: rationale
+  sequence: 2
+  content: |-
+    ## Why Lint Only Staged Files
+
+    A full repo lint takes 10-30 seconds. Linting only changed files is sub-second. Developers stop bypassing the hook.
+
+    The trade-off: a file you didn't touch may have lint errors that aren't caught here. CI catches those (running full lint). The hook is for the common case (your changes are clean).
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## The pre-commit Framework
+
+    Python ecosystem standard but works for any project:
+
+    ```bash
+    pip install pre-commit
+    pre-commit install  # writes .git/hooks/pre-commit
+    ```
+
+    `.pre-commit-config.yaml`:
+
+    ```yaml
+    repos:
+      - repo: https://github.com/pre-commit/pre-commit-hooks
+        rev: v5.0.0
+        hooks:
+          - id: trailing-whitespace
+          - id: end-of-file-fixer
+          - id: check-yaml
+      - repo: https://github.com/astral-sh/ruff-pre-commit
+        rev: v0.7.0
+        hooks:
+          - id: ruff
+            args: [--fix]
+          - id: ruff-format
+      - repo: https://github.com/pre-commit/mirrors-prettier
+        rev: v3.0.3
+        hooks:
+          - id: prettier
+            types_or: [json, yaml, markdown]
+    ```
+
+    Each hook runs against staged files matching its file types. Run manually: `pre-commit run --all-files` (full repo) or `pre-commit run` (staged only).
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Mixing Languages
+
+    `pre-commit` is best for polyglot repos (Python + JS + Go in one repo). Each ecosystem brings its own hooks; one config orchestrates all.
+
+    `lint-staged` is best for JS-native repos with one or two languages.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Tools to Run in Pre-Commit
+
+    - **Formatters** (prettier, ruff format, gofmt) — auto-fix and commit. Cheap to run.
+    - **Linters** (eslint, stylelint, ruff lint) — cheap if only on staged files.
+    - **Type checkers** (tsc, mypy) — slow; usually skip in pre-commit and run in CI.
+    - **Tests** — too slow; let CI handle.
+    - **Secret scanners** (gitleaks, detect-secrets) — fast and high-value.
+
+    The principle: only what's fast enough to not annoy. Anything over 2 seconds total = skip.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Skipping the Hook
+
+    Sometimes you need to commit broken code (work-in-progress, urgent fix bypass):
+
+    ```bash
+    git commit --no-verify -m "WIP"
+    ```
+
+    Don't disable the hook globally; the bypass should require thought.
+- fragment_type: rationale
+  sequence: 7
+  content: |-
+    ## Editor Integration vs Pre-Commit
+
+    Editor integration catches issues at type time (best UX). Pre-commit catches what slipped past. CI catches what slipped past pre-commit. Defense in depth.
+
+    Don't rely solely on pre-commit — editors give faster feedback.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## CI Should Still Run Linters
+
+    Pre-commit hooks can be bypassed (`--no-verify`). CI shouldn't. Run the same linters in CI on the full repo:
+
+    ```yaml
+    - run: npx eslint .
+    - run: npx prettier --check .
+    ```
+
+    If CI passes, the codebase is clean. If pre-commit always passed but CI fails, someone bypassed the hook.
+- fragment_type: guardrail
+  sequence: 9
+  content: |-
+    ## Common Pitfalls
+
+    - **Slow hooks.** A 30-second hook gets bypassed. Keep it under 5 seconds; otherwise move to CI.
+    - **Hooks that modify files but don't restage.** lint-staged handles this; manual scripts may not.
+    - **No CI lint.** Pre-commit can be bypassed; CI is the source of truth.
+    - **Pre-commit on huge multi-file commits.** Migrations + bulk renames trigger lint on hundreds of files. Either accept the slowdown or split the commit.
+    - **Different lint config in editor, hook, and CI.** Three places to drift. Centralize config in one file.
+- fragment_type: verification
+  sequence: 10
+  content: |-
+    ## Verification
+
+    A working pre-commit setup:
+
+    - A clean commit takes <5 seconds for the hook.
+    - Auto-fix applies and re-stages changes invisibly.
+    - CI runs the same linters on the full repo.
+    - New repo contributors don't get blocked by missing hook setup (init script handles it).

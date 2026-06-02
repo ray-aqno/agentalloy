@@ -1,0 +1,307 @@
+skill_type: domain
+skill_id: linting-stylelint
+canonical_name: Stylelint — CSS Linting
+category: tooling
+skill_class: domain
+domain_tags:
+- linting
+- stylelint
+- css
+- scss
+- style-rules
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Stylelint — CSS Linting
+
+  ## Overview
+
+  Stylelint is to CSS what ESLint is to JS. It catches style-rule errors, enforces conventions (property order, naming, units), and integrates with Prettier for formatting. Less ubiquitous than ESLint but the same shape: config + plugins + autofix.
+
+  ---
+
+  ## Setup
+
+  ```bash
+  npm install -D stylelint stylelint-config-standard
+  ```
+
+  `.stylelintrc.json`:
+
+  ```json
+  {
+      "extends": "stylelint-config-standard",
+      "rules": {
+          "indentation": 2,
+          "string-quotes": "double",
+          "color-hex-length": "short"
+      }
+  }
+  ```
+
+  Run: `npx stylelint "**/*.css"` or with auto-fix: `npx stylelint "**/*.css" --fix`.
+
+  ## Common Configs
+
+  - `stylelint-config-standard` — sensible defaults.
+  - `stylelint-config-recommended` — minimal, just rules that catch errors (not opinions).
+  - `stylelint-config-clean-order` — alphabetizes properties (or use logical order).
+  - `stylelint-config-prettier` — disables rules Prettier handles.
+
+  Pair with Prettier for formatting; let Stylelint handle correctness/conventions only.
+
+  ## Property Order
+
+  CSS properties have a recommended order (positioning, box model, typography, visual, animation). Plugins enforce one of:
+
+  - **Alphabetical** — easy to find, harder to scan related properties.
+  - **Logical (concentric)** — outside-in: position, box, type, visual.
+  - **Recess order** — Twitter Bootstrap convention.
+
+  Pick one; consistency matters more than which one.
+
+  ## SCSS / Sass / Less
+
+  ```bash
+  npm install -D stylelint-scss stylelint-config-standard-scss
+  ```
+
+  ```json
+  {
+      "extends": ["stylelint-config-standard-scss"],
+      "rules": {
+          "scss/at-rule-no-unknown": [true, { "ignoreAtRules": ["tailwind"] }]
+      }
+  }
+  ```
+
+  For Tailwind, ignore `@apply`, `@layer`, `@tailwind`, `@screen` — they're not standard CSS.
+
+  ## CSS-in-JS
+
+  For styled-components / emotion, use `stylelint-config-styled-components`:
+
+  ```js
+  // Configure plugin
+  "customSyntax": "postcss-styled-syntax"
+  ```
+
+  Stylelint reads template literals as if they were CSS files.
+
+  ## Ignoring Rules
+
+  Per file via `.stylelintignore`:
+
+  ```
+  dist/**
+  node_modules/**
+  *.min.css
+  ```
+
+  Inline:
+
+  ```css
+  /* stylelint-disable-next-line color-no-hex */
+  color: #abc;
+
+  /* stylelint-disable color-no-hex */
+  .legacy { color: #def; }
+  /* stylelint-enable color-no-hex */
+  ```
+
+  Use sparingly. A repo full of disable comments means the rules don't fit.
+
+  ## Editor Integration
+
+  VS Code: `stylelint.vscode-stylelint`. Auto-fix on save:
+
+  ```json
+  {
+      "editor.codeActionsOnSave": {
+          "source.fixAll.stylelint": "explicit"
+      }
+  }
+  ```
+
+  Same for IntelliJ, Sublime, Vim.
+
+  ## CI Integration
+
+  ```yaml
+  # .github/workflows/lint.yml
+  - run: npx stylelint "**/*.css"
+  ```
+
+  Add `--max-warnings 0` to fail on warnings (treat them like errors in CI).
+
+  ## Common Pitfalls
+
+  - **Stylelint + Prettier conflict.** Indentation, quotes, etc. — both want to format. Use `stylelint-config-prettier` to disable conflicting rules in Stylelint.
+  - **No autofix for the rule that bothers you.** Some rules are reportable but not fixable. Worth checking the docs for `--fix` support before adopting strict rules.
+  - **Ignoring custom Tailwind / framework directives.** Stylelint complains about `@tailwind`. Add to `ignoreAtRules`.
+  - **Linting only on push.** Editor integration catches issues at type time; CI catches what slipped past.
+
+  ## Verification
+
+  Working Stylelint setup:
+
+  - `npx stylelint "**/*.css"` runs cleanly on the codebase.
+  - Editor shows squiggles in IDE.
+  - CI fails on Stylelint errors.
+  - No conflicts with Prettier.
+  - New CSS files pass lint without manual fix.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Setup
+
+    ```bash
+    npm install -D stylelint stylelint-config-standard
+    ```
+
+    `.stylelintrc.json`:
+
+    ```json
+    {
+        "extends": "stylelint-config-standard",
+        "rules": {
+            "indentation": 2,
+            "string-quotes": "double",
+            "color-hex-length": "short"
+        }
+    }
+    ```
+
+    Run: `npx stylelint "**/*.css"` or with auto-fix: `npx stylelint "**/*.css" --fix`.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Common Configs
+
+    - `stylelint-config-standard` — sensible defaults.
+    - `stylelint-config-recommended` — minimal, just rules that catch errors (not opinions).
+    - `stylelint-config-clean-order` — alphabetizes properties (or use logical order).
+    - `stylelint-config-prettier` — disables rules Prettier handles.
+
+    Pair with Prettier for formatting; let Stylelint handle correctness/conventions only.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Property Order
+
+    CSS properties have a recommended order (positioning, box model, typography, visual, animation). Plugins enforce one of:
+
+    - **Alphabetical** — easy to find, harder to scan related properties.
+    - **Logical (concentric)** — outside-in: position, box, type, visual.
+    - **Recess order** — Twitter Bootstrap convention.
+
+    Pick one; consistency matters more than which one.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## SCSS / Sass / Less
+
+    ```bash
+    npm install -D stylelint-scss stylelint-config-standard-scss
+    ```
+
+    ```json
+    {
+        "extends": ["stylelint-config-standard-scss"],
+        "rules": {
+            "scss/at-rule-no-unknown": [true, { "ignoreAtRules": ["tailwind"] }]
+        }
+    }
+    ```
+
+    For Tailwind, ignore `@apply`, `@layer`, `@tailwind`, `@screen` — they're not standard CSS.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## CSS-in-JS
+
+    For styled-components / emotion, use `stylelint-config-styled-components`:
+
+    ```js
+    // Configure plugin
+    "customSyntax": "postcss-styled-syntax"
+    ```
+
+    Stylelint reads template literals as if they were CSS files.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Ignoring Rules
+
+    Per file via `.stylelintignore`:
+
+    ```
+    dist/**
+    node_modules/**
+    *.min.css
+    ```
+
+    Inline:
+
+    ```css
+    /* stylelint-disable-next-line color-no-hex */
+    color: #abc;
+
+    /* stylelint-disable color-no-hex */
+    .legacy { color: #def; }
+    /* stylelint-enable color-no-hex */
+    ```
+
+    Use sparingly. A repo full of disable comments means the rules don't fit.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Editor Integration
+
+    VS Code: `stylelint.vscode-stylelint`. Auto-fix on save:
+
+    ```json
+    {
+        "editor.codeActionsOnSave": {
+            "source.fixAll.stylelint": "explicit"
+        }
+    }
+    ```
+
+    Same for IntelliJ, Sublime, Vim.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## CI Integration
+
+    ```yaml
+    # .github/workflows/lint.yml
+    - run: npx stylelint "**/*.css"
+    ```
+
+    Add `--max-warnings 0` to fail on warnings (treat them like errors in CI).
+- fragment_type: guardrail
+  sequence: 9
+  content: |-
+    ## Common Pitfalls
+
+    - **Stylelint + Prettier conflict.** Indentation, quotes, etc. — both want to format. Use `stylelint-config-prettier` to disable conflicting rules in Stylelint.
+    - **No autofix for the rule that bothers you.** Some rules are reportable but not fixable. Worth checking the docs for `--fix` support before adopting strict rules.
+    - **Ignoring custom Tailwind / framework directives.** Stylelint complains about `@tailwind`. Add to `ignoreAtRules`.
+    - **Linting only on push.** Editor integration catches issues at type time; CI catches what slipped past.
+- fragment_type: verification
+  sequence: 10
+  content: |-
+    ## Verification
+
+    Working Stylelint setup:
+
+    - `npx stylelint "**/*.css"` runs cleanly on the codebase.
+    - Editor shows squiggles in IDE.
+    - CI fails on Stylelint errors.
+    - No conflicts with Prettier.
+    - New CSS files pass lint without manual fix.

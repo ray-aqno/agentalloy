@@ -1,0 +1,41 @@
+skill_id: sys-governance-always
+canonical_name: Universal governance — applied to every composition
+category: governance
+skill_class: system
+domain_tags: []
+deprecated: false
+always_apply: true
+phase_scope: null
+category_scope: null
+versions:
+  - version_id: sys-governance-always-v1
+    version_number: 1
+    authored_at: 2026-01-01T00:00:00Z
+    author: fixture-seed
+    change_summary: initial version (superseded)
+    status: superseded
+    raw_prose: Legacy rules.
+    fragments: []
+  - version_id: sys-governance-always-v2
+    version_number: 2
+    authored_at: 2026-02-15T00:00:00Z
+    author: fixture-seed
+    change_summary: v2 with core universal constraints
+    status: active
+    raw_prose: |
+      These constraints apply to every task, regardless of phase or category.
+      They exist to keep agent output safe, reviewable, and truthful.
+    fragments:
+      - fragment_id: sys-governance-always-v2-f1
+        fragment_type: guardrail
+        sequence: 1
+        content: |
+          Do not invent facts. If the available context does not answer a
+          question, say so and stop. A wrong answer stated with confidence is
+          worse than an explicit "unknown".
+      - fragment_id: sys-governance-always-v2-f2
+        fragment_type: guardrail
+        sequence: 2
+        content: |
+          Never take a destructive action (delete, force-push, drop schema)
+          without explicit authorization. Reversibility trumps efficiency.

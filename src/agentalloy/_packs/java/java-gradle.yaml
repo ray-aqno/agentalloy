@@ -1,0 +1,407 @@
+skill_type: domain
+skill_id: java-gradle
+canonical_name: Gradle Build Tool
+category: engineering
+skill_class: domain
+domain_tags:
+- java
+- gradle
+- kotlin-dsl
+- build
+- configuration-cache
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # Gradle Build Tool
+
+  ## Overview
+
+  Gradle is the modern JVM build tool — flexible, fast (incremental builds + cache), with two DSL choices (Kotlin or Groovy). The mental model: tasks form a DAG; Gradle runs only what changed.
+
+  ---
+
+  ## A Minimal build.gradle.kts
+
+  ```kotlin
+  plugins {
+      java
+      id("org.springframework.boot") version "3.4.0"
+      id("io.spring.dependency-management") version "1.1.6"
+  }
+
+  group = "com.example"
+  version = "1.0.0-SNAPSHOT"
+
+  java {
+      toolchain {
+          languageVersion = JavaLanguageVersion.of(21)
+      }
+  }
+
+  repositories {
+      mavenCentral()
+  }
+
+  dependencies {
+      implementation("org.springframework.boot:spring-boot-starter-web")
+      testImplementation("org.springframework.boot:spring-boot-starter-test")
+  }
+
+  tasks.test {
+      useJUnitPlatform()
+  }
+  ```
+
+  Plugins block first; project metadata; then dependencies. Kotlin DSL gives you IDE autocomplete vs the older Groovy DSL.
+
+  ## Configurations — implementation vs api vs runtimeOnly
+
+  ```kotlin
+  dependencies {
+      implementation("com.example:internal-lib:1.0")  // not exposed to consumers
+      api("com.example:public-types:1.0")              // exposed (for libraries)
+      runtimeOnly("com.example:driver:1.0")            // not on compile classpath
+      testImplementation("org.junit.jupiter:junit-jupiter")
+      annotationProcessor("org.projectlombok:lombok")
+  }
+  ```
+
+  - `implementation` — most common. Internal dependency.
+  - `api` — for libraries; the dep is part of your public API.
+  - `runtimeOnly` — JDBC drivers etc., needed at runtime not compile time.
+  - `compileOnly` — annotation processors, lombok.
+  - `annotationProcessor` — runs during compile to generate code.
+
+  ## Version Catalogs
+
+  `gradle/libs.versions.toml` centralizes versions:
+
+  ```toml
+  [versions]
+  spring-boot = "3.4.0"
+  junit = "5.10.0"
+
+  [libraries]
+  spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web", version.ref = "spring-boot" }
+  junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+  ```
+
+  In build.gradle.kts:
+
+  ```kotlin
+  dependencies {
+      implementation(libs.spring.boot.starter.web)
+      testImplementation(libs.junit.jupiter)
+  }
+  ```
+
+  Type-safe accessors generated from the catalog. Single source of truth for versions across multi-module projects.
+
+  ## Tasks
+
+  Built-in tasks: `compileJava`, `test`, `jar`, `bootJar`, `bootRun`, `clean`. Run with `./gradlew test` or chain `./gradlew clean test bootJar`.
+
+  Custom tasks:
+
+  ```kotlin
+  tasks.register("hello") {
+      doLast { println("Hello!") }
+  }
+
+  tasks.register<Copy>("copyDocs") {
+      from("src/main/docs")
+      into("$buildDir/docs")
+  }
+  ```
+
+  ## Build Cache and Configuration Cache
+
+  ```properties
+  # gradle.properties
+  org.gradle.caching=true
+  org.gradle.configuration-cache=true
+  org.gradle.parallel=true
+  ```
+
+  - **Build cache**: caches task outputs by inputs; reuses across builds and machines.
+  - **Configuration cache**: caches the configured task graph itself; second build starts much faster.
+  - **Parallel**: builds independent modules concurrently.
+
+  These are the difference between 'builds in 30s' and 'builds in 3s for incremental'.
+
+  ## Multi-Module Projects
+
+  `settings.gradle.kts`:
+
+  ```kotlin
+  rootProject.name = "my-app"
+  include("api", "core", "web")
+  ```
+
+  Root build file applies common config; modules have their own:
+
+  ```
+  my-app/
+  ├── settings.gradle.kts
+  ├── build.gradle.kts
+  ├── gradle/
+  │   └── libs.versions.toml
+  ├── api/
+  │   └── build.gradle.kts
+  ├── core/
+  │   └── build.gradle.kts
+  └── web/
+      └── build.gradle.kts
+  ```
+
+  Common config in root `build.gradle.kts`:
+
+  ```kotlin
+  allprojects {
+      repositories {
+          mavenCentral()
+      }
+  }
+
+  subprojects {
+      apply(plugin = "java")
+      java {
+          toolchain {
+              languageVersion = JavaLanguageVersion.of(21)
+          }
+      }
+  }
+  ```
+
+  ## Toolchains
+
+  ```kotlin
+  java {
+      toolchain {
+          languageVersion = JavaLanguageVersion.of(21)
+      }
+  }
+  ```
+
+  Gradle downloads the right JDK if not found locally. Eliminates 'works on my JDK' issues — each project specifies its required toolchain.
+
+  ## Common Pitfalls
+
+  - **Mixing Groovy and Kotlin DSL.** Pick one. Kotlin DSL has better tooling but Groovy syntax is shorter for simple builds.
+  - **Not using version catalog.** Versions scatter across files; updates touch many files instead of one.
+  - **Disabling configuration cache to fix one error.** The error is usually fixable; the speed loss isn't worth it.
+  - **`gradle build` instead of `./gradlew build`.** Wrapper guarantees reproducibility; system Gradle drifts.
+  - **Running tasks without `--build-cache --parallel`.** On large multi-module builds, the speed difference is 10x+.
+
+  ## Verification
+
+  A healthy Gradle setup:
+
+  - `./gradlew build` works on a fresh checkout (wrapper + toolchain handle everything).
+  - Incremental builds finish in <10s after small changes (caches work).
+  - Version catalog is the only place versions appear.
+  - CI builds use `--build-cache --parallel` flags.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## A Minimal build.gradle.kts
+
+    ```kotlin
+    plugins {
+        java
+        id("org.springframework.boot") version "3.4.0"
+        id("io.spring.dependency-management") version "1.1.6"
+    }
+
+    group = "com.example"
+    version = "1.0.0-SNAPSHOT"
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        implementation("org.springframework.boot:spring-boot-starter-web")
+        testImplementation("org.springframework.boot:spring-boot-starter-test")
+    }
+
+    tasks.test {
+        useJUnitPlatform()
+    }
+    ```
+
+    Plugins block first; project metadata; then dependencies. Kotlin DSL gives you IDE autocomplete vs the older Groovy DSL.
+- fragment_type: rationale
+  sequence: 2
+  content: |-
+    ## Configurations — implementation vs api vs runtimeOnly
+
+    ```kotlin
+    dependencies {
+        implementation("com.example:internal-lib:1.0")  // not exposed to consumers
+        api("com.example:public-types:1.0")              // exposed (for libraries)
+        runtimeOnly("com.example:driver:1.0")            // not on compile classpath
+        testImplementation("org.junit.jupiter:junit-jupiter")
+        annotationProcessor("org.projectlombok:lombok")
+    }
+    ```
+
+    - `implementation` — most common. Internal dependency.
+    - `api` — for libraries; the dep is part of your public API.
+    - `runtimeOnly` — JDBC drivers etc., needed at runtime not compile time.
+    - `compileOnly` — annotation processors, lombok.
+    - `annotationProcessor` — runs during compile to generate code.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Version Catalogs
+
+    `gradle/libs.versions.toml` centralizes versions:
+
+    ```toml
+    [versions]
+    spring-boot = "3.4.0"
+    junit = "5.10.0"
+
+    [libraries]
+    spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web", version.ref = "spring-boot" }
+    junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+    ```
+
+    In build.gradle.kts:
+
+    ```kotlin
+    dependencies {
+        implementation(libs.spring.boot.starter.web)
+        testImplementation(libs.junit.jupiter)
+    }
+    ```
+
+    Type-safe accessors generated from the catalog. Single source of truth for versions across multi-module projects.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Tasks
+
+    Built-in tasks: `compileJava`, `test`, `jar`, `bootJar`, `bootRun`, `clean`. Run with `./gradlew test` or chain `./gradlew clean test bootJar`.
+
+    Custom tasks:
+
+    ```kotlin
+    tasks.register("hello") {
+        doLast { println("Hello!") }
+    }
+
+    tasks.register<Copy>("copyDocs") {
+        from("src/main/docs")
+        into("$buildDir/docs")
+    }
+    ```
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Build Cache and Configuration Cache
+
+    ```properties
+    # gradle.properties
+    org.gradle.caching=true
+    org.gradle.configuration-cache=true
+    org.gradle.parallel=true
+    ```
+
+    - **Build cache**: caches task outputs by inputs; reuses across builds and machines.
+    - **Configuration cache**: caches the configured task graph itself; second build starts much faster.
+    - **Parallel**: builds independent modules concurrently.
+
+    These are the difference between 'builds in 30s' and 'builds in 3s for incremental'.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Multi-Module Projects
+
+    `settings.gradle.kts`:
+
+    ```kotlin
+    rootProject.name = "my-app"
+    include("api", "core", "web")
+    ```
+
+    Root build file applies common config; modules have their own:
+
+    ```
+    my-app/
+    ├── settings.gradle.kts
+    ├── build.gradle.kts
+    ├── gradle/
+    │   └── libs.versions.toml
+    ├── api/
+    │   └── build.gradle.kts
+    ├── core/
+    │   └── build.gradle.kts
+    └── web/
+        └── build.gradle.kts
+    ```
+
+    Common config in root `build.gradle.kts`:
+
+    ```kotlin
+    allprojects {
+        repositories {
+            mavenCentral()
+        }
+    }
+
+    subprojects {
+        apply(plugin = "java")
+        java {
+            toolchain {
+                languageVersion = JavaLanguageVersion.of(21)
+            }
+        }
+    }
+    ```
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Toolchains
+
+    ```kotlin
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+    }
+    ```
+
+    Gradle downloads the right JDK if not found locally. Eliminates 'works on my JDK' issues — each project specifies its required toolchain.
+- fragment_type: guardrail
+  sequence: 8
+  content: |-
+    ## Common Pitfalls
+
+    - **Mixing Groovy and Kotlin DSL.** Pick one. Kotlin DSL has better tooling but Groovy syntax is shorter for simple builds.
+    - **Not using version catalog.** Versions scatter across files; updates touch many files instead of one.
+    - **Disabling configuration cache to fix one error.** The error is usually fixable; the speed loss isn't worth it.
+    - **`gradle build` instead of `./gradlew build`.** Wrapper guarantees reproducibility; system Gradle drifts.
+    - **Running tasks without `--build-cache --parallel`.** On large multi-module builds, the speed difference is 10x+.
+- fragment_type: verification
+  sequence: 9
+  content: |-
+    ## Verification
+
+    A healthy Gradle setup:
+
+    - `./gradlew build` works on a fresh checkout (wrapper + toolchain handle everything).
+    - Incremental builds finish in <10s after small changes (caches work).
+    - Version catalog is the only place versions appear.
+    - CI builds use `--build-cache --parallel` flags.

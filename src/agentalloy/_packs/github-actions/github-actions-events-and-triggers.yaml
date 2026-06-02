@@ -1,0 +1,335 @@
+skill_type: domain
+skill_id: github-actions-events-and-triggers
+canonical_name: GitHub Actions Events and Triggers
+category: ops
+skill_class: domain
+domain_tags: [github-actions, events, triggers, workflows]
+always_apply: false
+phase_scope: []
+category_scope: []
+author: authoring-agent
+change_summary: initial authoring draft
+raw_prose: |
+  # GitHub Actions Events and Triggers
+
+  ## Overview
+
+  Workflows are triggered by events. Choosing the right trigger and filter set determines when (and against what context) the workflow runs. This skill covers the trigger surface and the security implications of `pull_request` vs `pull_request_target`.
+
+  Sourced from https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows.
+
+  ## About events that trigger workflows
+
+  Workflow triggers are events that cause a workflow to run. For more information about how to use workflow triggers, see [AUTOTITLE](/actions/using-workflows/triggering-a-workflow).
+
+  Some events have multiple activity types. For these events, you can specify which activity types will trigger a workflow run. For more information about what each activity type means, see [AUTOTITLE](/webhooks-and-events/webhooks/webhook-events-and-payloads).
+
+  > [!NOTE]
+  > Not all webhook events trigger workflows.
+
+  ## `branch_protection_rule`
+
+  | Webhook event payload | Activity types | `GITHUB_SHA` | `GITHUB_REF` |
+  | --------------------- | -------------- | ------------ | -------------|
+  | [`branch_protection_rule`](/webhooks-and-events/webhooks/webhook-events-and-payloads#branch_protection_rule) | - `created`<br/>- `edited`<br/>- `deleted` | Last commit on default branch | Default branch |
+
+  > [!NOTE]
+  > *  For information about each activity type, see [AUTOTITLE](/webhooks-and-events/webhooks/webhook-events-and-payloads#branch_protection_rule). 
+  > * 
+
+  Runs your workflow when branch protection rules in the workflow repository are changed. For more information about branch protection rules, see [AUTOTITLE](/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches). For information about the branch protection rule APIs, see [AUTOTITLE](/graphql/reference/objects#branchprotectionrule) in the GraphQL API documentation or [AUTOTITLE](/rest/branches).
+
+  For example, you can run a workflow when a branch protection rule has been `created` or `deleted`:
+
+  ```yaml
+  on:
+    branch_protection_rule:
+      types: [created, deleted]
+  ```
+
+  ## `check_run`
+
+  | Webhook event payload | Activity types | `GITHUB_SHA` | `GITHUB_REF` |
+  | --------------------- | -------------- | ------------ | -------------|
+  | [`check_run`](/webhooks-and-events/webhooks/webhook-events-and-payloads#check_run) | - `created`<br/>- `rerequested`<br/>- `completed`<br/>- `requested_action` | Last commit on default branch | Default branch |
+
+  > [!NOTE]
+  > *  For information about each activity type, see [AUTOTITLE](/webhooks-and-events/webhooks/webhook-events-and-payloads#check_run). 
+  > * 
+  > * To prevent recursive workflows, this event does not trigger workflows if the check run's check suite was created by  or if the check suite's head SHA is associated with .
+
+  Runs your workflow when activity related to a check run occurs. A check run is an individual test that is part of a check suite. For information, see [AUTOTITLE](/rest/guides/using-the-rest-api-to-interact-with-checks). For information about the check run APIs, see [AUTOTITLE](/graphql/reference/objects#checkrun) in the GraphQL API documentation or [AUTOTITLE](/rest/checks/runs).
+
+  For example, you can run a workflow when a check run has been `rerequested` or `completed`.
+
+  ```yaml
+  on:
+    check_run:
+      types: [rerequested, completed]
+  ```
+
+  ## `check_suite`
+
+  | Webhook event payload | Activity types | `GITHUB_SHA` | `GITHUB_REF` |
+  | --------------------- | -------------- | ------------ | -------------|
+  | [`check_suite`](/webhooks-and-events/webhooks/webhook-events-and-payloads#check_suite) | - `completed` | Last commit on default branch | Default branch |
+
+  > [!NOTE]
+  > *  For information about each activity type, see [AUTOTITLE](/webhooks-and-events/webhooks/webhook-events-and-payloads#check_suite). Although only the `completed` activity type is supported, specifying the activity type will keep your workflow specific if more activity types are added in the future. 
+  > * 
+  > * To prevent recursive workflows, this event does not trigger workflows if the check suite was created by  or if the check suite's head SHA is associated with .
+
+  Runs your workflow when check suite activity occurs. A check suite is a collection of the check runs created for a specific commit. Check suites summarize the status and conclusion of the check runs that are in the suite. For information, see [AUTOTITLE](/rest/guides/using-the-rest-api-to-interact-with-checks). For information about the check suite APIs, see [AUTOTITLE](/graphql/reference/objects#checksuite) in the GraphQL API documentation or [AUTOTITLE](/rest/checks/suites).
+
+  For example, you can run a workflow when a check suite has been `completed`.
+
+  ```yaml
+  on:
+    check_suite:
+      types: [completed]
+  ```
+
+  ## `create`
+
+  | Webhook event payload | Activity types | `GITHUB_SHA` | `GITHUB_REF` |
+  | --------------------- | -------------- | ------------ | -------------|
+  | [`create`](/webhooks-and-events/webhooks/webhook-events-and-payloads#create) | Not applicable | Last commit on the created branch or tag | Branch or tag created |
+
+  > [!NOTE]
+  > An event will not be created when you create more than three tags at once.
+
+  Runs your workflow when someone creates a Git reference (Git branch or tag) in the workflow's repository. For information about the APIs to create a Git reference, see [AUTOTITLE](/graphql/reference/mutations#createref) in the GraphQL API documentation or [AUTOTITLE](/rest/git/refs#create-a-reference).
+
+  For example, you can run a workflow when the `create` event occurs.
+
+  ```yaml
+  on:
+    create
+  ```
+
+  ## `delete`
+
+  | Webhook event payload | Activity types | `GITHUB_SHA` | `GITHUB_REF` |
+  | --------------------- | -------------- | ------------ | -------------|
+  | [`delete`](/webhooks-and-events/webhooks/webhook-events-and-payloads#delete) | Not applicable | Last commit on default branch | Default branch |
+
+  > [!NOTE]
+  > * 
+  > * An event will not be created when you delete more than three tags at once.
+
+  Runs your workflow when someone deletes a Git reference (Git branch or tag) in the workflow's repository. For information about the APIs to delete a Git reference, see [AUTOTITLE](/graphql/reference/mutations#deleteref) in the GraphQL API documentation or [AUTOTITLE](/rest/git/refs#delete-a-reference).
+
+  For example, you can run a workflow when the `delete` event occurs.
+
+  ```yaml
+  on:
+    delete
+  ```
+
+  ## `deployment`
+
+  | Webhook event payload | Activity types | `GITHUB_SHA` | `GITHUB_REF` |
+  | --------------------- | -------------- | ------------ | -------------|
+  | [`deployment`](/webhooks-and-events/webhooks/webhook-events-and-payloads#deployment) | Not applicable | Commit to be deployed | Branch or tag to be deployed (empty if created with a commit SHA)|
+
+  Runs your workflow when someone creates a deployment in the workflow's repository. Deployments created with a commit SHA may not have a Git ref. For information about the APIs to create a deployment, see [AUTOTITLE](/graphql/reference/mutations#createdeployment) in the GraphQL API documentation or [AUTOTITLE](/rest/repos#deployments).
+
+  For example, you can run a workflow when the `deployment` event occurs.
+
+  ```yaml
+  on:
+    deployment
+  ```
+
+  ## `deployment_status`
+
+  | Webhook event payload | Activity types | `GITHUB_SHA` | `GITHUB_REF` |
+  | --------------------- | -------------- | ------------ | -------------|
+  | [`deployment_status`](/webhooks-and-events/webhooks/webhook-events-and-payloads#deployment_status) | Not applicable | Commit to be deployed | Branch or tag to be deployed (empty if commit)|
+
+  > [!NOTE]
+  > When a deployment status's state is set to `inactive`, a workflow run will not be triggered.
+
+  Runs your workflow when a third party provides a deployment status. Deployments created with a commit SHA may not have a Git ref. For information about the APIs to create a deployment status, see [AUTOTITLE](/graphql/reference/mutations#createdeploymentstatus) in the GraphQL API documentation or [AUTOTITLE](/rest/deployments#create-a-deployment-status).
+
+  For example, you can run a workflow when the `deployment_status` event occurs.
+
+  ```yaml
+  on:
+    deployment_status
+  ```
+
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      # Overview
+
+      Workflows are triggered by events. Choosing the right trigger and filter set determines when (and against what context) the workflow runs. This skill covers the trigger surface and the security implications of `pull_request` vs `pull_request_target`.
+
+      Sourced from https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows.
+
+  - fragment_type: execution
+    sequence: 2
+    content: |
+      ## About events that trigger workflows
+
+      Workflow triggers are events that cause a workflow to run. For more information about how to use workflow triggers, see [AUTOTITLE](/actions/using-workflows/triggering-a-workflow).
+
+      Some events have multiple activity types. For these events, you can specify which activity types will trigger a workflow run. For more information about what each activity type means, see [AUTOTITLE](/webhooks-and-events/webhooks/webhook-events-and-payloads).
+
+      > [!NOTE]
+      > Not all webhook events trigger workflows.
+
+  - fragment_type: example
+    sequence: 3
+    content: |
+      ## `branch_protection_rule`
+
+      | Webhook event payload | Activity types | `GITHUB_SHA` | `GITHUB_REF` |
+      | --------------------- | -------------- | ------------ | -------------|
+      | [`branch_protection_rule`](/webhooks-and-events/webhooks/webhook-events-and-payloads#branch_protection_rule) | - `created`<br/>- `edited`<br/>- `deleted` | Last commit on default branch | Default branch |
+
+      > [!NOTE]
+      > *  For information about each activity type, see [AUTOTITLE](/webhooks-and-events/webhooks/webhook-events-and-payloads#branch_protection_rule). 
+      > * 
+
+      Runs your workflow when branch protection rules in the workflow repository are changed. For more information about branch protection rules, see [AUTOTITLE](/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches). For information about the branch protection rule APIs, see [AUTOTITLE](/graphql/reference/objects#branchprotectionrule) in the GraphQL API documentation or [AUTOTITLE](/rest/branches).
+
+      For example, you can run a workflow when a branch protection rule has been `created` or `deleted`:
+
+      ```yaml
+      on:
+        branch_protection_rule:
+          types: [created, deleted]
+      ```
+
+  - fragment_type: example
+    sequence: 4
+    content: |
+      ## `check_run`
+
+      | Webhook event payload | Activity types | `GITHUB_SHA` | `GITHUB_REF` |
+      | --------------------- | -------------- | ------------ | -------------|
+      | [`check_run`](/webhooks-and-events/webhooks/webhook-events-and-payloads#check_run) | - `created`<br/>- `rerequested`<br/>- `completed`<br/>- `requested_action` | Last commit on default branch | Default branch |
+
+      > [!NOTE]
+      > *  For information about each activity type, see [AUTOTITLE](/webhooks-and-events/webhooks/webhook-events-and-payloads#check_run). 
+      > * 
+      > * To prevent recursive workflows, this event does not trigger workflows if the check run's check suite was created by  or if the check suite's head SHA is associated with .
+
+      Runs your workflow when activity related to a check run occurs. A check run is an individual test that is part of a check suite. For information, see [AUTOTITLE](/rest/guides/using-the-rest-api-to-interact-with-checks). For information about the check run APIs, see [AUTOTITLE](/graphql/reference/objects#checkrun) in the GraphQL API documentation or [AUTOTITLE](/rest/checks/runs).
+
+      For example, you can run a workflow when a check run has been `rerequested` or `completed`.
+
+      ```yaml
+      on:
+        check_run:
+          types: [rerequested, completed]
+      ```
+
+  - fragment_type: example
+    sequence: 5
+    content: |
+      ## `check_suite`
+
+      | Webhook event payload | Activity types | `GITHUB_SHA` | `GITHUB_REF` |
+      | --------------------- | -------------- | ------------ | -------------|
+      | [`check_suite`](/webhooks-and-events/webhooks/webhook-events-and-payloads#check_suite) | - `completed` | Last commit on default branch | Default branch |
+
+      > [!NOTE]
+      > *  For information about each activity type, see [AUTOTITLE](/webhooks-and-events/webhooks/webhook-events-and-payloads#check_suite). Although only the `completed` activity type is supported, specifying the activity type will keep your workflow specific if more activity types are added in the future. 
+      > * 
+      > * To prevent recursive workflows, this event does not trigger workflows if the check suite was created by  or if the check suite's head SHA is associated with .
+
+      Runs your workflow when check suite activity occurs. A check suite is a collection of the check runs created for a specific commit. Check suites summarize the status and conclusion of the check runs that are in the suite. For information, see [AUTOTITLE](/rest/guides/using-the-rest-api-to-interact-with-checks). For information about the check suite APIs, see [AUTOTITLE](/graphql/reference/objects#checksuite) in the GraphQL API documentation or [AUTOTITLE](/rest/checks/suites).
+
+      For example, you can run a workflow when a check suite has been `completed`.
+
+      ```yaml
+      on:
+        check_suite:
+          types: [completed]
+      ```
+
+  - fragment_type: example
+    sequence: 6
+    content: |
+      ## `create`
+
+      | Webhook event payload | Activity types | `GITHUB_SHA` | `GITHUB_REF` |
+      | --------------------- | -------------- | ------------ | -------------|
+      | [`create`](/webhooks-and-events/webhooks/webhook-events-and-payloads#create) | Not applicable | Last commit on the created branch or tag | Branch or tag created |
+
+      > [!NOTE]
+      > An event will not be created when you create more than three tags at once.
+
+      Runs your workflow when someone creates a Git reference (Git branch or tag) in the workflow's repository. For information about the APIs to create a Git reference, see [AUTOTITLE](/graphql/reference/mutations#createref) in the GraphQL API documentation or [AUTOTITLE](/rest/git/refs#create-a-reference).
+
+      For example, you can run a workflow when the `create` event occurs.
+
+      ```yaml
+      on:
+        create
+      ```
+
+  - fragment_type: example
+    sequence: 7
+    content: |
+      ## `delete`
+
+      | Webhook event payload | Activity types | `GITHUB_SHA` | `GITHUB_REF` |
+      | --------------------- | -------------- | ------------ | -------------|
+      | [`delete`](/webhooks-and-events/webhooks/webhook-events-and-payloads#delete) | Not applicable | Last commit on default branch | Default branch |
+
+      > [!NOTE]
+      > * 
+      > * An event will not be created when you delete more than three tags at once.
+
+      Runs your workflow when someone deletes a Git reference (Git branch or tag) in the workflow's repository. For information about the APIs to delete a Git reference, see [AUTOTITLE](/graphql/reference/mutations#deleteref) in the GraphQL API documentation or [AUTOTITLE](/rest/git/refs#delete-a-reference).
+
+      For example, you can run a workflow when the `delete` event occurs.
+
+      ```yaml
+      on:
+        delete
+      ```
+
+  - fragment_type: example
+    sequence: 8
+    content: |
+      ## `deployment`
+
+      | Webhook event payload | Activity types | `GITHUB_SHA` | `GITHUB_REF` |
+      | --------------------- | -------------- | ------------ | -------------|
+      | [`deployment`](/webhooks-and-events/webhooks/webhook-events-and-payloads#deployment) | Not applicable | Commit to be deployed | Branch or tag to be deployed (empty if created with a commit SHA)|
+
+      Runs your workflow when someone creates a deployment in the workflow's repository. Deployments created with a commit SHA may not have a Git ref. For information about the APIs to create a deployment, see [AUTOTITLE](/graphql/reference/mutations#createdeployment) in the GraphQL API documentation or [AUTOTITLE](/rest/repos#deployments).
+
+      For example, you can run a workflow when the `deployment` event occurs.
+
+      ```yaml
+      on:
+        deployment
+      ```
+
+  - fragment_type: example
+    sequence: 9
+    content: |
+      ## `deployment_status`
+
+      | Webhook event payload | Activity types | `GITHUB_SHA` | `GITHUB_REF` |
+      | --------------------- | -------------- | ------------ | -------------|
+      | [`deployment_status`](/webhooks-and-events/webhooks/webhook-events-and-payloads#deployment_status) | Not applicable | Commit to be deployed | Branch or tag to be deployed (empty if commit)|
+
+      > [!NOTE]
+      > When a deployment status's state is set to `inactive`, a workflow run will not be triggered.
+
+      Runs your workflow when a third party provides a deployment status. Deployments created with a commit SHA may not have a Git ref. For information about the APIs to create a deployment status, see [AUTOTITLE](/graphql/reference/mutations#createdeploymentstatus) in the GraphQL API documentation or [AUTOTITLE](/rest/deployments#create-a-deployment-status).
+
+      For example, you can run a workflow when the `deployment_status` event occurs.
+
+      ```yaml
+      on:
+        deployment_status
+      ```

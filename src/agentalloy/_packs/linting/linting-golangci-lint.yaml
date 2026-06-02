@@ -1,0 +1,337 @@
+skill_type: domain
+skill_id: linting-golangci-lint
+canonical_name: golangci-lint — Go Linting
+category: tooling
+skill_class: domain
+domain_tags:
+- linting
+- go
+- golangci-lint
+- static-analysis
+- gofmt
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # golangci-lint — Go Linting
+
+  ## Overview
+
+  Go's standard formatter (gofmt) handles formatting. Linting is split across many tools: govet, staticcheck, errcheck, gosec, gosimple, etc. golangci-lint is a meta-runner that orchestrates them — one binary, one config, parallelized execution.
+
+  ---
+
+  ## Setup
+
+  ```bash
+  # Install
+  brew install golangci-lint
+  # or
+  go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+  ```
+
+  Run:
+
+  ```bash
+  golangci-lint run
+  ```
+
+  By default it runs a curated set of linters on all `.go` files.
+
+  ## .golangci.yml
+
+  ```yaml
+  linters:
+    enable:
+      - errcheck
+      - govet
+      - staticcheck
+      - gosimple
+      - ineffassign
+      - unused
+      - gosec
+      - misspell
+
+  linters-settings:
+    errcheck:
+      check-type-assertions: true
+    gosec:
+      excludes:
+        - G104  # unhandled errors
+
+  issues:
+    exclude-rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+    max-issues-per-linter: 0  # report all
+    max-same-issues: 0
+  ```
+
+  `linters` controls which run. `linters-settings` configures each. `issues.exclude-rules` skips specific paths.
+
+  ## Common Linters
+
+  - **errcheck** — unchecked errors (the most common Go bug).
+  - **govet** — suspicious constructs (printf format, lock copies, struct tags).
+  - **staticcheck** — wide range of code-smell rules.
+  - **gosimple** — simplifications (e.g., `if x { return true } return false` → `return x`).
+  - **ineffassign** — assignments that are never used.
+  - **unused** — unused vars, functions, imports.
+  - **gosec** — security issues (hardcoded credentials, weak crypto).
+  - **misspell** — spelling in comments / strings.
+  - **gofmt** / **gofumpt** — stricter formatting (gofumpt extends gofmt).
+
+  ## Disabling Linters Per File
+
+  ```go
+  //nolint:errcheck
+  defer file.Close()
+  ```
+
+  Or for a block:
+
+  ```go
+  //nolint:errcheck,gosec
+  func legacyFunc() {
+      // ...
+  }
+  ```
+
+  Use sparingly. Repos with `nolint` everywhere are rationalizing away the lint.
+
+  ## Excluding Test Files
+
+  Tests often have legitimate reasons to skip checks (mock setup, deliberate panics):
+
+  ```yaml
+  issues:
+    exclude-rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+  ```
+
+  ## Running on Changed Files Only
+
+  For pre-commit speed:
+
+  ```bash
+  golangci-lint run --new-from-rev=HEAD~1
+  ```
+
+  Only reports issues on lines changed since the previous commit. Useful for CI on large repos that can't afford a full repo lint per PR.
+
+  ## CI Integration
+
+  ```yaml
+  # .github/workflows/lint.yml
+  - uses: golangci/golangci-lint-action@v6
+    with:
+      version: v1.61
+  ```
+
+  Pin version explicitly — golangci-lint frequently adds new rules; an unpinned version causes builds to suddenly fail.
+
+  ## Migration to Strict
+
+  For a legacy codebase, start with a permissive set and tighten:
+
+  1. Enable: `errcheck`, `govet`, `gosimple`. Fix all errors.
+  2. Add `staticcheck`. Fix.
+  3. Add `gosec`, `unused`, `misspell`. Fix.
+  4. Settle on a steady-state config that all new code passes.
+
+  Don't enable everything at once on a 100k-line codebase. Incremental adoption.
+
+  ## Conflict with go vet
+
+  `go vet` runs as part of `go test` by default. golangci-lint's `govet` integration can duplicate. Decide which runs in CI; the other can stay for local development.
+
+  ## Common Pitfalls
+
+  - **Enabling all linters and getting 5,000 errors.** Triage by enabling individually.
+  - **Pinning golangci-lint to `latest`.** Rules added in new versions break builds. Pin to a major.minor.
+  - **Forgetting to exclude generated code.** Generated `.pb.go` files often fail lint. Use `exclude-files` for them.
+  - **No editor integration.** Devs miss errors until CI. Install the IDE plugin (`golangci-lint-langserver` or VS Code extension).
+
+  ## Verification
+
+  A working golangci-lint setup:
+
+  - `golangci-lint run` passes on a clean repo.
+  - CI uses the same version locally and in CI (pin via Docker or version flag).
+  - Generated and test files have appropriate exclusions.
+  - Editor shows lint feedback inline.
+  - New PRs lint before they hit `main`.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Setup
+
+    ```bash
+    # Install
+    brew install golangci-lint
+    # or
+    go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+    ```
+
+    Run:
+
+    ```bash
+    golangci-lint run
+    ```
+
+    By default it runs a curated set of linters on all `.go` files.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## .golangci.yml
+
+    ```yaml
+    linters:
+      enable:
+        - errcheck
+        - govet
+        - staticcheck
+        - gosimple
+        - ineffassign
+        - unused
+        - gosec
+        - misspell
+
+    linters-settings:
+      errcheck:
+        check-type-assertions: true
+      gosec:
+        excludes:
+          - G104  # unhandled errors
+
+    issues:
+      exclude-rules:
+        - path: _test\.go
+          linters:
+            - errcheck
+      max-issues-per-linter: 0  # report all
+      max-same-issues: 0
+    ```
+
+    `linters` controls which run. `linters-settings` configures each. `issues.exclude-rules` skips specific paths.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Common Linters
+
+    - **errcheck** — unchecked errors (the most common Go bug).
+    - **govet** — suspicious constructs (printf format, lock copies, struct tags).
+    - **staticcheck** — wide range of code-smell rules.
+    - **gosimple** — simplifications (e.g., `if x { return true } return false` → `return x`).
+    - **ineffassign** — assignments that are never used.
+    - **unused** — unused vars, functions, imports.
+    - **gosec** — security issues (hardcoded credentials, weak crypto).
+    - **misspell** — spelling in comments / strings.
+    - **gofmt** / **gofumpt** — stricter formatting (gofumpt extends gofmt).
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## Disabling Linters Per File
+
+    ```go
+    //nolint:errcheck
+    defer file.Close()
+    ```
+
+    Or for a block:
+
+    ```go
+    //nolint:errcheck,gosec
+    func legacyFunc() {
+        // ...
+    }
+    ```
+
+    Use sparingly. Repos with `nolint` everywhere are rationalizing away the lint.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Excluding Test Files
+
+    Tests often have legitimate reasons to skip checks (mock setup, deliberate panics):
+
+    ```yaml
+    issues:
+      exclude-rules:
+        - path: _test\.go
+          linters:
+            - errcheck
+            - gosec
+    ```
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Running on Changed Files Only
+
+    For pre-commit speed:
+
+    ```bash
+    golangci-lint run --new-from-rev=HEAD~1
+    ```
+
+    Only reports issues on lines changed since the previous commit. Useful for CI on large repos that can't afford a full repo lint per PR.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## CI Integration
+
+    ```yaml
+    # .github/workflows/lint.yml
+    - uses: golangci/golangci-lint-action@v6
+      with:
+        version: v1.61
+    ```
+
+    Pin version explicitly — golangci-lint frequently adds new rules; an unpinned version causes builds to suddenly fail.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Migration to Strict
+
+    For a legacy codebase, start with a permissive set and tighten:
+
+    1. Enable: `errcheck`, `govet`, `gosimple`. Fix all errors.
+    2. Add `staticcheck`. Fix.
+    3. Add `gosec`, `unused`, `misspell`. Fix.
+    4. Settle on a steady-state config that all new code passes.
+
+    Don't enable everything at once on a 100k-line codebase. Incremental adoption.
+- fragment_type: execution
+  sequence: 9
+  content: |-
+    ## Conflict with go vet
+
+    `go vet` runs as part of `go test` by default. golangci-lint's `govet` integration can duplicate. Decide which runs in CI; the other can stay for local development.
+- fragment_type: guardrail
+  sequence: 10
+  content: |-
+    ## Common Pitfalls
+
+    - **Enabling all linters and getting 5,000 errors.** Triage by enabling individually.
+    - **Pinning golangci-lint to `latest`.** Rules added in new versions break builds. Pin to a major.minor.
+    - **Forgetting to exclude generated code.** Generated `.pb.go` files often fail lint. Use `exclude-files` for them.
+    - **No editor integration.** Devs miss errors until CI. Install the IDE plugin (`golangci-lint-langserver` or VS Code extension).
+- fragment_type: verification
+  sequence: 11
+  content: |-
+    ## Verification
+
+    A working golangci-lint setup:
+
+    - `golangci-lint run` passes on a clean repo.
+    - CI uses the same version locally and in CI (pin via Docker or version flag).
+    - Generated and test files have appropriate exclusions.
+    - Editor shows lint feedback inline.
+    - New PRs lint before they hit `main`.

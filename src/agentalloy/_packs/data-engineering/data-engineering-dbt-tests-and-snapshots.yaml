@@ -1,0 +1,269 @@
+skill_type: domain
+skill_id: data-engineering-dbt-tests-and-snapshots
+canonical_name: dbt — Tests and Snapshots
+category: engineering
+skill_class: domain
+domain_tags:
+  - dbt
+  - data tests
+  - snapshots
+  - data quality
+  - SCD Type 2
+always_apply: false
+phase_scope: []
+category_scope: []
+author: authoring-agent
+change_summary: initial authoring draft
+raw_prose: |
+  # dbt — Tests and Snapshots
+
+  ## Overview
+
+  dbt tests assert data quality on models and sources. Snapshots capture history for slow-changing dimensions. This skill covers both surfaces — generic tests, custom tests, and snapshot strategies.
+
+  Sourced from https://docs.getdbt.com/docs/build/data-tests and /snapshots.
+
+  ## Add data tests to your DAG
+
+  import CopilotBeta from '/snippets/_dbt-copilot-avail.md';
+
+  <CopilotBeta resource='data tests' />
+
+  ## Related reference docs
+  * [Test command](/reference/commands/test)
+  * [Data test properties](/reference/resource-properties/data-tests)
+  * [Data test configurations](/reference/data-test-configs)
+  * [Test selection examples](/reference/node-selection/test-selection-examples)
+
+  :::important
+
+  Tests are now called data tests to disambiguate from [unit tests](/docs/build/unit-tests). The YAML key `tests:` is still supported as an alias for `data_tests:`. Refer to [New `data_tests:` syntax](#new-data_tests-syntax) for more information.
+
+  :::
+
+  ## Overview
+
+  Data tests are assertions you make about your models and other resources in your dbt project (for example, sources, seeds, and snapshots). When you run `dbt test`, dbt will tell you if each test in your project passes or fails.
+
+  You can use data tests to improve the integrity of the SQL in each model by making assertions about the results generated. Out of the box, you can test whether a specified column in a model only contains non-null values, unique values, or values that have a corresponding value in another model (for example, a `customer_id` for an `order` corresponds to an `id` in the `customers` model), and values from a specified list. You can extend data tests to suit business logic specific to your organization – any assertion that you can make about your model in the form of a select query can be turned into a data test.
+
+  Data tests return a set of failing records. Generic data tests (also known as schema tests) are defined using `test` blocks.
+
+  Like almost everything in dbt, data tests are SQL queries. In particular, they are `select` statements that seek to grab "failing" records, ones that disprove your assertion. If you assert that a column is unique in a model, the test query selects for duplicates; if you assert that a column is never null, the test seeks nulls. If the data test returns zero failing rows, it passes, and your assertion has been validated.
+
+  There are two ways of defining data tests in dbt:
+
+  - A **singular** data test, in its simplest form, is when you write a SQL query that returns failing rows, you can save that query in a `.sql` file within your [test directory](/reference/project-configs/test-paths). It's now a data test, and it will be executed by the `dbt test` command.
+  - A **generic** data test is a parameterized query that accepts arguments. The test query is defined in a special `test` block (like a [macro](/docs/build/jinja-macros)). Once defined, you can reference the generic test by name throughout your `.yml` files—define it on models, columns, sources, snapshots, and seeds. dbt ships with four generic data tests built in, and we think you should use them!
+
+  Defining data tests is a great way to confirm that your outputs and inputs are as expected, and helps prevent regressions when your code changes. Because you can use them over and over again, making similar assertions with minor variations, generic data tests tend to be much more common—they should make up the bulk of your dbt data testing suite. That said, both ways of defining data tests have their time and place.
+
+  :::tip Creating your first data tests
+  If you're new to dbt, we recommend that you check out our [online dbt Fundamentals course](https://learn.getdbt.com/learn/course/dbt-fundamentals/data-tests-30min/building-tests?page=1) or [quickstart guide](/guides) to build your first dbt project with models and tests.
+  :::
+
+  ## Add snapshots to your DAG
+
+  ## Related documentation
+
+  - [Snapshot configurations](/reference/snapshot-configs)
+  - [Snapshot properties](/reference/snapshot-properties)
+  - [`snapshot` command](/reference/commands/snapshot)
+
+  import CourseCallout from '/snippets/_materialization-video-callout.md';
+  import SnapshotCompiledSql from '/snippets/_snapshot-compiled-sql.md';
+
+  <CourseCallout resource="Snapshots" 
+  url="https://learn.getdbt.com/courses/snapshots"
+  course="Snapshots"
+  />
+
+  ## What are snapshots?
+  Analysts often need to "look back in time" at previous data states in their mutable tables. While some source data systems are built in a way that makes accessing historical data possible, this is not always the case. dbt provides a mechanism, **snapshots**, which records changes to a mutable <Term id="table" /> over time.
+
+  Snapshots implement [type-2 Slowly Changing Dimensions](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row) over mutable source tables. These Slowly Changing Dimensions (or SCDs) identify how a row in a table changes over time. Imagine you have an `orders` table where the `status` field can be overwritten as the order is processed.
+
+  | id | status | updated_at |
+  | -- | ------ | ---------- |
+  | 1 | pending | 2024-01-01 |
+
+  Now, imagine that the order goes from "pending" to "shipped". That same record will now look like:
+
+  | id | status | updated_at |
+  | -- | ------ | ---------- |
+  | 1 | shipped | 2024-01-02 |
+
+  This order is now in the "shipped" state, but we've lost the information about when the order was last in the "pending" state. This makes it difficult (or impossible) to analyze how long it took for an order to ship. dbt can "snapshot" these changes to help you understand how values in a row change over time. Here's an example of a snapshot table for the previous example:
+
+  | id | status | updated_at | dbt_valid_from | dbt_valid_to |
+  | -- | ------ | ---------- | -------------- | ------------ |
+  | 1 | pending | 2024-01-01 | 2024-01-01 | 2024-01-02 |
+  | 1 | shipped | 2024-01-02 | 2024-01-02 | `null` |
+
+  ## Configuring snapshots
+
+  <VersionBlock firstVersion="1.9">
+
+  Configure your snapshots in YAML files to tell dbt how to detect record changes. Define snapshots configurations in YAML files, alongside your models, for a cleaner, faster, and more consistent set up. Place snapshot YAML files in the models directory or in a snapshots directory.
+
+  <File name='snapshots/orders_snapshot.yml'>
+
+  ```yaml
+  snapshots:
+    - name: string
+      relation: relation # source('my_source', 'my_table') or ref('my_model')
+      [description](/reference/resource-properties/description):  markdown_string
+      config:
+        [database](/reference/resource-configs/database): string
+        [schema](/reference/resource-configs/schema): string
+        [alias](/reference/resource-configs/alias): string
+        [strategy](/reference/resource-configs/strategy): timestamp | check
+        [unique_key](/reference/resource-configs/unique_key): column_name_or_expression
+        [check_cols](/reference/resource-configs/check_cols): [column_name] | all
+        [updated_at](/reference/resource-configs/updated_at): column_name
+        [snapshot_meta_column_names](/reference/resource-configs/snapshot_meta_column_names): dictionary
+        [dbt_valid_to_current](/reference/resource-configs/dbt_valid_to_current): string
+        [hard_deletes](/reference/resource-configs/hard-deletes): ignore | invalidate | new_record 
+  ```
+
+  </File>
+
+  The following table outlines the configurations available for snapshots:
+
+  | Config | Description | Required? | Example |
+  | ------ | ----------- | --------- | ------- |
+  | [database](/reference/resource-configs/database) | Specify a custom database for the snapshot | No | analytics |
+  | [schema](/reference/resource-configs/schema) | Specify a custom schema for the snapshot | No | snapshots |
+  | [alias](/reference/resource-configs/alias)   | Specify an alias for the snapshot | No | your_custom_snapshot |
+  | [strategy](/reference/resource-configs/strategy) | The snapshot strategy to use. Valid values: `timestamp` or `check` | Yes | timestamp |
+  | [unique_key](/reference/resource-configs/unique_key) | A <Term id="primary-key" /> column(s) (string or array) or expression for the record | Yes |  `id` or `[order_id, product_id]` |
+  | [check_cols](/reference/resource-configs/check_cols) | If using the `check` strategy, then the columns to check | Only if using the `check` strategy | ["status"] |
+  | [updated_at](/reference/resource-configs/update
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      dbt tests assert data quality on models and sources. Snapshots capture history for slow-changing dimensions. This skill covers both surfaces — generic tests, custom tests, and snapshot strategies.
+
+      Sourced from https://docs.getdbt.com/docs/build/data-tests and /snapshots.
+  - fragment_type: execution
+    sequence: 2
+    content: |
+      ## Add data tests to your DAG
+
+      import CopilotBeta from '/snippets/_dbt-copilot-avail.md';
+
+      <CopilotBeta resource='data tests' />
+
+      ## Related reference docs
+      * [Test command](/reference/commands/test)
+      * [Data test properties](/reference/resource-properties/data-tests)
+      * [Data test configurations](/reference/data-test-configs)
+      * [Test selection examples](/reference/node-selection/test-selection-examples)
+
+      :::important
+
+      Tests are now called data tests to disambiguate from [unit tests](/docs/build/unit-tests). The YAML key `tests:` is still supported as an alias for `data_tests:`. Refer to [New `data_tests:` syntax](#new-data_tests-syntax) for more information.
+
+      :::
+
+      ## Overview
+
+      Data tests are assertions you make about your models and other resources in your dbt project (for example, sources, seeds, and snapshots). When you run `dbt test`, dbt will tell you if each test in your project passes or fails.
+
+      You can use data tests to improve the integrity of the SQL in each model by making assertions about the results generated. Out of the box, you can test whether a specified column in a model only contains non-null values, unique values, or values that have a corresponding value in another model (for example, a `customer_id` for an `order` corresponds to an `id` in the `customers` model), and values from a specified list. You can extend data tests to suit business logic specific to your organization – any assertion that you can make about your model in the form of a select query can be turned into a data test.
+
+      Data tests return a set of failing records. Generic data tests (also known as schema tests) are defined using `test` blocks.
+
+      Like almost everything in dbt, data tests are SQL queries. In particular, they are `select` statements that seek to grab "failing" records, ones that disprove your assertion. If you assert that a column is unique in a model, the test query selects for duplicates; if you assert that a column is never null, the test seeks nulls. If the data test returns zero failing rows, it passes, and your assertion has been validated.
+
+      There are two ways of defining data tests in dbt:
+
+      - A **singular** data test, in its simplest form, is when you write a SQL query that returns failing rows, you can save that query in a `.sql` file within your [test directory](/reference/project-configs/test-paths). It's now a data test, and it will be executed by the `dbt test` command.
+      - A **generic** data test is a parameterized query that accepts arguments. The test query is defined in a special `test` block (like a [macro](/docs/build/jinja-macros)). Once defined, you can reference the generic test by name throughout your `.yml` files—define it on models, columns, sources, snapshots, and seeds. dbt ships with four generic data tests built in, and we think you should use them!
+
+      Defining data tests is a great way to confirm that your outputs and inputs are as expected, and helps prevent regressions when your code changes. Because you can use them over and over again, making similar assertions with minor variations, generic data tests tend to be much more common—they should make up the bulk of your dbt data testing suite. That said, both ways of defining data tests have their time and place.
+
+      :::tip Creating your first data tests
+      If you're new to dbt, we recommend that you check out our [online dbt Fundamentals course](https://learn.getdbt.com/learn/course/dbt-fundamentals/data-tests-30min/building-tests?page=1) or [quickstart guide](/guides) to build your first dbt project with models and tests.
+      :::
+  - fragment_type: execution
+    sequence: 3
+    content: |
+      ## Add snapshots to your DAG
+
+      ## Related documentation
+
+      - [Snapshot configurations](/reference/snapshot-configs)
+      - [Snapshot properties](/reference/snapshot-properties)
+      - [`snapshot` command](/reference/commands/snapshot)
+
+      import CourseCallout from '/snippets/_materialization-video-callout.md';
+      import SnapshotCompiledSql from '/snippets/_snapshot-compiled-sql.md';
+
+      <CourseCallout resource="Snapshots" 
+      url="https://learn.getdbt.com/courses/snapshots"
+      course="Snapshots"
+      />
+
+      ## What are snapshots?
+      Analysts often need to "look back in time" at previous data states in their mutable tables. While some source data systems are built in a way that makes accessing historical data possible, this is not always the case. dbt provides a mechanism, **snapshots**, which records changes to a mutable <Term id="table" /> over time.
+
+      Snapshots implement [type-2 Slowly Changing Dimensions](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row) over mutable source tables. These Slowly Changing Dimensions (or SCDs) identify how a row in a table changes over time. Imagine you have an `orders` table where the `status` field can be overwritten as the order is processed.
+
+      | id | status | updated_at |
+      | -- | ------ | ---------- |
+      | 1 | pending | 2024-01-01 |
+
+      Now, imagine that the order goes from "pending" to "shipped". That same record will now look like:
+
+      | id | status | updated_at |
+      | -- | ------ | ---------- |
+      | 1 | shipped | 2024-01-02 |
+
+      This order is now in the "shipped" state, but we've lost the information about when the order was last in the "pending" state. This makes it difficult (or impossible) to analyze how long it took for an order to ship. dbt can "snapshot" these changes to help you understand how values in a row change over time. Here's an example of a snapshot table for the previous example:
+
+      | id | status | updated_at | dbt_valid_from | dbt_valid_to |
+      | -- | ------ | ---------- | -------------- | ------------ |
+      | 1 | pending | 2024-01-01 | 2024-01-01 | 2024-01-02 |
+      | 1 | shipped | 2024-01-02 | 2024-01-02 | `null` |
+
+      ## Configuring snapshots
+
+      <VersionBlock firstVersion="1.9">
+
+      Configure your snapshots in YAML files to tell dbt how to detect record changes. Define snapshots configurations in YAML files, alongside your models, for a cleaner, faster, and more consistent set up. Place snapshot YAML files in the models directory or in a snapshots directory.
+
+      <File name='snapshots/orders_snapshot.yml'>
+
+      ```yaml
+      snapshots:
+        - name: string
+          relation: relation # source('my_source', 'my_table') or ref('my_model')
+          [description](/reference/resource-properties/description):  markdown_string
+          config:
+            [database](/reference/resource-configs/database): string
+            [schema](/reference/resource-configs/schema): string
+            [alias](/reference/resource-configs/alias): string
+            [strategy](/reference/resource-configs/strategy): timestamp | check
+            [unique_key](/reference/resource-configs/unique_key): column_name_or_expression
+            [check_cols](/reference/resource-configs/check_cols): [column_name] | all
+            [updated_at](/reference/resource-configs/updated_at): column_name
+            [snapshot_meta_column_names](/reference/resource-configs/snapshot_meta_column_names): dictionary
+            [dbt_valid_to_current](/reference/resource-configs/dbt_valid_to_current): string
+            [hard_deletes](/reference/resource-configs/hard-deletes): ignore | invalidate | new_record 
+      ```
+
+      </File>
+
+      The following table outlines the configurations available for snapshots:
+
+      | Config | Description | Required? | Example |
+      | ------ | ----------- | --------- | ------- |
+      | [database](/reference/resource-configs/database) | Specify a custom database for the snapshot | No | analytics |
+      | [schema](/reference/resource-configs/schema) | Specify a custom schema for the snapshot | No | snapshots |
+      | [alias](/reference/resource-configs/alias)   | Specify an alias for the snapshot | No | your_custom_snapshot |
+      | [strategy](/reference/resource-configs/strategy) | The snapshot strategy to use. Valid values: `timestamp` or `check` | Yes | timestamp |
+      | [unique_key](/reference/resource-configs/unique_key) | A <Term id="primary-key" /> column(s) (string or array) or expression for the record | Yes |  `id` or `[order_id, product_id]` |
+      | [check_cols](/reference/resource-configs/check_cols) | If using the `check` strategy, then the columns to check | Only if using the `check` strategy | ["status"] |
+      | [updated_at](/reference/resource-configs/update

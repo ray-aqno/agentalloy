@@ -1,0 +1,80 @@
+language: C#
+version_anchor: .NET 9 / C# 13
+generated_at: 2026-05-01
+canonical:
+  language_reference: https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/
+  library_reference: https://learn.microsoft.com/en-us/dotnet/api/?view=net-9.0
+  spec_or_standard: https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/introduction
+  release_notes: https://learn.microsoft.com/en-us/dotnet/core/whats-new/dotnet-9/overview
+topics:
+  concurrency_and_async:
+    description: Task, async/await, CancellationToken, Channels, and Parallel
+    urls:
+      - https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/
+      - https://learn.microsoft.com/en-us/dotnet/standard/parallel-programming/task-parallel-library-tpl
+      - https://learn.microsoft.com/en-us/dotnet/api/system.threading.channels?view=net-9.0
+      - https://learn.microsoft.com/en-us/dotnet/api/system.threading.cancellationtoken?view=net-9.0
+  error_handling_and_exceptions:
+    description: Exception types, catch filters, and AggregateException for tasks
+    urls:
+      - https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/exceptions/
+      - https://learn.microsoft.com/en-us/dotnet/api/system.exception?view=net-9.0
+      - https://learn.microsoft.com/en-us/dotnet/standard/parallel-programming/exception-handling-task-parallel-library
+  typing_and_generics:
+    description: Generics, constraints, nullable reference types, and pattern matching
+    urls:
+      - https://learn.microsoft.com/en-us/dotnet/csharp/programming-guide/generics/
+      - https://learn.microsoft.com/en-us/dotnet/csharp/nullable-references
+      - https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/operators/patterns
+  memory_and_performance:
+    description: Span<T>, Memory<T>, ArrayPool, GC tuning, and unsafe context
+    urls:
+      - https://learn.microsoft.com/en-us/dotnet/api/system.span-1?view=net-9.0
+      - https://learn.microsoft.com/en-us/dotnet/api/system.memory-1?view=net-9.0
+      - https://learn.microsoft.com/en-us/dotnet/standard/garbage-collection/
+      - https://learn.microsoft.com/en-us/dotnet/api/system.buffers.arraypool-1?view=net-9.0
+  packaging_and_dependency_management:
+    description: NuGet package references, .csproj SDK style, and global.json
+    urls:
+      - https://learn.microsoft.com/en-us/nuget/consume-packages/package-references-in-project-files
+      - https://learn.microsoft.com/en-us/dotnet/core/tools/global-json
+  testing_idioms:
+    description: MSTest v3 is the Microsoft-canonical test framework
+    urls:
+      - https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-with-mstest
+      - https://learn.microsoft.com/en-us/dotnet/core/testing/
+  security_and_crypto_primitives:
+    description: System.Security.Cryptography — hashing, symmetric/asymmetric encryption
+    urls:
+      - https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography?view=net-9.0
+      - https://learn.microsoft.com/en-us/dotnet/standard/security/cryptography-model
+  io_and_filesystem:
+    description: System.IO — File, Stream, Path, and async file operations
+    urls:
+      - https://learn.microsoft.com/en-us/dotnet/api/system.io?view=net-9.0
+      - https://learn.microsoft.com/en-us/dotnet/standard/io/
+      - https://learn.microsoft.com/en-us/dotnet/api/system.io.file?view=net-9.0
+  networking_and_http_client:
+    description: HttpClient, SocketsHttpHandler, and System.Net.Http
+    urls:
+      - https://learn.microsoft.com/en-us/dotnet/api/system.net.http.httpclient?view=net-9.0
+      - https://learn.microsoft.com/en-us/dotnet/fundamentals/networking/http/httpclient
+  serialization_json_binary:
+    description: System.Text.Json — canonical built-in JSON serializer since .NET Core 3+
+    urls:
+      - https://learn.microsoft.com/en-us/dotnet/api/system.text.json?view=net-9.0
+      - https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/overview
+  logging_and_observability:
+    description: Microsoft.Extensions.Logging abstraction and ILogger pattern
+    urls:
+      - https://learn.microsoft.com/en-us/dotnet/core/extensions/logging
+      - https://learn.microsoft.com/en-us/dotnet/api/microsoft.extensions.logging?view=net-9.0
+  language_evolution_and_deprecation:
+    description: What's new in C# per version and .NET breaking changes
+    urls:
+      - https://learn.microsoft.com/en-us/dotnet/csharp/whats-new/csharp-13
+      - https://learn.microsoft.com/en-us/dotnet/core/compatibility/9.0
+known_gaps:
+  - learn.microsoft.com versioned subtrees can redirect to wrong .NET version; verify view=net-9.0 param
+  - ASP.NET Core has separate docs tree; supplement with framework-tier skill
+  - Entity Framework Core is outside core .NET docs

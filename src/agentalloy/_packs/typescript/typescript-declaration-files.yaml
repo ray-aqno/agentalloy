@@ -1,0 +1,341 @@
+skill_type: domain
+skill_id: typescript-declaration-files
+canonical_name: TypeScript Declaration Files (.d.ts)
+category: engineering
+skill_class: domain
+domain_tags:
+- typescript
+- declaration-files
+- ambient-types
+- type-definitions
+- modules
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion (wave 2)
+raw_prose: |
+  # TypeScript Declaration Files (.d.ts)
+
+  ## Overview
+
+  Declaration files (.d.ts) describe the shape of JavaScript code without implementation. Used for: typing untyped libraries, augmenting third-party types, ambient globals, and shipping types alongside compiled JS in npm packages.
+
+  ---
+
+  ## What .d.ts Files Are
+
+  A .d.ts file contains only type declarations:
+
+  ```ts
+  // types/legacy-lib.d.ts
+  declare module 'legacy-lib' {
+      export function doThing(input: string): number;
+      export const VERSION: string;
+  }
+  ```
+
+  No `function doThing() { ... }` body. Just the signature. The compiler trusts the declaration; the runtime uses the actual JS.
+
+  ## Augmenting Third-Party Types
+
+  Some libraries ship incomplete or wrong types. Augment via module declaration merging:
+
+  ```ts
+  // custom.d.ts
+  import 'express';
+
+  declare module 'express' {
+      interface Request {
+          user?: { id: string; email: string };
+      }
+  }
+  ```
+
+  Now `req.user` is typed across the app. Place the file in your project; tsc auto-includes it.
+
+  ## Ambient Globals
+
+  For globals not exported from any module:
+
+  ```ts
+  // globals.d.ts
+  declare global {
+      interface Window {
+          myAnalytics: {
+              track(event: string, props?: object): void;
+          };
+      }
+
+      var __APP_VERSION__: string;
+  }
+
+  export {};  // makes this a module so `declare global` works
+  ```
+
+  `window.myAnalytics.track(...)` is now typed. The trailing `export {}` is required — without it, `declare global` doesn't take effect.
+
+  ## declare module for Untyped Modules
+
+  When importing an untyped library:
+
+  ```ts
+  // my-types.d.ts
+  declare module 'untyped-lib';  // anything goes — typed as `any`
+
+  declare module 'sloppily-typed-lib' {
+      export function foo(x: string): number;
+      // partial typing — only what you actually use
+  }
+  ```
+
+  The first form silences errors; the second adds real types where you care. Useful for legacy code with one or two missing types.
+
+  ## Shipping Types in Your Package
+
+  ```json
+  // package.json
+  {
+      "main": "dist/index.js",
+      "types": "dist/index.d.ts",
+      "files": ["dist"]
+  }
+  ```
+
+  ```jsonc
+  // tsconfig.json
+  {
+      "compilerOptions": {
+          "declaration": true,
+          "declarationMap": true,
+          "outDir": "dist"
+      }
+  }
+  ```
+
+  `declaration: true` emits .d.ts files alongside .js. `declarationMap: true` adds source maps so consumers' editors jump to your TS source.
+
+  ## DefinitelyTyped — @types Packages
+
+  For libraries you don't own:
+
+  ```bash
+  npm install --save-dev @types/lodash
+  ```
+
+  `@types/x` packages ship just .d.ts files. Maintained at github.com/DefinitelyTyped/DefinitelyTyped. Most popular libraries have community-maintained types.
+
+  If a library has built-in types (its package.json has a `types` field), no `@types` install needed.
+
+  ## Triple-Slash References
+
+  Legacy way to reference declarations:
+
+  ```ts
+  /// <reference path="./types.d.ts" />
+  /// <reference types="node" />
+  ```
+
+  Modern alternative: `tsconfig.json`'s `types` field:
+
+  ```jsonc
+  { "compilerOptions": { "types": ["node", "vitest/globals"] } }
+  ```
+
+  Reach for triple-slash only for tight per-file scoping. Default to tsconfig.
+
+  ## Module Resolution and .d.ts
+
+  When you import from `'foo'`:
+
+  1. Check if `node_modules/foo/package.json` has a `types` field.
+  2. Else look for `node_modules/foo/index.d.ts`.
+  3. Else check `node_modules/@types/foo/index.d.ts`.
+  4. Else error.
+
+  Bundle your .d.ts emission output into the package; consumers pick it up automatically.
+
+  ## Common Pitfalls
+
+  - **Forgetting `export {}` in global declaration files.** `declare global` doesn't take effect; types appear missing.
+  - **Augmenting modules from a non-module file.** `declare module 'express'` in a script-mode file (no top-level imports/exports) fails silently.
+  - **Shipping .ts files in node_modules.** Consumers compile your source instead of using your .d.ts. Always ship compiled .js + .d.ts.
+  - **Wrong `types` path in package.json.** Editors don't pick up your types. Verify with a fresh `npm install` of your package in a test app.
+
+  ## Verification
+
+  A working type setup:
+
+  - IDE auto-suggests properties on third-party types you've augmented.
+  - Your published package's consumers get types automatically.
+  - declarationMap lets consumers jump from imported types to your source.
+  - Ambient globals are typed correctly without per-file imports.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## What .d.ts Files Are
+
+    A .d.ts file contains only type declarations:
+
+    ```ts
+    // types/legacy-lib.d.ts
+    declare module 'legacy-lib' {
+        export function doThing(input: string): number;
+        export const VERSION: string;
+    }
+    ```
+
+    No `function doThing() { ... }` body. Just the signature. The compiler trusts the declaration; the runtime uses the actual JS.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Augmenting Third-Party Types
+
+    Some libraries ship incomplete or wrong types. Augment via module declaration merging:
+
+    ```ts
+    // custom.d.ts
+    import 'express';
+
+    declare module 'express' {
+        interface Request {
+            user?: { id: string; email: string };
+        }
+    }
+    ```
+
+    Now `req.user` is typed across the app. Place the file in your project; tsc auto-includes it.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Ambient Globals
+
+    For globals not exported from any module:
+
+    ```ts
+    // globals.d.ts
+    declare global {
+        interface Window {
+            myAnalytics: {
+                track(event: string, props?: object): void;
+            };
+        }
+
+        var __APP_VERSION__: string;
+    }
+
+    export {};  // makes this a module so `declare global` works
+    ```
+
+    `window.myAnalytics.track(...)` is now typed. The trailing `export {}` is required — without it, `declare global` doesn't take effect.
+- fragment_type: execution
+  sequence: 4
+  content: |-
+    ## declare module for Untyped Modules
+
+    When importing an untyped library:
+
+    ```ts
+    // my-types.d.ts
+    declare module 'untyped-lib';  // anything goes — typed as `any`
+
+    declare module 'sloppily-typed-lib' {
+        export function foo(x: string): number;
+        // partial typing — only what you actually use
+    }
+    ```
+
+    The first form silences errors; the second adds real types where you care. Useful for legacy code with one or two missing types.
+- fragment_type: execution
+  sequence: 5
+  content: |-
+    ## Shipping Types in Your Package
+
+    ```json
+    // package.json
+    {
+        "main": "dist/index.js",
+        "types": "dist/index.d.ts",
+        "files": ["dist"]
+    }
+    ```
+
+    ```jsonc
+    // tsconfig.json
+    {
+        "compilerOptions": {
+            "declaration": true,
+            "declarationMap": true,
+            "outDir": "dist"
+        }
+    }
+    ```
+
+    `declaration: true` emits .d.ts files alongside .js. `declarationMap: true` adds source maps so consumers' editors jump to your TS source.
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## DefinitelyTyped — @types Packages
+
+    For libraries you don't own:
+
+    ```bash
+    npm install --save-dev @types/lodash
+    ```
+
+    `@types/x` packages ship just .d.ts files. Maintained at github.com/DefinitelyTyped/DefinitelyTyped. Most popular libraries have community-maintained types.
+
+    If a library has built-in types (its package.json has a `types` field), no `@types` install needed.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Triple-Slash References
+
+    Legacy way to reference declarations:
+
+    ```ts
+    /// <reference path="./types.d.ts" />
+    /// <reference types="node" />
+    ```
+
+    Modern alternative: `tsconfig.json`'s `types` field:
+
+    ```jsonc
+    { "compilerOptions": { "types": ["node", "vitest/globals"] } }
+    ```
+
+    Reach for triple-slash only for tight per-file scoping. Default to tsconfig.
+- fragment_type: execution
+  sequence: 8
+  content: |-
+    ## Module Resolution and .d.ts
+
+    When you import from `'foo'`:
+
+    1. Check if `node_modules/foo/package.json` has a `types` field.
+    2. Else look for `node_modules/foo/index.d.ts`.
+    3. Else check `node_modules/@types/foo/index.d.ts`.
+    4. Else error.
+
+    Bundle your .d.ts emission output into the package; consumers pick it up automatically.
+- fragment_type: guardrail
+  sequence: 9
+  content: |-
+    ## Common Pitfalls
+
+    - **Forgetting `export {}` in global declaration files.** `declare global` doesn't take effect; types appear missing.
+    - **Augmenting modules from a non-module file.** `declare module 'express'` in a script-mode file (no top-level imports/exports) fails silently.
+    - **Shipping .ts files in node_modules.** Consumers compile your source instead of using your .d.ts. Always ship compiled .js + .d.ts.
+    - **Wrong `types` path in package.json.** Editors don't pick up your types. Verify with a fresh `npm install` of your package in a test app.
+- fragment_type: verification
+  sequence: 10
+  content: |-
+    ## Verification
+
+    A working type setup:
+
+    - IDE auto-suggests properties on third-party types you've augmented.
+    - Your published package's consumers get types automatically.
+    - declarationMap lets consumers jump from imported types to your source.
+    - Ambient globals are typed correctly without per-file imports.

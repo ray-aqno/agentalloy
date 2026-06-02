@@ -1,0 +1,303 @@
+skill_type: domain
+skill_id: testing-test-data-builders
+canonical_name: Test Data Builders Pattern
+category: quality
+skill_class: domain
+domain_tags:
+  - test data
+  - fluent API
+  - complex objects
+  - factory pattern
+  - domain knowledge
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: machine authoring contract for pending-qa pipeline
+raw_prose: |
+  # Test Data Builders Pattern
+
+  ## Overview
+
+  Builders are fluent APIs for constructing test data. They read like English (`anOrder().withCustomer(alice).withTwoItems().build()`), encode domain knowledge ('a trial subscription has these defaults'), and stay readable as the domain grows.
+
+  ## When Factories Aren't Enough
+
+  `UserFactory(plan='pro', is_admin=True)` is fine for one object. When you need to express 'a customer who has been on the trial plan for 5 days, has 2 active subscriptions, and lives in Germany', argument lists become unreadable.
+
+  Builders express this fluently:
+
+  ```python
+  customer = (a_customer()
+      .with_country('DE')
+      .with_trial_plan(active_for=timedelta(days=5))
+      .with_active_subscriptions(2)
+      .build())
+  ```
+
+  Reads like a domain sentence. New variations are added by extending the builder, not by stacking more arguments.
+
+  ## Implementation Sketch
+
+  ```python
+  class CustomerBuilder:
+      def __init__(self):
+          self._country = 'US'
+          self._plan = 'free'
+          self._subscriptions = []
+          self._created_at = datetime.utcnow()
+
+      def with_country(self, country):
+          self._country = country
+          return self  # fluent — returns self for chaining
+
+      def with_trial_plan(self, active_for):
+          self._plan = 'trial'
+          self._trial_ends_at = datetime.utcnow() + active_for
+          return self
+
+      def with_active_subscriptions(self, n):
+          self._subscriptions = [SubscriptionBuilder().active().build() for _ in range(n)]
+          return self
+
+      def build(self):
+          return Customer(
+              country=self._country,
+              plan=self._plan,
+              subscriptions=self._subscriptions,
+              ...
+          )
+
+  def a_customer():
+      return CustomerBuilder()
+  ```
+
+  The `a_customer()` function is sugar — `CustomerBuilder()` works too, but the function reads better in English.
+
+  ## Encoding Domain Knowledge
+
+  Builders are the right place to encode 'what does a valid X look like':
+
+  ```python
+  def with_eu_compliant_settings(self):
+      self._country = 'DE'
+      self._gdpr_consent = True
+      self._marketing_opt_in = False
+      return self
+  ```
+
+  A test that needs 'an EU-compliant customer' calls `.with_eu_compliant_settings()` once, instead of remembering all three settings. Domain rules live in the builder, not in tests.
+
+  ## Composition Over Inheritance
+
+  Don't build a `TrialCustomerBuilder` that extends `CustomerBuilder`. Instead, expose `.with_trial_plan()` on the base. Composition keeps the builder API discoverable and avoids subclass explosion.
+
+  For deeply nested objects, break them out:
+
+  ```python
+  order = (an_order()
+      .for_customer(alice)
+      .with_item(an_item().named('Widget').priced(2999).build())
+      .with_item(an_item().named('Gadget').priced(4999).build())
+      .build())
+  ```
+
+  Each builder owns its slice of the domain.
+
+  ## Builders for Persistent Objects
+
+  When the test needs a saved-to-DB object, expose two terminal methods:
+
+  ```python
+  def build(self):
+      return Customer(...)  # in-memory
+
+  def create(self, db):
+      customer = self.build()
+      db.save(customer)
+      return customer
+
+  # In tests:
+  unsaved = a_customer().build()
+  saved = a_customer().with_country('DE').create(db)
+  ```
+
+  `build` for unit tests, `create` for integration tests.
+
+  ## Builders vs Factories — The Boundary
+
+  Factory libraries (factory_boy) handle the 'generate plausible data' problem. Builders handle the 'express test intent fluently' problem.
+
+  You can use both: a builder that internally calls a factory.
+
+  ```python
+  class CustomerBuilder:
+      def __init__(self):
+          self._customer = CustomerFactory.build()  # plausible defaults
+
+      def with_country(self, country):
+          self._customer.country = country
+          return self
+
+      def build(self):
+          return self._customer
+  ```
+
+  Factories give you valid baselines; builders give you readable variations.
+
+  ## Common Pitfalls
+
+  - **Builders that mutate AND return the result.** Pick one. Either always return `self` (fluent), or don't (more explicit). Mixing surprises readers.
+  - **Too many `.with_X` methods.** A builder with 30 fluent methods is no easier than a 30-arg factory. Group related setters under named state methods (`.with_admin_user`, `.with_trial_plan`).
+  - **Forgetting the `build()` step.** `a_customer().with_country('DE')` returns a builder, not a Customer. Tests that pass the builder where a Customer is expected fail in confusing ways. Strong types help.
+  - **Building business logic into the builder.** A builder makes test data; it shouldn't compute derived fields the production code computes. Otherwise tests pass even when production logic regresses.
+
+  ## When Builders Are Overkill
+
+  - Tests that need one object with one or two overrides — factory is enough.
+  - Domain objects with three fields — direct construction is fine.
+  - One-off test data — inline data is most readable.
+
+  Reach for builders when the same complex setup recurs in 5+ tests, OR when the test reads obscurely without one.
+
+  ## Verification
+
+  A working builder:
+
+  - Reads like English in the test.
+  - Encodes domain rules so individual tests don't have to.
+  - Composes naturally with other builders for nested structures.
+  - Has a clear `build()` (or `create()`) terminal method.
+  - Doesn't replicate production logic that should be computed by real code.
+
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      Builders are fluent APIs for constructing test data. They read like English (`anOrder().withCustomer(alice).withTwoItems().build()`), encode domain knowledge ('a trial subscription has these defaults'), and stay readable as the domain grows.
+  - fragment_type: execution
+    sequence: 2
+    content: |
+      `UserFactory(plan='pro', is_admin=True)` is fine for one object. When you need to express 'a customer who has been on the trial plan for 5 days, has 2 active subscriptions, and lives in Germany', argument lists become unreadable.
+
+      Builders express this fluently:
+
+      ```python
+      customer = (a_customer()
+          .with_country('DE')
+          .with_trial_plan(active_for=timedelta(days=5))
+          .with_active_subscriptions(2)
+          .build())
+      ```
+
+      Reads like a domain sentence. New variations are added by extending the builder, not by stacking more arguments.
+  - fragment_type: example
+    sequence: 3
+    content: |
+      ```python
+      class CustomerBuilder:
+          def __init__(self):
+              self._country = 'US'
+              self._plan = 'free'
+              self._subscriptions = []
+              self._created_at = datetime.utcnow()
+
+          def with_country(self, country):
+              self._country = country
+              return self  # fluent — returns self for chaining
+
+          def with_trial_plan(self, active_for):
+              self._plan = 'trial'
+              self._trial_ends_at = datetime.utcnow() + active_for
+              return self
+
+          def with_active_subscriptions(self, n):
+              self._subscriptions = [SubscriptionBuilder().active().build() for _ in range(n)]
+              return self
+
+          def build(self):
+              return Customer(
+                  country=self._country,
+                  plan=self._plan,
+                  subscriptions=self._subscriptions,
+                  ...
+              )
+
+      def a_customer():
+          return CustomerBuilder()
+      ```
+  - fragment_type: rationale
+    sequence: 4
+    content: |
+      The `a_customer()` function is sugar — `CustomerBuilder()` works too, but the function reads better in English.
+
+      Builders are the right place to encode 'what does a valid X look like':
+
+      ```python
+      def with_eu_compliant_settings(self):
+          self._country = 'DE'
+          self._gdpr_consent = True
+          self._marketing_opt_in = False
+          return self
+      ```
+
+      A test that needs 'an EU-compliant customer' calls `.with_eu_compliant_settings()` once, instead of remembering all three settings. Domain rules live in the builder, not in tests.
+  - fragment_type: guardrail
+    sequence: 5
+    content: |
+      Don't build a `TrialCustomerBuilder` that extends `CustomerBuilder`. Instead, expose `.with_trial_plan()` on the base. Composition keeps the builder API discoverable and avoids subclass explosion.
+
+      For deeply nested objects, break them out:
+
+      ```python
+      order = (an_order()
+          .for_customer(alice)
+          .with_item(an_item().named('Widget').priced(2999).build())
+          .with_item(an_item().named('Gadget').priced(4999).build())
+          .build())
+      ```
+
+      Each builder owns its slice of the domain.
+
+      `build` for unit tests, `create` for integration tests.
+  - fragment_type: example
+    sequence: 6
+    content: |
+      ```python
+      def build(self):
+          return Customer(...)  # in-memory
+
+      def create(self, db):
+          customer = self.build()
+          db.save(customer)
+          return customer
+
+      # In tests:
+      unsaved = a_customer().build()
+      saved = a_customer().with_country('DE').create(db)
+      ```
+  - fragment_type: rationale
+    sequence: 7
+    content: |
+      Factories give you valid baselines; builders give you readable variations.
+
+      - **Builders that mutate AND return the result.** Pick one. Either always return `self` (fluent), or don't (more explicit). Mixing surprises readers.
+      - **Too many `.with_X` methods.** A builder with 30 fluent methods is no easier than a 30-arg factory. Group related setters under named state methods (`.with_admin_user`, `.with_trial_plan`).
+      - **Forgetting the `build()` step.** `a_customer().with_country('DE')` returns a builder, not a Customer. Tests that pass the builder where a Customer is expected fail in confusing ways. Strong types help.
+      - **Building business logic into the builder.** A builder makes test data; it shouldn't compute derived fields the production code computes. Otherwise tests pass even when production logic regresses.
+
+      - Tests that need one object with one or two overrides — factory is enough.
+      - Domain objects with three fields — direct construction is fine.
+      - One-off test data — inline data is most readable.
+
+      Reach for builders when the same complex setup recurs in 5+ tests, OR when the test reads obscurely without one.
+  - fragment_type: verification
+    sequence: 8
+    content: |
+      A working builder:
+
+      - Reads like English in the test.
+      - Encodes domain rules so individual tests don't have to.
+      - Composes naturally with other builders for nested structures.
+      - Has a clear `build()` (or `create()`) terminal method.
+      - Doesn't replicate production logic that should be computed by real code.

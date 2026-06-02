@@ -1,0 +1,377 @@
+skill_type: domain
+skill_id: ui-design-component-patterns
+canonical_name: UI Component Library Patterns
+category: design
+skill_class: domain
+domain_tags:
+- ui-design
+- components
+- composition
+- headless-ui
+- compound-components
+always_apply: false
+phase_scope: []
+category_scope: []
+author: navistone
+change_summary: hand-authored Opus expansion
+raw_prose: |
+  # UI Component Library Patterns
+
+  ## Overview
+
+  A reusable component's API determines how painful it is to use. The patterns: prefer composition (small parts you assemble) over configuration (one component with 30 props). Headless components separate logic from presentation. Compound components let consumers compose related parts.
+
+  ---
+
+  ## Composition Over Configuration
+
+  Don't:
+  ```jsx
+  <Modal
+      title="Confirm"
+      description="Are you sure?"
+      primaryButtonText="OK"
+      primaryButtonVariant="danger"
+      secondaryButtonText="Cancel"
+      showCloseIcon
+      closeOnEsc
+      closeOnOverlayClick={false}
+      icon="warning"
+  />
+  ```
+
+  Do:
+  ```jsx
+  <Modal>
+      <Modal.Header>
+          <Modal.Icon variant="warning" />
+          <Modal.Title>Confirm</Modal.Title>
+          <Modal.Close />
+      </Modal.Header>
+      <Modal.Body>Are you sure?</Modal.Body>
+      <Modal.Footer>
+          <Button variant="ghost">Cancel</Button>
+          <Button variant="danger">OK</Button>
+      </Modal.Footer>
+  </Modal>
+  ```
+
+  The compound form scales: add 'badge in header', 'two paragraphs in body', 'three buttons in footer' without changing component props.
+
+  ## Headless Components
+
+  Logic without styles. Radix UI and Headless UI are the canonical examples:
+
+  ```jsx
+  import * as Dialog from '@radix-ui/react-dialog';
+
+  <Dialog.Root>
+      <Dialog.Trigger>Open</Dialog.Trigger>
+      <Dialog.Portal>
+          <Dialog.Overlay className="bg-black/50 fixed inset-0" />
+          <Dialog.Content className="bg-white p-6 rounded-lg fixed top-1/2">
+              <Dialog.Title>Title</Dialog.Title>
+              <Dialog.Description>Description</Dialog.Description>
+              <Dialog.Close>Close</Dialog.Close>
+          </Dialog.Content>
+      </Dialog.Portal>
+  </Dialog.Root>
+  ```
+
+  You write the styles; Radix handles focus management, keyboard nav, ARIA, portals, escape-key, click-outside. The hard parts.
+
+  ## Polymorphic Components — The `as` Prop
+
+  ```jsx
+  <Box as="section" />
+  <Button as="a" href="..." />
+  <Heading as="h2" />
+  ```
+
+  The `as` prop changes the rendered element while keeping styles and behavior. Common in design systems where 'a heading' might be h1-h6 or a div with role=heading.
+
+  TypeScript polymorphic typing is fiddly — use `@radix-ui/react-slot` or accept the typing complexity.
+
+  ## Render Props vs Slots
+
+  Render props pass a callable:
+  ```jsx
+  <List items={users} renderItem={(user) => <UserCard {...user} />} />
+  ```
+
+  Slots pass children:
+  ```jsx
+  <List>
+      {users.map(user => <UserCard key={user.id} {...user} />)}
+  </List>
+  ```
+
+  Slots are the JSX-native way; render props remain useful when you need to pass derived state to the consumer:
+
+  ```jsx
+  <Toggle>
+      {({ on, toggle }) => <button onClick={toggle}>{on ? 'On' : 'Off'}</button>}
+  </Toggle>
+  ```
+
+  ## Controlled vs Uncontrolled
+
+  Both are first-class:
+
+  ```jsx
+  // Uncontrolled — component manages state
+  <Switch defaultChecked />
+
+  // Controlled — parent manages state
+  const [on, setOn] = useState(false);
+  <Switch checked={on} onCheckedChange={setOn} />
+  ```
+
+  Default to uncontrolled when state is internal. Switch to controlled when the parent needs the state (form integration, conditional UI based on the value).
+
+  ## Forwarding Refs
+
+  Library components must accept refs to be useful:
+
+  ```jsx
+  const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+      ({ children, ...props }, ref) => (
+          <button ref={ref} {...props}>{children}</button>
+      )
+  );
+  ```
+
+  Without ref forwarding, consumers can't focus, measure, or animate the underlying DOM. React 19 makes this less verbose (ref-as-prop), but for libraries supporting React 18, forwardRef is necessary.
+
+  ## Compound Components — Implementation
+
+  ```jsx
+  const ModalContext = createContext();
+
+  function Modal({ children }) {
+      const [open, setOpen] = useState(false);
+      return (
+          <ModalContext.Provider value={{ open, setOpen }}>
+              {children}
+          </ModalContext.Provider>
+      );
+  }
+
+  function ModalTrigger({ children }) {
+      const { setOpen } = useContext(ModalContext);
+      return <button onClick={() => setOpen(true)}>{children}</button>;
+  }
+
+  function ModalContent({ children }) {
+      const { open } = useContext(ModalContext);
+      return open ? <div>{children}</div> : null;
+  }
+
+  Modal.Trigger = ModalTrigger;
+  Modal.Content = ModalContent;
+  ```
+
+  Context glues parent + children. Consumers compose without prop-drilling.
+
+  ## Common Pitfalls
+
+  - **`forwardRef` everywhere preemptively.** Adds typing noise. Add only when the component represents a DOM element consumers will reference.
+  - **Polymorphic `as` without proper typing.** TypeScript thinks it's `unknown`. Either invest in typing or limit `as` to a known set.
+  - **Controlled-only components.** Forces consumers to manage state for trivial cases. Always provide uncontrolled defaults.
+  - **Tight coupling between parent and child compounds.** `Modal.Footer` that crashes outside `Modal`. Use Context with a clear error: `useContext(ModalContext)` returns undefined? Throw with a helpful message.
+
+  ## Verification
+
+  A well-designed component library:
+
+  - Compound components compose without prop drilling.
+  - Headless primitives (Radix or equivalent) handle a11y/keyboard.
+  - Polymorphic `as` prop works for reasonable element substitutions.
+  - Refs forward to underlying DOM where consumers expect.
+  - Both controlled and uncontrolled modes supported.
+fragments:
+- fragment_type: execution
+  sequence: 1
+  content: |-
+    ## Composition Over Configuration
+
+    Don't:
+    ```jsx
+    <Modal
+        title="Confirm"
+        description="Are you sure?"
+        primaryButtonText="OK"
+        primaryButtonVariant="danger"
+        secondaryButtonText="Cancel"
+        showCloseIcon
+        closeOnEsc
+        closeOnOverlayClick={false}
+        icon="warning"
+    />
+    ```
+
+    Do:
+    ```jsx
+    <Modal>
+        <Modal.Header>
+            <Modal.Icon variant="warning" />
+            <Modal.Title>Confirm</Modal.Title>
+            <Modal.Close />
+        </Modal.Header>
+        <Modal.Body>Are you sure?</Modal.Body>
+        <Modal.Footer>
+            <Button variant="ghost">Cancel</Button>
+            <Button variant="danger">OK</Button>
+        </Modal.Footer>
+    </Modal>
+    ```
+
+    The compound form scales: add 'badge in header', 'two paragraphs in body', 'three buttons in footer' without changing component props.
+- fragment_type: execution
+  sequence: 2
+  content: |-
+    ## Headless Components
+
+    Logic without styles. Radix UI and Headless UI are the canonical examples:
+
+    ```jsx
+    import * as Dialog from '@radix-ui/react-dialog';
+
+    <Dialog.Root>
+        <Dialog.Trigger>Open</Dialog.Trigger>
+        <Dialog.Portal>
+            <Dialog.Overlay className="bg-black/50 fixed inset-0" />
+            <Dialog.Content className="bg-white p-6 rounded-lg fixed top-1/2">
+                <Dialog.Title>Title</Dialog.Title>
+                <Dialog.Description>Description</Dialog.Description>
+                <Dialog.Close>Close</Dialog.Close>
+            </Dialog.Content>
+        </Dialog.Portal>
+    </Dialog.Root>
+    ```
+
+    You write the styles; Radix handles focus management, keyboard nav, ARIA, portals, escape-key, click-outside. The hard parts.
+- fragment_type: execution
+  sequence: 3
+  content: |-
+    ## Polymorphic Components — The `as` Prop
+
+    ```jsx
+    <Box as="section" />
+    <Button as="a" href="..." />
+    <Heading as="h2" />
+    ```
+
+    The `as` prop changes the rendered element while keeping styles and behavior. Common in design systems where 'a heading' might be h1-h6 or a div with role=heading.
+
+    TypeScript polymorphic typing is fiddly — use `@radix-ui/react-slot` or accept the typing complexity.
+- fragment_type: rationale
+  sequence: 4
+  content: |-
+    ## Render Props vs Slots
+
+    Render props pass a callable:
+    ```jsx
+    <List items={users} renderItem={(user) => <UserCard {...user} />} />
+    ```
+
+    Slots pass children:
+    ```jsx
+    <List>
+        {users.map(user => <UserCard key={user.id} {...user} />)}
+    </List>
+    ```
+
+    Slots are the JSX-native way; render props remain useful when you need to pass derived state to the consumer:
+
+    ```jsx
+    <Toggle>
+        {({ on, toggle }) => <button onClick={toggle}>{on ? 'On' : 'Off'}</button>}
+    </Toggle>
+    ```
+- fragment_type: rationale
+  sequence: 5
+  content: |-
+    ## Controlled vs Uncontrolled
+
+    Both are first-class:
+
+    ```jsx
+    // Uncontrolled — component manages state
+    <Switch defaultChecked />
+
+    // Controlled — parent manages state
+    const [on, setOn] = useState(false);
+    <Switch checked={on} onCheckedChange={setOn} />
+    ```
+
+    Default to uncontrolled when state is internal. Switch to controlled when the parent needs the state (form integration, conditional UI based on the value).
+- fragment_type: execution
+  sequence: 6
+  content: |-
+    ## Forwarding Refs
+
+    Library components must accept refs to be useful:
+
+    ```jsx
+    const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+        ({ children, ...props }, ref) => (
+            <button ref={ref} {...props}>{children}</button>
+        )
+    );
+    ```
+
+    Without ref forwarding, consumers can't focus, measure, or animate the underlying DOM. React 19 makes this less verbose (ref-as-prop), but for libraries supporting React 18, forwardRef is necessary.
+- fragment_type: execution
+  sequence: 7
+  content: |-
+    ## Compound Components — Implementation
+
+    ```jsx
+    const ModalContext = createContext();
+
+    function Modal({ children }) {
+        const [open, setOpen] = useState(false);
+        return (
+            <ModalContext.Provider value={{ open, setOpen }}>
+                {children}
+            </ModalContext.Provider>
+        );
+    }
+
+    function ModalTrigger({ children }) {
+        const { setOpen } = useContext(ModalContext);
+        return <button onClick={() => setOpen(true)}>{children}</button>;
+    }
+
+    function ModalContent({ children }) {
+        const { open } = useContext(ModalContext);
+        return open ? <div>{children}</div> : null;
+    }
+
+    Modal.Trigger = ModalTrigger;
+    Modal.Content = ModalContent;
+    ```
+
+    Context glues parent + children. Consumers compose without prop-drilling.
+- fragment_type: guardrail
+  sequence: 8
+  content: |-
+    ## Common Pitfalls
+
+    - **`forwardRef` everywhere preemptively.** Adds typing noise. Add only when the component represents a DOM element consumers will reference.
+    - **Polymorphic `as` without proper typing.** TypeScript thinks it's `unknown`. Either invest in typing or limit `as` to a known set.
+    - **Controlled-only components.** Forces consumers to manage state for trivial cases. Always provide uncontrolled defaults.
+    - **Tight coupling between parent and child compounds.** `Modal.Footer` that crashes outside `Modal`. Use Context with a clear error: `useContext(ModalContext)` returns undefined? Throw with a helpful message.
+- fragment_type: verification
+  sequence: 9
+  content: |-
+    ## Verification
+
+    A well-designed component library:
+
+    - Compound components compose without prop drilling.
+    - Headless primitives (Radix or equivalent) handle a11y/keyboard.
+    - Polymorphic `as` prop works for reasonable element substitutions.
+    - Refs forward to underlying DOM where consumers expect.
+    - Both controlled and uncontrolled modes supported.

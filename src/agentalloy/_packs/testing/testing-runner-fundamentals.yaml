@@ -1,0 +1,503 @@
+skill_type: domain
+skill_id: testing-runner-fundamentals
+canonical_name: Test Runner Fundamentals — Describe, Hooks, Filtering
+category: quality
+skill_class: domain
+domain_tags:
+  - test runner
+  - describe blocks
+  - hooks
+  - filtering
+  - vitest
+always_apply: false
+phase_scope: null
+category_scope: null
+author: authoring-agent
+change_summary: initial authoring draft
+raw_prose: |
+  # Test Runner Fundamentals — Describe, Hooks, Filtering
+
+  ## Overview
+
+  Test runners share a core surface: describe blocks for grouping, it/test blocks for assertions, hooks for setup/teardown, and filtering for running subsets. Vitest's API is the reference taxonomy here — Jest, Mocha, and pytest map to the same concepts. This skill covers the runner surface.
+
+  Sourced from https://vitest.dev/api/ — describe, hooks, filtering reference.
+
+  ## describe
+
+  * **Alias:** `suite`
+
+  ```ts
+  function describe(
+    name: string | Function,
+    body?: () => unknown,
+    timeout?: number
+  ): void
+  function describe(
+    name: string | Function,
+    options: SuiteOptions,
+    body?: () => unknown,
+  ): void
+  ```
+
+  `describe` is used to group related tests and benchmarks into a suite. Suites help organize your test files by creating logical blocks, making test output easier to read and enabling shared setup/teardown through [lifecycle hooks](/api/hooks).
+
+  When you use `test` in the top level of file, they are collected as part of the implicit suite for it. Using `describe` you can define a new suite in the current context, as a set of related tests or benchmarks and other nested suites.
+
+  ```ts [basic.spec.ts]
+  import { describe, expect, test } from 'vitest'
+
+  const person = {
+    isActive: true,
+    age: 32,
+  }
+
+  describe('person', () => {
+    test('person is defined', () => {
+      expect(person).toBeDefined()
+    })
+
+    test('is active', () => {
+      expect(person.isActive).toBeTruthy()
+    })
+
+    test('age limit', () => {
+      expect(person.age).toBeLessThanOrEqual(32)
+    })
+  })
+  ```
+
+  You can also nest `describe` blocks if you have a hierarchy of tests:
+
+  ```ts
+  import { describe, expect, test } from 'vitest'
+
+  function numberToCurrency(value: number | string) {
+    if (typeof value !== 'number') {
+      throw new TypeError('Value must be a number')
+    }
+
+    return value.toFixed(2).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  }
+
+  describe('numberToCurrency', () => {
+    describe('given an invalid number', () => {
+      test('composed of non-numbers to throw error', () => {
+        expect(() => numberToCurrency('abc')).toThrow()
+      })
+    })
+
+    describe('given a valid number', () => {
+      test('returns the correct currency format', () => {
+        expect(numberToCurrency(10000)).toBe('10,000.00')
+      })
+    })
+  })
+  ```
+
+  ## Test Options
+
+  You can use [test options](/api/test#test-options) to apply configuration to every test inside a suite, including nested suites. This is useful when you want to set timeouts, retries, or other options for a group of related tests.
+
+  ```ts
+  import { describe, test } from 'vitest'
+
+  describe('slow tests', { timeout: 10_000 }, () => {
+    test('test 1', () => { /* ... */ })
+    test('test 2', () => { /* ... */ })
+
+    // nested suites also inherit the timeout
+    describe('nested', () => {
+      test('test 3', () => { /* ... */ })
+    })
+  })
+  ```
+
+  ### `shuffle`
+
+  * **Type:** `boolean`
+  * **Default:** `false` (configured by [`sequence.shuffle`](/config/sequence#sequence-shuffle))
+  * **Alias:** [`describe.shuffle`](#describe-shuffle)
+
+  Run tests within the suite in random order. This option is inherited by nested suites.
+
+  ```ts
+  import { describe, test } from 'vitest'
+
+  describe('randomized tests', { shuffle: true }, () => {
+    test('test 1', () => { /* ... */ })
+    test('test 2', () => { /* ... */ })
+    test('test 3', () => { /* ... */ })
+  })
+  ```
+
+  ## describe.skip
+
+  * **Alias:** `suite.skip`
+
+  Use `describe.skip` in a suite to avoid running a particular describe block.
+
+  ```ts
+  import { assert, describe, test } from 'vitest'
+
+  describe.skip('skipped suite', () => {
+    test('sqrt', () => {
+      // Suite skipped, no error
+      assert.equal(Math.sqrt(4), 3)
+    })
+  })
+  ```
+
+  ## describe.skipIf
+
+  * **Alias:** `suite.skipIf`
+
+  In some cases, you might run suites multiple times with different environments, and some of the suites might be environment-specific. Instead of wrapping the suite with `if`, you can use `describe.skipIf` to skip the suite whenever the condition is truthy.
+
+  ```ts
+  import { describe, test } from 'vitest'
+
+  const isDev = process.env.NODE_ENV === 'development'
+
+  describe.skipIf(isDev)('prod only test suite', () => {
+    // this test suite only runs in production
+  })
+  ```
+
+  ## describe.runIf
+
+  * **Alias:** `suite.runIf`
+
+  Opposite of [describe.skipIf](#describe-skipif).
+
+  ```ts
+  import { assert, describe, test } from 'vitest'
+
+  const isDev = process.env.NODE_ENV === 'development'
+
+  describe.runIf(isDev)('dev only test suite', () => {
+    // this test suite only runs in development
+  })
+  ```
+
+  ## Hooks
+
+  These functions allow you to hook into the life cycle of tests to avoid repeating setup and teardown code. They apply to the current context: the file if they are used at the top-level or the current suite if they are inside a `describe` block. These hooks are not called, when you are running Vitest as a [type checker](/guide/testing-types).
+
+  Test hooks are called in a stack order ("after" hooks are reversed) by default, but you can configure it via [`sequence.hooks`](/config/sequence#sequence-hooks) option.
+
+  ## beforeEach
+
+  ```ts
+  function beforeEach(
+    body: (context: TestContext) => unknown,
+    timeout?: number,
+  ): void
+  ```
+
+  Register a callback to be called before each of the tests in the current suite runs.
+  If the function returns a promise, Vitest waits until the promise resolve before running the test.
+
+  Optionally, you can pass a timeout (in milliseconds) defining how long to wait before terminating. The default is 10 seconds, and can be configured globally with [`hookTimeout`](/config/hooktimeout).
+
+  ```ts
+  import { beforeEach } from 'vitest'
+
+  beforeEach(async () => {
+    // Clear mocks and add some testing data before each test run
+    await stopMocking()
+    await addUser({ name: 'John' })
+  })
+  ```
+
+  Here, the `beforeEach` ensures that user is added for each test.
+
+  `beforeEach` can also return an optional cleanup function (equivalent to [`afterEach`](#aftereach)):
+
+  ```ts
+  import { beforeEach } from 'vitest'
+
+  beforeEach(async () => {
+    // called once before each test run
+    await prepareSomething()
+
+    // clean up function, called once after each test run
+    return async () => {
+      await resetSomething()
+    }
+  })
+  ```
+
+  ## afterEach
+
+  ```ts
+  function afterEach(
+    body: (context: TestContext) => unknown,
+    timeout?: number,
+  ): void
+  ```
+
+  Register a callback to be called after each one of the tests in the current suite completes.
+  If the function returns a promise, Vitest waits until the promise resolve before continuing.
+
+  Optionally, you can provide a timeout (in milliseconds) for specifying how long to wait before terminating. The default is 10 seconds, and can be configured globally with [`hookTimeout`](/config/hooktimeout).
+
+  ```ts
+  import { afterEach } from 'vitest'
+
+  afterEach(async () => {
+    await clearTestingData() // clear testing data after each test run
+  })
+  ```
+
+  Here, the `afterEach` ensures that testing data is cleared after each test runs.
+
+  ::: tip
+  You can also use [`onTestFinished`](#ontestfinished) during the test execution to cleanup any state after the test has finished running.
+  :::
+
+  ## beforeAll
+
+  ```ts
+  function beforeAll(
+    body: (context: ModuleContext) => unknown,
+    timeout?: number,
+  ): void
+  ```
+
+  Register a callback to be called once before starting to run all tests in the current suite.
+  If the function returns a promise, Vitest waits until the promise resolve before running tests.
+
+  Optionally, you can provide a timeout (in milliseconds) for specifying how long to wait before terminating. The default is 10 seconds, and can be configured globally with [`hookTimeout`](/config/hooktimeout).
+
+  ```ts
+  import { beforeAll } from 'vitest'
+
+  beforeAll(async () => {
+    await startMocking() // called once before all tests run
+  })
+  ```
+
+  Here the `beforeAll` ensures that the mock data is set up before tests run.
+
+  `beforeAll` can also return an optional cleanup function (equivalent to [`afterAll`](#afterall)):
+
+  ```ts
+  import { beforeAll } from 'vitest'
+
+  beforeAll(async () => {
+    // called once before all tests run
+    await startMocking()
+
+    // clean up function, called once after all tests run
+    return async () => {
+      await stopMocking()
+    }
+  })
+  ```
+
+  ## afterAll
+
+  ```ts
+  function afterAll(
+    body: (context: ModuleContext) => unknown,
+    timeout?: number,
+  ): void
+  ```
+
+  Register a callback to be called once after all tests have run in the current suite.
+  If the function returns a promise, Vitest waits until the promise resolve before continuing.
+
+  Optionally, you can provide a timeout (in milliseconds) for specifying how long to wait before terminating. The default is 10 seconds, and can be configured globally with [`hookTimeout`](/config/hooktimeout).
+
+  ```ts
+  import { afterAll } from 'vitest'
+
+  afterAll(async () => {
+    await stopMocking() // this method is called after all tests run
+  })
+  ```
+
+  Here the `afterAll` ensures that `stopMocking` method is called after all tests run.
+fragments:
+  - fragment_type: setup
+    sequence: 1
+    content: |
+      Test runners share a core surface: describe blocks for grouping, it/test blocks for assertions, hooks for setup/teardown, and filtering for running subsets. Vitest's API is the reference taxonomy here — Jest, Mocha, and pytest map to the same concepts. This skill covers the runner surface.
+
+      Sourced from https://vitest.dev/api/ — describe, hooks, filtering reference.
+  - fragment_type: execution
+    sequence: 2
+    content: |
+      ```ts [basic.spec.ts]
+      import { describe, expect, test } from 'vitest'
+
+      const person = {
+        isActive: true,
+        age: 32,
+      }
+
+      describe('person', () => {
+        test('person is defined', () => {
+          expect(person).toBeDefined()
+        })
+
+        test('is active', () => {
+          expect(person.isActive).toBeTruthy()
+        })
+
+        test('age limit', () => {
+          expect(person.age).toBeLessThanOrEqual(32)
+        })
+      })
+      ```
+
+      You can also nest `describe` blocks if you have a hierarchy of tests:
+
+      ```ts
+      import { describe, expect, test } from 'vitest'
+
+      function numberToCurrency(value: number | string) {
+        if (typeof value !== 'number') {
+          throw new TypeError('Value must be a number')
+        }
+
+        return value.toFixed(2).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+      }
+
+      describe('numberToCurrency', () => {
+        describe('given an invalid number', () => {
+          test('composed of non-numbers to throw error', () => {
+            expect(() => numberToCurrency('abc')).toThrow()
+          })
+        })
+
+        describe('given a valid number', () => {
+          test('returns the correct currency format', () => {
+            expect(numberToCurrency(10000)).toBe('10,000.00')
+          })
+        })
+      })
+      ```
+  - fragment_type: setup
+    sequence: 3
+    content: |
+      You can use [test options](/api/test#test-options) to apply configuration to every test inside a suite, including nested suites. This is useful when you want to set timeouts, retries, or other options for a group of related tests.
+
+      ```ts
+      import { describe, test } from 'vitest'
+
+      describe('slow tests', { timeout: 10_000 }, () => {
+        test('test 1', () => { /* ... */ })
+        test('test 2', () => { /* ... */ })
+
+        // nested suites also inherit the timeout
+        describe('nested', () => {
+          test('test 3', () => { /* ... */ })
+        })
+      })
+      ```
+
+      ### `shuffle`
+
+      * **Type:** `boolean`
+      * **Default:** `false` (configured by [`sequence.shuffle`](/config/sequence#sequence-shuffle))
+      * **Alias:** [`describe.shuffle`](#describe-shuffle)
+
+      Run tests within the suite in random order. This option is inherited by nested suites.
+
+      ```ts
+      import { describe, test } from 'vitest'
+
+      describe('randomized tests', { shuffle: true }, () => {
+        test('test 1', () => { /* ... */ })
+        test('test 2', () => { /* ... */ })
+        test('test 3', () => { /* ... */ })
+      })
+      ```
+  - fragment_type: execution
+    sequence: 4
+    content: |
+      ```ts
+      import { beforeEach } from 'vitest'
+
+      beforeEach(async () => {
+        // Clear mocks and add some testing data before each test run
+        await stopMocking()
+        await addUser({ name: 'John' })
+      })
+      ```
+
+      Here, the `beforeEach` ensures that user is added for each test.
+
+      `beforeEach` can also return an optional cleanup function (equivalent to [`afterEach`](#aftereach)):
+
+      ```ts
+      import { beforeEach } from 'vitest'
+
+      beforeEach(async () => {
+        // called once before each test run
+        await prepareSomething()
+
+        // clean up function, called once after each test run
+        return async () => {
+          await resetSomething()
+        }
+      })
+      ```
+  - fragment_type: execution
+    sequence: 5
+    content: |
+      ```ts
+      import { afterEach } from 'vitest'
+
+      afterEach(async () => {
+        await clearTestingData() // clear testing data after each test run
+      })
+      ```
+
+      Here, the `afterEach` ensures that testing data is cleared after each test runs.
+
+      ::: tip
+      You can also use [`onTestFinished`](#ontestfinished) during the test execution to cleanup any state after the test has finished running.
+      :::
+  - fragment_type: setup
+    sequence: 6
+    content: |
+      ```ts
+      import { beforeAll } from 'vitest'
+
+      beforeAll(async () => {
+        await startMocking() // called once before all tests run
+      })
+      ```
+
+      Here the `beforeAll` ensures that the mock data is set up before tests run.
+
+      `beforeAll` can also return an optional cleanup function (equivalent to [`afterAll`](#afterall)):
+
+      ```ts
+      import { beforeAll } from 'vitest'
+
+      beforeAll(async () => {
+        // called once before all tests run
+        await startMocking()
+
+        // clean up function, called once after all tests run
+        return async () => {
+          await stopMocking()
+        }
+      })
+      ```
+  - fragment_type: execution
+    sequence: 7
+    content: |
+      ```ts
+      import { afterAll } from 'vitest'
+
+      afterAll(async () => {
+        await stopMocking() // this method is called after all tests run
+      })
+      ```
+
+      Here the `afterAll` ensures that `stopMocking` method is called after all tests run.
