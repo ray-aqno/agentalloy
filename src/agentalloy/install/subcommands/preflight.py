@@ -265,8 +265,9 @@ def _try_brew_install(package: str, *, cask: bool = False) -> tuple[bool, str | 
         cmd.append("--cask")
     cmd.append(package)
     print(f"  preflight: running `{' '.join(cmd)}` ...", file=sys.stderr)
+    # Route brew's stdout to stderr so it doesn't corrupt our --json output.
     try:
-        subprocess.run(cmd, check=True, timeout=600)
+        subprocess.run(cmd, check=True, timeout=600, stdout=sys.stderr)
     except subprocess.CalledProcessError as exc:
         return False, f"brew install failed (exit {exc.returncode})"
     except subprocess.TimeoutExpired:
@@ -294,11 +295,17 @@ def _check_ollama_present() -> dict[str, Any]:
                     started=t0,
                     detail=f"ollama at {binary} (installed via brew)",
                 )
+            error = (
+                "brew install --cask ollama-app succeeded but `ollama` is "
+                "still not on PATH; open the Ollama app once to install the CLI shim"
+            )
+        else:
+            error = f"brew install --cask ollama-app failed: {err or 'unknown error'}"
         return _check(
             "ollama_present",
             passed=False,
             started=t0,
-            error=f"ollama not found and brew install failed: {err or 'unknown error'}",
+            error=error,
             remediation=(
                 "Install Ollama manually: https://ollama.com/download/mac, then re-run preflight."
             ),
@@ -396,11 +403,17 @@ def _check_llama_server_present() -> dict[str, Any]:
                     started=t0,
                     detail=f"llama-server at {binary} (installed via brew)",
                 )
+            error = (
+                "brew install llama.cpp succeeded but `llama-server` is "
+                "still not on PATH; check `brew --prefix llama.cpp`"
+            )
+        else:
+            error = f"brew install llama.cpp failed: {err or 'unknown error'}"
         return _check(
             "llama_server_present",
             passed=False,
             started=t0,
-            error=f"llama-server not found and brew install failed: {err or 'unknown error'}",
+            error=error,
             remediation=(
                 "Install llama.cpp manually: `brew install llama.cpp`, then re-run preflight."
             ),
