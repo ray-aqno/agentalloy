@@ -300,8 +300,7 @@ def _check_ollama_present() -> dict[str, Any]:
             started=t0,
             error=f"ollama not found and brew install failed: {err or 'unknown error'}",
             remediation=(
-                "Install Ollama manually: https://ollama.com/download/mac, "
-                "then re-run preflight."
+                "Install Ollama manually: https://ollama.com/download/mac, then re-run preflight."
             ),
         )
 
@@ -403,8 +402,7 @@ def _check_llama_server_present() -> dict[str, Any]:
             started=t0,
             error=f"llama-server not found and brew install failed: {err or 'unknown error'}",
             remediation=(
-                "Install llama.cpp manually: `brew install llama.cpp`, "
-                "then re-run preflight."
+                "Install llama.cpp manually: `brew install llama.cpp`, then re-run preflight."
             ),
         )
 
