@@ -14,6 +14,8 @@ phase_scope: null
 category_scope: null
 author: authoring-agent
 change_summary: initial authoring draft
+deprecated: true
+superseded_by: fastify-error-handling-deep
 raw_prose: |
   # Fastify Error Handling
 
