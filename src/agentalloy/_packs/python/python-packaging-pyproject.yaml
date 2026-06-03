@@ -9,11 +9,16 @@ domain_tags:
 - pyproject
 - pep-621
 - build-system
+- pyproject-toml
+- build-backend
+- src-layout
+- lockfile
+- editable-install
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [language]
 author: navistone
-change_summary: hand-authored Opus expansion
+change_summary: hand-authored Opus expansion; Phase 1 absorbed src layout, editable install, dependencies/lockfiles, virtual environments, versioning from python-packaging-and-pyproject
 raw_prose: |
   # Python Packaging — pyproject.toml
 
@@ -115,6 +120,8 @@ raw_prose: |
   my-plugin = "my_package.pytest_plugin"
   ```
 
+  Plugin entry points let third parties register plugins your package discovers via `importlib.metadata.entry_points()`. Entry points are how Python's plugin ecosystem composes: rather than importing every plugin explicitly, your package discovers them at runtime via `importlib.metadata.entry_points(group="mypackage.plugins")`. This is the same mechanism pytest uses for plugins, the same hatch uses for build hooks, and the same Black uses for formatter integrations. Use it whenever your package wants to be extensible without hardcoding plugin names; reach for explicit imports when the integration set is closed and small.
+
   ## [tool.*] Sections
 
   Tools read their own subsection. Common ones:
@@ -150,6 +157,92 @@ raw_prose: |
   ```
 
   Common for `version` (read from `__init__.py` or VCS) and `readme` (computed from multiple files).
+
+  ## Use the src layout
+
+  Two project layouts exist:
+
+  ```
+  # Flat layout
+  mypackage/
+    __init__.py
+  pyproject.toml
+
+  # Src layout
+  src/
+    mypackage/
+      __init__.py
+  pyproject.toml
+  ```
+
+  Use the src layout. Why:
+
+  - **Forces installation before import.** With flat layout, running tests from the repo root imports the source directly even if the package is not installed; this hides packaging bugs (missing files in the wheel, incorrect entry points) until release.
+  - **Cleaner separation.** Test files, docs, and tooling live alongside `src/` without polluting the package's import namespace.
+  - **Standard.** Most modern templates (cookiecutter, hatch new, uv init) default to src layout.
+
+  The flat layout still works and may be simpler for tiny single-file packages. For anything else, src layout is the safer default.
+
+  ## Editable install for local development
+
+  When developing a package locally, install it in editable mode so changes are picked up without reinstalling:
+
+  ```bash
+  pip install -e .
+  # or with uv:
+  uv pip install -e .
+  ```
+
+  The editable install creates a link from your environment to the source tree. Edits to `src/mypackage/` are visible immediately. PEP 660 (2021) standardized editable installs across build backends, so this works with any modern backend.
+
+  Avoid editable installs in production environments — they couple the running code to the source tree, which may not be present after deploy.
+
+  ## Dependencies and lockfiles
+
+  Two declarations matter:
+
+  - **`dependencies` in `pyproject.toml`.** The *abstract* requirements — version ranges your code is compatible with. This is what gets published to PyPI.
+  - **Lockfile (e.g., `uv.lock`, `poetry.lock`, `pdm.lock`, `requirements.lock`).** The *concrete* resolved versions used in development and deployment. Pinned exactly, including transitive deps.
+
+  For applications, both matter. The `pyproject.toml` declares compatibility; the lockfile pins reproducibility. Commit the lockfile to version control. CI installs from the lockfile; local development uses the lockfile by default.
+
+  For libraries (published to PyPI), the lockfile is for development only and is not part of the published artifact. Library users get the abstract `dependencies`; their lockfile pins versions for their use.
+
+  Tools that manage lockfiles natively: `uv`, `poetry`, `pdm`, `pip-tools` (with `pip-compile`). Plain `pip install -r requirements.txt` works but the requirements file is hand-maintained, not generated from the lockfile resolver — drift is harder to control.
+
+  ## Virtual environments
+
+  Every Python project lives in a virtual environment — never install dependencies into the system Python. Two equivalent patterns:
+
+  ```bash
+  # Standard library tooling
+  python -m venv .venv
+  source .venv/bin/activate
+  pip install -e .
+
+  # uv (faster, integrated)
+  uv venv
+  source .venv/bin/activate
+  uv pip install -e .
+
+  # uv with sync-from-lockfile
+  uv sync
+  ```
+
+  `uv sync` is the modern shortcut: creates the venv if missing, installs from `pyproject.toml` and `uv.lock` in one step, and removes packages not in the lock. Equivalent commands exist in Poetry (`poetry install`) and pdm (`pdm install`).
+
+  For multi-version testing, use `tox` or `nox` — they create per-Python-version venvs and run the test matrix.
+
+  ## Versioning
+
+  Use semantic versioning (`MAJOR.MINOR.PATCH`). For applications, simple integer versions or date-based versions are also fine; the rule is to be explicit and consistent.
+
+  Two patterns for keeping `version` in sync with the source:
+
+  - **Static version in pyproject.toml.** Simple; the version lives in one place.
+  - **Dynamic version from a source file or git tag.** Hatchling supports `version = { source = "vcs" }`; setuptools supports `version = { attr = "mypackage.__version__" }`. Useful when CI tags drive releases.
+
+  Pick one; do not write the version in three places that then drift apart.
 
   ## Common Pitfalls
 
@@ -270,6 +363,8 @@ fragments:
     [project.entry-points."pytest11"]
     my-plugin = "my_package.pytest_plugin"
     ```
+
+    Plugin entry points let third parties register plugins your package discovers via `importlib.metadata.entry_points()`. Entry points are how Python's plugin ecosystem composes: rather than importing every plugin explicitly, your package discovers them at runtime via `importlib.metadata.entry_points(group="mypackage.plugins")`. This is the same mechanism pytest uses for plugins, the same hatch uses for build hooks, and the same Black uses for formatter integrations. Use it whenever your package wants to be extensible without hardcoding plugin names; reach for explicit imports when the integration set is closed and small.
 - fragment_type: execution
   sequence: 6
   content: |-
@@ -310,8 +405,104 @@ fragments:
     ```
 
     Common for `version` (read from `__init__.py` or VCS) and `readme` (computed from multiple files).
-- fragment_type: guardrail
+- fragment_type: execution
   sequence: 8
+  content: |-
+    ## Use the src layout
+
+    Two project layouts exist:
+
+    ```
+    # Flat layout
+    mypackage/
+      __init__.py
+    pyproject.toml
+
+    # Src layout
+    src/
+      mypackage/
+        __init__.py
+    pyproject.toml
+    ```
+
+    Use the src layout. Why:
+
+    - **Forces installation before import.** With flat layout, running tests from the repo root imports the source directly even if the package is not installed; this hides packaging bugs (missing files in the wheel, incorrect entry points) until release.
+    - **Cleaner separation.** Test files, docs, and tooling live alongside `src/` without polluting the package's import namespace.
+    - **Standard.** Most modern templates (cookiecutter, hatch new, uv init) default to src layout.
+
+    The flat layout still works and may be simpler for tiny single-file packages. For anything else, src layout is the safer default.
+- fragment_type: example
+  sequence: 9
+  content: |-
+    ## Editable install for local development
+
+    When developing a package locally, install it in editable mode so changes are picked up without reinstalling:
+
+    ```bash
+    pip install -e .
+    # or with uv:
+    uv pip install -e .
+    ```
+
+    The editable install creates a link from your environment to the source tree. Edits to `src/mypackage/` are visible immediately. PEP 660 (2021) standardized editable installs across build backends, so this works with any modern backend.
+
+    Avoid editable installs in production environments — they couple the running code to the source tree, which may not be present after deploy.
+- fragment_type: execution
+  sequence: 10
+  content: |-
+    ## Dependencies and lockfiles
+
+    Two declarations matter:
+
+    - **`dependencies` in `pyproject.toml`.** The *abstract* requirements — version ranges your code is compatible with. This is what gets published to PyPI.
+    - **Lockfile (e.g., `uv.lock`, `poetry.lock`, `pdm.lock`, `requirements.lock`).** The *concrete* resolved versions used in development and deployment. Pinned exactly, including transitive deps.
+
+    For applications, both matter. The `pyproject.toml` declares compatibility; the lockfile pins reproducibility. Commit the lockfile to version control. CI installs from the lockfile; local development uses the lockfile by default.
+
+    For libraries (published to PyPI), the lockfile is for development only and is not part of the published artifact. Library users get the abstract `dependencies`; their lockfile pins versions for their use.
+
+    Tools that manage lockfiles natively: `uv`, `poetry`, `pdm`, `pip-tools` (with `pip-compile`). Plain `pip install -r requirements.txt` works but the requirements file is hand-maintained, not generated from the lockfile resolver — drift is harder to control.
+- fragment_type: example
+  sequence: 11
+  content: |-
+    ## Virtual environments
+
+    Every Python project lives in a virtual environment — never install dependencies into the system Python. Two equivalent patterns:
+
+    ```bash
+    # Standard library tooling
+    python -m venv .venv
+    source .venv/bin/activate
+    pip install -e .
+
+    # uv (faster, integrated)
+    uv venv
+    source .venv/bin/activate
+    uv pip install -e .
+
+    # uv with sync-from-lockfile
+    uv sync
+    ```
+
+    `uv sync` is the modern shortcut: creates the venv if missing, installs from `pyproject.toml` and `uv.lock` in one step, and removes packages not in the lock. Equivalent commands exist in Poetry (`poetry install`) and pdm (`pdm install`).
+
+    For multi-version testing, use `tox` or `nox` — they create per-Python-version venvs and run the test matrix.
+- fragment_type: rationale
+  sequence: 12
+  content: |-
+    ## Versioning
+
+    Use semantic versioning (`MAJOR.MINOR.PATCH`). For applications, simple integer versions or date-based versions are also fine; the rule is to be explicit and consistent.
+
+    Two patterns for keeping `version` in sync with the source:
+
+    - **Static version in pyproject.toml.** Simple; the version lives in one place.
+    - **Dynamic version from a source file or git tag.** Hatchling supports `version = { source = "vcs" }`; setuptools supports `version = { attr = "mypackage.__version__" }`. Useful when CI tags drive releases.
+
+    Pick one; do not write the version in three places that then drift apart.
+- fragment_type: guardrail
+  sequence: 13
   content: |-
     ## Common Pitfalls
 
@@ -320,7 +511,7 @@ fragments:
     - **Running `python setup.py develop`.** Deprecated. Use `pip install -e .` or `uv pip install -e .`.
     - **Forgetting `requires-python`.** Without it, pip won't refuse to install on incompatible versions and your users get cryptic errors at import time.
 - fragment_type: verification
-  sequence: 9
+  sequence: 14
   content: |-
     ## Verification
 

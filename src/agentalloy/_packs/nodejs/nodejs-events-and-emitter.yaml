@@ -9,6 +9,8 @@ domain_tags:
   - async iteration
   - error handling
   - once method
+phase_scope: [build]
+category_scope: [language]
 author: navistone
 change_summary: initial authoring draft
 raw_prose: |

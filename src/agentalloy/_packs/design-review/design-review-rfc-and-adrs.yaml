@@ -9,11 +9,17 @@ domain_tags:
   - architecture
   - decision-making
   - documentation
+  - decision-log
+  - immutable-record
+  - supersede-not-edit
+  - nygard-template
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [design, review]
+category_scope: [process]
 author: authoring-agent
-change_summary: initial authoring draft
+change_summary: |
+  initial authoring draft
+  merged 2026-06-03: absorbed unique content from architecture-decision-records (superseded_by: architecture-decision-records)
 raw_prose: |
   # Design Review — RFCs and Architecture Decision Records
 
@@ -298,6 +304,80 @@ raw_prose: |
   - [ ] Known gotchas are documented inline where they matter
   - [ ] No commented-out code remains
   - [ ] Rules files (CLAUDE.md etc.) are current and accurate
+
+  ## ADR core rule (one sentence)
+
+  ADRs record *why*, are written when the decision is made, and are immutable once accepted — superseded, never edited. Most ADR collections that lost value broke this rule somewhere: records were written months after the fact (so the context was already lost), they recorded the *what* (which the code already shows) instead of the *why* (which only humans remember), or they were edited in place when the decision changed (destroying the historical reasoning).
+
+  ## When an ADR is warranted
+
+  Not every decision deserves an ADR. The bar is whether the decision will surface as "why is this done this way?" six months later. Specifically, write an ADR when:
+
+  - The decision constrains future work (database choice, framework choice, deployment topology).
+  - The decision is non-obvious (you would explain it in onboarding).
+  - The decision picked one option over a real alternative (not "chose Postgres because everyone uses Postgres").
+  - The decision is hard to reverse cheaply (any architectural commitment).
+
+  Skip ADRs for routine decisions documented elsewhere: dependency upgrades (commit history), small refactors (the diff), feature implementations (PR description). The ADR collection is for the long arc, not daily work.
+
+  ## The Nygard standard ADR shape
+
+  - **Title.** A short noun phrase: "Use Postgres for primary OLTP storage", not a question.
+  - **Status.** One of: `proposed`, `accepted`, `deprecated`, `superseded by ADR-NNNN`. Status changes over time; the rest of the document does not.
+  - **Context.** What forces are at play — technical constraints, business pressure, team capability, prior commitments. The context section is what dates the document; a future reader uses it to decide whether the decision still applies.
+  - **Decision.** The choice, stated plainly. One paragraph, present tense: "We will use Postgres."
+  - **Consequences.** What changes as a result — what becomes easier, what becomes harder, what new commitments the team has taken on. Listing only the upsides is propaganda; listing the trade-offs is a record.
+
+  Some teams add **Options Considered** as a separate section between Context and Decision.
+
+  ## Number sequentially, store in the repo
+
+  ADRs are numbered sequentially (`ADR-0001`, `ADR-0002`, ...) and stored as Markdown files in the repo, typically under `docs/adr/` or `architecture/decisions/`. They live with the code so they are versioned alongside it and discoverable through the same search the code uses.
+
+  Numbers are never reused. If ADR-0007 is superseded, ADR-0023 might replace it; the file for ADR-0007 stays, with its status changed to `superseded by ADR-0023`.
+
+  Tools like `adr-tools` (`adr new`, `adr supersede`) automate the numbering and cross-linking.
+
+  ## Immutable after acceptance — supersede, don't edit
+
+  Once an ADR is accepted, the body does not change. If the decision later turns out wrong, write a new ADR that supersedes the old one and explains the new reasoning. The superseded ADR keeps its original text plus a status header pointing to the successor.
+
+  Editing in place destroys the record — a future reader cannot tell what the team believed when the decision was made vs. what they believe now. Typo fixes and link corrections are fine. Substantive rewrites of the reasoning are not.
+
+  ## Write when the decision is made, not later
+
+  The single biggest failure mode of ADR collections is "we'll write them up next week." Next week, the context has faded and the alternatives are half-remembered. The ADR ends up summarizing the decision (which the code shows anyway) without the *why* (which is the value).
+
+  Write the ADR as part of making the decision. The PR that implements the decision should include the ADR. If the team has not coalesced around the decision yet, the ADR-in-progress is the artifact you discuss — proposing it surfaces the alternatives faster than discussing the implementation diff.
+
+  ## ADRs are short — not RFCs in disguise
+
+  An ADR is one to two pages. If it is longer, it is probably an RFC or a design document. The ADR captures the decision crisply; the design doc explores the design space. ADRs do not need long preambles, implementation details, or marketing language.
+
+  ## ADR-specific anti-patterns
+
+  - **Writing ADRs months after the fact.** Context is lost; the document degrades to a summary of the code.
+  - **Recording the *what* not the *why*.** "We use Postgres." The code shows that. Why? What was the alternative? What were the trade-offs?
+  - **Editing in place after a change of mind.** Destroys the historical record. Supersede instead.
+  - **One-option-considered ADRs.** "We picked Postgres because Postgres is good." Without a real alternative, the ADR records a foregone conclusion, not a decision.
+  - **ADRs that are RFCs in disguise.** Ten pages of design exploration is an RFC. The ADR captures the conclusion of an RFC, not the exploration.
+  - **Living-doc ADRs that drift.** "Updated 2026-05-04: now we use MySQL instead." Edit creates ambiguity. Supersede.
+
+  ## Tying ADRs to the code
+
+  ADRs are most useful when the code that implements them references them. A comment like `// see ADR-0023` at a non-obvious config or schema definition points future readers to the rationale. A README section listing the active ADRs (and their statuses) makes them discoverable.
+
+  Some teams add an `adr-link` lint that flags PRs touching files marked as covered by an ADR — forcing the author to update or supersede the ADR rather than silently changing the underlying decision.
+
+  ## ADR verification checklist (Nygard discipline)
+
+  - [ ] Each ADR file has the standard sections: title (noun phrase), status, context, decision, consequences (and optionally options considered).
+  - [ ] ADR was written at the time of the decision, not retrofitted weeks later.
+  - [ ] Decision section states the choice plainly in present tense, one paragraph.
+  - [ ] Consequences section lists trade-offs honestly, including what becomes harder.
+  - [ ] ADRs are stored in-repo (e.g. `docs/adr/`), numbered sequentially, never reused.
+  - [ ] Superseded ADRs were not edited; their status was updated and a new ADR written that references the old.
+  - [ ] At least two real options were weighed in any ADR claiming to capture a decision.
 
 fragments:
   - fragment_type: setup
@@ -604,3 +684,83 @@ fragments:
       - [ ] Known gotchas are documented inline where they matter
       - [ ] No commented-out code remains
       - [ ] Rules files (CLAUDE.md etc.) are current and accurate
+  - fragment_type: rationale
+    sequence: 15
+    content: |
+      ## ADR core rule (one sentence)
+
+      ADRs record *why*, are written when the decision is made, and are immutable once accepted — superseded, never edited. Most ADR collections that lost value broke this rule somewhere: records were written months after the fact (so the context was already lost), they recorded the *what* (which the code already shows) instead of the *why* (which only humans remember), or they were edited in place when the decision changed (destroying the historical reasoning).
+
+      ## When an ADR is warranted
+
+      Not every decision deserves an ADR. The bar is whether the decision will surface as "why is this done this way?" six months later. Write an ADR when:
+
+      - The decision constrains future work (database choice, framework choice, deployment topology).
+      - The decision is non-obvious (you would explain it in onboarding).
+      - The decision picked one option over a real alternative (not "chose Postgres because everyone uses Postgres").
+      - The decision is hard to reverse cheaply (any architectural commitment).
+
+      Skip ADRs for routine decisions documented elsewhere: dependency upgrades (commit history), small refactors (the diff), feature implementations (PR description).
+  - fragment_type: execution
+    sequence: 16
+    content: |
+      ## The Nygard standard ADR shape
+
+      - **Title.** A short noun phrase: "Use Postgres for primary OLTP storage", not a question.
+      - **Status.** One of: `proposed`, `accepted`, `deprecated`, `superseded by ADR-NNNN`. Status changes over time; the rest of the document does not.
+      - **Context.** What forces are at play — technical constraints, business pressure, team capability, prior commitments. The context section dates the document; a future reader uses it to decide whether the decision still applies.
+      - **Decision.** The choice, stated plainly. One paragraph, present tense: "We will use Postgres."
+      - **Consequences.** What changes as a result — what becomes easier, what becomes harder, what new commitments the team has taken on. Listing only the upsides is propaganda; listing the trade-offs is a record.
+
+      Some teams add **Options Considered** as a separate section between Context and Decision.
+
+      ## Number sequentially, store in the repo
+
+      ADRs are numbered sequentially (`ADR-0001`, `ADR-0002`, ...) and stored as Markdown files in the repo, typically under `docs/adr/` or `architecture/decisions/`. Numbers are never reused. If ADR-0007 is superseded, ADR-0023 might replace it; the file for ADR-0007 stays, with its status changed to `superseded by ADR-0023`.
+
+      Tools like `adr-tools` (`adr new`, `adr supersede`) automate the numbering and cross-linking.
+  - fragment_type: execution
+    sequence: 17
+    content: |
+      ## Immutable after acceptance — supersede, don't edit
+
+      Once an ADR is accepted, the body does not change. If the decision later turns out wrong, write a new ADR that supersedes the old one and explains the new reasoning. The superseded ADR keeps its original text plus a status header pointing to the successor.
+
+      Editing in place destroys the record — a future reader cannot tell what the team believed when the decision was made vs. what they believe now. Typo fixes and link corrections are fine. Substantive rewrites of the reasoning are not.
+
+      ## Write when the decision is made, not later
+
+      The single biggest failure mode of ADR collections is "we'll write them up next week." Next week, the context has faded and the alternatives are half-remembered. Write the ADR as part of making the decision. The PR that implements the decision should include the ADR.
+
+      ## ADRs are short — not RFCs in disguise
+
+      An ADR is one to two pages. If it is longer, it is probably an RFC or a design document. The ADR captures the decision crisply; the design doc explores the design space. ADRs do not need long preambles, implementation details, or marketing language.
+  - fragment_type: guardrail
+    sequence: 18
+    content: |
+      ## ADR-specific anti-patterns
+
+      - **Writing ADRs months after the fact.** Context is lost; the document degrades to a summary of the code.
+      - **Recording the *what* not the *why*.** "We use Postgres." The code shows that. Why? What was the alternative? What were the trade-offs?
+      - **Editing in place after a change of mind.** Destroys the historical record. Supersede instead.
+      - **One-option-considered ADRs.** "We picked Postgres because Postgres is good." Without a real alternative, the ADR records a foregone conclusion, not a decision.
+      - **ADRs that are RFCs in disguise.** Ten pages of design exploration is an RFC. The ADR captures the conclusion of an RFC, not the exploration.
+      - **Living-doc ADRs that drift.** "Updated 2026-05-04: now we use MySQL instead." Edit creates ambiguity. Supersede.
+
+      ## Tying ADRs to the code
+
+      ADRs are most useful when the code that implements them references them. A comment like `// see ADR-0023` at a non-obvious config or schema definition points future readers to the rationale. A README section listing the active ADRs (and their statuses) makes them discoverable.
+
+      Some teams add an `adr-link` lint that flags PRs touching files marked as covered by an ADR — forcing the author to update or supersede the ADR rather than silently changing the underlying decision.
+  - fragment_type: verification
+    sequence: 19
+    content: |
+      ## ADR verification checklist (Nygard discipline)
+
+      - [ ] Each ADR file has the standard sections: title (noun phrase), status, context, decision, consequences (and optionally options considered).
+      - [ ] ADR was written at the time of the decision, not retrofitted weeks later.
+      - [ ] Decision section states the choice plainly in present tense, one paragraph.
+      - [ ] Consequences section lists trade-offs honestly, including what becomes harder.
+      - [ ] ADRs are stored in-repo (e.g. `docs/adr/`), numbered sequentially, never reused.
+      - [ ] Superseded ADRs were not edited; their status was updated and a new ADR written that references the old.
+      - [ ] At least two real options were weighed in any ADR claiming to capture a decision.

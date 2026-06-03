@@ -47,14 +47,4 @@ EXPOSE 47950
 # Podman's default OCI image format does not honor inline HEALTHCHECK directives;
 # the compose-level healthcheck works on both Podman and Docker.
 
-# Create non-root user. -g root: GID 0 so group-readable mounts remain accessible.
-# chown -R: bounded by /app image layer contents (≤ wheel install + packs, O(thousands) files). P10-R2.
-RUN useradd -r -u 1001 -g root appuser \
-    && chown -R appuser /app
-
-# uv writes cache/tmp to $HOME by default. Set HOME=/app so appuser (no home dir) can write.
-ENV HOME=/app
-
-USER appuser
-
 CMD ["uv", "run", "uvicorn", "agentalloy.app:app", "--host", "0.0.0.0", "--port", "47950"]

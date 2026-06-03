@@ -10,8 +10,8 @@ domain_tags:
 - ci-cd
 - yaml
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [ops]
 author: navistone
 change_summary: hand-authored Opus source after 14B over-fragmented
 raw_prose: |

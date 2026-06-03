@@ -10,10 +10,12 @@ domain_tags:
   - custom-errors
   - schema-validation
 always_apply: false
-phase_scope: null
-category_scope: null
+phase_scope: [build]
+category_scope: [framework]
 author: authoring-agent
 change_summary: initial authoring draft
+deprecated: true
+superseded_by: fastify-error-handling-deep
 raw_prose: |
   # Fastify Error Handling
 

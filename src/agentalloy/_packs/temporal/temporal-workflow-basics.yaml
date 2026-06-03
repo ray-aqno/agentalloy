@@ -10,8 +10,8 @@ domain_tags:
   - development
   - workflow-definition
 always_apply: false
-phase_scope: null
-category_scope: null
+phase_scope: [build]
+category_scope: [ops]
 author: authoring-agent
 change_summary: machine authoring contract for pending-qa pipeline
 raw_prose: |

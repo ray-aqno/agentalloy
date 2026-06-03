@@ -1,7 +1,7 @@
 """Gemini CLI provider — HarnessSpec registration for Google Gemini CLI.
 
 Registers the ``gemini-cli`` harness in REGISTRY with:
-- Protocol: ANTHROPIC (Gemini CLI uses Anthropic-compatible API)
+- Protocol: EITHER (Gemini CLI can use either Anthropic or OpenAI protocol)
 - Capabilities: MARKDOWN_ONLY (sidecar harness, markdown injection)
 - env_builder: returns empty dict (Gemini CLI uses markdown injection)
 - install_writer: writes GEMINI.md with sentinel-bounded block

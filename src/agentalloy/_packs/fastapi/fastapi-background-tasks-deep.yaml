@@ -10,9 +10,11 @@ domain_tags:
 - async-work
 - celery-comparison
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [framework]
 author: navistone
+deprecated: true
+superseded_by: fastapi-async-and-background-tasks
 change_summary: hand-authored Opus expansion
 raw_prose: |
   # FastAPI Background Tasks (Deep)

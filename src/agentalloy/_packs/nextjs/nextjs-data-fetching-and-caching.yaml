@@ -3,12 +3,13 @@ skill_id: nextjs-data-fetching-and-caching
 canonical_name: Next.js 16 Data Fetching and Caching (Cache Components, use cache, cacheLife, Revalidation)
 category: engineering
 skill_class: domain
-domain_tags: [cache-components-config, use-cache-directive, cachelife-profiles, cachetag-revalidation, streaming-suspense-fallback]
+domain_tags: [cache-components-config, use-cache-directive, cachelife-profiles, cachetag-revalidation, streaming-suspense-fallback, nextjs, isr, revalidation, static-site-generation, on-demand-rendering]
 always_apply: false
-phase_scope: null
+phase_scope: [build]
 category_scope: framework
 author: navistone
 change_summary: |
+  merged 2026-06-03: absorbed unique content from nextjs-isr-and-revalidation (superseded_by: nextjs-isr-and-revalidation)
   Initial authoring 2026-05-06. Sources — Next.js Fetching Data https://nextjs.org/docs/app/getting-started/fetching-data, Caching (Cache Components) https://nextjs.org/docs/app/getting-started/caching, `use cache` directive https://nextjs.org/docs/app/api-reference/directives/use-cache, `cacheLife` https://nextjs.org/docs/app/api-reference/functions/cacheLife, `cacheTag` https://nextjs.org/docs/app/api-reference/functions/cacheTag, `cacheComponents` config https://nextjs.org/docs/app/api-reference/config/next-config-js/cacheComponents, `revalidateTag` https://nextjs.org/docs/app/api-reference/functions/revalidateTag (all verified 2026-05-06 against fixtures/upstream/registry.yaml entry nextjs via tier-2 llms_url procedure; Next.js 16.2.4). Skill scope: the new Cache Components model introduced in Next.js 16 (October 2025) and stable through 16.2.x, opted into via `cacheComponents: true` in `next.config.ts`. Under this model `fetch` is NOT cached across requests by default; identical fetches are still memoized within a single render. Caching is opt-in via the `'use cache'` directive at two scopes — data-level (an async function such as `getProducts()`) and UI-level (a Server Component, page, or layout). `cacheLife` from `next/cache` selects a preset profile (`seconds`, `minutes`, `hours`, `days`, `weeks`, `max`) or accepts a custom `{ stale, revalidate, expire }` object. `cacheTag` tags a cached function so `revalidateTag('posts', 'max')` after a mutation can invalidate it. Components that touch `cookies()`, `headers()`, `searchParams`, or other request-time APIs are dynamic and must be wrapped in `<Suspense>` so they stream around the prerendered shell. Walks the boundary edge: a function carrying `'use cache'` that calls `cookies()` is a contradiction — the runtime API forces dynamic, and the cache directive cannot apply. Out of scope: the previous fetch-cached-by-default model documented in the "Caching and Revalidating (Previous Model)" guide, Pages Router, and ISR-via-`revalidate` route segment config. Original authoring — scaffolded with citations against nextjs.org docs, not a verbatim copy of upstream prose.
 
 raw_prose: |
@@ -240,6 +241,54 @@ raw_prose: |
   - **Suspense boundaries placed too granularly.** A boundary per row produces a fallback waterfall, each fallback animating in turn. Group siblings that should appear together under one boundary.
   - **Calling the deprecated `revalidateTag(tag)` single-argument form.** It currently works only with TypeScript errors suppressed and is slated for removal. Use `revalidateTag(tag, 'max')` or `updateTag` per the current API.
   - **Tagging cached functions with high-cardinality dynamic strings without a budget.** A tag per user-id-per-resource is fine for targeted invalidation but produces an unbounded tag table — make sure the tag domain is intentional and finite enough to operate.
+
+  ## Incremental Static Regeneration (legacy time-based)
+
+  Outside the Cache Components model, Next.js App Router still supports time-based ISR via the `revalidate` route segment config plus `generateStaticParams`. With ISR you can update static content without rebuilding the entire site, reduce server load by serving prerendered pages for most requests, get automatic `cache-control` headers, and handle large content sets without long `next build` times.
+
+  ```tsx
+  // app/blog/[id]/page.tsx
+  interface Post { id: string; title: string; content: string }
+
+  // Next.js will invalidate the cache when a request comes in,
+  // at most once every 60 seconds.
+  export const revalidate = 60
+
+  export async function generateStaticParams() {
+    const posts: Post[] = await fetch('https://api.vercel.app/blog').then((res) => res.json())
+    return posts.map((post) => ({ id: String(post.id) }))
+  }
+
+  export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+    const { id } = await params
+    const post: Post = await fetch(`https://api.vercel.app/blog/${id}`).then((res) => res.json())
+    return (
+      <main>
+        <h1>{post.title}</h1>
+        <p>{post.content}</p>
+      </main>
+    )
+  }
+  ```
+
+  How this flow works: during `next build`, all known params are generated; requests to those pages are cached and instantaneous; after the revalidate window passes, the next request still returns the cached (now stale) page while the cache is invalidated and a new version is generated in the background; once generated, the next request returns the updated page and re-caches it. If an un-prebuilt param is requested and exists, the page is generated on-demand — controlled by [`dynamicParams`](/docs/app/api-reference/file-conventions/route-segment-config/dynamicParams). If the resource does not exist, a 404 is returned.
+
+  ## On-demand revalidation with `revalidatePath`
+
+  `revalidatePath(path)` from `next/cache` invalidates the cached output for a specific route, complementing tag-based invalidation. Use it from a Server Action or Route Handler after a mutation when invalidating by route is more natural than by tag — for example, refreshing a single post page after editing it.
+
+  ```tsx
+  // app/posts/[id]/actions.ts
+  'use server'
+  import { revalidatePath } from 'next/cache'
+
+  export async function updatePost(id: string, formData: FormData) {
+    await db.posts.update(id, { title: formData.get('title') as string })
+    revalidatePath(`/posts/${id}`)
+  }
+  ```
+
+  Choose `revalidateTag` when many routes share the same underlying data (tag the data once, invalidate broadly). Choose `revalidatePath` when the invalidation maps cleanly to a single route or a small set of routes. The two are complementary, not exclusive.
 
   ## Verification
 
@@ -542,3 +591,57 @@ fragments:
       - `revalidateTag(tag, profile)` two-argument signature is current; single-argument form is deprecated; tags are case-sensitive and capped at 256 characters; `profile="max"` provides stale-while-revalidate, per nextjs.org/docs/app/api-reference/functions/revalidateTag (verified 2026-05-06).
       - Identical `fetch` calls memoized within a render but not cached across requests under Cache Components; explicit `'use cache'` is required for cross-request caching, per nextjs.org/docs/app/getting-started/fetching-data (verified 2026-05-06).
       - Request-time APIs (`cookies`, `headers`, `searchParams`, dynamic `params`) require `<Suspense>` wrapping under Cache Components, per nextjs.org/docs/app/getting-started/caching "Working with runtime APIs" (verified 2026-05-06).
+
+  - sequence: 11
+    fragment_type: execution
+    content: |
+      ## Incremental Static Regeneration (legacy time-based)
+
+      Outside the Cache Components model, Next.js App Router still supports time-based ISR via the `revalidate` route segment config plus `generateStaticParams`. With ISR you can update static content without rebuilding the entire site, reduce server load by serving prerendered pages for most requests, get automatic `cache-control` headers, and handle large content sets without long `next build` times.
+
+      ```tsx
+      // app/blog/[id]/page.tsx
+      interface Post { id: string; title: string; content: string }
+
+      // Next.js will invalidate the cache when a request comes in,
+      // at most once every 60 seconds.
+      export const revalidate = 60
+
+      export async function generateStaticParams() {
+        const posts: Post[] = await fetch('https://api.vercel.app/blog').then((res) => res.json())
+        return posts.map((post) => ({ id: String(post.id) }))
+      }
+
+      export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+        const { id } = await params
+        const post: Post = await fetch(`https://api.vercel.app/blog/${id}`).then((res) => res.json())
+        return (
+          <main>
+            <h1>{post.title}</h1>
+            <p>{post.content}</p>
+          </main>
+        )
+      }
+      ```
+
+      How this flow works: during `next build`, all known params are generated; requests to those pages are cached and instantaneous; after the revalidate window passes, the next request still returns the cached (now stale) page while the cache is invalidated and a new version is generated in the background; once generated, the next request returns the updated page and re-caches it. If an un-prebuilt param is requested and exists, the page is generated on-demand — controlled by [`dynamicParams`](/docs/app/api-reference/file-conventions/route-segment-config/dynamicParams). If the resource does not exist, a 404 is returned.
+
+  - sequence: 12
+    fragment_type: example
+    content: |
+      ## On-demand revalidation with `revalidatePath`
+
+      `revalidatePath(path)` from `next/cache` invalidates the cached output for a specific route, complementing tag-based invalidation. Use it from a Server Action or Route Handler after a mutation when invalidating by route is more natural than by tag — for example, refreshing a single post page after editing it.
+
+      ```tsx
+      // app/posts/[id]/actions.ts
+      'use server'
+      import { revalidatePath } from 'next/cache'
+
+      export async function updatePost(id: string, formData: FormData) {
+        await db.posts.update(id, { title: formData.get('title') as string })
+        revalidatePath(`/posts/${id}`)
+      }
+      ```
+
+      Choose `revalidateTag` when many routes share the same underlying data (tag the data once, invalidate broadly). Choose `revalidatePath` when the invalidation maps cleanly to a single route or a small set of routes. The two are complementary, not exclusive.

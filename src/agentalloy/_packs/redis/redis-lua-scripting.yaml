@@ -10,10 +10,14 @@ domain_tags:
   - atomic-operations
   - evalsha
 always_apply: false
-phase_scope: []
-category_scope: []
+deprecated: true
+superseded_by: redis-lua-functions
+phase_scope: [build]
+category_scope: [infrastructure]
 author: authoring-agent
-change_summary: initial authoring draft
+change_summary: |
+  initial authoring draft
+  Deprecated 2026-06-03: superseded by redis-lua-functions
 raw_prose: |
   # Redis Lua Scripting (EVAL)
 

@@ -10,8 +10,8 @@ domain_tags:
   - routing-layer
   - v1-scope
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [design, review]
+category_scope: [process]
 author: navistone
 change_summary: machine authoring contract for pending-qa pipeline
 raw_prose: |

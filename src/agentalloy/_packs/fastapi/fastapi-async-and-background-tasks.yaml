@@ -3,12 +3,16 @@ skill_id: fastapi-async-and-background-tasks
 canonical_name: FastAPI Async, Lifespan, and BackgroundTasks (when async def, sync runs in threadpool, not for slow work)
 category: engineering
 skill_class: domain
-domain_tags: [async-def-handler, threadpool-sync-handler, backgroundtasks-after-response, lifespan-context-manager, concurrency-limit-uvicorn]
+domain_tags: [async-def-handler, threadpool-sync-handler, backgroundtasks-after-response, lifespan-context-manager, concurrency-limit-uvicorn, fastapi, background-tasks, post-response, async-work, celery-comparison]
 always_apply: false
-phase_scope: null
+phase_scope: [build]
 category_scope: framework
 author: navistone
 change_summary: |
+  Merged unique content from fastapi-background-tasks-deep (deprecated) into this keeper skill.
+  Absorbed: multiple tasks example, async/sync task distinction, dependency-injected background tasks,
+  limits/outgrow constraints, DB session pitfalls, common pitfalls, and verification criteria.
+  Deprecated skill marked with deprecated:true and superseded_by set.
   Initial authoring 2026-05-06. Sources — FastAPI concurrency and async/await https://fastapi.tiangolo.com/async/ (verified 2026-05-06 against fixtures/upstream/registry.yaml entry fastapi via tier-3 fallback_root procedure); background tasks https://fastapi.tiangolo.com/tutorial/background-tasks/; lifespan events https://fastapi.tiangolo.com/advanced/events/; async tests https://fastapi.tiangolo.com/advanced/async-tests/; deployment concepts https://fastapi.tiangolo.com/deployment/concepts/. Original authoring — scaffolded with citations against fastapi.tiangolo.com docs, not a verbatim copy of upstream prose. Skill scope: handler signature choice (`async def` vs `def`), the blocking-the-loop trap, `BackgroundTasks` (and when not to use it), `lifespan` context manager, app.state, async DB sessions, the Uvicorn worker concurrency model, and async tests. FastAPI 0.115+ (lifespan available since 0.93, March 2023; SQLAlchemy 2 native async since Jan 2023).
 
 raw_prose: |
@@ -52,6 +56,112 @@ raw_prose: |
   ```
 
   The task function may be `def` or `async def`. It runs in the same worker process, on the same machine, after the response has flushed. That makes it good for fast follow-ups: a logging write, sending a single email, invalidating a cache key. It is bad for slow or critical work — if the worker crashes or is replaced, the task is lost. Anything that must survive a process crash needs a real queue (Celery, Arq, RQ, Dramatiq) backed by a broker.
+
+  ### Multiple Tasks
+
+  ```python
+  @app.post("/order")
+  async def create_order(order: Order, bg: BackgroundTasks):
+      saved = save_order(order)
+      bg.add_task(send_confirmation_email, saved)
+      bg.add_task(notify_warehouse, saved)
+      bg.add_task(record_metric, "order.created")
+      return saved
+  ```
+
+  Tasks run sequentially in registration order. They don't block the response; the client gets the saved order immediately.
+
+  ### Async or Sync Tasks
+
+  ```python
+  async def async_task(payload):
+      async with httpx.AsyncClient() as client:
+          await client.post("https://api.example.com", json=payload)
+
+  def sync_task(payload):
+      requests.post("https://api.example.com", json=payload)
+
+  @app.post("/event")
+  async def event(e: Event, bg: BackgroundTasks):
+      bg.add_task(async_task, e.payload)  # awaited
+      bg.add_task(sync_task, e.payload)   # called in threadpool
+      return {"status": "ok"}
+  ```
+
+  Async tasks are awaited on the event loop. Sync tasks run on the thread pool. FastAPI handles both.
+
+  ### Dependency-Injected Background Tasks
+
+  You can inject background tasks into a dependency:
+
+  ```python
+  async def log_request(bg: BackgroundTasks):
+      bg.add_task(write_log, "request received")
+
+  @app.get("/data", dependencies=[Depends(log_request)])
+  async def data():
+      return {"data": 42}
+  ```
+
+  Useful for cross-cutting work (logging, metrics) without polluting every route signature.
+
+  ### Limits and When to Outgrow
+
+  BackgroundTasks runs in the same process as the request handler:
+
+  - **No durability.** Process restart = task lost. Server crash = task lost.
+  - **No retry.** Failure = lost. Errors get logged but the framework doesn't retry.
+  - **No isolation.** Tasks share the request handler's CPU and memory.
+  - **No scheduling.** Runs immediately after response, no 'in 5 minutes' option.
+  - **Limited backpressure.** A task that runs forever or blocks the loop affects request throughput.
+
+  When any of those constraints matter, you've outgrown BackgroundTasks. Move to Celery, RQ, Dramatiq, or a cloud queue (SQS, Pub/Sub) plus a separate worker process.
+
+  ### When BackgroundTasks Is Right
+
+  - **Lightweight async I/O after a response**: send an email, post a webhook, write a log line.
+  - **Operations that fire-and-forget is acceptable for**: analytics events, cache warming, soft notifications.
+  - **Tiny apps without infrastructure**: prototypes, internal tools, scripts.
+
+  When BackgroundTasks is wrong:
+
+  - **Anything money-related**: orders, charges, refunds. Need durability + retry.
+  - **Anything observable failure matters**: data syncs, ETL. Need a queue with DLQ.
+  - **Long-running work** (>30s): blocks the loop's task queue, hurts throughput.
+
+  ### Tasks and Database Sessions
+
+  A common pitfall: passing a request-scoped DB session into a background task:
+
+  ```python
+  @app.post("/order")
+  async def order(bg: BackgroundTasks, db: Session = Depends(get_db)):
+      bg.add_task(send_confirmation, db, order_id)  # WRONG
+      return {"ok": True}
+  ```
+
+  The DB session closes when the request ends, before the task runs. The task gets a closed session and crashes.
+
+  Fix: open a fresh session inside the task:
+
+  ```python
+  def send_confirmation(order_id):
+      db = SessionLocal()
+      try:
+          order = db.query(Order).get(order_id)
+          # ...
+      finally:
+          db.close()
+  ```
+
+  Pass IDs into background tasks, not ORM objects.
+
+  ### Common Pitfalls
+
+  - **Sharing request-scoped state with the task** (DB sessions, request objects). They close before the task runs.
+  - **Using BackgroundTasks for work that must survive crashes.** Use a real queue.
+  - **Returning task results to the client.** You can't — the response has already been sent. Use a job ID + status endpoint, or move to a queue + status table.
+  - **Long-running CPU-bound tasks.** They block the thread pool, starving other requests.
 
   ## `lifespan` is the modern startup/shutdown hook
 
@@ -213,6 +323,93 @@ fragments:
   - sequence: 5
     fragment_type: example
     content: |
+      ## Multiple Tasks
+
+      ```python
+      @app.post("/order")
+      async def create_order(order: Order, bg: BackgroundTasks):
+          saved = save_order(order)
+          bg.add_task(send_confirmation_email, saved)
+          bg.add_task(notify_warehouse, saved)
+          bg.add_task(record_metric, "order.created")
+          return saved
+      ```
+
+      Tasks run sequentially in registration order. They don't block the response; the client gets the saved order immediately.
+
+  - sequence: 6
+    fragment_type: example
+    content: |
+      ## Async or Sync Tasks
+
+      ```python
+      async def async_task(payload):
+          async with httpx.AsyncClient() as client:
+              await client.post("https://api.example.com", json=payload)
+
+      def sync_task(payload):
+          requests.post("https://api.example.com", json=payload)
+
+      @app.post("/event")
+      async def event(e: Event, bg: BackgroundTasks):
+          bg.add_task(async_task, e.payload)  # awaited
+          bg.add_task(sync_task, e.payload)   # called in threadpool
+          return {"status": "ok"}
+      ```
+
+      Async tasks are awaited on the event loop. Sync tasks run on the thread pool. FastAPI handles both.
+
+  - sequence: 7
+    fragment_type: example
+    content: |
+      ## Dependency-Injected Background Tasks
+
+      You can inject background tasks into a dependency:
+
+      ```python
+      async def log_request(bg: BackgroundTasks):
+          bg.add_task(write_log, "request received")
+
+      @app.get("/data", dependencies=[Depends(log_request)])
+      async def data():
+          return {"data": 42}
+      ```
+
+      Useful for cross-cutting work (logging, metrics) without polluting every route signature.
+
+  - sequence: 8
+    fragment_type: rationale
+    content: |
+      ## Limits and When to Outgrow
+
+      BackgroundTasks runs in the same process as the request handler:
+
+      - **No durability.** Process restart = task lost. Server crash = task lost.
+      - **No retry.** Failure = lost. Errors get logged but the framework doesn't retry.
+      - **No isolation.** Tasks share the request handler's CPU and memory.
+      - **No scheduling.** Runs immediately after response, no 'in 5 minutes' option.
+      - **Limited backpressure.** A task that runs forever or blocks the loop affects request throughput.
+
+      When any of those constraints matter, you've outgrown BackgroundTasks. Move to Celery, RQ, Dramatiq, or a cloud queue (SQS, Pub/Sub) plus a separate worker process.
+
+  - sequence: 9
+    fragment_type: rationale
+    content: |
+      ## When BackgroundTasks Is Right
+
+      - **Lightweight async I/O after a response**: send an email, post a webhook, write a log line.
+      - **Operations that fire-and-forget is acceptable for**: analytics events, cache warming, soft notifications.
+      - **Tiny apps without infrastructure**: prototypes, internal tools, scripts.
+
+      When BackgroundTasks is wrong:
+
+      - **Anything money-related**: orders, charges, refunds. Need durability + retry.
+      - **Anything observable failure matters**: data syncs, ETL. Need a queue with DLQ.
+      - **Long-running work** (>30s): blocks the loop's task queue, hurts throughput.
+
+  - sequence: 10
+    fragment_type: example
+    content: |
       ## `lifespan` is the modern startup/shutdown hook
 
       Since FastAPI 0.93 (March 2023), the `lifespan` context manager is the recommended way to run code at startup and shutdown. The older `@app.on_event("startup")` and `@app.on_event("shutdown")` decorators still work but are deprecated and the docs recommend not using them in new code.
@@ -231,7 +428,7 @@ fragments:
 
       Code before `yield` runs once before the app starts taking requests; code after `yield` runs once after the last request has been served. Use it for shared connection pools (`httpx.AsyncClient`, `asyncpg.create_pool`, `redis.asyncio.from_url`), warming caches, loading ML models, and closing those resources cleanly.
 
-  - sequence: 6
+  - sequence: 11
     fragment_type: example
     content: |
       ## App state — share clients, do not recreate per request
@@ -265,7 +462,7 @@ fragments:
 
       Inject with `session: AsyncSession = Depends(get_session)`. Do not mix `psycopg2` (sync) into an `async def` handler — that is the blocking-the-loop trap.
 
-  - sequence: 7
+  - sequence: 12
     fragment_type: execution
     content: |
       ## Concurrency model — workers and the loop
@@ -274,7 +471,7 @@ fragments:
 
       Concretely: with one worker, one slow `async def` handler that calls a sync blocking library will freeze every other concurrent request hitting that worker. With one worker and `def` handlers, Starlette's threadpool (default 40 threads) gives you ~40 concurrent slow handlers before saturation. In production, run multiple workers (one per core is a common starting point) behind a process manager — the FastAPI deployment docs walk through Gunicorn-with-Uvicorn-workers, container replication, and Kubernetes patterns.
 
-  - sequence: 8
+  - sequence: 13
     fragment_type: example
     content: |
       ## Async tests
@@ -296,7 +493,7 @@ fragments:
 
       This lets the test query an async DB or call other async helpers in the same coroutine as the request.
 
-  - sequence: 9
+  - sequence: 14
     fragment_type: guardrail
     content: |
       ## Anti-patterns
@@ -310,7 +507,7 @@ fragments:
       - **Running `--workers 1` in production with a sync-blocking `async def` handler.** One slow request freezes every concurrent request on that worker. Either fix the handler signature or scale workers — preferably both.
       - **Sync `psycopg2` inside `async def`.** Blocks the loop; switch to `asyncpg` / SQLAlchemy 2 async, or move the handler to `def`.
 
-  - sequence: 10
+  - sequence: 15
     fragment_type: verification
     content: |
       ## Verification
@@ -323,3 +520,43 @@ fragments:
       - [ ] `BackgroundTasks` is used only for fast, best-effort follow-ups; durable jobs are handed to Celery/Arq/RQ with a broker.
       - [ ] Async tests use `httpx.AsyncClient(app=app)` with `pytest-asyncio` (`asyncio_mode = "auto"` in `pytest.ini`); the sync `TestClient` is reserved for non-async test paths.
       - [ ] Production deploys run multiple Uvicorn workers (e.g. one per CPU core) behind a process manager; `--workers 1` is dev-only.
+
+  - sequence: 16
+    fragment_type: execution
+    content: |
+      ## Tasks and Database Sessions
+
+      A common pitfall: passing a request-scoped DB session into a background task:
+
+      ```python
+      @app.post("/order")
+      async def order(bg: BackgroundTasks, db: Session = Depends(get_db)):
+          bg.add_task(send_confirmation, db, order_id)  # WRONG
+          return {"ok": True}
+      ```
+
+      The DB session closes when the request ends, before the task runs. The task gets a closed session and crashes.
+
+      Fix: open a fresh session inside the task:
+
+      ```python
+      def send_confirmation(order_id):
+          db = SessionLocal()
+          try:
+              order = db.query(Order).get(order_id)
+              # ...
+          finally:
+              db.close()
+      ```
+
+      Pass IDs into background tasks, not ORM objects.
+
+  - sequence: 17
+    fragment_type: guardrail
+    content: |
+      ## Common Pitfalls
+
+      - **Sharing request-scoped state with the task** (DB sessions, request objects). They close before the task runs.
+      - **Using BackgroundTasks for work that must survive crashes.** Use a real queue.
+      - **Returning task results to the client.** You can't — the response has already been sent. Use a job ID + status endpoint, or move to a queue + status table.
+      - **Long-running CPU-bound tasks.** They block the thread pool, starving other requests.

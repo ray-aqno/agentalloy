@@ -21,7 +21,7 @@ skills:
   fragment_count: 9
 - skill_id: github-actions-reusable-workflows
   file: github-actions-reusable-workflows.yaml
-  fragment_count: 7
+  fragment_count: 11
 - skill_id: github-actions-workflow-syntax
   file: github-actions-workflow-syntax.yaml
   fragment_count: 9

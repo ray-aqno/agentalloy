@@ -5,7 +5,7 @@ category: engineering
 skill_class: domain
 domain_tags: [record-component, sealed-permits, switch-pattern-matching, deconstruction-patterns, algebraic-data-types]
 always_apply: false
-phase_scope: null
+phase_scope: [build]
 category_scope: language
 author: navistone
 change_summary: |

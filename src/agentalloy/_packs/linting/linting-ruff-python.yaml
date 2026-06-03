@@ -9,8 +9,8 @@ domain_tags:
   - linting
   - formatting
 always_apply: false
-phase_scope: null
-category_scope: null
+phase_scope: [build, review]
+category_scope: [tooling]
 author: authoring-agent
 change_summary: initial authoring draft
 

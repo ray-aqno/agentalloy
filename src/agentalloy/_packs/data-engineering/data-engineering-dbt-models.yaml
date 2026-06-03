@@ -4,469 +4,203 @@ canonical_name: dbt — Models, Materializations, Sources
 category: engineering
 skill_class: domain
 domain_tags:
-  - dbt
-  - models
-  - materializations
-  - sources
+- dbt
+- models
+- materializations
+- sources
+- incremental models
+- unique_key
 always_apply: false
-phase_scope: null
-category_scope: null
+phase_scope: [build]
+category_scope: [infrastructure]
 author: navistone
-change_summary: initial authoring draft
-raw_prose: |
-  # dbt — Models, Materializations, Sources
-
-  ## Overview
-
-  dbt models are SQL files that define transformations; materializations decide whether they become tables, views, or incremental tables. Sources declare external data the project depends on. This skill covers the core authoring surface.
-
-  Sourced from https://docs.getdbt.com/docs/build/models, /materializations, and /sources.
-
-  ---
-
-  # About dbt models
-
-
-  dbt Core and Cloud are composed of different moving parts working harmoniously. All of them are important to what dbt does — transforming data—the 'T' in ELT. When you execute `dbt run`, you are running a model that will transform your data without that data ever leaving your warehouse.
-
-  Models are where your developers spend most of their time within a dbt environment. Models are primarily written as a `select` statement and saved as a `.sql` file. While the definition is straightforward, the complexity of the execution will vary from environment to environment.  Models will be written and rewritten as needs evolve and your organization finds new ways to maximize efficiency.
-
-  SQL is the language most dbt users will utilize, but it is not the only one for building models. Starting in version 1.3, dbt Core and <Constant name="dbt" /> support Python models. Python models are useful for training or deploying data science models, complex transformations, or where a specific Python package meets a need &mdash; such as using the `dateutil` library to parse dates.
-
-  ### Models and modern workflows
-
-  The top level of a dbt workflow is the project. A project is a directory of a `.yml` file (the project configuration) and either `.sql` or `.py` files (the models). The project file tells dbt the project context, and the models let dbt know how to build a specific data set. For more details on projects, refer to [About dbt projects](/docs/build/projects).
-
-  Your organization may need only a few models, but more likely you’ll need a complex structure of nested models to transform the required data. A model is a single file containing a final `select` statement, and a project can have multiple models, and models can even reference each other. Add to that, numerous projects and the level of effort required for transforming complex data sets can improve drastically compared to older methods.
-
-  Learn more about models in [SQL models](/docs/build/sql-models) and [Python models](/docs/build/python-models) pages. If you'd like to begin with a bit of practice, visit our [Getting Started Guide](/guides) for instructions on setting up the Jaffle_Shop sample data so yo
-
-  ---
-
-  # Materializations
-
-
-  ## Overview
-  <Term id="materialization">Materializations</Term> are strategies for persisting dbt models in a warehouse. There are five types of materializations built into dbt. They are:
-
-  - <Term id="table" />
-  - <Term id="view" />
-  - incremental
-  - ephemeral
-  - materialized view
-
-  You can also configure [custom materializations](/guides/create-new-materializations?step=1) in dbt. Custom materializations are a powerful way to extend dbt's functionality to meet your specific needs. 
-
-  For a detailed guide on materializations, refer to [Materializations best practices](/best-practices/materializations/1-guide-overview). For information about data streaming, refer to [How to handle real-time data](/best-practices/how-we-handle-real-time-data/1-intro).
-
-
-  import CourseCallout from '/snippets/_materialization-video-callout.md';
-
-  <CourseCallout resource="Materializations" 
-  url="https://learn.getdbt.com/courses/materializations-fundamentals" 
-  course="Materializations fundamentals" 
-  />
-
-  ## Configuring materializations
-  By default, dbt models are materialized as "views". Models can be configured with a different materialization by supplying the [`materialized` configuration](/reference/resource-configs/materialized) parameter as shown in the following tabs.
-
-  <Tabs>
-
-  <TabItem value="Project file">
-
-  <File name='dbt_project.yml'>
-
-  ```yaml
-  # The following dbt_project.yml configures a project that looks like this:
-  # .
-  # └── models
-  #     ├── csvs
-  #     │   ├── employees.sql
-  #     │   └── goals.sql
-  #     └── events
-  #         ├── stg_event_log.sql
-  #         └── stg_event_sessions.sql
-
-  name: my_project
-  version: 1.0.0
-  config-version: 2
-
-  models:
-    my_project:
-      events:
-        # materialize all models in models/events as tables
-        +materialized: table
-      csvs:
-        # this is redundant, and does not need to be set
-        +materialized: view
-  ```
-
-  </File>
-
-  </TabItem>
-
-  <TabItem value="Model file">
-
-  Alternatively, materializations can be configured directly inside of the model SQL files. This can be useful if you are also setting [Performance Optimization] configs for specific models (for example, [Redshift specific configurations](/reference/resource-configs/redshift-configs) or [BigQuery specific configurations](/reference/resource-configs/bigquery-configs)).
-
-  <File name='models/events/stg_event_log.sql'>
-
-  ```sql
-
-  {{ config(materialized='table', sort='timestamp', dist='user_id') }}
-
-  select *
-  from ...
-  ```
-
-  </File>
-
-  </TabItem>
-
-  <TabItem value="Property file">
-
-  Materializations can also be configured in the model's `properties.yml` file.  The following example shows the `table` materialization type. For a complete list of materialization types, refer to [materializations](/docs/build/materializations#materializations).
-
-  <File name='models/properties.yml'>
-
-  ```yaml
-
-  models:
-    - name: events
-      config:
-        materialized: table
-  ```
-
-  </File>
-
-  </TabItem>
-
-  </Tabs>
-
-  ---
-
-  # Add sources to your DAG
-
-
-  ## Related reference docs
-  * [Source properties](/reference/source-properties)
-  * [Source configurations](/reference/source-configs)
-  * [`{{ source() }}` Jinja function](/reference/dbt-jinja-functions/source)
-  * [`source freshness` command](/reference/commands/source)
-
-  ## Using sources
-  Sources make it possible to name and describe the data loaded into your warehouse by your Extract and Load tools. By declaring these tables as sources in dbt, you can then
-  - select from source tables in your models using the [`{{ source() }}` function,](/reference/dbt-jinja-functions/source) helping define the lineage of your data
-  - test your assumptions about your source data
-  - calculate the freshness of your source data
-
-  ### Declaring a source
-
-  Sources are defined in `.yml` files nested under a `sources:` key.
-
-  <File name='models/<filename>.yml'>
-
-  ```yaml
-
-  sources:
-    - name: jaffle_shop
-      database: raw  
-      schema: jaffle_shop  
-      tables:
-        - name: orders
-        - name: customers
-
-    - name: stripe
-      tables:
-        - name: payments
-  ```
-
-  </File>
-
-  *By default, `schema` will be the same as `name`. Add `schema` only if you want to use a source name that differs from the existing schema.
-
-  If you're not already familiar with these files, be sure to check out [the documentation on properties.yml files](/reference/configs-and-properties) before proceeding.
-
-  ### Selecting from a source
-
-  Once a source has been defined, it can be referenced from a model using the [`{{ source()}}` function](/reference/dbt-jinja-functions/source).
-
-
-  <File name='models/orders.sql'>
-
-  ```sql
-  select
-    ...
-
-  from {{ source('jaffle_shop', 'orders') }}
-
-  left join {{ source('jaffle_shop', 'customers') }} using (customer_id)
-
-  ```
-
-  </File>
-
-  dbt will compile this to the full <Term id="table" /> name:
-
-  <File name='target/compiled/jaffle_shop/models/my_model.sql'>
-
-  ```sql
-
-  select
-    ...
-
-  from raw.jaffle_shop.orders
-
-  left join raw.jaffle_shop.customers using (customer_id)
-
-  ```
-
-  </File>
-
-  Using the `{{ source () }}` function also creates a dependency between the model and the source table.
-
-  <Lightbox src="/img/docs/building-a-dbt-project/sources-dag.png" title="The source function tells dbt a model is dependent on a source "/>
-
-  ### Testing and documenting sources
-  You can also:
-  - Add data tests to sources
-  - Add descriptions to sources, that get rendered as part of your documentation site
-
-  These should be familiar concepts if you've already added data tests and descriptions to your models (if not check out the guides on [testing](/docs/build/data-tests) and [documentation](/docs/build/documentation)).
-
-  <File name='models/<filename>.yml'>
-
-  ```yaml
-
-  sources:
-    - name: jaffle_shop
-      description: This is a replica of the Postgres database used by our app
-      tables:
-        - name: orders
-          database: raw
-          description: >
-            One record per order. Includes cancelled and deleted orders.
-          columns:
-            - name: id
-              description: Primary key of the orders table
-              data_tests:
-                - unique
-                - not_null
-            - name: status
-              description: Note that the status can change over time
-
-        - name: ...
-
-    - name: ...
-  ```
-
-  </File>
-
-  You can find more details on the available properties for sources in the [reference section](/reference/source-properties).
-
-  ### FAQs
-  <FAQ path="Project/source-has-bad-name" />
-  <FAQ path="Project/source-in-different-database" />
-  <FAQ path="Models/source-quotes" />
-  <FAQ path="
+change_summary: 'initial authoring draft; merged 2026-06-03: absorbed unique content from data-engineering-dbt-incremental (superseded_by: data-engineering-dbt-incremental)'
+raw_prose: "# dbt — Models, Materializations, Sources\n\n## Overview\n\ndbt models are SQL files that define transformations; materializations decide whether they become tables, views, or incremental tables. Sources declare external data the project depends on. This skill covers the core authoring surface.\n\nSourced from https://docs.getdbt.com/docs/build/models, /materializations, and /sources.\n\n---\n\n# About dbt models\n\ndbt Core and Cloud are composed of different moving parts working harmoniously. All of them are important to what dbt does — transforming data—the 'T' in ELT. When you execute `dbt run`, you are running a model that will transform your data without that data ever leaving your warehouse.\n\nModels are where your developers spend most of their time within a dbt environment. Models are primarily written as a `select` statement and saved as a `.sql` file. While the definition is straightforward, the complexity of the execution will vary from environment to environment.\
+  \  Models will be written and rewritten as needs evolve and your organization finds new ways to maximize efficiency.\n\nSQL is the language most dbt users will utilize, but it is not the only one for building models. Starting in version 1.3, dbt Core and Cloud also support Python models. Python models are useful for training or deploying data science models, complex transformations, or where a specific Python package meets a need — such as using the `dateutil` library to parse dates.\n\n### Models and modern workflows\n\nThe top level of a dbt workflow is the project. A project is a directory of a `.yml` file (the project configuration) and either `.sql` or `.py` files (the models). The project file tells dbt the project context, and the models let dbt know how to build a specific data set. For more details on projects, refer to [About dbt projects](/docs/build/projects).\n\nYour organization may need only a few models, but more likely you’ll need a complex structure of nested models to\
+  \ transform the required data. A model is a single file containing a final `select` statement, and a project can have multiple models, and models can even reference each other. Add to that, numerous projects and the level of effort required for transforming complex data sets can improve drastically compared to older methods.\n\nLearn more about models in [SQL models](/docs/build/sql-models) and [Python models](/docs/build/python-models) pages. If you'd like to begin with a bit of practice, visit our [Getting Started Guide](/guides) for instructions on setting up the Jaffle_Shop sample data so yo\n\n---\n\n# Materializations\n\n## Overview\nMaterializations are strategies for persisting dbt models in a warehouse. There are five types of materializations built into dbt. They are:\n\n- - - incremental\n- ephemeral\n- materialized view\n\nYou can also configure [custom materializations](/guides/create-new-materializations?step=1) in dbt. Custom materializations are a powerful way to extend\
+  \ dbt's functionality to meet your specific needs. \n\nFor a detailed guide on materializations, refer to [Materializations best practices](/best-practices/materializations/1-guide-overview). For information about data streaming, refer to [How to handle real-time data](/best-practices/how-we-handle-real-time-data/1-intro).\n\n## Configuring materializations\nBy default, dbt models are materialized as \"views\". Models can be configured with a different materialization by supplying the [`materialized` configuration](/reference/resource-configs/materialized) parameter as shown in the following tabs.\n\n---\nProject file\n---\n```yaml\n# The following dbt_project.yml configures a project that looks like this:\n# .\n# └── models\n#     ├── csvs\n#     │   ├── employees.sql\n#     │   └── goals.sql\n#     └── events\n#         ├── stg_event_log.sql\n#         └── stg_event_sessions.sql\n\nname: my_project\nversion: 1.0.0\nconfig-version: 2\n\nmodels:\n  my_project:\n    events:\n      # materialize\
+  \ all models in models/events as tables\n      +materialized: table\n    csvs:\n      # this is redundant, and does not need to be set\n      +materialized: view\n```\n\n---\nModel file\n---\nAlternatively, materializations can be configured directly inside of the model SQL files. This can be useful if you are also setting [Performance Optimization] configs for specific models (for example, [Redshift specific configurations](/reference/resource-configs/redshift-configs) or [BigQuery specific configurations](/reference/resource-configs/bigquery-configs)).\n\n```sql\n\n{{ config(materialized='table', sort='timestamp', dist='user_id') }}\n\nselect *\nfrom ...\n```\n\n---\nProperty file\n---\nMaterializations can also be configured in the model's `properties.yml` file.  The following example shows the `table` materialization type. For a complete list of materialization types, refer to [materializations](/docs/build/materializations#materializations).\n\n```yaml\n\nmodels:\n  - name: events\n\
+  \    config:\n      materialized: table\n```\n\n---\n\n# Add sources to your DAG\n\n## Related reference docs\n* [Source properties](/reference/source-properties)\n* [Source configurations](/reference/source-configs)\n* [`{{ source() }}` Jinja function](/reference/dbt-jinja-functions/source)\n* [`source freshness` command](/reference/commands/source)\n\n## Using sources\nSources make it possible to name and describe the data loaded into your warehouse by your Extract and Load tools. By declaring these tables as sources in dbt, you can then\n- select from source tables in your models using the [`{{ source() }}` function,](/reference/dbt-jinja-functions/source) helping define the lineage of your data\n- test your assumptions about your source data\n- calculate the freshness of your source data\n\n### Declaring a source\n\nSources are defined in `.yml` files nested under a `sources:` key.\n\n```yaml\n\nsources:\n  - name: jaffle_shop\n    database: raw  \n    schema: jaffle_shop  \n    tables:\n\
+  \      - name: orders\n      - name: customers\n\n  - name: stripe\n    tables:\n      - name: payments\n```\n\n*By default, `schema` will be the same as `name`. Add `schema` only if you want to use a source name that differs from the existing schema.\n\nIf you're not already familiar with these files, be sure to check out [the documentation on properties.yml files](/reference/configs-and-properties) before proceeding.\n\n### Selecting from a source\n\nOnce a source has been defined, it can be referenced from a model using the [`{{ source()}}` function](/reference/dbt-jinja-functions/source).\n\n```sql\nselect\n  ...\n\nfrom {{ source('jaffle_shop', 'orders') }}\n\nleft join {{ source('jaffle_shop', 'customers') }} using (customer_id)\n\n```\n\ndbt will compile this to the full name:\n\n```sql\n\nselect\n  ...\n\nfrom raw.jaffle_shop.orders\n\nleft join raw.jaffle_shop.customers using (customer_id)\n\n```\n\nUsing the `{{ source () }}` function also creates a dependency between the model\
+  \ and the source table.\n\n\n\n### Testing and documenting sources\nYou can also:\n- Add data tests to sources\n- Add descriptions to sources, that get rendered as part of your documentation site\n\nThese should be familiar concepts if you've already added data tests and descriptions to your models (if not check out the guides on [testing](/docs/build/data-tests) and [documentation](/docs/build/documentation)).\n\n```yaml\n\nsources:\n  - name: jaffle_shop\n    description: This is a replica of the Postgres database used by our app\n    tables:\n      - name: orders\n        database: raw\n        description: >\n          One record per order. Includes cancelled and deleted orders.\n        columns:\n          - name: id\n            description: Primary key of the orders table\n            data_tests:\n              - unique\n              - not_null\n          - name: status\n            description: Note that the status can change over time\n\n      - name: ...\n\n  - name: ...\n```\n\
+  \nYou can find more details on the available properties for sources in the [reference section](/reference/source-properties).\n\n### FAQs\n\n---\n\n# Incremental Models — Deep Dive\n\nIncremental models scale to large datasets by re-processing only new or changed rows. The right strategy + unique_key choice determines correctness.\n\nSourced from https://docs.getdbt.com/docs/build/incremental-models.\n\n## Configure incremental materializations\n\nLike the other materializations built into dbt, incremental models are defined with `select` statements, with the materialization defined in a config block.\n\n```sql\n{{\n    config(\n        materialized='incremental'\n    )\n}}\n\nselect ...\n```\n\nTo use incremental models, you also need to tell dbt:\n\n- How to filter the rows on an incremental run\n- The unique key of the model (if any)\n\n### Understand the is_incremental() macro\n\nThe `is_incremental()` macro powers incremental materializations. It will return `True` if _all_ of the following conditions are met:\n\n- The model must already exist as a table in the database\n- The `full-refresh` flag _is not_ passed\n- The running model is configured with `materialized='incremental'`\n\nNote that the SQL in your model needs to be valid whether `is_incremental()` evaluates to `True` or `False`.\n\n### Filtering rows on an incremental run\n\nTo tell dbt which rows it should transform on an incremental run, wrap valid SQL that filters for these rows in the `is_incremental()` macro.\n\nOften, you'll want to filter for \"new\" rows. The best way to find the timestamp of the most recent run of this model is by checking the most recent timestamp in your target table using the `{{ this }}` variable.\n\nAlso common is wanting to capture both new and updated records. For updated records, you'll need to define a unique key to ensure you don't bring in modified records as duplicates.\n\n```sql\n{{\n    config(\n        materialized='incremental'\n    )\n}}\n\nselect\n    *,\n    my_slow_function(my_column)\n\nfrom {{ ref('app_data_events') }}\n\n{% if is_incremental() %}\n\n  -- this filter will only be applied on an incremental run\n  -- (uses >= to include records whose timestamp occurred since the last run of this model)\nwhere event_time >= (select coalesce(max(event_time),'1900-01-01') from {{ this }} )\n\n{% endif %}\n```\n\n**Optimizing your incremental model**\n\nFor more complex incremental models that make use of Common Table Expressions (CTEs), you should consider the impact of the position of the `is_incremental()` macro on query performance. In some warehouses, filtering your records early can vastly improve the run time of your query.\n\n### Defining a unique key\n\nDefining the optional `unique_key` parameter enables updating existing rows instead of just appending new rows. If new information arrives for an existing `unique_key`, that new information can replace the current information instead of being appended to the table.\n\nIf you don't specify a `unique_key`, most adapters will result in `append`-only behavior, which means dbt inserts all rows returned by the model's SQL into the preexisting target table without regard for whether the rows represent duplicates.\n\nThe `unique_key` should be supplied as a string representing a single column or a list of column names (e.g., `['col1', 'col2']`). Columns used in this way should not contain any nulls, or the incremental model may fail to match rows and generate duplicate rows. Either ensure that each column has no nulls (for example with `coalesce(COLUMN_NAME, 'VALUE_IF_NULL')`) or define a single-column surrogate key (for example with `dbt_utils.generate_surrogate_key`).\n\n**Tip**: In cases where you need multiple columns in combination to uniquely identify each row, we recommend you pass these columns as a list (`unique_key = ['user_id', 'session_number']`), rather than a string expression (`unique_key = 'concat(user_id, session_number)'`). The list form is more universal and dbt can template it appropriately for your database.\n\nWhen you define a `unique_key`, you'll see this behavior for each row of \"new\" data:\n\n- If the same `unique_key` is present in the \"new\" and \"old\" model data, dbt will update/replace the old row with the new row.\n- If the `unique_key` is _not_ present in the \"old\" data, dbt will insert the entire row into the table.\n\nPlease note that if there's a unique_key with more than one row in either the existing target table or the new incremental rows, the incremental model may fail depending on your database and incremental strategy.\n\n**Info**: While common incremental strategies, such as `delete+insert` + `merge`, might use `unique_key`, others don't. For example, the `insert_overwrite` strategy does not use `unique_key`, because it operates on partitions of data rather than individual rows.\n\n#### `unique_key` example\n\nConsider a model that calculates the number of daily active users (DAUs), based on an event stream. As source data arrives, you will want to recalculate the number of DAUs for both the day that dbt last ran, and any days since then:\n\n```sql\n{{\n    config(\n        materialized='incremental',\n        unique_key='date_day'\n    )\n}}\n\nselect\n    date_trunc('day', event_at) as date_day,\n    count(distinct user_id) as daily_active_users\n\nfrom {{ ref('app_data_events') }}\n\n{% if is_incremental() %}\n\n  where date_day >= (select coalesce(max(date_day), '1900-01-01') from {{ this }})\n\n{% endif %}\n\ngroup by 1\n```\n\nBuilding this model incrementally without the `unique_key` parameter would result in multiple rows for the same day, as each run of the model would append new data without checking for duplicates.\n"
 fragments:
-  - fragment_type: setup
-    sequence: 1
-    content: |
-      dbt models are SQL files that define transformations; materializations decide whether they become tables, views, or incremental tables. Sources declare external data the project depends on. This skill covers the core authoring surface.
-
-      Sourced from https://docs.getdbt.com/docs/build/models, /materializations, and /sources.
-  - fragment_type: execution
-    sequence: 2
-    content: |
-      dbt Core and Cloud are composed of different moving parts working harmoniously. All of them are important to what dbt does — transforming data—the 'T' in ELT. When you execute `dbt run`, you are running a model that will transform your data without that data ever leaving your warehouse.
-
-      Models are where your developers spend most of their time within a dbt environment. Models are primarily written as a `select` statement and saved as a `.sql` file. While the definition is straightforward, the complexity of the execution will vary from environment to environment.  Models will be written and rewritten as needs evolve and your organization finds new ways to maximize efficiency.
-
-      SQL is the language most dbt users will utilize, but it is not the only one for building models. Starting in version 1.3, dbt Core and <Constant name="dbt" /> support Python models. Python models are useful for training or deploying data science models, complex transformations, or where a specific Python package meets a need &mdash; such as using the `dateutil` library to parse dates.
-  - fragment_type: execution
-    sequence: 3
-    content: |
-      The top level of a dbt workflow is the project. A project is a directory of a `.yml` file (the project configuration) and either `.sql` or `.py` files (the models). The project file tells dbt the project context, and the models let dbt know how to build a specific data set. For more details on projects, refer to [About dbt projects](/docs/build/projects).
-
-      Your organization may need only a few models, but more likely you’ll need a complex structure of nested models to transform the required data. A model is a single file containing a final `select` statement, and a project can have multiple models, and models can even reference each other. Add to that, numerous projects and the level of effort required for transforming complex data sets can improve drastically compared to older methods.
-
-      Learn more about models in [SQL models](/docs/build/sql-models) and [Python models](/docs/build/python-models) pages. If you'd like to begin with a bit of practice, visit our [Getting Started Guide](/guides) for instructions on setting up the Jaffle_Shop sample data so yo
-  - fragment_type: execution
-    sequence: 4
-    content: |
-      <Tabs>
-
-      <TabItem value="Project file">
-
-      <File name='dbt_project.yml'>
-
-      ```yaml
-      # The following dbt_project.yml configures a project that looks like this:
-      # .
-      # └── models
-      #     ├── csvs
-      #     │   ├── employees.sql
-      #     │   └── goals.sql
-      #     └── events
-      #         ├── stg_event_log.sql
-      #         └── stg_event_sessions.sql
-
-      name: my_project
-      version: 1.0.0
-      config-version: 2
-
-      models:
-        my_project:
-          events:
-            # materialize all models in models/events as tables
-            +materialized: table
-          csvs:
-            # this is redundant, and does not need to be set
-            +materialized: view
-      ```
-
-      </File>
-
-      </TabItem>
-
-      <TabItem value="Model file">
-
-      Alternatively, materializations can be configured directly inside of the model SQL files. This can be useful if you are also setting [Performance Optimization] configs for specific models (for example, [Redshift specific configurations](/reference/resource-configs/redshift-configs) or [BigQuery specific configurations](/reference/resource-configs/bigquery-configs)).
-
-      <File name='models/events/stg_event_log.sql'>
-
-      ```sql
-
-      {{ config(materialized='table', sort='timestamp', dist='user_id') }}
-
-      select *
-      from ...
-      ```
-
-      </File>
-
-      </TabItem>
-
-      <TabItem value="Property file">
-
-      Materializations can also be configured in the model's `properties.yml` file.  The following example shows the `table` materialization type. For a complete list of materialization types, refer to [materializations](/docs/build/materializations#materializations).
-
-      <File name='models/properties.yml'>
-
-      ```yaml
-
-      models:
-        - name: events
-          config:
-            materialized: table
-      ```
-
-      </File>
-
-      </TabItem>
-
-      </Tabs>
-  - fragment_type: execution
-    sequence: 5
-    content: |
-      Sources are defined in `.yml` files nested under a `sources:` key.
-
-      <File name='models/<filename>.yml'>
-
-      ```yaml
-
-      sources:
-        - name: jaffle_shop
-          database: raw  
-          schema: jaffle_shop  
-          tables:
-            - name: orders
-            - name: customers
-
-        - name: stripe
-          tables:
-            - name: payments
-      ```
-
-      </File>
-
-      *By default, `schema` will be the same as `name`. Add `schema` only if you want to use a source name that differs from the existing schema.
-
-      If you're not already familiar with these files, be sure to check out [the documentation on properties.yml files](/reference/configs-and-properties) before proceeding.
-  - fragment_type: execution
-    sequence: 6
-    content: |
-      Once a source has been defined, it can be referenced from a model using the [`{{ source()}}` function](/reference/dbt-jinja-functions/source).
+- fragment_type: setup
+  sequence: 1
+  content: 'dbt models are SQL files that define transformations; materializations decide whether they become tables, views, or incremental tables. Sources declare external data the project depends on. This skill covers the core authoring surface.
 
 
-      <File name='models/orders.sql'>
+    Sourced from https://docs.getdbt.com/docs/build/models, /materializations, and /sources.
 
-      ```sql
-      select
-        ...
+    '
+- fragment_type: execution
+  sequence: 2
+  content: 'dbt Core and Cloud are composed of different moving parts working harmoniously. All of them are important to what dbt does — transforming data—the ''T'' in ELT. When you execute `dbt run`, you are running a model that will transform your data without that data ever leaving your warehouse.
 
-      from {{ source('jaffle_shop', 'orders') }}
 
-      left join {{ source('jaffle_shop', 'customers') }} using (customer_id)
+    Models are where your developers spend most of their time within a dbt environment. Models are primarily written as a `select` statement and saved as a `.sql` file. While the definition is straightforward, the complexity of the execution will vary from environment to environment.  Models will be written and rewritten as needs evolve and your organization finds new ways to maximize efficiency.
 
-      ```
 
-      </File>
+    SQL is the language most dbt users will utilize, but it is not the only one for building models. Starting in version 1.3, dbt Core and Cloud also support Python models. Python models are useful for training or deploying data science models, complex transformations, or where a specific Python package meets a need — such as using the `dateutil` library to parse dates.
 
-      dbt will compile this to the full <Term id="table" /> name:
+    '
+- fragment_type: execution
+  sequence: 3
+  content: 'The top level of a dbt workflow is the project. A project is a directory of a `.yml` file (the project configuration) and either `.sql` or `.py` files (the models). The project file tells dbt the project context, and the models let dbt know how to build a specific data set. For more details on projects, refer to [About dbt projects](/docs/build/projects).
 
-      <File name='target/compiled/jaffle_shop/models/my_model.sql'>
 
-      ```sql
+    Your organization may need only a few models, but more likely you’ll need a complex structure of nested models to transform the required data. A model is a single file containing a final `select` statement, and a project can have multiple models, and models can even reference each other. Add to that, numerous projects and the level of effort required for transforming complex data sets can improve drastically compared to older methods.
 
-      select
-        ...
 
-      from raw.jaffle_shop.orders
+    Learn more about models in [SQL models](/docs/build/sql-models) and [Python models](/docs/build/python-models) pages. If you''d like to begin with a bit of practice, visit our [Getting Started Guide](/guides) for instructions on setting up the Jaffle_Shop sample data so yo
 
-      left join raw.jaffle_shop.customers using (customer_id)
+    '
+- fragment_type: execution
+  sequence: 4
+  content: "---\nProject file\n---\n```yaml\n# The following dbt_project.yml configures a project that looks like this:\n# .\n# └── models\n#     ├── csvs\n#     │   ├── employees.sql\n#     │   └── goals.sql\n#     └── events\n#         ├── stg_event_log.sql\n#         └── stg_event_sessions.sql\n\nname: my_project\nversion: 1.0.0\nconfig-version: 2\n\nmodels:\n  my_project:\n    events:\n      # materialize all models in models/events as tables\n      +materialized: table\n    csvs:\n      # this is redundant, and does not need to be set\n      +materialized: view\n```\n\n---\nModel file\n---\nAlternatively, materializations can be configured directly inside of the model SQL files. This can be useful if you are also setting [Performance Optimization] configs for specific models (for example, [Redshift specific configurations](/reference/resource-configs/redshift-configs) or [BigQuery specific configurations](/reference/resource-configs/bigquery-configs)).\n\n```sql\n\n{{ config(materialized='table',\
+    \ sort='timestamp', dist='user_id') }}\n\nselect *\nfrom ...\n```\n\n---\nProperty file\n---\nMaterializations can also be configured in the model's `properties.yml` file.  The following example shows the `table` materialization type. For a complete list of materialization types, refer to [materializations](/docs/build/materializations#materializations).\n\n```yaml\n\nmodels:\n  - name: events\n    config:\n      materialized: table\n```\n"
+- fragment_type: execution
+  sequence: 5
+  content: "Sources are defined in `.yml` files nested under a `sources:` key.\n\n```yaml\n\nsources:\n  - name: jaffle_shop\n    database: raw  \n    schema: jaffle_shop  \n    tables:\n      - name: orders\n      - name: customers\n\n  - name: stripe\n    tables:\n      - name: payments\n```\n\n*By default, `schema` will be the same as `name`. Add `schema` only if you want to use a source name that differs from the existing schema.\n\nIf you're not already familiar with these files, be sure to check out [the documentation on properties.yml files](/reference/configs-and-properties) before proceeding.\n"
+- fragment_type: execution
+  sequence: 6
+  content: "Once a source has been defined, it can be referenced from a model using the [`{{ source()}}` function](/reference/dbt-jinja-functions/source).\n\n```sql\nselect\n  ...\n\nfrom {{ source('jaffle_shop', 'orders') }}\n\nleft join {{ source('jaffle_shop', 'customers') }} using (customer_id)\n\n```\n\ndbt will compile this to the full name:\n\n```sql\n\nselect\n  ...\n\nfrom raw.jaffle_shop.orders\n\nleft join raw.jaffle_shop.customers using (customer_id)\n\n```\n\nUsing the `{{ source () }}` function also creates a dependency between the model and the source table.\n"
+- fragment_type: execution
+  sequence: 7
+  content: "You can also:\n- Add data tests to sources\n- Add descriptions to sources, that get rendered as part of your documentation site\n\nThese should be familiar concepts if you've already added data tests and descriptions to your models (if not check out the guides on [testing](/docs/build/data-tests) and [documentation](/docs/build/documentation)).\n\n```yaml\n\nsources:\n  - name: jaffle_shop\n    description: This is a replica of the Postgres database used by our app\n    tables:\n      - name: orders\n        database: raw\n        description: >\n          One record per order. Includes cancelled and deleted orders.\n        columns:\n          - name: id\n            description: Primary key of the orders table\n            data_tests:\n              - unique\n              - not_null\n          - name: status\n            description: Note that the status can change over time\n\n      - name: ...\n\n  - name: ...\n```\n\nYou can find more details on the available properties\
+    \ for sources in the [reference section](/reference/source-properties)."
+- fragment_type: setup
+  sequence: 8
+  content: |
+    Incremental models are built as tables in your data warehouse. The first time a model is run, the table is built by transforming _all_ rows of source data. On subsequent runs, dbt transforms _only_ the rows in your source data that you tell dbt to filter for, inserting them into the target table which is the table that has already been built.
 
-      ```
+    Often, the rows you filter for on an incremental run will be the rows in your source data that have been created or updated since the last time dbt ran. As such, on each dbt run, your model gets built incrementally.
 
-      </File>
+    Using an incremental model limits the amount of data that needs to be transformed, vastly reducing the runtime of your transformations. This improves warehouse performance and reduces compute costs.
+- fragment_type: execution
+  sequence: 9
+  content: |
+    To use incremental models, you also need to tell dbt:
 
-      Using the `{{ source () }}` function also creates a dependency between the model and the source table.
-  - fragment_type: execution
-    sequence: 7
-    content: |
-      You can also:
-      - Add data tests to sources
-      - Add descriptions to sources, that get rendered as part of your documentation site
+    - How to filter the rows on an incremental run
+    - The unique key of the model (if any)
 
-      These should be familiar concepts if you've already added data tests and descriptions to your models (if not check out the guides on [testing](/docs/build/data-tests) and [documentation](/docs/build/documentation)).
+    ### Understand the is_incremental() macro
 
-      <File name='models/<filename>.yml'>
+    The `is_incremental()` macro powers incremental materializations. It will return `True` if _all_ of the following conditions are met:
 
-      ```yaml
+    - The model must already exist as a table in the database
+    - The `full-refresh` flag _is not_ passed
+    - The running model is configured with `materialized='incremental'`
 
-      sources:
-        - name: jaffle_shop
-          description: This is a replica of the Postgres database used by our app
-          tables:
-            - name: orders
-              database: raw
-              description: >
-                One record per order. Includes cancelled and deleted orders.
-              columns:
-                - name: id
-                  description: Primary key of the orders table
-                  data_tests:
-                    - unique
-                    - not_null
-                - name: status
-                  description: Note that the status can change over time
+    Note that the SQL in your model needs to be valid whether `is_incremental()` evaluates to `True` or `False`.
+- fragment_type: execution
+  sequence: 10
+  content: |
+    ### Filtering rows on an incremental run
 
-            - name: ...
+    To tell dbt which rows it should transform on an incremental run, wrap valid SQL that filters for these rows in the `is_incremental()` macro.
 
-        - name: ...
-      ```
+    Often, you'll want to filter for "new" rows, as in, rows that have been created since the last time dbt ran this model. The best way to find the timestamp of the most recent run of this model is by checking the most recent timestamp in your target table. dbt makes it easy to query your target table by using the "[\{\{ this \}\}](/reference/dbt-jinja-functions/this)" variable.
 
-      </File>
+    Also common is wanting to capture both new and updated records. For updated records, you'll need to [define a unique key](#defining-a-unique-key-optional) to ensure you don't bring in modified records as duplicates. Your `is_incremental()` code will check for rows created *or modified* since the last time dbt ran this model.
 
-      You can find more details on the available properties for sources in the [reference section](/reference/source-properties).
+    For example, a model that includes a computationally slow transformation on a column can be built incrementally, as follows:
+
+    ```sql
+    {{
+        config(
+            materialized='incremental'
+        )
+    }}
+
+    select
+        *,
+        my_slow_function(my_column)
+
+    from {{ ref('app_data_events') }}
+
+    {% if is_incremental() %}
+
+      -- this filter will only be applied on an incremental run
+      -- (uses >= to include records whose timestamp occurred since the last run of this model)
+      -- (If event_time is NULL or the table is truncated, the condition will always be true and load all records)
+    where event_time >= (select coalesce(max(event_time),'1900-01-01') from {{ this }} )
+
+    {% endif %}
+    ```
+- fragment_type: guardrail
+  sequence: 11
+  content: |
+    **Optimizing your incremental model**
+
+    For more complex incremental models that make use of Common Table Expressions (CTEs), you should consider the impact of the position of the `is_incremental()` macro on query performance. In some warehouses, filtering your records early can vastly improve the run time of your query!
+- fragment_type: execution
+  sequence: 12
+  content: |
+    ### Defining a unique key
+
+    Defining the optional [`unique_key` parameter](/reference/resource-configs/unique_key) enables updating existing rows instead of just appending new rows. If new information arrives for an existing `unique_key`, that new information can replace the current information instead of being appended to the table. If a duplicate row arrives, it can be ignored. Refer to [strategy specific configs](/docs/build/incremental-strategy#strategy-specific-configs) for more options on managing this update behavior, like choosing only specific columns to update.
+
+    If you don't specify a `unique_key`, most adapters will result in `append`-only behavior, which means dbt inserts all rows returned by the model's SQL into the preexisting target table without regard for whether the rows represent duplicates.
+- fragment_type: guardrail
+  sequence: 13
+  content: |
+    **Tip**
+
+    In cases where you need multiple columns in combination to uniquely identify each row, we recommend you pass these columns as a list (`unique_key = ['user_id', 'session_number']`), rather than a string expression (`unique_key = 'concat(user_id, session_number)'`).
+
+    By using the first syntax, which is more universal, dbt can ensure that the columns will be templated into your incremental model materialization in a way that's appropriate to your database.
+
+    When you pass a list in this way, please ensure that each column does not contain any nulls, or the incremental model run may fail.
+
+    Alternatively, you can define a single-column [surrogate key](https://www.getdbt.com/blog/guide-to-surrogate-key), for example with [`dbt_utils.generate_surrogate_key`](https://github.com/dbt-labs/dbt-utils#generate_surrogate_key-source)).
+- fragment_type: execution
+  sequence: 14
+  content: |
+    When you define a `unique_key`, you'll see this behavior for each row of "new" data returned by your dbt model:
+
+    - If the same `unique_key` is present in the "new" and "old" model data, dbt will update/replace the old row with the new row of data. The exact mechanics of how that update/replace takes place will vary depending on your database, [incremental strategy](/docs/build/incremental-strategy), and [strategy specific configs](/docs/build/incremental-strategy#strategy-specific-configs).
+    - If the `unique_key` is _not_ present in the "old" data, dbt will insert the entire row into the table.
+
+    Please note that if there's a unique_key with more than one row in either the existing target table or the new incremental rows, the incremental model may fail depending on your database and [incremental strategy](/docs/build/incremental-strategy). If you're having issues running an incremental model, it's a good idea to double check that the unique key is truly unique in both your existing database table and your new incremental rows. You can [learn more about surrogate keys here](https://www.getdbt.com/blog/guide-to-surrogate-key).
+- fragment_type: guardrail
+  sequence: 15
+  content: |
+    **Info**
+
+    While common incremental strategies, such as `delete+insert` + `merge`, might use `unique_key`, others don't. For example, the `insert_overwrite` strategy does not use `unique_key`, because it operates on partitions of data rather than individual rows. For more information, see [About incremental_strategy](/docs/build/incremental-strategy).
+- fragment_type: example
+  sequence: 16
+  content: |
+    #### `unique_key` example
+
+    Consider a model that calculates the number of daily active users (DAUs), based on an event stream. As source data arrives, you will want to recalculate the number of DAUs for both the day that dbt last ran, and any days since then. The model would look as follows:
+
+    ```sql
+    {{
+        config(
+            materialized='incremental',
+            unique_key='date_day'
+        )
+    }}
+
+    select
+        date_trunc('day', event_at) as date_day,
+        count(distinct user_id) as daily_active_users
+
+    from {{ ref('app_data_events') }}
+
+
+    {% if is_incremental() %}
+
+      -- this filter will only be applied on an incremental run
+      -- (uses >= to include records arriving later on the same day as the last run of this model)
+      where date_day >= (select coalesce(max(date_day), '1900-01-01') from {{ this }})
+
+    {% endif %}
+
+    group by 1
+    ```
+
+    Building this model incrementally without the `unique_key` parameter would result in multiple rows for the same day, as each run of the model would append new data without checking for duplicates.

@@ -50,7 +50,7 @@ skills:
   fragment_count: 16
 - skill_id: python-packaging-pyproject
   file: python-packaging-pyproject.yaml
-  fragment_count: 9
+  fragment_count: 14
 - skill_id: python-pattern-matching
   file: python-pattern-matching.yaml
   fragment_count: 11

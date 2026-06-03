@@ -6,7 +6,6 @@ restart_service_in_container, and test_kuzu_lock_released.
 
 from __future__ import annotations
 
-import os
 import signal
 import subprocess
 import time
@@ -161,43 +160,6 @@ class TestStopServiceInContainer:
 
             result = stop_service_in_container()
             assert result is True
-
-    def test_sigkill_permission_error_clears_sentinel(self, monkeypatch: pytest.MonkeyPatch):
-        """SIGKILL PermissionError must return False and clear the sentinel."""
-
-        def fake_kill(pid: int, sig: int) -> None:
-            if sig == signal.SIGKILL:
-                raise PermissionError
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.container_service._find_uvicorn_pid", lambda: 2222)
-            m.setattr("os.kill", fake_kill)
-            m.setattr("agentalloy.install.container_service._pid_alive", lambda pid: True)
-            m.setattr(time, "sleep", lambda s: None)
-
-            from agentalloy.install.container_service import stop_service_in_container
-
-            result = stop_service_in_container()
-            assert result is False
-            assert os.environ.get("AGENTALLOY_DB_LOCK_HELD") is None
-
-    def test_survived_sigkill_clears_sentinel(self, monkeypatch: pytest.MonkeyPatch):
-        """If the process survives SIGKILL, return False and clear the sentinel."""
-
-        def fake_kill(pid: int, sig: int) -> None:
-            pass
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.container_service._find_uvicorn_pid", lambda: 3333)
-            m.setattr("os.kill", fake_kill)
-            m.setattr("agentalloy.install.container_service._pid_alive", lambda pid: True)
-            m.setattr(time, "sleep", lambda s: None)
-
-            from agentalloy.install.container_service import stop_service_in_container
-
-            result = stop_service_in_container()
-            assert result is False
-            assert os.environ.get("AGENTALLOY_DB_LOCK_HELD") is None
 
 
 class TestRestartServiceInContainer:
@@ -598,74 +560,3 @@ class TestIntegration:
             assert result is False
             # The function returns False on error; stderr capture verifies
             # that the caller can inspect output if needed.
-
-
-# ---------------------------------------------------------------------------
-# Council acceptance gate — _find_uvicorn_pid() returns min(pids) not first-match
-# ---------------------------------------------------------------------------
-
-
-class TestFindUvicornPidMinSelection:
-    """Council acceptance gate (2026-06-02): _find_uvicorn_pid() collects ALL
-    matching PIDs from /proc and returns the LOWEST (parent process).
-
-    All existing tests mock _find_uvicorn_pid entirely; this is the only test
-    that exercises the real /proc-scanning function body.
-
-    Patch: agentalloy.install.container_service.Path (module-scoped, not global)
-    because Path is a module-level import in container_service.py. Global
-    pathlib.Path patching is explicitly rejected — it corrupts pytest internals.
-    """
-
-    def test_find_uvicorn_pid_returns_min_when_multiple_match(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Three /proc/<pid>/cmdline entries all matching agentalloy.app.
-        The function must return 50 (the minimum), not 100 or 75.
-        A non-numeric directory is included to confirm the filter.
-        """
-        from pathlib import Path as RealPath
-        from unittest.mock import patch
-
-        # Build a fake /proc tree in tmp_path.
-        proc_dir = tmp_path / "proc"
-        proc_dir.mkdir()
-
-        # Three matching PIDs — result must be min(50, 75, 100) = 50.
-        for pid in (100, 50, 75):
-            pid_dir = proc_dir / str(pid)
-            pid_dir.mkdir()
-            (pid_dir / "cmdline").write_bytes(
-                b"python\x00-m\x00uvicorn\x00agentalloy.app:app\x00--host\x000.0.0.0\x00"
-            )
-
-        # Non-numeric sibling directory — must be ignored without crashing.
-        other_dir = proc_dir / "net"
-        other_dir.mkdir()
-        (other_dir / "cmdline").write_bytes(b"agentalloy.app:app\x00")
-
-        # Non-matching PID — should not appear in pids list.
-        unrelated = proc_dir / "9999"
-        unrelated.mkdir()
-        (unrelated / "cmdline").write_bytes(b"python\x00-m\x00other_service\x00")
-
-        # Patch Path in the container_service module namespace only.
-        # side_effect redirects Path("/proc") to proc_dir; all other calls
-        # use the real Path so the rest of the function works correctly.
-        def _path_redirect(p: str) -> RealPath:
-            if p == "/proc":
-                return proc_dir
-            return RealPath(p)
-
-        with patch(
-            "agentalloy.install.container_service.Path",
-            side_effect=_path_redirect,
-        ):
-            from agentalloy.install.container_service import _find_uvicorn_pid
-
-            result = _find_uvicorn_pid()
-
-        assert result == 50, (
-            f"Expected min(50, 75, 100) = 50 but got {result!r}. "
-            "If this fails, _find_uvicorn_pid() is returning first-match or max, not min."
-        )

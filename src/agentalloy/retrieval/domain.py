@@ -104,6 +104,8 @@ class FragmentSource(Protocol):
         domain_tags: list[str] | None = None,
     ) -> list[ActiveFragment]: ...
 
+    def get_deprecated_skill_ids(self) -> list[str]: ...
+
 
 # Phase -> eligible-category mapping. Aligned with the seeded corpus
 # vocabulary (design, engineering, quality, review, tooling, ops). The
@@ -161,6 +163,11 @@ class StoreFragmentSource:
             domain_tags=domain_tags,
         )
 
+    def get_deprecated_skill_ids(self) -> list[str]:
+        from agentalloy.reads import get_deprecated_skill_ids  # local import avoids cycle
+
+        return get_deprecated_skill_ids(self._store)  # type: ignore[arg-type]
+
 
 def _rrf_fuse(
     dense_hits: list[SimilarityHit],
@@ -209,8 +216,14 @@ def _bm25_fallback_result(
     """Run the lexical leg only and package the degraded retrieval result."""
     categories = phase_to_categories(phase)
     pool_size = max(k * 2, 50)
+    deprecated_ids = frag_src.get_deprecated_skill_ids()
     bm25_query, bm25_source = _resolve_bm25_query(task, contract_tags)
-    bm25_hits = vector_store.search_bm25(bm25_query, categories=categories, k=pool_size)
+    bm25_hits = vector_store.search_bm25(
+        bm25_query,
+        categories=categories,
+        deprecated_skill_ids=deprecated_ids,
+        k=pool_size,
+    )
 
     metadata = frag_src.get_active_fragments(
         skill_class=("domain", "workflow"),
@@ -350,10 +363,12 @@ def retrieve_domain_candidates(
 
     categories = phase_to_categories(phase)
     pool_size = max(k * 2, 50)
+    deprecated_ids = frag_src.get_deprecated_skill_ids()
 
     dense_hits = vector_store.search_similar(
         query_vec,
         categories=categories,
+        deprecated_skill_ids=deprecated_ids,
         k=pool_size,
     )
 
@@ -362,7 +377,12 @@ def retrieve_domain_candidates(
     # rule-extracted ones. Union mode enabled by AGENTALLOY_UNION_KEYWORDS=1.
 
     bm25_query, _bm25_source = _resolve_bm25_query(task, contract_tags)
-    bm25_hits = vector_store.search_bm25(bm25_query, categories=categories, k=pool_size)
+    bm25_hits = vector_store.search_bm25(
+        bm25_query,
+        categories=categories,
+        deprecated_skill_ids=deprecated_ids,
+        k=pool_size,
+    )
     bm25_ids = [h.fragment_id for h in bm25_hits]
 
     if not dense_hits and not bm25_hits:

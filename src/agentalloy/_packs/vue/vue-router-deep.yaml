@@ -10,8 +10,8 @@ domain_tags:
 - navigation-guards
 - lazy-loading
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [framework]
 author: navistone
 change_summary: hand-authored Opus expansion
 raw_prose: |

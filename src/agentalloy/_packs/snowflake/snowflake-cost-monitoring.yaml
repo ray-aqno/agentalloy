@@ -3,6 +3,8 @@ skill_id: snowflake-cost-monitoring
 canonical_name: Snowflake Cost Monitoring and Optimization
 category: engineering
 skill_class: domain
+deprecated: true
+superseded_by: snowflake-warehouses-and-cost
 domain_tags:
 - snowflake
 - cost-optimization
@@ -10,10 +12,10 @@ domain_tags:
 - credits
 - resource-monitor
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [infrastructure]
 author: navistone
-change_summary: hand-authored Opus expansion
+change_summary: 'hand-authored Opus expansion; Deprecated 2026-06-03: superseded by snowflake-warehouses-and-cost'
 raw_prose: |
   # Snowflake Cost Monitoring and Optimization
 

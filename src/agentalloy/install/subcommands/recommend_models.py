@@ -68,7 +68,7 @@ def _options_apple_silicon() -> list[dict[str, Any]]:
             "default": True,
             "embed_model": "qwen3-embedding:0.6b",
             "embed_runner": "ollama",
-            "embed_runner_install_hint": "ollama (auto-installs `ollama-app` via brew on macOS if missing); will run `ollama pull qwen3-embedding:0.6b`",
+            "embed_runner_install_hint": "ollama is installed; will run `ollama pull qwen3-embedding:0.6b`",
         },
         {
             "default": False,
@@ -76,7 +76,6 @@ def _options_apple_silicon() -> list[dict[str, Any]]:
             "embed_runner": "llama-server",
             "embed_runner_install_hint": (
                 "llama-server (llama.cpp) with Metal acceleration; "
-                "auto-installs `llama.cpp` via brew on macOS if missing; "
                 "GGUF will be downloaded from Hugging Face automatically."
             ),
         },
@@ -89,7 +88,7 @@ def _options_nvidia() -> list[dict[str, Any]]:
             "default": True,
             "embed_model": "qwen3-embedding:0.6b",
             "embed_runner": "ollama",
-            "embed_runner_install_hint": "ollama (auto-installs `ollama-app` via brew on macOS if missing); will run `ollama pull qwen3-embedding:0.6b`",
+            "embed_runner_install_hint": "ollama is installed; will run `ollama pull qwen3-embedding:0.6b`",
         },
         {
             "default": False,
@@ -129,7 +128,7 @@ def _options_cpu() -> list[dict[str, Any]]:
             "default": True,
             "embed_model": "qwen3-embedding:0.6b",
             "embed_runner": "ollama",
-            "embed_runner_install_hint": "ollama (auto-installs `ollama-app` via brew on macOS if missing); will run `ollama pull qwen3-embedding:0.6b`",
+            "embed_runner_install_hint": "ollama is installed; will run `ollama pull qwen3-embedding:0.6b`",
         },
         {
             "default": False,

@@ -5,8 +5,8 @@ category: engineering
 skill_class: domain
 domain_tags: [small-commits, working-tree-discipline, integration-frequency, stop-at-green, scope-creep]
 always_apply: false
-phase_scope: null
-category_scope: null
+phase_scope: [build, review]
+category_scope: [process]
 author: navistone
 change_summary: |
   Initial authoring 2026-05-04. Sources — internal review history, git workflow conventions, observed correlations between commit-frequency and bug-discovery latency. Skill scope: the discipline of keeping the working tree green at every step; not the planning step that decided what to slice (covered in planning-and-task-breakdown).

@@ -10,10 +10,10 @@ domain_tags:
 - streaming
 - s3-events
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [infrastructure]
 author: navistone
-change_summary: hand-authored Opus expansion
+change_summary: 'hand-authored Opus expansion; merged 2026-06-03: absorbed Snowpipe overview from snowflake-data-loading'
 raw_prose: |
   # Snowflake Snowpipe and Auto-Ingest
 
@@ -164,6 +164,26 @@ raw_prose: |
   - **Auto-ingest with no S3 notification setup.** Pipe is created but never fires. Verify event configuration on S3 side.
   - **No error notifications.** Failed loads get logged but nobody sees them. Always set ERROR_INTEGRATION.
   - **Treating Snowpipe as a queue.** Files queue if they arrive faster than ingestion can process. Past a certain rate, lag accumulates. Monitor PIPE_USAGE_HISTORY.
+
+  ## Cloud Storage Support Matrix
+
+  The cloud storage service support for automated Snowpipe and Snowpipe REST API calls from Snowflake accounts on each cloud platform:
+
+  | Snowflake Account Host | Amazon S3 | Google Cloud Storage | Microsoft Azure Blob storage | Microsoft Data Lake Storage Gen2 | Microsoft Azure General-purpose v2 |
+  | --- | --- | --- | --- | --- | --- |
+  | Amazon Web Services | ✔ | ✔ | ✔ | ✔ | ✔ |
+  | Google Cloud | ✔ | ✔ | ✔ | ✔ | ✔ |
+  | Microsoft Azure | ✔ | ✔ | ✔ | ✔ | ✔ |
+
+  Note that the government regions of the cloud providers do not allow event notifications to be sent to or from other commercial regions.
+
+  ## Enable Cloud Event Filtering
+
+  Snowflake recommends enabling cloud event filtering for Snowpipe to reduce costs, event noise, and latency. See the per-provider docs:
+
+  - Configuring event notifications using object key name filtering — Amazon S3
+  - Understand event filtering for Event Grid subscriptions — Azure
+  - Filtering messages — Google Pub/Sub
 
   ## Verification
 
@@ -334,8 +354,32 @@ fragments:
     - **Auto-ingest with no S3 notification setup.** Pipe is created but never fires. Verify event configuration on S3 side.
     - **No error notifications.** Failed loads get logged but nobody sees them. Always set ERROR_INTEGRATION.
     - **Treating Snowpipe as a queue.** Files queue if they arrive faster than ingestion can process. Past a certain rate, lag accumulates. Monitor PIPE_USAGE_HISTORY.
-- fragment_type: verification
+- fragment_type: setup
   sequence: 10
+  content: |-
+    ## Cloud Storage Support Matrix
+
+    The cloud storage service support for automated Snowpipe and Snowpipe REST API calls from Snowflake accounts on each cloud platform:
+
+    | Snowflake Account Host | Amazon S3 | Google Cloud Storage | Microsoft Azure Blob storage | Microsoft Data Lake Storage Gen2 | Microsoft Azure General-purpose v2 |
+    | --- | --- | --- | --- | --- | --- |
+    | Amazon Web Services | ✔ | ✔ | ✔ | ✔ | ✔ |
+    | Google Cloud | ✔ | ✔ | ✔ | ✔ | ✔ |
+    | Microsoft Azure | ✔ | ✔ | ✔ | ✔ | ✔ |
+
+    Note that the government regions of the cloud providers do not allow event notifications to be sent to or from other commercial regions.
+- fragment_type: guardrail
+  sequence: 11
+  content: |-
+    ## Enable Cloud Event Filtering
+
+    Snowflake recommends enabling cloud event filtering for Snowpipe to reduce costs, event noise, and latency. See the per-provider docs:
+
+    - Configuring event notifications using object key name filtering — Amazon S3
+    - Understand event filtering for Event Grid subscriptions — Azure
+    - Filtering messages — Google Pub/Sub
+- fragment_type: verification
+  sequence: 12
   content: |-
     ## Verification
 

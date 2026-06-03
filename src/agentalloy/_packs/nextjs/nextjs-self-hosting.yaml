@@ -10,8 +10,8 @@ domain_tags:
   - image-optimization
   - reverse-proxy
 always_apply: false
-phase_scope: null
-category_scope: null
+phase_scope: [build]
+category_scope: [framework]
 author: navistone
 change_summary: initial authoring draft
 raw_prose: |

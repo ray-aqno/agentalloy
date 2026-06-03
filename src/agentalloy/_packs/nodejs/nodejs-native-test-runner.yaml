@@ -9,11 +9,13 @@ domain_tags:
   - native
   - describe/it
   - test-hooks
+deprecated: true
+superseded_by: node-built-in-test-runner
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build, review]
+category_scope: [language]
 author: authoring-agent
-change_summary: initial authoring draft
+change_summary: Merged into node-built-in-test-runner (2026-06-03). Original authoring by authoring-agent.
 raw_prose: |
   # Node.js Native Test Runner
 

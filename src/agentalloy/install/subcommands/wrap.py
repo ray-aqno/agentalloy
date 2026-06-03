@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
 import signal
 import subprocess
@@ -129,17 +130,24 @@ def _run(args: argparse.Namespace) -> int:
     via = args.via  # "hook" or "proxy"
     no_start_server = args.no_start_server
     child_args = args.child_args
+    json_output = getattr(args, "json", False)
+
+    child_pid: int | None = None
 
     # ------------------------------------------------------------------
     # 1. Validate harness
     # ------------------------------------------------------------------
     if harness not in VALID_HARNESSES:
-        print_rich_stderr(
-            f"ERROR: Unknown harness '{harness}'.",
-        )
-        print_rich_stderr(
-            f"FIX:   Use one of: {', '.join(sorted(VALID_HARNESSES))}.",
-        )
+        result = {
+            "action": "wrap",
+            "error": f"Unknown harness '{harness}'",
+            "harness": harness,
+        }
+        if json_output:
+            print(json.dumps(result, indent=2))
+        else:
+            print_rich_stderr(f"ERROR: Unknown harness '{harness}'.")
+            print_rich_stderr(f"FIX:   Use one of: {', '.join(sorted(VALID_HARNESSES))}.")
         return 1
 
     # ------------------------------------------------------------------
@@ -231,12 +239,20 @@ def _run(args: argparse.Namespace) -> int:
     # 6. Spawn child process
     # ------------------------------------------------------------------
     if not child_args:
-        print_rich_stderr(
-            "ERROR: No child process specified. Pass args after --.",
-        )
-        print_rich_stderr(
-            "FIX:   agentalloy wrap <harness> -- <command> [args]",
-        )
+        result = {
+            "action": "wrap",
+            "error": "No child process specified. Pass args after --.",
+            "harness": harness,
+        }
+        if json_output:
+            print(json.dumps(result, indent=2))
+        else:
+            print_rich_stderr(
+                "ERROR: No child process specified. Pass args after --.",
+            )
+            print_rich_stderr(
+                "FIX:   agentalloy wrap <harness> -- <command> [args]",
+            )
         return 1
 
     print_rich(f"  Spawning child: {' '.join(child_args)}")
@@ -252,12 +268,21 @@ def _run(args: argparse.Namespace) -> int:
         proc = subprocess.Popen(
             child_args,
             env=child_env,
-            start_new_session=False,
+            start_new_session=True,
         )
         child_pid = proc.pid
     except FileNotFoundError as e:
-        print_rich_stderr(f"ERROR: Child process not found: {child_args[0]}")
-        print_rich_stderr(f"       {e}")
+        result = {
+            "action": "wrap",
+            "error": f"Child process not found: {child_args[0]}",
+            "details": str(e),
+            "harness": harness,
+        }
+        if json_output:
+            print(json.dumps(result, indent=2))
+        else:
+            print_rich_stderr(f"ERROR: Child process not found: {child_args[0]}")
+            print_rich_stderr(f"       {e}")
         return 2
 
     print_rich(f"  Child PID: {child_pid}")
@@ -315,7 +340,7 @@ def _run(args: argparse.Namespace) -> int:
     # ------------------------------------------------------------------
     # 8. Teardown on normal exit
     # ------------------------------------------------------------------
-    print_rich("\n  Child exited with code {exit_code}, tearing down ...")
+    print_rich(f"\n  Child exited with code {exit_code}, tearing down ...")
 
     # Stop server if we started it.
     if server_started and existing_pid is not None:
@@ -324,6 +349,25 @@ def _run(args: argparse.Namespace) -> int:
         _remove_pid_file()
 
     print_rich("  Teardown complete.")
+
+    # ------------------------------------------------------------------
+    # 9. Produce output
+    # ------------------------------------------------------------------
+    result: dict[str, Any] = {
+        "action": "wrap",
+        "harness": harness,
+        "port": port,
+        "via": via,
+        "child_pid": child_pid,
+        "exit_code": exit_code,
+        "server_started": server_started,
+        "files_written": files_written,
+    }
+
+    if json_output:
+        print(json.dumps(result, indent=2))
+    else:
+        _render_human(result)
 
     return exit_code
 

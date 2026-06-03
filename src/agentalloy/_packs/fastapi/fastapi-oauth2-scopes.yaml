@@ -10,10 +10,12 @@ domain_tags:
   - authentication
   - authorization
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [framework]
+deprecated: true
+superseded_by: fastapi-auth-and-security
 author: authoring-agent
-change_summary: revised draft addressing QA feedback
+change_summary: Merged into fastapi-auth-and-security. This skill is deprecated — all unique content has been absorbed into the keeper skill. See fastapi-auth-and-security for the consolidated OAuth2 scopes documentation.
 raw_prose: |
   # FastAPI OAuth2 Scopes
 

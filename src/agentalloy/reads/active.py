@@ -51,6 +51,17 @@ def get_active_skills(
     return [_row_to_active_skill(row) for row in store.execute(cypher)]
 
 
+def get_deprecated_skill_ids(store: LadybugStore) -> list[str]:
+    """Return the skill_ids of every Skill node with ``deprecated = true``.
+
+    Used by the DuckDB vector-store search methods to exclude deprecated
+    skills' fragments from retrieval results, mirroring the ``deprecated = false``
+    filter already applied to all Cypher-path active reads in this module.
+    """
+    cypher = "MATCH (s:Skill) WHERE s.deprecated = true RETURN s.skill_id"
+    return [str(row[0]) for row in store.execute(cypher)]
+
+
 def get_active_skill_by_id(store: LadybugStore, skill_id: str) -> ActiveSkill | None:
     """Single active skill lookup. Returns None if the skill is missing or has no active version."""
     # Targeted consistency check for just this skill

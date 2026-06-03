@@ -10,10 +10,14 @@ domain_tags:
 - custom-actions
 - action-authoring
 always_apply: false
-phase_scope: []
-category_scope: []
+deprecated: true
+superseded_by: github-actions-reusable-workflows
+phase_scope: [build]
+category_scope: [ops]
 author: navistone
-change_summary: hand-authored Opus expansion
+change_summary: |
+  hand-authored Opus expansion
+  Deprecated 2026-06-03: superseded by github-actions-reusable-workflows
 raw_prose: |-
   # GitHub Actions — Composite and CLI Actions
 

@@ -91,4 +91,3 @@ experiments/
 .cgr-stat-cache.json
 memory/
 .claude/settings.local.json
-.gstack/

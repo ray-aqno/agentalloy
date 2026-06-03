@@ -10,8 +10,8 @@ domain_tags:
 - complexity-reduction
 - naming
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [review]
+category_scope: [process]
 author: navistone
 change_summary: hand-authored Opus source after 14B failed structural authoring
 raw_prose: |-

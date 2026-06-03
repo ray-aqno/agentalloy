@@ -5,7 +5,7 @@ category: engineering
 skill_class: domain
 domain_tags: [strict-mode, no-unchecked-indexed-access, target-es-version, module-resolution-bundler, project-references]
 always_apply: false
-phase_scope: null
+phase_scope: [build]
 category_scope: language
 author: navistone
 change_summary: |

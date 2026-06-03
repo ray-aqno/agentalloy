@@ -10,8 +10,8 @@ domain_tags:
   - componentDidCatch
   - getDerivedStateFromError
 always_apply: false
-phase_scope: null
-category_scope: null
+phase_scope: [build]
+category_scope: [framework]
 author: authoring-agent
 change_summary: initial authoring draft
 raw_prose: |

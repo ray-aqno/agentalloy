@@ -3,6 +3,8 @@ skill_id: nextjs-streaming-and-suspense
 canonical_name: Next.js Streaming and Suspense
 category: engineering
 skill_class: domain
+deprecated: true
+superseded_by: nextjs-ppr-cache-components
 domain_tags:
   - streaming-ssr
   - suspense-boundaries
@@ -10,10 +12,11 @@ domain_tags:
   - route-level-loading
   - selective-hydration
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [framework]
 author: authoring-agent
-change_summary: initial authoring draft
+change_summary: |
+  initial authoring draft. Deprecated 2026-06-03: superseded by nextjs-ppr-cache-components
 raw_prose: |
   # Next.js Streaming and Suspense
 

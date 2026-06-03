@@ -10,10 +10,14 @@ domain_tags:
 - ssr
 - lazy-loading
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [framework]
 author: navistone
-change_summary: hand-authored Opus expansion (wave 2)
+deprecated: true
+superseded_by: react-server-components-and-suspense
+change_summary: |
+  merged 2026-06-03: deprecated, content absorbed into react-server-components-and-suspense (superseded_by: react-server-components-and-suspense).
+  hand-authored Opus expansion (wave 2)
 raw_prose: |
   # React Suspense and Streaming
 

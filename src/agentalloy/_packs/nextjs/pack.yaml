@@ -23,7 +23,7 @@ skills:
   fragment_count: 10
 - skill_id: nextjs-data-fetching-and-caching
   file: nextjs-data-fetching-and-caching.yaml
-  fragment_count: 10
+  fragment_count: 12
 - skill_id: nextjs-metadata-and-og-images
   file: nextjs-metadata-and-og-images.yaml
   fragment_count: 8
@@ -47,7 +47,7 @@ skills:
   fragment_count: 6
 - skill_id: nextjs-ppr-cache-components
   file: nextjs-ppr-cache-components.yaml
-  fragment_count: 15
+  fragment_count: 19
 - skill_id: nextjs-production-checklist
   file: nextjs-production-checklist.yaml
   fragment_count: 5

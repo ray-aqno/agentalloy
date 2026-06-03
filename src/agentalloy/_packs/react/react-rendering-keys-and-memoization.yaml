@@ -5,10 +5,11 @@ category: engineering
 skill_class: domain
 domain_tags: [list-keys-stable-id, reconciliation-tree-diff, react-memo-props-equality, key-prop-state-reset, auto-memoization-compiler]
 always_apply: false
-phase_scope: null
+phase_scope: [build]
 category_scope: framework
 author: navistone
 change_summary: |
+  merged 2026-06-03: removed useMemo/useCallback section (moved to react-hooks-rules-and-deps). Retains keys, reconciliation, React.memo, and React Compiler content.
   Initial authoring 2026-05-06. Sources — Render and Commit https://react.dev/learn/render-and-commit, Rendering Lists https://react.dev/learn/rendering-lists, Preserving and Resetting State https://react.dev/learn/preserving-and-resetting-state, memo https://react.dev/reference/react/memo, useMemo https://react.dev/reference/react/useMemo, useCallback https://react.dev/reference/react/useCallback (all verified 2026-05-06 via tier-2 llms_url procedure against the react.dev llms-index). Skill scope: the render/commit two-phase model, reconciliation rules (same type at same position preserves state; different type or different `key` remounts), keys for list rendering and the index-as-key trap, the deliberate `key`-as-state-reset pattern, `React.memo` shallow-prop equality, `useMemo` and `useCallback` as identity-stabilizers (not blanket optimizers), and the React Compiler (React 19+) which automatically inserts memoization at compile time. Out of scope: Suspense rendering, transitions/`useTransition`, server components rendering, and `useSyncExternalStore`. React Compiler is GA-stage at the time of authoring but adoption is uneven; this skill teaches code that is correct without the compiler so it remains correct with it.
 
 raw_prose: |
@@ -95,27 +96,6 @@ raw_prose: |
   ```
 
   The catch: shallow-equality on props means **referential** equality for objects, arrays, and functions. If the parent passes `onToggle={() => ...}` inline, that's a fresh function reference every render, `Object.is` returns false, and `memo` is a no-op. Same for `style={{color: 'red'}}` and `data={[...]}` inline. Either lift these to stable values, wrap them in `useMemo`/`useCallback`, or accept that `memo` won't help here.
-
-  ## `useMemo` and `useCallback`: identity-stabilizers, not blanket optimizers
-
-  `useMemo(fn, deps)` caches the result of `fn` between renders, recomputing only when a dependency in `deps` changes (compared with `Object.is`). `useCallback(fn, deps)` is the same idea for a function reference: the returned function is stable across renders unless deps change.
-
-  ```jsx
-  import { useMemo, useCallback } from 'react';
-
-  function TodoList({ todos, filter, onToggle }) {
-    const visible = useMemo(
-      () => todos.filter(t => filter === 'all' || (filter === 'open' && !t.done)),
-      [todos, filter]
-    );
-    const handleToggle = useCallback(id => onToggle(id), [onToggle]);
-    return visible.map(todo => (
-      <ItemRow key={todo.id} todo={todo} onToggle={handleToggle} />
-    ));
-  }
-  ```
-
-  Reach for `useMemo` when (a) the value is passed as a prop to a memoized child and identity must be stable across renders, or (b) the computation itself is genuinely expensive and runs on every render. Reach for `useCallback` for the same two reasons applied to function references. **Wrapping every value in `useMemo` is cargo-cult**: each `useMemo` adds bookkeeping, the dependency comparison itself costs, and most values are cheap to recompute. Profile before optimizing.
 
   ## React Compiler (React 19+): automatic memoization at compile time
 
@@ -257,30 +237,6 @@ fragments:
       The catch: shallow-equality on props means **referential** equality for objects, arrays, and functions. If the parent passes `onToggle={() => ...}` inline, that's a fresh function reference every render, `Object.is` returns false, and `memo` is a no-op. Same for `style={{color: 'red'}}` and `data={[...]}` inline. Either lift these to stable values, wrap them in `useMemo`/`useCallback`, or accept that `memo` won't help here.
 
   - sequence: 6
-    fragment_type: execution
-    content: |
-      ## `useMemo` and `useCallback`: identity-stabilizers, not blanket optimizers
-
-      `useMemo(fn, deps)` caches the result of `fn` between renders, recomputing only when a dependency in `deps` changes (compared with `Object.is`). `useCallback(fn, deps)` is the same idea for a function reference: the returned function is stable across renders unless deps change.
-
-      ```jsx
-      import { useMemo, useCallback } from 'react';
-
-      function TodoList({ todos, filter, onToggle }) {
-        const visible = useMemo(
-          () => todos.filter(t => filter === 'all' || (filter === 'open' && !t.done)),
-          [todos, filter]
-        );
-        const handleToggle = useCallback(id => onToggle(id), [onToggle]);
-        return visible.map(todo => (
-          <ItemRow key={todo.id} todo={todo} onToggle={handleToggle} />
-        ));
-      }
-      ```
-
-      Reach for `useMemo` when (a) the value is passed as a prop to a memoized child and identity must be stable across renders, or (b) the computation itself is genuinely expensive and runs on every render. Reach for `useCallback` for the same two reasons applied to function references. **Wrapping every value in `useMemo` is cargo-cult**: each `useMemo` adds bookkeeping, the dependency comparison itself costs, and most values are cheap to recompute. Profile before optimizing.
-
-  - sequence: 7
     fragment_type: rationale
     content: |
       ## React Compiler (React 19+): automatic memoization at compile time
@@ -293,7 +249,7 @@ fragments:
       - **Manual `useMemo`/`useCallback` is still useful** during the transition: explicit memoization stays, the compiler simply makes additional cases fast that weren't before.
       - **Keys are not memoization.** The compiler does not invent `key` props for you; bad keys remain a correctness bug regardless of compiler status.
 
-  - sequence: 8
+  - sequence: 7
     fragment_type: rationale
     content: |
       ## "Why did this re-render?" — the diagnostic loop
@@ -305,7 +261,7 @@ fragments:
       3. Did a context this component consumes change? `useContext` re-renders the consumer when the provider's value changes by `Object.is` — passing `value={{user, setUser}}` inline to a Provider re-renders every consumer on every parent render.
       4. Is `React.memo` in place but a no-op because of (2) or (3)? Stabilize the offending prop or accept the re-render.
 
-  - sequence: 9
+  - sequence: 8
     fragment_type: guardrail
     content: |
       ## Anti-patterns
@@ -318,7 +274,7 @@ fragments:
       - **Inline arrow function passed to a `React.memo`'d child.** `<MemoChild onClick={() => ...} />` — fresh reference each render, `memo` no-ops. Use `useCallback` or hoist the handler.
       - **Side effects during render.** Fetching, subscribing, mutating refs, writing to module state — all forbidden in render. They run unpredictably (Strict Mode double-render, speculative renders) and break the reconciler's purity assumption.
 
-  - sequence: 10
+  - sequence: 9
     fragment_type: verification
     content: |
       ## Verification

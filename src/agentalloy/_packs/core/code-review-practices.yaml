@@ -5,8 +5,8 @@ category: review
 skill_class: domain
 domain_tags: [pr-review, blocking-vs-nit, review-comment-tone, change-list-size, reviewer-fatigue]
 always_apply: false
-phase_scope: null
-category_scope: null
+phase_scope: [build, review]
+category_scope: [process]
 author: navistone
 change_summary: |
   Initial authoring 2026-05-04. Sources — Google Engineering Practices Code Review guide (https://google.github.io/eng-practices/review/), internal review history (docs/skill-review-history/2026-04-28-batch-2-stack-foundations.md). Skill scope: discipline of giving and receiving review feedback; PR-shaping and pre-review verification (covered in verification-before-completion).

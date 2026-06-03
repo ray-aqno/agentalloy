@@ -9,8 +9,8 @@ domain_tags:
   - cancellation
   - structured concurrency
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [language]
 author: navistone
 change_summary: machine authoring contract for pending-qa pipeline
 raw_prose: |

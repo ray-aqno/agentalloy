@@ -8,6 +8,8 @@ domain_tags:
   - performance
   - observability
   - operational-constraints
+phase_scope: [design, review]
+category_scope: [process]
 author: navistone
 change_summary: initial authoring draft
 raw_prose: |
