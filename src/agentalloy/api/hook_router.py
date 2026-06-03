@@ -449,7 +449,7 @@ async def hook_post_tool_use(request: Request) -> JSONResponse:
             safe_path, project_root = safe_contract_path(tool_path, project_root=cwd)
             if safe_path is not None and project_root is not None:
                 contract = parse_contract(safe_path)
-                issues = validate_contract(contract, cwd)
+                issues = validate_contract(contract, project_root)
                 if not issues:
                     return JSONResponse(
                         content={
