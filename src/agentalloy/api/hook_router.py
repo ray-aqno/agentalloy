@@ -431,7 +431,9 @@ async def hook_post_tool_use(request: Request) -> JSONResponse:
     cwd = Path(cwd_str) if cwd_str else Path.cwd()
 
     # Only fire on writes inside .agentalloy/contracts/ — use safe_contract_path for
-    # boundary validation (resolves .. sequences; returns (None, None) on escape).
+    # boundary validation (resolves .. sequences; returns (None, None) on escape or
+    # when the path is not a contract path at all). Non-contract paths fall through
+    # to no_action so the endpoint remains a no-op for ordinary tool writes.
     if tool_name in ("Edit", "Write", "MultiEdit") and tool_path:
         try:
             from agentalloy.contracts import (
@@ -440,23 +442,22 @@ async def hook_post_tool_use(request: Request) -> JSONResponse:
                 validate_contract,
             )
 
-            # Tuple unpack per contracts.py:205 signature: returns (Path|None, Path|None)
+            # Tuple unpack per contracts.py:205 signature: returns (Path|None, Path|None).
+            # (None, None) means either not a contract path or a path-traversal attempt —
+            # in both cases we skip parse_contract entirely (the security invariant) and
+            # fall through to the no_action response below.
             safe_path, project_root = safe_contract_path(tool_path, project_root=cwd)
-            if safe_path is None or project_root is None:
-                return JSONResponse(
-                    status_code=400,
-                    content={"error": "invalid contract path"},
-                )
-            contract = parse_contract(safe_path)
-            issues = validate_contract(contract, cwd)
-            if not issues:
-                return JSONResponse(
-                    content={
-                        "status": "contract_valid",
-                        "contract_phase": contract.phase,
-                        "latency_ms": int((time.monotonic() - start) * 1000),
-                    },
-                )
+            if safe_path is not None and project_root is not None:
+                contract = parse_contract(safe_path)
+                issues = validate_contract(contract, cwd)
+                if not issues:
+                    return JSONResponse(
+                        content={
+                            "status": "contract_valid",
+                            "contract_phase": contract.phase,
+                            "latency_ms": int((time.monotonic() - start) * 1000),
+                        },
+                    )
         except Exception:
             pass
 
