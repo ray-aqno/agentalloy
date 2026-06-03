@@ -6,7 +6,6 @@ restart_service_in_container, and test_kuzu_lock_released.
 
 from __future__ import annotations
 
-import os
 import signal
 import subprocess
 import time
@@ -15,17 +14,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
-@pytest.fixture(autouse=True)
-def clear_sentinel():
-    """Clear the AGENTALLOY_DB_LOCK_HELD sentinel before and after each test.
-
-    Without this, stop_service_in_container() tests that exercise the sentinel
-    path leave os.environ dirty and cause subsequent tests to short-circuit.
-    """
-    os.environ.pop("AGENTALLOY_DB_LOCK_HELD", None)
-    yield
-    os.environ.pop("AGENTALLOY_DB_LOCK_HELD", None)
 
 
 class TestIsInContainer:

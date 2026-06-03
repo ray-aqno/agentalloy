@@ -2,10 +2,25 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def clear_container_sentinel():
+    """Clear AGENTALLOY_DB_LOCK_HELD between every test.
+
+    The sentinel is set in os.environ by stop_service_in_container() and
+    cleared by restart_service_in_container(). If a test exercises the stop
+    path without the restart path, the sentinel leaks into subsequent tests
+    and causes stop_service_in_container() to short-circuit silently.
+    """
+    os.environ.pop("AGENTALLOY_DB_LOCK_HELD", None)
+    yield
+    os.environ.pop("AGENTALLOY_DB_LOCK_HELD", None)
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
