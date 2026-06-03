@@ -148,11 +148,17 @@ def stop_service_in_container(no_restart: bool = False) -> bool:
     except ProcessLookupError:
         return True
     except PermissionError:
+        # Cannot signal — pop sentinel since no stop occurred.
+        os.environ.pop("AGENTALLOY_DB_LOCK_HELD", None)
         return False
 
     # Brief wait for kernel to reap.
     time.sleep(0.4)
-    return not _pid_alive(pid)
+    if _pid_alive(pid):
+        # Cannot signal — pop sentinel since no stop occurred.
+        os.environ.pop("AGENTALLOY_DB_LOCK_HELD", None)
+        return False
+    return True
 
 
 def restart_service_in_container(no_restart: bool = False) -> bool:

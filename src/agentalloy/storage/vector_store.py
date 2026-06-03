@@ -689,6 +689,7 @@ def open_or_create(path: str | Path) -> VectorStore:
     stored_dim = vs.embedding_dim()  # int | None — None means corpus is empty
     assert stored_dim is None or stored_dim > 0, "stored embedding dim must be positive"  # P10-R5
     if stored_dim is not None and stored_dim != EMBEDDING_DIM:
+        vs.close()  # release DuckDB file lock before raising — callers may catch and reopen
         raise EmbeddingDimMismatch(
             f"Corpus was built with {stored_dim}-dim embeddings but the runtime "
             f"expects {EMBEDDING_DIM}-dim (qwen3-embedding:0.6b). "

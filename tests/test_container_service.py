@@ -6,6 +6,7 @@ restart_service_in_container, and test_kuzu_lock_released.
 
 from __future__ import annotations
 
+import os
 import signal
 import subprocess
 import time
@@ -160,6 +161,43 @@ class TestStopServiceInContainer:
 
             result = stop_service_in_container()
             assert result is True
+
+    def test_sigkill_permission_error_clears_sentinel(self, monkeypatch: pytest.MonkeyPatch):
+        """SIGKILL PermissionError must return False and clear the sentinel."""
+
+        def fake_kill(pid: int, sig: int) -> None:
+            if sig == signal.SIGKILL:
+                raise PermissionError
+
+        with monkeypatch.context() as m:
+            m.setattr("agentalloy.install.container_service._find_uvicorn_pid", lambda: 2222)
+            m.setattr("os.kill", fake_kill)
+            m.setattr("agentalloy.install.container_service._pid_alive", lambda pid: True)
+            m.setattr(time, "sleep", lambda s: None)
+
+            from agentalloy.install.container_service import stop_service_in_container
+
+            result = stop_service_in_container()
+            assert result is False
+            assert os.environ.get("AGENTALLOY_DB_LOCK_HELD") is None
+
+    def test_survived_sigkill_clears_sentinel(self, monkeypatch: pytest.MonkeyPatch):
+        """If the process survives SIGKILL, return False and clear the sentinel."""
+
+        def fake_kill(pid: int, sig: int) -> None:
+            pass
+
+        with monkeypatch.context() as m:
+            m.setattr("agentalloy.install.container_service._find_uvicorn_pid", lambda: 3333)
+            m.setattr("os.kill", fake_kill)
+            m.setattr("agentalloy.install.container_service._pid_alive", lambda pid: True)
+            m.setattr(time, "sleep", lambda s: None)
+
+            from agentalloy.install.container_service import stop_service_in_container
+
+            result = stop_service_in_container()
+            assert result is False
+            assert os.environ.get("AGENTALLOY_DB_LOCK_HELD") is None
 
 
 class TestRestartServiceInContainer:
