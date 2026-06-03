@@ -30,31 +30,25 @@ raw_prose: |
 
   For example, to apply the `bg-sky-700` class on hover, use the `hover:bg-sky-700` class:
 
-  <Figure hint="Hover over this button to see the background color change">
-
-  <Example>
-    {
+        {
       <div className="grid place-items-center">
         <button className="rounded-full bg-sky-500 px-5 py-2 text-sm leading-5 font-semibold text-white hover:bg-sky-700">
           Save changes
         </button>
       </div>
     }
-  </Example>
 
   ```html
   <!-- [!code classes:hover:bg-sky-700] -->
   <button class="bg-sky-500 hover:bg-sky-700 ...">Save changes</button>
   ```
 
-  </Figure>
-
-  <details className="mb-10 rounded-xl border border-gray-200 px-6 py-3 prose open:pb-5 dark:prose-dark dark:border-gray-800">
-  <summary className="font-medium cursor-default select-none text-gray-900 dark:text-gray-200">How does this compare to traditional CSS?</summary>
+  
+  ## How does this compare to traditional CSS?
 
   When writing CSS the traditional way, a single class name would do different things based on the current state:
 
-  <TipBad>{<>Traditionally the same class name applies different styles on hover</>}</TipBad>
+  > **Bad:** Traditionally the same class name applies different styles on hover
 
   ```css
   .btn-primary {
@@ -68,7 +62,7 @@ raw_prose: |
 
   In Tailwind, rather than adding the styles for a hover state to an existing class, you add another class to the element that _only_ does something on hover:
 
-  <TipGood>{<>In Tailwind, separate classes are used for the default state and the hover state</>}</TipGood>
+  > **Good:** In Tailwind, separate classes are used for the default state and the hover state
 
   ```css
   .bg-sky-500 {
@@ -84,7 +78,6 @@ raw_prose: |
 
   This is what we mean when we say a utility class can be applied _conditionally_ — by using variants you can control exactly how your design behaves in different states, without ever leaving your HTML.
 
-  </details>
 
   Tailwind includes variants for just about everything you'll ever need, including:
 
@@ -109,10 +102,7 @@ raw_prose: |
 
   Style elements on hover, focus, and active using the `hover`, `focus`, and `active` variants:
 
-  <Figure hint="Try interacting with this button to see the hover, focus, and active states">
-
-  <Example>
-    {
+        {
       <div className="grid place-items-center">
         <button
           type="button"
@@ -122,7 +112,6 @@ raw_prose: |
         </button>
       </div>
     }
-  </Example>
 
   ```html
   <!-- [!code classes:hover:bg-violet-600,focus:outline-2,focus:outline-offset-2,focus:outline-violet-500,active:bg-violet-700] -->
@@ -132,8 +121,6 @@ raw_prose: |
   </button>
   ```
 
-  </Figure>
-
   Tailwind also includes variants for other interactive states like `:visited`, `:focus-within`, `:focus-visible`, and more.
 
   See the [pseudo-class reference](#pseudo-class-reference) for a complete list of available pseudo-class variants.
@@ -142,10 +129,7 @@ raw_prose: |
 
   Style an element when it is the first-child or last-child using the `first` and `last` variants:
 
-  <Figure>
-
-  <Example className="py-0">
-    {
+        {
       <div className="px-4">
         <div className="mx-auto max-w-md border-x border-x-gray-200 dark:border-x-gray-800 dark:bg-gray-950/10">
           <ul role="list" className="divide-y divide-gray-200 p-6 dark:divide-gray-800">
@@ -197,7 +181,6 @@ raw_prose: |
         </div>
       </div>
     }
-  </Example>
 
   ```svelte
   <!-- [!code classes:first:pt-0,last:pb-0] -->
@@ -215,14 +198,9 @@ raw_prose: |
   </ul>
   ```
 
-  </Figure>
-
   You can also style an element when it's an odd or even child using the `odd` and `even` variants:
 
-  <Figure>
-
-  <Example padding={false} className="py-8">
-    {
+        {
       <div className="">
         <div className="border-y border-y-gray-200 bg-white dark:border-y-gray-800 dark:bg-gray-950">
           <div>
@@ -239,7 +217,7 @@ raw_prose: |
                       </th>
                       <th scope="col" className="px-6 py-3 text-left text-sm font-medium text-gray-900 dark:text-white">
 
-fragments:
+  fragments:
   - fragment_type: setup
     sequence: 1
     content: |
@@ -263,20 +241,17 @@ fragments:
             </button>
           </div>
         }
-      </Example>
 
       ```html
       <!-- [!code classes:hover:bg-sky-700] -->
       <button class="bg-sky-500 hover:bg-sky-700 ...">Save changes</button>
       ```
-
-      </Figure>
   - fragment_type: rationale
     sequence: 3
     content: |
       When writing CSS the traditional way, a single class name would do different things based on the current state:
 
-      <TipBad>{<>Traditionally the same class name applies different styles on hover</>}</TipBad>
+      > **Bad:** Traditionally the same class name applies different styles on hover
 
       ```css
       .btn-primary {
@@ -290,7 +265,7 @@ fragments:
 
       In Tailwind, rather than adding the styles for a hover state to an existing class, you add another class to the element that _only_ does something on hover:
 
-      <TipGood>{<>In Tailwind, separate classes are used for the default state and the hover state</>}</TipGood>
+      > **Good:** In Tailwind, separate classes are used for the default state and the hover state
 
       ```css
       .bg-sky-500 {
@@ -331,10 +306,7 @@ fragments:
 
       Style elements on hover, focus, and active using the `hover`, `focus`, and `active` variants:
 
-      <Figure hint="Try interacting with this button to see the hover, focus, and active states">
-
-      <Example>
-        {
+                    {
           <div className="grid place-items-center">
             <button
               type="button"
@@ -344,7 +316,6 @@ fragments:
             </button>
           </div>
         }
-      </Example>
 
       ```html
       <!-- [!code classes:hover:bg-violet-600,focus:outline-2,focus:outline-offset-2,focus:outline-violet-500,active:bg-violet-700] -->
@@ -353,8 +324,6 @@ fragments:
         Save changes
       </button>
       ```
-
-      </Figure>
 
       Tailwind also includes variants for other interactive states like `:visited`, `:focus-within`, `:focus-visible`, and more.
 
@@ -366,10 +335,7 @@ fragments:
 
       Style an element when it is the first-child or last-child using the `first` and `last` variants:
 
-      <Figure>
-
-      <Example className="py-0">
-        {
+                    {
           <div className="px-4">
             <div className="mx-auto max-w-md border-x border-x-gray-200 dark:border-x-gray-800 dark:bg-gray-950/10">
               <ul role="list" className="divide-y divide-gray-200 p-6 dark:divide-gray-800">
@@ -421,7 +387,6 @@ fragments:
             </div>
           </div>
         }
-      </Example>
 
       ```svelte
       <!-- [!code classes:first:pt-0,last:pb-0] -->
@@ -438,8 +403,6 @@ fragments:
         {/each}
       </ul>
       ```
-
-      </Figure>
 
       You can also style an element when it's an odd or even child using the `odd` and `even` variants:
 

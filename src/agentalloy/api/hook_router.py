@@ -120,11 +120,13 @@ def _evaluate_sync(
     signal_keywords: list[str] = list(skill.get("signal_keywords") or [])
     gate_spec: dict[str, Any] = skill.get("exit_gates") or {}
 
+    # Extract tool_name from the request body (not the FastAPI Request class).
+    # The hook script sends tool_name in the JSON payload for PreToolUse events.
     ctx = _build_predicate_context(
         project_root=cwd,
         phase=current_phase,
         prompt_text=prompt,
-        tool_name=getattr(Request, "tool_name", None),
+        tool_name=None,  # UserPromptSubmit does not include tool_name
     )
 
     from agentalloy.signals.prefilter import check_prefilter

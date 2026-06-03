@@ -25,12 +25,11 @@ raw_prose: |
 
   By using CSP, developers can specify which origins are permissible for content sources, scripts, stylesheets, images, fonts, objects, media (audio, video), iframes, and more.
 
-  <details>
-    <summary>Examples</summary>
+  
+  ## Examples
 
   - [Strict CSP](https://github.com/vercel/next.js/tree/canary/examples/with-strict-csp)
 
-  </details>
 
   ## Nonces
 
@@ -316,7 +315,7 @@ raw_prose: |
   class MyDocument extends Document {
     static async getInitialProps(ctx) {
       const initialProps = await Document.getIni
-fragments:
+  fragments:
   - fragment_type: setup
     sequence: 1
     content: |
@@ -328,12 +327,11 @@ fragments:
 
       By using CSP, developers can specify which origins are permissible for content sources, scripts, stylesheets, images, fonts, objects, media (audio, video), iframes, and more.
 
-      <details>
-        <summary>Examples</summary>
+      
+  ## Examples
 
-      - [Strict CSP](https://github.com/vercel/next.js/tree/canary/examples/with-strict-csp)
+  - [Strict CSP](https://github.com/vercel/next.js/tree/canary/examples/with-strict-csp)
 
-      </details>
   - fragment_type: execution
     sequence: 2
     content: |
