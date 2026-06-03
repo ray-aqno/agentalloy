@@ -1045,17 +1045,16 @@ class TestContainerFlow:
         # The container flow has different steps than native
 
     def test_container_flow_records_state(self, tmp_state_dir: tuple[Path, Path]):
-        """Container setup records deployment, runtime_binary, image_tag, container_name, data_volume in state."""
+        """Container setup records deployment, compose_file, compose_binary in state."""
         SetupConfig, run_setup = self._import_run_setup()
 
         with (
-            patch("shutil.which") as mock_which,
+            patch(
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
+            ),
             patch("subprocess.run") as mock_run,
         ):
-            # Mock podman being available
-            mock_which.return_value = "/usr/bin/podman"
-
-            # Mock build and run commands
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_result.stdout = "0\n"
@@ -1066,30 +1065,39 @@ class TestContainerFlow:
 
         assert rc == 0
 
-        # Check state was recorded with new direct runtime fields
+        # Check state was recorded
         import agentalloy.install.state as state_mod
 
         st = state_mod.load_state()
         assert st["deployment"] == "container"
-        assert st["runtime_binary"] == "podman"
-        assert st["image_tag"] == "agentalloy:local"
-        assert st["container_name"] == "agentalloy"
-        assert st["data_volume"] == "agentalloy-data"
+        assert st["compose_binary"] == "podman compose"
+        assert st["compose_file"] is not None
 
-    def test_runtime_binary_missing_exits_1(
+    def test_compose_binary_missing_exits_1(
         self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
     ):
         """No podman/docker detected, setup exits with code 1."""
         SetupConfig, run_setup = self._import_run_setup()
 
-        with patch("shutil.which", return_value=None):
+        with patch(
+            "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+            return_value=(
+                None,
+                None,
+                [
+                    {
+                        "binary": "podman",
+                        "path": "/usr/bin/podman",
+                        "compose_ok": False,
+                        "stderr": "podman-compose not installed",
+                    }
+                ],
+            ),
+        ):
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
 
         assert rc == 1
         captured = capsys.readouterr()
-        combined = (captured.out + captured.err).lower()
-        assert "podman" in combined or "docker" in combined or "runtime" in combined
-
         # Output goes to stdout via Rich console, not stderr
         combined = (captured.out + captured.err).lower()
         assert "podman" in combined or "docker" in combined or "compose" in combined
