@@ -13,9 +13,13 @@ import signal
 import subprocess
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from agentalloy.install import server_proc
 from agentalloy.install import state as install_state
+
+if TYPE_CHECKING:
+    import kuzu  # annotation-only; runtime import lives inside test_kuzu_lock_released()
 
 _DEFAULT_UVICORN_CMD = "uv run uvicorn agentalloy.app:app --host 0.0.0.0 --port 47950"
 
@@ -43,16 +47,20 @@ def is_in_container() -> bool:
 def _find_uvicorn_pid() -> int | None:
     """Scan /proc for the AgentAlloy uvicorn process.
 
-    Returns the PID of the first match, or None if no matching process
-    is found.  Only matches processes that serve ``agentalloy.app``,
-    avoiding accidental kills of unrelated uvicorn instances in shared
-    containers or test/debug sessions.
+    Collects ALL matching PIDs and returns the minimum (parent) to avoid
+    signaling a worker when the parent is still alive. ``iterdir()`` order
+    is not guaranteed; first-match would be non-deterministic under reload
+    or multi-worker deployments.
+
+    Returns None if no matching process is found.
     """
     proc_dir = Path("/proc")
     if not proc_dir.is_dir():
         return None
 
-    for pid_str in proc_dir.iterdir():
+    # P10-R2: bounded by OS /proc entries; ≤5 agentalloy uvicorn procs in practice
+    pids: list[int] = []
+    for pid_str in proc_dir.iterdir():  # P10-R2: single pass — OS-bounded
         if not pid_str.is_dir():
             continue
         cmdline_path = pid_str / "cmdline"
@@ -62,10 +70,12 @@ def _find_uvicorn_pid() -> int | None:
             continue
         if "agentalloy.app" in cmdline:
             try:
-                return int(pid_str.name)
+                pids.append(int(pid_str.name))
             except ValueError:
                 continue
-    return None
+
+    assert all(p > 0 for p in pids), "collected PIDs must be positive integers"  # P10-R5
+    return min(pids) if pids else None
 
 
 def _pid_alive(pid: int) -> bool:
@@ -86,17 +96,33 @@ def stop_service_in_container(no_restart: bool = False) -> bool:
     Scans ``/proc`` for a uvicorn process, sends SIGTERM, and waits up to
     15 seconds for it to exit. If it does not, escalates to SIGKILL.
 
-    When ``no_restart`` is True, this function is a no-op (returns False)
-    because the caller intends to skip the full stop/restart cycle.
+    Sentinel reentrancy guard: sets ``AGENTALLOY_DB_LOCK_HELD=1`` in
+    ``os.environ`` after confirming a real process exists. Child processes
+    spawned via ``subprocess.run()`` inherit this sentinel (POSIX default)
+    and short-circuit their own stop attempt — preventing N stop/restart
+    cycles when composed commands (install-packs → ingest) each try to
+    manage the lifecycle independently. Sentinel lifetime = this call →
+    matching ``restart_service_in_container()`` call.
 
-    Returns ``True`` if a process was found and stopped, ``False`` if no
-    uvicorn process was running (no-op).
+    When ``no_restart`` is True, this function is a no-op (returns False).
+    Returns ``True`` if a process was found and stopped, ``False`` otherwise.
     """
+    assert isinstance(no_restart, bool), "no_restart must be bool"  # P10-R5
     if no_restart:
         return False
+    # Sentinel check: if an ancestor process already owns the lifecycle, no-op.
+    # POSIX subprocess.run() inherits os.environ — child ingest processes see this.
+    if os.environ.get("AGENTALLOY_DB_LOCK_HELD"):
+        return False  # ancestor owns stop/restart lifecycle
+
     pid = _find_uvicorn_pid()
     if pid is None:
-        return False
+        return False  # D1: no service running — sentinel NOT set (nothing was stopped)
+
+    # Set sentinel AFTER confirming a real stop is happening.
+    # POSIX-global lifetime: this stop → matching restart_service_in_container() call.
+    os.environ["AGENTALLOY_DB_LOCK_HELD"] = "1"
+    assert os.environ.get("AGENTALLOY_DB_LOCK_HELD") == "1"  # P10-R5: sentinel confirmed
 
     # SIGTERM first — graceful shutdown.
     try:
@@ -105,7 +131,8 @@ def stop_service_in_container(no_restart: bool = False) -> bool:
         # Process already exited between scan and kill.
         return True
     except PermissionError:
-        # Cannot signal — process may belong to another user.
+        # Cannot signal — pop sentinel since no stop occurred.
+        os.environ.pop("AGENTALLOY_DB_LOCK_HELD", None)
         return False
 
     # Poll for exit up to 15 seconds.
@@ -135,14 +162,22 @@ def restart_service_in_container(no_restart: bool = False) -> bool:
     command, spawns it as a background subprocess, then polls the
     ``/health`` endpoint for up to 30 seconds.
 
-    When ``no_restart`` is True, this function is a no-op (returns True)
-    because the caller intends to skip the restart.
+    Clears the ``AGENTALLOY_DB_LOCK_HELD`` sentinel BEFORE copying
+    ``os.environ`` for the child process — if cleared after, the spawned
+    uvicorn would inherit the sentinel and all future in-process stops
+    would silently no-op forever.
 
-    Returns ``True`` if the service became healthy (or no-op), ``False``
-    otherwise.
+    When ``no_restart`` is True, this function is a no-op (returns True).
+    Returns ``True`` if the service became healthy (or no-op), ``False`` otherwise.
     """
+    assert isinstance(no_restart, bool), "no_restart must be bool"  # P10-R5
     if no_restart:
         return True
+    # T6: clear sentinel BEFORE env copy — spawned uvicorn must not inherit it.
+    # P10-R7: pop() with default avoids KeyError on non-owned restarts.
+    os.environ.pop("AGENTALLOY_DB_LOCK_HELD", None)
+    assert "AGENTALLOY_DB_LOCK_HELD" not in os.environ  # P10-R5: sentinel cleared
+
     # Build the uvicorn command from state.
     st = install_state.load_state()
     port = install_state.validate_port(st.get("port", 47950))
@@ -211,34 +246,49 @@ def restart_service_in_container(no_restart: bool = False) -> bool:
 def test_kuzu_lock_released() -> bool:
     """Test whether the Kuzu database lock is released.
 
-    Attempts to open a test Kuzu database connection. If it succeeds,
-    the lock is released. If it fails, retries up to 5 seconds at
-    0.5-second intervals.
+    Prefers ``LADYBUG_DB_PATH`` env var (set in compose.yaml to
+    ``/app/data/ladybug``) over ``user_data_dir()`` — the latter
+    resolves to the host home directory and silently skips the check
+    inside a container where the volume-mounted DB lives elsewhere.
 
-    Returns ``True`` if the lock is released, ``False`` if still locked
-    after all retries.
+    Opens a test connection, then explicitly deletes the handle in a
+    ``finally`` block so the file lock is released before the caller
+    opens the real ``LadybugStore`` connection.
+
+    Retries up to 5 seconds at 0.5-second intervals.
+    Returns ``True`` if the lock is released, ``False`` if still locked.
     """
-    ladybug_path = install_state.user_data_dir() / "ladybug"
+    # T3: prefer LADYBUG_DB_PATH env (compose.yaml sets /app/data/ladybug)
+    env_path = os.environ.get("LADYBUG_DB_PATH")
+    if env_path is not None:
+        ladybug_path = Path(env_path)
+    else:
+        ladybug_path = install_state.user_data_dir() / "ladybug"
+
+    assert ladybug_path is not None, "ladybug_path must resolve to a non-None Path"  # P10-R5
+
     if not ladybug_path.is_dir():
         # No database yet — not locked.
         return True
 
-    max_retries = 10  # 5 seconds / 0.5 second intervals
+    max_retries = 10  # P10-R2: 10 iterations × 0.5s = 5s max wait
     retry_interval = 0.5
 
-    for attempt in range(max_retries):
+    for attempt in range(max_retries):  # P10-R2: bounded = max_retries = 10
+        db: kuzu.Database | None = None  # P10-R9: TYPE_CHECKING-imported annotation
         try:
-            import kuzu
+            import kuzu as _kuzu  # runtime import kept inside function per existing pattern
 
-            db = kuzu.Database(str(ladybug_path))
-            kuzu.Connection(db)
+            db = _kuzu.Database(str(ladybug_path))
+            _kuzu.Connection(db)
             # Success — lock is released.
             return True
         except Exception:
             if attempt < max_retries - 1:
                 time.sleep(retry_interval)
-            else:
-                # All retries exhausted — lock still held.
-                return False
+        finally:
+            # T4: explicitly release file handle before caller opens real connection.
+            if db is not None:
+                del db  # P10-R7: forces CPython refcount drop → lock release
 
     return False

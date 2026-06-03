@@ -156,7 +156,12 @@ def _is_deprecated(yaml_path: Path) -> tuple[bool, str, str]:
     return deprecated, skill_id, superseded_by
 
 
-def _ingest_yaml(yaml_path: Path, repo_root: Path) -> dict[str, Any]:
+def _ingest_yaml(
+    yaml_path: Path,
+    repo_root: Path,
+    *,
+    no_restart: bool = False,
+) -> dict[str, Any]:
     """Run the existing ingest pipeline on one YAML. Returns parsed result.
 
     Distinguishes four outcomes:
@@ -165,7 +170,12 @@ def _ingest_yaml(yaml_path: Path, repo_root: Path) -> dict[str, Any]:
                                  treated as a benign skip, not a failure.
       - outcome "deprecated"  → skill is marked deprecated; skipped with warning.
       - other non-zero        → real failure (parse, validation, DB error).
+
+    ``no_restart`` is passed as ``--no-restart`` to the ingest subprocess when
+    True. Defense-in-depth alongside the AGENTALLOY_DB_LOCK_HELD sentinel:
+    if a future caller adds ``env={}`` to subprocess.run(), the flag still fires.
     """
+    assert isinstance(no_restart, bool), "no_restart must be bool"  # P10-R5
     # --- check for deprecated before calling ingest ---
     is_dep, skill_id, superseded_by = _is_deprecated(yaml_path)
     if is_dep:
@@ -181,14 +191,13 @@ def _ingest_yaml(yaml_path: Path, repo_root: Path) -> dict[str, Any]:
             "stderr_tail": f"superseded by '{superseded_by}'",
         }
 
+    # T1: build cmd list; append --no-restart when caller owns stop/restart lifecycle.
+    cmd = [sys.executable, "-m", "agentalloy.ingest", str(yaml_path), "--yes"]
+    if no_restart:
+        cmd.append("--no-restart")
+
     result = subprocess.run(  # noqa: S603 — fixed args, no shell
-        [
-            sys.executable,
-            "-m",
-            "agentalloy.ingest",
-            str(yaml_path),
-            "--yes",
-        ],
+        cmd,
         cwd=repo_root,
         capture_output=True,
         text=True,
@@ -338,11 +347,22 @@ def _check_embedding_dim(manifest: dict[str, Any], root: Path) -> str | None:
     return None
 
 
-def install_local_pack(pack_dir: Path, *, root: Path) -> dict[str, Any]:
+def install_local_pack(
+    pack_dir: Path,
+    *,
+    root: Path,
+    no_restart: bool = False,
+) -> dict[str, Any]:
     """Install a pack from a local directory (containing pack.yaml + YAMLs).
 
     No tarball download, no sha256 check. Trusts the local filesystem.
+
+    ``no_restart`` is forwarded to each ``_ingest_yaml()`` call so that
+    the container stop/restart lifecycle is owned by the outermost caller
+    (e.g. ``_run_container_guard()`` in install-packs) rather than each
+    individual ingest subprocess.
     """
+    assert isinstance(no_restart, bool), "no_restart must be bool"  # P10-R5
     t0 = time.monotonic()
     pack_dir = pack_dir.resolve()
 
@@ -377,7 +397,8 @@ def install_local_pack(pack_dir: Path, *, root: Path) -> dict[str, Any]:
     ingest_results: list[dict[str, Any]] = []
     for entry in skills_entries:
         yaml_path = pack_dir / str(entry["file"])
-        ingest_results.append(_ingest_yaml(yaml_path, root))
+        # T1: pass no_restart so ingest subprocess suppresses its own stop/restart.
+        ingest_results.append(_ingest_yaml(yaml_path, root, no_restart=no_restart))
 
     new_count = sum(1 for r in ingest_results if r["outcome"] == "ingested")
     duplicate_count = sum(1 for r in ingest_results if r["outcome"] == "duplicate")
