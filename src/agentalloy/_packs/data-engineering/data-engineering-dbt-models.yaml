@@ -59,7 +59,7 @@ raw_prose: "# dbt — Models, Materializations, Sources\n\n## Overview\n\ndbt mo
   \ Load tools. By declaring these tables as sources in dbt, you can then\n- select from source tables in your models using\
   \ the [`{{ source() }}` function,](/reference/dbt-jinja-functions/source) helping define the lineage of your data\n- test\
   \ your assumptions about your source data\n- calculate the freshness of your source data\n\n### Declaring a source\n\nSources\
-  \ are defined in `.yml` files nested under a `sources:` key.\n\n.yml'>\n\n```yaml\n\nsources:\n  - name: jaffle_shop\n \
+  \ are defined in `.yml` files nested under a `sources:` key.\n\n.yml\n\n```yaml\n\nsources:\n  - name: jaffle_shop\n \
   \   database: raw  \n    schema: jaffle_shop  \n    tables:\n      - name: orders\n      - name: customers\n\n  - name:\
   \ stripe\n    tables:\n      - name: payments\n```\n\n*By default, `schema` will be the same as `name`. Add `schema` only\
   \ if you want to use a source name that differs from the existing schema.\n\nIf you're not already familiar with these files,\
@@ -68,12 +68,10 @@ raw_prose: "# dbt — Models, Materializations, Sources\n\n## Overview\n\ndbt mo
   \ function](/reference/dbt-jinja-functions/source).\n\n```sql\nselect\n  ...\n\nfrom {{ source('jaffle_shop', 'orders')\
   \ }}\n\nleft join {{ source('jaffle_shop', 'customers') }} using (customer_id)\n\n```\n\ndbt will compile this to the full\
   \ name:\n\n```sql\n\nselect\n  ...\n\nfrom raw.jaffle_shop.orders\n\nleft join raw.jaffle_shop.customers using (customer_id)\n\
-  \n```\n\nUsing the `{{ source () }}` function also creates a dependency between the model and the source table.\n\n<Lightbox\
-  \ src=\"/img/docs/building-a-dbt-project/sources-dag.png\" title=\"The source function tells dbt a model is dependent on\
-  \ a source \"/>\n\n### Testing and documenting sources\nYou can also:\n- Add data tests to sources\n- Add descriptions to\
+  \n```\n\nUsing the `{{ source () }}` function also creates a dependency between the model and the source table.\n\n\n\n### Testing and documenting sources\nYou can also:\n- Add data tests to sources\n- Add descriptions to\
   \ sources, that get rendered as part of your documentation site\n\nThese should be familiar concepts if you've already added\
   \ data tests and descriptions to your models (if not check out the guides on [testing](/docs/build/data-tests) and [documentation](/docs/build/documentation)).\n\
-  \n.yml'>\n\n```yaml\n\nsources:\n  - name: jaffle_shop\n    description: This is a replica of the Postgres database used\
+  \n.yml\n\n```yaml\n\nsources:\n  - name: jaffle_shop\n    description: This is a replica of the Postgres database used\
   \ by our app\n    tables:\n      - name: orders\n        database: raw\n        description: >\n          One record per\
   \ order. Includes cancelled and deleted orders.\n        columns:\n          - name: id\n            description: Primary\
   \ key of the orders table\n            data_tests:\n              - unique\n              - not_null\n          - name:\
@@ -142,7 +140,7 @@ fragments:
     \n```yaml\n\nmodels:\n  - name: events\n    config:\n      materialized: table\n```\n"
 - fragment_type: execution
   sequence: 5
-  content: "Sources are defined in `.yml` files nested under a `sources:` key.\n\n.yml'>\n\n```yaml\n\nsources:\n  - name:\
+  content: "Sources are defined in `.yml` files nested under a `sources:` key.\n\n.yml\n\n```yaml\n\nsources:\n  - name:\
     \ jaffle_shop\n    database: raw  \n    schema: jaffle_shop  \n    tables:\n      - name: orders\n      - name: customers\n\
     \n  - name: stripe\n    tables:\n      - name: payments\n```\n\n*By default, `schema` will be the same as `name`. Add\
     \ `schema` only if you want to use a source name that differs from the existing schema.\n\nIf you're not already familiar\
@@ -159,7 +157,7 @@ fragments:
   sequence: 7
   content: "You can also:\n- Add data tests to sources\n- Add descriptions to sources, that get rendered as part of your documentation\
     \ site\n\nThese should be familiar concepts if you've already added data tests and descriptions to your models (if not\
-    \ check out the guides on [testing](/docs/build/data-tests) and [documentation](/docs/build/documentation)).\n\n.yml'>\n\
+    \ check out the guides on [testing](/docs/build/data-tests) and [documentation](/docs/build/documentation)).\n\n.yml\n\
     \n```yaml\n\nsources:\n  - name: jaffle_shop\n    description: This is a replica of the Postgres database used by our\
     \ app\n    tables:\n      - name: orders\n        database: raw\n        description: >\n          One record per order.\
     \ Includes cancelled and deleted orders.\n        columns:\n          - name: id\n            description: Primary key\

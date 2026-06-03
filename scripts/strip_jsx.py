@@ -129,6 +129,25 @@ def strip_jsx(text: str) -> str:
     # 13. Handle <CodeTabs>...</CodeTabs> (similar to Tabs)
     text = re.sub(r'<CodeTabs[^>]*>.*?</CodeTabs>', '', text, flags=re.DOTALL)
 
+    # 14. Handle <Lightbox ... /> self-closing tags (Docusaurus image embeds)
+    text = re.sub(r'<Lightbox[^>]*/>', '', text)
+
+    # 15. Handle <a href="...">text</a> — strip the tag but keep the text content
+    # Uses non-greedy .*? with DOTALL to handle multi-line and backslash-escaped quotes
+    text = re.sub(r'<a\s+href=".*?"[^>]*>(.*?)\s*</a>', r'\1', text, flags=re.DOTALL)
+
+    # 15b. Handle <a href='...'>text</a> — same with single quotes
+    text = re.sub(r"<a\s+href='.*?'[^>]*>(.*?)\s*</a>", r'\1', text, flags=re.DOTALL)
+
+    # 16. Handle leftover closing </a> tags (from partial stripping)
+    text = re.sub(r'</a\s*>', '', text, flags=re.IGNORECASE)
+
+    # 17. Handle <Link href="...">text</Link> — strip the tag but keep the text content
+    text = re.sub(r'<Link\s+href="[^"]*"\s*>(.*?)\s*</Link>', r'\1', text, flags=re.DOTALL)
+
+    # 18. Handle leftover fragments like `.yml'>` — clean up stray attribute closures
+    text = re.sub(r"\s*'\s*>", '', text)
+
     return text
 
 

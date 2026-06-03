@@ -40,9 +40,9 @@ raw_prose: "# Webhooks — Signature Verification\n\n## Overview\n\nWebhooks mus
   \ POM:\n\n```xml\n<dependency>\n  <groupId>com.svix.kotlin</groupId>\n  <artifactId>svix-kotlin</artifactId>\n  <version>0.x.y</version>\n\
   </dependency>\n```\n\n---\nRuby\n---\n```shell\ngem install svix\n```\n\n---\nC#\n---\n```shell\ndotnet add package Svix\n\
   ```\n\n---\nPHP\n---\n```shell\ncomposer require svix/svix\n```\n\n---\nCLI\n---\nOn macOS install via <a href=\"https://brew.sh/\"\
-  >Homebrew</a>:\n```sh\nbrew install svix/svix/svix-cli\n```\n\nOn Windows install via <a href=\"https://scoop.sh/\">Scoop</a>:\n\
+  >Homebrew:\n```sh\nbrew install svix/svix/svix-cli\n```\n\nOn Windows install via <a href=\"https://scoop.sh/\">Scoop:\n\
   ```sh\nscoop bucket add svix https://github.com/svix/scoop-svix.git\nscoop install svix\n```\n\nFor other platforms, such\
-  \ as linux, checkout the <a href=\"https://github.com/svix/svix-cli#installation\">CLI docs</a> on Github.\n\n---\ncURL\n\
+  \ as linux, checkout the <a href=\"https://github.com/svix/svix-cli#installation\">CLI docs on Github.\n\n---\ncURL\n\
   ---\n```shell\n# Install cURL. E.g. on arch linux:\npacman -S curl\n```\n\nThen verify webhooks using the code below. The\
   \ payload is the raw (string) body of the request, and the headers are the headers passed in the request.\n\n> **Warning:**\n\
   >\n**Use the raw request body**\n\nYou need to use the raw request body when verifying webhooks, as the cryptographic signature\
@@ -169,10 +169,10 @@ fragments:
     \ project's POM:\n\n```xml\n<dependency>\n  <groupId>com.svix.kotlin</groupId>\n  <artifactId>svix-kotlin</artifactId>\n\
     \  <version>0.x.y</version>\n</dependency>\n```\n\n---\nRuby\n---\n```shell\ngem install svix\n```\n\n---\nC#\n---\n```shell\n\
     dotnet add package Svix\n```\n\n---\nPHP\n---\n```shell\ncomposer require svix/svix\n```\n\n---\nCLI\n---\nOn macOS install\
-    \ via <a href=\"https://brew.sh/\">Homebrew</a>:\n```sh\nbrew install svix/svix/svix-cli\n```\n\nOn Windows install via\
-    \ <a href=\"https://scoop.sh/\">Scoop</a>:\n```sh\nscoop bucket add svix https://github.com/svix/scoop-svix.git\nscoop\
+    \ via <a href=\"https://brew.sh/\">Homebrew:\n```sh\nbrew install svix/svix/svix-cli\n```\n\nOn Windows install via\
+    \ <a href=\"https://scoop.sh/\">Scoop:\n```sh\nscoop bucket add svix https://github.com/svix/scoop-svix.git\nscoop\
     \ install svix\n```\n\nFor other platforms, such as linux, checkout the <a href=\"https://github.com/svix/svix-cli#installation\"\
-    >CLI docs</a> on Github.\n\n---\ncURL\n---\n```shell\n# Install cURL. E.g. on arch linux:\npacman -S curl\n```\n"
+    >CLI docs on Github.\n\n---\ncURL\n---\n```shell\n# Install cURL. E.g. on arch linux:\npacman -S curl\n```\n"
 - fragment_type: execution
   sequence: 5
   content: 'Then verify webhooks using the code below. The payload is the raw (string) body of the request, and the headers
