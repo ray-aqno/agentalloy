@@ -140,7 +140,9 @@ def _run(args: argparse.Namespace) -> int:
     # T1: single container stop/restart wrapping all ingests + reembed.
     # _run_container_guard() owns the AGENTALLOY_DB_LOCK_HELD lifecycle;
     # child ingest subprocesses inherit the sentinel via POSIX env and no-op.
-    install_results, named_results, reembed_rc = _run_container_guard(args, selected, packs_root, root)
+    install_results, named_results, reembed_rc = _run_container_guard(
+        args, selected, packs_root, root
+    )
 
     for pack_name, r in named_results:
         if r.get("action") not in ("ingested", "ingested_with_errors", "already_installed"):
@@ -518,7 +520,9 @@ def _run_container_guard(
         container_stopped = stop_service_in_container()
         assert isinstance(container_stopped, bool), "stop must return bool"  # P10-R5
         if container_stopped:
-            print("[agentalloy] Service stopped; ingesting packs with --no-restart", file=sys.stderr)
+            print(
+                "[agentalloy] Service stopped; ingesting packs with --no-restart", file=sys.stderr
+            )
 
     # list[tuple[pack_name, result]] so _run() can build failed list by name, not path
     named_results: list[tuple[str, dict[str, Any]]] = []

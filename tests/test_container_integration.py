@@ -585,7 +585,9 @@ class TestInstallPacksGuardSingleStopRestart:
             restart_calls.append(True)
             return True
 
-        def fake_install_local_pack(pack_dir: Path, *, root: Path, no_restart: bool = False) -> dict:  # type: ignore[return]
+        def fake_install_local_pack(
+            pack_dir: Path, *, root: Path, no_restart: bool = False
+        ) -> dict:  # type: ignore[return]
             return {"action": "ingested"}
 
         # Two fake pack directories so the loop runs twice.

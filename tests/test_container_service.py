@@ -15,7 +15,6 @@ from unittest.mock import MagicMock
 import pytest
 
 
-
 class TestIsInContainer:
     """is_in_container() detection."""
 

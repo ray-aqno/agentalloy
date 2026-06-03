@@ -7,6 +7,11 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from agentalloy.app import create_app
+from agentalloy.storage.vector_store import VectorStore, open_or_create
 
 
 @pytest.fixture(autouse=True)
@@ -21,11 +26,6 @@ def clear_container_sentinel():
     os.environ.pop("AGENTALLOY_DB_LOCK_HELD", None)
     yield
     os.environ.pop("AGENTALLOY_DB_LOCK_HELD", None)
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
-from agentalloy.app import create_app
-from agentalloy.storage.vector_store import VectorStore, open_or_create
 
 
 @pytest.fixture
