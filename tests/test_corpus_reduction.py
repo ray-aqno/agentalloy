@@ -106,18 +106,13 @@ def test_a7_fastapi_background_tasks_deprecated_flags() -> None:
     dep = _load_a7_skill(_A7_DEPRECATED_ID)
 
     # Must have deprecated flag
-    assert dep.get("deprecated") is True, (
-        f"{_A7_DEPRECATED_ID} must have deprecated: true"
-    )
+    assert dep.get("deprecated") is True, f"{_A7_DEPRECATED_ID} must have deprecated: true"
 
     # Must have superseded_by pointing to the keeper skill_id
     superseded = dep.get("superseded_by")
-    assert superseded is not None, (
-        f"{_A7_DEPRECATED_ID} must have superseded_by set"
-    )
+    assert superseded is not None, f"{_A7_DEPRECATED_ID} must have superseded_by set"
     assert superseded == _A7_KEEPER_ID, (
-        f"superseded_by should point to '{_A7_KEEPER_ID}', "
-        f"got '{superseded}'"
+        f"superseded_by should point to '{_A7_KEEPER_ID}', got '{superseded}'"
     )
 
 
@@ -140,9 +135,7 @@ def test_a7_fastapi_background_tasks_keeper_has_absorbed_content() -> None:
         if section not in keeper_text:
             missing.append(section)
 
-    assert not missing, (
-        f"Keeper is missing absorbed content from deprecated skill: {missing}"
-    )
+    assert not missing, f"Keeper is missing absorbed content from deprecated skill: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -156,8 +149,7 @@ def test_a7_fastapi_background_tasks_deprecated_sequences_contiguous() -> None:
     seqs = _fragment_sequences(dep)
     expected = list(range(1, len(seqs) + 1))
     assert seqs == expected, (
-        f"Deprecated skill fragment sequences are not contiguous: "
-        f"got {seqs}, expected {expected}"
+        f"Deprecated skill fragment sequences are not contiguous: got {seqs}, expected {expected}"
     )
 
 
@@ -167,8 +159,7 @@ def test_a7_fastapi_background_tasks_keeper_sequences_contiguous() -> None:
     seqs = _fragment_sequences(keeper)
     expected = list(range(1, len(seqs) + 1))
     assert seqs == expected, (
-        f"Keeper skill fragment sequences are not contiguous: "
-        f"got {seqs}, expected {expected}"
+        f"Keeper skill fragment sequences are not contiguous: got {seqs}, expected {expected}"
     )
 
 
@@ -218,9 +209,7 @@ def test_a7_fastapi_background_tasks_keeper_retains_unique_content() -> None:
         if section not in keeper_text:
             missing.append(section)
 
-    assert not missing, (
-        f"Keeper lost its own unique content: {missing}"
-    )
+    assert not missing, f"Keeper lost its own unique content: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -236,9 +225,7 @@ def test_a7_fastapi_background_tasks_deprecated_retains_content() -> None:
     assert "bg.add_task(send_confirmation_email, saved)" in dep_text, (
         "Deprecated skill should retain multiple tasks content"
     )
-    assert "No durability" in dep_text, (
-        "Deprecated skill should retain limits content"
-    )
+    assert "No durability" in dep_text, "Deprecated skill should retain limits content"
     assert "Pass IDs into background tasks, not ORM objects" in dep_text, (
         "Deprecated skill should retain DB session pitfalls"
     )
@@ -260,12 +247,9 @@ def test_a1_python_packaging_deprecated_flags() -> None:
 
     # Must have superseded_by pointing to the keeper skill_id
     superseded = dep.get("superseded_by")
-    assert superseded is not None, (
-        "python-packaging-and-pyproject must have superseded_by set"
-    )
+    assert superseded is not None, "python-packaging-and-pyproject must have superseded_by set"
     assert superseded == "python-packaging-pyproject", (
-        f"superseded_by should point to 'python-packaging-pyproject', "
-        f"got '{superseded}'"
+        f"superseded_by should point to 'python-packaging-pyproject', got '{superseded}'"
     )
 
 
@@ -305,9 +289,7 @@ def test_a1_python_packaging_keeper_has_absorbed_content() -> None:
         if section not in keeper_text:
             missing.append(section)
 
-    assert not missing, (
-        f"Keeper is missing absorbed content from deprecated skill: {missing}"
-    )
+    assert not missing, f"Keeper is missing absorbed content from deprecated skill: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -321,8 +303,7 @@ def test_a1_python_packaging_deprecated_sequences_contiguous() -> None:
     seqs = _fragment_sequences(dep)
     expected = list(range(1, len(seqs) + 1))
     assert seqs == expected, (
-        f"Deprecated skill fragment sequences are not contiguous: "
-        f"got {seqs}, expected {expected}"
+        f"Deprecated skill fragment sequences are not contiguous: got {seqs}, expected {expected}"
     )
 
 
@@ -332,8 +313,7 @@ def test_a1_python_packaging_keeper_sequences_contiguous() -> None:
     seqs = _fragment_sequences(keeper)
     expected = list(range(1, len(seqs) + 1))
     assert seqs == expected, (
-        f"Keeper skill fragment sequences are not contiguous: "
-        f"got {seqs}, expected {expected}"
+        f"Keeper skill fragment sequences are not contiguous: got {seqs}, expected {expected}"
     )
 
 
@@ -343,9 +323,17 @@ def test_a1_python_packaging_keeper_sequences_contiguous() -> None:
 
 _VALID_FRAGMENT_TYPES = {"execution", "rationale", "example", "guardrail", "verification", "setup"}
 _REQUIRED_DOMAIN_FIELDS = {
-    "skill_type", "skill_id", "canonical_name", "category",
-    "skill_class", "domain_tags", "always_apply", "author",
-    "change_summary", "raw_prose", "fragments",
+    "skill_type",
+    "skill_id",
+    "canonical_name",
+    "category",
+    "skill_class",
+    "domain_tags",
+    "always_apply",
+    "author",
+    "change_summary",
+    "raw_prose",
+    "fragments",
 }
 
 
@@ -437,9 +425,7 @@ def test_a1_python_packaging_keeper_retains_unique_content() -> None:
         if section not in keeper_text:
             missing.append(section)
 
-    assert not missing, (
-        f"Keeper lost its own unique content: {missing}"
-    )
+    assert not missing, f"Keeper lost its own unique content: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -453,14 +439,10 @@ def test_a1_python_packaging_deprecated_retains_content() -> None:
     dep_text = _raw_prose(dep) + "\n\n" + _fragment_content_concat(dep)
 
     # Must still have the src layout section
-    assert "Use the src layout" in dep_text, (
-        "Deprecated skill should retain src layout content"
-    )
+    assert "Use the src layout" in dep_text, "Deprecated skill should retain src layout content"
 
     # Must still have the versioning section
-    assert "Versioning" in dep_text, (
-        "Deprecated skill should retain versioning content"
-    )
+    assert "Versioning" in dep_text, "Deprecated skill should retain versioning content"
 
     # Must still have virtual environments
     assert "Virtual environments" in dep_text, (
@@ -478,18 +460,13 @@ def test_a4_fastify_error_handling_deprecated_flags() -> None:
     dep = _load_skill("fastify-error-handling", category="fastify")
 
     # Must have deprecated flag
-    assert dep.get("deprecated") is True, (
-        "fastify-error-handling must have deprecated: true"
-    )
+    assert dep.get("deprecated") is True, "fastify-error-handling must have deprecated: true"
 
     # Must have superseded_by pointing to the keeper skill_id
     superseded = dep.get("superseded_by")
-    assert superseded is not None, (
-        "fastify-error-handling must have superseded_by set"
-    )
+    assert superseded is not None, "fastify-error-handling must have superseded_by set"
     assert superseded == "fastify-error-handling-deep", (
-        f"superseded_by should point to 'fastify-error-handling-deep', "
-        f"got '{superseded}'"
+        f"superseded_by should point to 'fastify-error-handling-deep', got '{superseded}'"
     )
 
 
@@ -526,9 +503,7 @@ def test_a4_fastify_error_handling_keeper_has_absorbed_content() -> None:
         if section not in keeper_text:
             missing.append(section)
 
-    assert not missing, (
-        f"Keeper is missing absorbed content from deprecated skill: {missing}"
-    )
+    assert not missing, f"Keeper is missing absorbed content from deprecated skill: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -542,8 +517,7 @@ def test_a4_fastify_error_handling_deprecated_sequences_contiguous() -> None:
     seqs = _fragment_sequences(dep)
     expected = list(range(1, len(seqs) + 1))
     assert seqs == expected, (
-        f"Deprecated skill fragment sequences are not contiguous: "
-        f"got {seqs}, expected {expected}"
+        f"Deprecated skill fragment sequences are not contiguous: got {seqs}, expected {expected}"
     )
 
 
@@ -553,8 +527,7 @@ def test_a4_fastify_error_handling_keeper_sequences_contiguous() -> None:
     seqs = _fragment_sequences(keeper)
     expected = list(range(1, len(seqs) + 1))
     assert seqs == expected, (
-        f"Keeper skill fragment sequences are not contiguous: "
-        f"got {seqs}, expected {expected}"
+        f"Keeper skill fragment sequences are not contiguous: got {seqs}, expected {expected}"
     )
 
 
@@ -605,9 +578,7 @@ def test_a4_fastify_error_handling_keeper_retains_unique_content() -> None:
         if section not in keeper_text:
             missing.append(section)
 
-    assert not missing, (
-        f"Keeper lost its own unique content: {missing}"
-    )
+    assert not missing, f"Keeper lost its own unique content: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -621,9 +592,7 @@ def test_a4_fastify_error_handling_deprecated_retains_content() -> None:
     dep_text = _raw_prose(dep) + "\n\n" + _fragment_content_concat(dep)
 
     # Must still have the error code list
-    assert "FST_ERR_NOT_FOUND" in dep_text, (
-        "Deprecated skill should retain error code content"
-    )
+    assert "FST_ERR_NOT_FOUND" in dep_text, "Deprecated skill should retain error code content"
 
     # Must still have the overview
     assert "Fastify routes errors through a layered pipeline" in dep_text, (
@@ -641,18 +610,13 @@ def test_a3_node_test_runner_deprecated_flags() -> None:
     dep = _load_skill("nodejs-native-test-runner", category="nodejs")
 
     # Must have deprecated flag
-    assert dep.get("deprecated") is True, (
-        "nodejs-native-test-runner must have deprecated: true"
-    )
+    assert dep.get("deprecated") is True, "nodejs-native-test-runner must have deprecated: true"
 
     # Must have superseded_by pointing to the keeper skill_id
     superseded = dep.get("superseded_by")
-    assert superseded is not None, (
-        "nodejs-native-test-runner must have superseded_by set"
-    )
+    assert superseded is not None, "nodejs-native-test-runner must have superseded_by set"
     assert superseded == "node-built-in-test-runner", (
-        f"superseded_by should point to 'node-built-in-test-runner', "
-        f"got '{superseded}'"
+        f"superseded_by should point to 'node-built-in-test-runner', got '{superseded}'"
     )
 
 
@@ -692,9 +656,7 @@ def test_a3_node_test_runner_keeper_has_absorbed_content() -> None:
         if section not in keeper_text:
             missing.append(section)
 
-    assert not missing, (
-        f"Keeper is missing absorbed content from deprecated skill: {missing}"
-    )
+    assert not missing, f"Keeper is missing absorbed content from deprecated skill: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -708,8 +670,7 @@ def test_a3_node_test_runner_deprecated_sequences_contiguous() -> None:
     seqs = _fragment_sequences(dep)
     expected = list(range(1, len(seqs) + 1))
     assert seqs == expected, (
-        f"Deprecated skill fragment sequences are not contiguous: "
-        f"got {seqs}, expected {expected}"
+        f"Deprecated skill fragment sequences are not contiguous: got {seqs}, expected {expected}"
     )
 
 
@@ -719,8 +680,7 @@ def test_a3_node_test_runner_keeper_sequences_contiguous() -> None:
     seqs = _fragment_sequences(keeper)
     expected = list(range(1, len(seqs) + 1))
     assert seqs == expected, (
-        f"Keeper skill fragment sequences are not contiguous: "
-        f"got {seqs}, expected {expected}"
+        f"Keeper skill fragment sequences are not contiguous: got {seqs}, expected {expected}"
     )
 
 
@@ -770,9 +730,7 @@ def test_a3_node_test_runner_keeper_retains_unique_content() -> None:
         if section not in keeper_text:
             missing.append(section)
 
-    assert not missing, (
-        f"Keeper lost its own unique content: {missing}"
-    )
+    assert not missing, f"Keeper lost its own unique content: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -786,14 +744,10 @@ def test_a3_node_test_runner_deprecated_retains_content() -> None:
     dep_text = _raw_prose(dep) + "\n\n" + _fragment_content_concat(dep)
 
     # Must still have the skip content
-    assert "t.skip()" in dep_text, (
-        "Deprecated skill should retain skip content"
-    )
+    assert "t.skip()" in dep_text, "Deprecated skill should retain skip content"
 
     # Must still have the todo content
-    assert "t.todo()" in dep_text, (
-        "Deprecated skill should retain todo content"
-    )
+    assert "t.todo()" in dep_text, "Deprecated skill should retain todo content"
 
     # Must still have the rerun-failures content
     assert "--test-rerun-failures" in dep_text, (
@@ -809,9 +763,7 @@ def test_a3_node_test_runner_deprecated_retains_content() -> None:
 def test_a5_nextjs_forms_deprecated_is_marked() -> None:
     """Deprecated skill (nextjs-forms-and-server-actions) must have
     deprecated=True and superseded_by pointing to the keeper."""
-    dep = _load_skill(
-        "nextjs-forms-and-server-actions", category="nextjs"
-    )
+    dep = _load_skill("nextjs-forms-and-server-actions", category="nextjs")
 
     assert dep.get("deprecated") is True, (
         "nextjs-forms-and-server-actions must have deprecated=True"
@@ -823,13 +775,11 @@ def test_a5_nextjs_forms_deprecated_is_marked() -> None:
 
 def test_a5_nextjs_forms_deprecated_has_no_jsx_artifacts() -> None:
     """Deprecated skill must not contain JSX/MDX artifacts from Next.js docs."""
-    dep = _load_skill(
-        "nextjs-forms-and-server-actions", category="nextjs"
-    )
+    dep = _load_skill("nextjs-forms-and-server-actions", category="nextjs")
     dep_text = _raw_prose(dep) + "\n\n" + _fragment_content_concat(dep)
 
     artifacts = [
-        'filename=',
+        "filename=",
         "switcher",
         "highlight={",
         "> [!WARNING]",
@@ -845,42 +795,26 @@ def test_a5_nextjs_forms_deprecated_has_no_jsx_artifacts() -> None:
 
 def test_a5_nextjs_forms_deprecated_retains_content() -> None:
     """Deprecated skill must retain all its original content after merge."""
-    dep = _load_skill(
-        "nextjs-forms-and-server-actions", category="nextjs"
-    )
+    dep = _load_skill("nextjs-forms-and-server-actions", category="nextjs")
     dep_text = _raw_prose(dep) + "\n\n" + _fragment_content_concat(dep)
 
     # Must still have the core server action content
-    assert "use server" in dep_text, (
-        "Deprecated skill should retain 'use server' content"
-    )
-    assert "formData" in dep_text, (
-        "Deprecated skill should retain formData content"
-    )
-    assert "useActionState" in dep_text, (
-        "Deprecated skill should retain useActionState content"
-    )
+    assert "use server" in dep_text, "Deprecated skill should retain 'use server' content"
+    assert "formData" in dep_text, "Deprecated skill should retain formData content"
+    assert "useActionState" in dep_text, "Deprecated skill should retain useActionState content"
     assert "Object.fromEntries" in dep_text, (
         "Deprecated skill should retain Object.fromEntries content"
     )
-    assert "bind" in dep_text, (
-        "Deprecated skill should retain bind content"
-    )
+    assert "bind" in dep_text, "Deprecated skill should retain bind content"
 
     # Must still have validation content
-    assert "zod" in dep_text, (
-        "Deprecated skill should retain zod validation content"
-    )
-    assert "safeParse" in dep_text, (
-        "Deprecated skill should retain safeParse content"
-    )
+    assert "zod" in dep_text, "Deprecated skill should retain zod validation content"
+    assert "safeParse" in dep_text, "Deprecated skill should retain safeParse content"
 
 
 def test_a5_nextjs_forms_deprecated_has_category_scope() -> None:
     """Deprecated skill must have category_scope set."""
-    dep = _load_skill(
-        "nextjs-forms-and-server-actions", category="nextjs"
-    )
+    dep = _load_skill("nextjs-forms-and-server-actions", category="nextjs")
     assert dep.get("category_scope") == "framework", (
         "Deprecated skill must have category_scope='framework'"
     )
@@ -888,24 +822,18 @@ def test_a5_nextjs_forms_deprecated_has_category_scope() -> None:
 
 def test_a5_nextjs_forms_deprecated_has_merged_domain_tags() -> None:
     """Deprecated skill must have its original domain_tags preserved."""
-    dep = _load_skill(
-        "nextjs-forms-and-server-actions", category="nextjs"
-    )
+    dep = _load_skill("nextjs-forms-and-server-actions", category="nextjs")
     tags = dep.get("domain_tags", [])
     assert "nextjs" in tags, "Must have 'nextjs' domain tag"
     assert "forms" in tags, "Must have 'forms' domain tag"
     assert "server-actions" in tags, "Must have 'server-actions' domain tag"
-    assert "progressive-enhancement" in tags, (
-        "Must have 'progressive-enhancement' domain tag"
-    )
+    assert "progressive-enhancement" in tags, "Must have 'progressive-enhancement' domain tag"
     assert "validation" in tags, "Must have 'validation' domain tag"
 
 
 def test_a5_nextjs_forms_deprecated_change_summary_mentions_merge() -> None:
     """Deprecated skill change_summary must mention the merge."""
-    dep = _load_skill(
-        "nextjs-forms-and-server-actions", category="nextjs"
-    )
+    dep = _load_skill("nextjs-forms-and-server-actions", category="nextjs")
     summary = dep.get("change_summary", "")
     assert "merged" in summary.lower() or "superseded" in summary.lower(), (
         "change_summary must mention merge or supersession"
@@ -914,45 +842,29 @@ def test_a5_nextjs_forms_deprecated_change_summary_mentions_merge() -> None:
 
 def test_a5_nextjs_forms_keeper_has_merged_domain_tags() -> None:
     """Keeper skill must have domain_tags from both merged skills."""
-    keeper = _load_skill(
-        "nextjs-server-actions-and-mutations", category="nextjs"
-    )
+    keeper = _load_skill("nextjs-server-actions-and-mutations", category="nextjs")
     tags = keeper.get("domain_tags", [])
 
     # Original keeper tags
-    assert "use-server-directive" in tags, (
-        "Keeper must retain original 'use-server-directive' tag"
-    )
-    assert "form-action-prop" in tags, (
-        "Keeper must retain original 'form-action-prop' tag"
-    )
+    assert "use-server-directive" in tags, "Keeper must retain original 'use-server-directive' tag"
+    assert "form-action-prop" in tags, "Keeper must retain original 'form-action-prop' tag"
     assert "useactionstate-pending" in tags, (
         "Keeper must retain original 'useactionstate-pending' tag"
     )
-    assert "revalidatepath-tag" in tags, (
-        "Keeper must retain original 'revalidatepath-tag' tag"
-    )
-    assert "csrf-authorization" in tags, (
-        "Keeper must retain original 'csrf-authorization' tag"
-    )
+    assert "revalidatepath-tag" in tags, "Keeper must retain original 'revalidatepath-tag' tag"
+    assert "csrf-authorization" in tags, "Keeper must retain original 'csrf-authorization' tag"
 
     # Merged tags from deprecated skill
-    assert "forms" in tags, (
-        "Keeper must have merged 'forms' tag from deprecated skill"
-    )
+    assert "forms" in tags, "Keeper must have merged 'forms' tag from deprecated skill"
     assert "progressive-enhancement" in tags, (
         "Keeper must have merged 'progressive-enhancement' tag"
     )
-    assert "validation" in tags, (
-        "Keeper must have merged 'validation' tag"
-    )
+    assert "validation" in tags, "Keeper must have merged 'validation' tag"
 
 
 def test_a5_nextjs_forms_keeper_change_summary_mentions_merge() -> None:
     """Keeper change_summary must mention the merge."""
-    keeper = _load_skill(
-        "nextjs-server-actions-and-mutations", category="nextjs"
-    )
+    keeper = _load_skill("nextjs-server-actions-and-mutations", category="nextjs")
     summary = keeper.get("change_summary", "")
     assert "merged" in summary.lower() or "merge" in summary.lower(), (
         "Keeper change_summary must mention the merge"
@@ -961,47 +873,25 @@ def test_a5_nextjs_forms_keeper_change_summary_mentions_merge() -> None:
 
 def test_a5_nextjs_forms_keeper_retains_all_content() -> None:
     """Keeper skill must retain all content from both merged skills."""
-    keeper = _load_skill(
-        "nextjs-server-actions-and-mutations", category="nextjs"
-    )
+    keeper = _load_skill("nextjs-server-actions-and-mutations", category="nextjs")
     keeper_text = _raw_prose(keeper) + "\n\n" + _fragment_content_concat(keeper)
 
     # Content from keeper (original)
-    assert "use server" in keeper_text, (
-        "Keeper must retain 'use server' content"
-    )
-    assert "useOptimistic" in keeper_text, (
-        "Keeper must retain useOptimistic content"
-    )
-    assert "redirect" in keeper_text, (
-        "Keeper must retain redirect content"
-    )
-    assert "useActionState" in keeper_text, (
-        "Keeper must retain useActionState content"
-    )
-    assert "revalidatePath" in keeper_text, (
-        "Keeper must retain revalidatePath content"
-    )
-    assert "revalidateTag" in keeper_text, (
-        "Keeper must retain revalidateTag content"
-    )
-    assert "useFormStatus" in keeper_text, (
-        "Keeper must retain useFormStatus content"
-    )
+    assert "use server" in keeper_text, "Keeper must retain 'use server' content"
+    assert "useOptimistic" in keeper_text, "Keeper must retain useOptimistic content"
+    assert "redirect" in keeper_text, "Keeper must retain redirect content"
+    assert "useActionState" in keeper_text, "Keeper must retain useActionState content"
+    assert "revalidatePath" in keeper_text, "Keeper must retain revalidatePath content"
+    assert "revalidateTag" in keeper_text, "Keeper must retain revalidateTag content"
+    assert "useFormStatus" in keeper_text, "Keeper must retain useFormStatus content"
 
     # Content from deprecated (forms) skill
     assert "Object.fromEntries" in keeper_text, (
         "Keeper must retain Object.fromEntries from deprecated skill"
     )
-    assert "bind" in keeper_text, (
-        "Keeper must retain bind content from deprecated skill"
-    )
-    assert "zod" in keeper_text, (
-        "Keeper must retain zod validation content from deprecated skill"
-    )
-    assert "safeParse" in keeper_text, (
-        "Keeper must retain safeParse content from deprecated skill"
-    )
+    assert "bind" in keeper_text, "Keeper must retain bind content from deprecated skill"
+    assert "zod" in keeper_text, "Keeper must retain zod validation content from deprecated skill"
+    assert "safeParse" in keeper_text, "Keeper must retain safeParse content from deprecated skill"
     assert "progressive enhancement" in keeper_text, (
         "Keeper must retain progressive enhancement content"
     )
@@ -1009,13 +899,11 @@ def test_a5_nextjs_forms_keeper_retains_all_content() -> None:
 
 def test_a5_nextjs_forms_keeper_has_no_jsx_artifacts() -> None:
     """Keeper skill must not contain JSX/MDX artifacts."""
-    keeper = _load_skill(
-        "nextjs-server-actions-and-mutations", category="nextjs"
-    )
+    keeper = _load_skill("nextjs-server-actions-and-mutations", category="nextjs")
     keeper_text = _raw_prose(keeper) + "\n\n" + _fragment_content_concat(keeper)
 
     artifacts = [
-        'filename=',
+        "filename=",
         "switcher",
         "highlight={",
         "> [!WARNING]",
@@ -1031,18 +919,14 @@ def test_a5_nextjs_forms_keeper_has_no_jsx_artifacts() -> None:
 
 def test_a5_nextjs_forms_deprecated_ingests_cleanly() -> None:
     """Deprecated skill must pass ingest validation."""
-    dep = _load_skill(
-        "nextjs-forms-and-server-actions", category="nextjs"
-    )
+    dep = _load_skill("nextjs-forms-and-server-actions", category="nextjs")
     errors = _validate_skill_ingest(dep, "nextjs-forms-and-server-actions")
     assert not errors, f"Deprecated skill ingest errors: {errors}"
 
 
 def test_a5_nextjs_forms_keeper_ingests_cleanly() -> None:
     """Keeper skill must pass ingest validation after merge."""
-    keeper = _load_skill(
-        "nextjs-server-actions-and-mutations", category="nextjs"
-    )
+    keeper = _load_skill("nextjs-server-actions-and-mutations", category="nextjs")
     errors = _validate_skill_ingest(keeper, "nextjs-server-actions-and-mutations")
     assert not errors, f"Keeper skill ingest errors: {errors}"
 
@@ -1057,18 +941,13 @@ def test_a8_fastapi_oauth2_scopes_deprecated_flags() -> None:
     dep = _load_a7_skill("fastapi-oauth2-scopes")
 
     # Must have deprecated flag
-    assert dep.get("deprecated") is True, (
-        "fastapi-oauth2-scopes must have deprecated: true"
-    )
+    assert dep.get("deprecated") is True, "fastapi-oauth2-scopes must have deprecated: true"
 
     # Must have superseded_by pointing to the keeper skill_id
     superseded = dep.get("superseded_by")
-    assert superseded is not None, (
-        "fastapi-oauth2-scopes must have superseded_by set"
-    )
+    assert superseded is not None, "fastapi-oauth2-scopes must have superseded_by set"
     assert superseded == "fastapi-auth-and-security", (
-        f"superseded_by should point to 'fastapi-auth-and-security', "
-        f"got '{superseded}'"
+        f"superseded_by should point to 'fastapi-auth-and-security', got '{superseded}'"
     )
 
 
@@ -1109,9 +988,7 @@ def test_a8_fastapi_oauth2_scopes_keeper_has_absorbed_content() -> None:
         if section not in keeper_text:
             missing.append(section)
 
-    assert not missing, (
-        f"Keeper is missing absorbed content from deprecated skill: {missing}"
-    )
+    assert not missing, f"Keeper is missing absorbed content from deprecated skill: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -1125,8 +1002,7 @@ def test_a8_fastapi_oauth2_scopes_deprecated_sequences_contiguous() -> None:
     seqs = _fragment_sequences(dep)
     expected = list(range(1, len(seqs) + 1))
     assert seqs == expected, (
-        f"Deprecated skill fragment sequences are not contiguous: "
-        f"got {seqs}, expected {expected}"
+        f"Deprecated skill fragment sequences are not contiguous: got {seqs}, expected {expected}"
     )
 
 
@@ -1136,8 +1012,7 @@ def test_a8_fastapi_oauth2_scopes_keeper_sequences_contiguous() -> None:
     seqs = _fragment_sequences(keeper)
     expected = list(range(1, len(seqs) + 1))
     assert seqs == expected, (
-        f"Keeper skill fragment sequences are not contiguous: "
-        f"got {seqs}, expected {expected}"
+        f"Keeper skill fragment sequences are not contiguous: got {seqs}, expected {expected}"
     )
 
 
@@ -1188,9 +1063,7 @@ def test_a8_fastapi_oauth2_scopes_keeper_retains_unique_content() -> None:
         if section not in keeper_text:
             missing.append(section)
 
-    assert not missing, (
-        f"Keeper lost its own unique content: {missing}"
-    )
+    assert not missing, f"Keeper lost its own unique content: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -1204,9 +1077,7 @@ def test_a8_fastapi_oauth2_scopes_deprecated_retains_content() -> None:
     dep_text = _raw_prose(dep) + "\n\n" + _fragment_content_concat(dep)
 
     # Must still have the SecurityScopes content
-    assert "SecurityScopes" in dep_text, (
-        "Deprecated skill should retain SecurityScopes content"
-    )
+    assert "SecurityScopes" in dep_text, "Deprecated skill should retain SecurityScopes content"
 
     # Must still have the verify scopes content
     assert "verify that all the scopes required" in dep_text, (
@@ -1228,13 +1099,9 @@ def test_a6_testing_tdd_cycle_deprecated_flags() -> None:
     """The deprecated skill must have deprecated:true and superseded_by set."""
     dep = _load_skill("testing-tdd-cycle", category="testing")
 
-    assert dep.get("deprecated") is True, (
-        "testing-tdd-cycle must have deprecated: true"
-    )
+    assert dep.get("deprecated") is True, "testing-tdd-cycle must have deprecated: true"
     superseded = dep.get("superseded_by")
-    assert superseded is not None, (
-        "testing-tdd-cycle must have superseded_by set"
-    )
+    assert superseded is not None, "testing-tdd-cycle must have superseded_by set"
     assert superseded == "test-driven-development", (
         f"superseded_by should point to 'test-driven-development', got '{superseded}'"
     )
@@ -1274,9 +1141,7 @@ def test_a6_testing_tdd_cycle_keeper_has_absorbed_content() -> None:
         if section not in keeper_text:
             missing.append(section)
 
-    assert not missing, (
-        f"Keeper is missing absorbed content from deprecated skill: {missing}"
-    )
+    assert not missing, f"Keeper is missing absorbed content from deprecated skill: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -1290,8 +1155,7 @@ def test_a6_testing_tdd_cycle_deprecated_sequences_contiguous() -> None:
     seqs = _fragment_sequences(dep)
     expected = list(range(1, len(seqs) + 1))
     assert seqs == expected, (
-        f"Deprecated skill fragment sequences are not contiguous: "
-        f"got {seqs}, expected {expected}"
+        f"Deprecated skill fragment sequences are not contiguous: got {seqs}, expected {expected}"
     )
 
 
@@ -1301,8 +1165,7 @@ def test_a6_testing_tdd_cycle_keeper_sequences_contiguous() -> None:
     seqs = _fragment_sequences(keeper)
     expected = list(range(1, len(seqs) + 1))
     assert seqs == expected, (
-        f"Keeper skill fragment sequences are not contiguous: "
-        f"got {seqs}, expected {expected}"
+        f"Keeper skill fragment sequences are not contiguous: got {seqs}, expected {expected}"
     )
 
 
@@ -1351,9 +1214,7 @@ def test_a6_testing_tdd_cycle_keeper_retains_unique_content() -> None:
         if section not in keeper_text:
             missing.append(section)
 
-    assert not missing, (
-        f"Keeper lost its own unique content: {missing}"
-    )
+    assert not missing, f"Keeper lost its own unique content: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -1372,9 +1233,7 @@ def test_a6_testing_tdd_cycle_deprecated_retains_content() -> None:
     assert "test_add_two_numbers" in dep_text, (
         "Deprecated skill should retain triangulation content"
     )
-    assert "30 seconds" in dep_text, (
-        "Deprecated skill should retain cycle length content"
-    )
+    assert "30 seconds" in dep_text, "Deprecated skill should retain cycle length content"
     assert "When TDD Helps Most" in dep_text, (
         "Deprecated skill should retain 'when TDD helps most' content"
     )
@@ -1391,29 +1250,19 @@ def test_a6_testing_tdd_cycle_keeper_has_merged_domain_tags() -> None:
     tags = keeper.get("domain_tags", [])
 
     # Original keeper tags
-    assert "failing-test-first" in tags, (
-        "Keeper must retain original 'failing-test-first' tag"
-    )
+    assert "failing-test-first" in tags, "Keeper must retain original 'failing-test-first' tag"
     assert "pytest" in tags, "Keeper must retain original 'pytest' tag"
     assert "vitest" in tags, "Keeper must retain original 'vitest' tag"
-    assert "red-green-refactor" in tags, (
-        "Keeper must retain original 'red-green-refactor' tag"
-    )
-    assert "regression-trap" in tags, (
-        "Keeper must retain original 'regression-trap' tag"
-    )
+    assert "red-green-refactor" in tags, "Keeper must retain original 'red-green-refactor' tag"
+    assert "regression-trap" in tags, "Keeper must retain original 'regression-trap' tag"
 
     # Merged tags from deprecated skill
     assert "tdd" in tags, "Keeper must have merged 'tdd' tag"
     assert "test-driven-development" in tags, (
         "Keeper must have merged 'test-driven-development' tag"
     )
-    assert "software-testing" in tags, (
-        "Keeper must have merged 'software-testing' tag"
-    )
-    assert "agile-methodology" in tags, (
-        "Keeper must have merged 'agile-methodology' tag"
-    )
+    assert "software-testing" in tags, "Keeper must have merged 'software-testing' tag"
+    assert "agile-methodology" in tags, "Keeper must have merged 'agile-methodology' tag"
 
 
 # ---------------------------------------------------------------------------
@@ -1462,8 +1311,7 @@ def test_a2_typescript_narrowing_deprecated_flags() -> None:
         "typescript-narrowing-and-control-flow must have superseded_by set"
     )
     assert superseded == "typescript-narrowing-patterns", (
-        f"superseded_by should point to 'typescript-narrowing-patterns', "
-        f"got '{superseded}'"
+        f"superseded_by should point to 'typescript-narrowing-patterns', got '{superseded}'"
     )
 
 
@@ -1473,7 +1321,7 @@ def test_a2_typescript_narrowing_deprecated_flags() -> None:
 
 _A2_UNIQUE_DEPRECATED_SECTIONS = [
     # typeof quirks (null === 'object' edge case with printAll example)
-    "typeof null === \"object\"",
+    'typeof null === "object"',
     "string[] | null",
     # Truthiness narrowing (falsy values list, guards, caveats)
     "0n",
@@ -1500,9 +1348,7 @@ def test_a2_typescript_narrowing_keeper_has_absorbed_content() -> None:
         if section not in keeper_text:
             missing.append(section)
 
-    assert not missing, (
-        f"Keeper is missing absorbed content from deprecated skill: {missing}"
-    )
+    assert not missing, f"Keeper is missing absorbed content from deprecated skill: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -1516,8 +1362,7 @@ def test_a2_typescript_narrowing_deprecated_sequences_contiguous() -> None:
     seqs = _fragment_sequences(dep)
     expected = list(range(1, len(seqs) + 1))
     assert seqs == expected, (
-        f"Deprecated skill fragment sequences are not contiguous: "
-        f"got {seqs}, expected {expected}"
+        f"Deprecated skill fragment sequences are not contiguous: got {seqs}, expected {expected}"
     )
 
 
@@ -1527,8 +1372,7 @@ def test_a2_typescript_narrowing_keeper_sequences_contiguous() -> None:
     seqs = _fragment_sequences(keeper)
     expected = list(range(1, len(seqs) + 1))
     assert seqs == expected, (
-        f"Keeper skill fragment sequences are not contiguous: "
-        f"got {seqs}, expected {expected}"
+        f"Keeper skill fragment sequences are not contiguous: got {seqs}, expected {expected}"
     )
 
 
@@ -1581,9 +1425,7 @@ def test_a2_typescript_narrowing_keeper_retains_unique_content() -> None:
         if section not in keeper_text:
             missing.append(section)
 
-    assert not missing, (
-        f"Keeper lost its own unique content: {missing}"
-    )
+    assert not missing, f"Keeper lost its own unique content: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -1596,15 +1438,9 @@ def test_a2_typescript_narrowing_deprecated_retains_content() -> None:
     dep = _load_skill("typescript-narrowing-and-control-flow", category="typescript")
     dep_text = _raw_prose(dep) + "\n\n" + _fragment_content_concat(dep)
 
-    assert "padLeft" in dep_text, (
-        "Deprecated skill should retain padLeft walkthrough content"
-    )
-    assert "multiplyAll" in dep_text, (
-        "Deprecated skill should retain boolean negations content"
-    )
-    assert "typeof null" in dep_text, (
-        "Deprecated skill should retain typeof quirks content"
-    )
+    assert "padLeft" in dep_text, "Deprecated skill should retain padLeft walkthrough content"
+    assert "multiplyAll" in dep_text, "Deprecated skill should retain boolean negations content"
+    assert "typeof null" in dep_text, "Deprecated skill should retain typeof quirks content"
 
 
 # ---------------------------------------------------------------------------
@@ -1633,9 +1469,7 @@ def test_a2_typescript_narrowing_keeper_has_merged_domain_tags() -> None:
     assert "control-flow-analysis" in keeper_tags, (
         "Keeper must have merged 'control-flow-analysis' tag"
     )
-    assert "union-types" in keeper_tags, (
-        "Keeper must have merged 'union-types' tag"
-    )
+    assert "union-types" in keeper_tags, "Keeper must have merged 'union-types' tag"
 
 
 # ---------------------------------------------------------------------------

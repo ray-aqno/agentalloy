@@ -71,8 +71,9 @@ def _extract_jsx_tags(content: str) -> list[str]:
     Handles indented code fences found in YAML literal block scalars.
     """
     import re
-    lines = content.split('\n')
-    jsx_re = re.compile(r'</?[A-Za-z][a-zA-Z0-9]*(?:\s+[^>]*)?/?>')
+
+    lines = content.split("\n")
+    jsx_re = re.compile(r"</?[A-Za-z][a-zA-Z0-9]*(?:\s+[^>]*)?/?>")
 
     # Track code block depth using a stack-based approach
     # In YAML content: ``` (just backticks) toggles depth,
@@ -82,10 +83,10 @@ def _extract_jsx_tags(content: str) -> list[str]:
 
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith('```'):
+        if stripped.startswith("```"):
             rest = stripped[3:]
             rest_stripped = rest.strip()
-            has_language = bool(re.match(r'[a-zA-Z]', rest_stripped))
+            has_language = bool(re.match(r"[a-zA-Z]", rest_stripped))
             if has_language:
                 code_depth += 1
             else:
@@ -97,7 +98,7 @@ def _extract_jsx_tags(content: str) -> list[str]:
         if code_depth == 0:
             prose_lines.append(line)
 
-    prose = '\n'.join(prose_lines)
+    prose = "\n".join(prose_lines)
     return jsx_re.findall(prose)
 
 
@@ -107,22 +108,21 @@ def _check_file(filepath: Path) -> list[str]:
     tags = _extract_jsx_tags(content)
 
     # Filter to only JSX component tags (not standard HTML like <details>).
-    jsx_components = [
-        tag for tag in tags if tag.split()[0].lstrip("<") in JSX_COMPONENTS
-    ]
+    jsx_components = [tag for tag in tags if tag.split()[0].lstrip("<") in JSX_COMPONENTS]
 
     # Also check for Docusaurus-style callout markers in prose
     import re
-    for m in re.finditer(r'::note|:::caution|:::warning', content):
+
+    for m in re.finditer(r"::note|:::caution|:::warning", content):
         # Verify this match is outside code blocks
         pos = m.start()
-        lines_before = content[:pos].split('\n')
+        lines_before = content[:pos].split("\n")
         code_depth = 0
         for line in lines_before[:-1]:
             stripped = line.strip()
-            if stripped.startswith('```'):
+            if stripped.startswith("```"):
                 rest = stripped[3:]
-                has_lang = bool(re.match(r'[a-zA-Z]', rest.strip()))
+                has_lang = bool(re.match(r"[a-zA-Z]", rest.strip()))
                 if has_lang:
                     code_depth += 1
                 else:
@@ -159,9 +159,7 @@ def test_batch_a_complex_jsx_no_jsx() -> None:
         # Check for JSX artifacts
         jsx_components = _check_file(filepath)
 
-        assert (
-            not jsx_components
-        ), f"{filepath.name} still contains JSX artifacts: {jsx_components}"
+        assert not jsx_components, f"{filepath.name} still contains JSX artifacts: {jsx_components}"
 
 
 def test_batch_a_raw_prose_has_no_jsx() -> None:
@@ -171,21 +169,18 @@ def test_batch_a_raw_prose_has_no_jsx() -> None:
     fragment's content field, and verifies no JSX-like tags remain.
     """
     import re
+
     for filepath in BATCH_A_FILES:
         data = yaml.safe_load(filepath.read_text(encoding="utf-8"))
 
         # Check top-level raw_prose
         raw = data.get("raw_prose", "")
         if raw:
-            tags = re.findall(r'</?[A-Za-z][a-zA-Z0-9]*(?:\s+[^>]*)?/?>', raw)
+            tags = re.findall(r"</?[A-Za-z][a-zA-Z0-9]*(?:\s+[^>]*)?/?>", raw)
             jsx = [t for t in tags if t.split()[0].lstrip("<") in JSX_COMPONENTS]
-            assert not jsx, (
-                f"{filepath.name}: JSX in top-level raw_prose: {jsx}"
-            )
-            docusaurus = re.findall(r'::note|:::caution|:::warning', raw)
-            assert not docusaurus, (
-                f"{filepath.name}: Docusaurus markers in raw_prose: {docusaurus}"
-            )
+            assert not jsx, f"{filepath.name}: JSX in top-level raw_prose: {jsx}"
+            docusaurus = re.findall(r"::note|:::caution|:::warning", raw)
+            assert not docusaurus, f"{filepath.name}: Docusaurus markers in raw_prose: {docusaurus}"
 
         # Check fragment content
         fragments = data.get("fragments", [])
@@ -193,13 +188,12 @@ def test_batch_a_raw_prose_has_no_jsx() -> None:
             content = frag.get("content", "")
             if not content:
                 continue
-            tags = re.findall(r'<[A-Z][a-zA-Z0-9]*(?:\s+[^>]*)?/?>', content)
+            tags = re.findall(r"<[A-Z][a-zA-Z0-9]*(?:\s+[^>]*)?/?>", content)
             jsx = [t for t in tags if t.split()[0].lstrip("<") in JSX_COMPONENTS]
             assert not jsx, (
-                f"{filepath.name} fragment sequence {frag.get('sequence')}: "
-                f"JSX in content: {jsx}"
+                f"{filepath.name} fragment sequence {frag.get('sequence')}: JSX in content: {jsx}"
             )
-            docusaurus = re.findall(r'::note|:::caution|:::warning', content)
+            docusaurus = re.findall(r"::note|:::caution|:::warning", content)
             assert not docusaurus, (
                 f"{filepath.name} fragment sequence {frag.get('sequence')}: "
                 f"Docusaurus markers in content: {docusaurus}"
@@ -229,6 +223,4 @@ def test_batch_b_simple_jsx_no_jsx() -> None:
         # Check for JSX artifacts
         jsx_components = _check_file(filepath)
 
-        assert (
-            not jsx_components
-        ), f"{filepath.name} still contains JSX artifacts: {jsx_components}"
+        assert not jsx_components, f"{filepath.name} still contains JSX artifacts: {jsx_components}"

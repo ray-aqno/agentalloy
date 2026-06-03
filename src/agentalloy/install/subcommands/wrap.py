@@ -147,9 +147,7 @@ def _run(args: argparse.Namespace) -> int:
             print(json.dumps(result, indent=2))
         else:
             print_rich_stderr(f"ERROR: Unknown harness '{harness}'.")
-            print_rich_stderr(
-                f"FIX:   Use one of: {', '.join(sorted(VALID_HARNESSES))}."
-            )
+            print_rich_stderr(f"FIX:   Use one of: {', '.join(sorted(VALID_HARNESSES))}.")
         return 1
 
     # ------------------------------------------------------------------

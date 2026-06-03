@@ -1076,7 +1076,6 @@ class TestContainerFlow:
         assert st["container_name"] == "agentalloy"
         assert st["data_volume"] == "agentalloy-data"
 
-
     def test_runtime_binary_missing_exits_1(
         self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
     ):

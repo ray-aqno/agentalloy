@@ -138,7 +138,6 @@ class TestProcessGroupSafety:
             assert call_kwargs[1].get("start_new_session") is True
 
 
-
 # ---------------------------------------------------------------------------
 # JSON output tests (Issue 8)
 # ---------------------------------------------------------------------------
@@ -351,9 +350,7 @@ class TestJsonOutput:
 
         # Should NOT contain JSON (no braces at start of output)
         for line in captured_output:
-            assert not line.strip().startswith("{"), (
-                f"Expected human output but got JSON: {line}"
-            )
+            assert not line.strip().startswith("{"), f"Expected human output but got JSON: {line}"
 
 
 # ---------------------------------------------------------------------------

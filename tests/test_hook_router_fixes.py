@@ -26,9 +26,7 @@ class TestHookRouterToolNameFix:
         }
 
         with (
-            patch(
-                "agentalloy.signals.skill_loader._read_phase", return_value="build"
-            ),
+            patch("agentalloy.signals.skill_loader._read_phase", return_value="build"),
             patch(
                 "agentalloy.signals.skill_loader._load_workflow_skill_for_phase",
                 return_value=mock_skill,
