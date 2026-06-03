@@ -46,7 +46,7 @@ All notable changes to this project will be documented in this file.
 
 - **Path traversal fix in hook endpoint** — `POST /v1/hook/post-tool-use` now
   validates `tool_path` using `safe_contract_path()` before reading any file.
-  Previously a substring check (`(".agentalloy/contracts/" in tool_path`) could
+  Previously a substring check (`".agentalloy/contracts/" in tool_path`) could
   be bypassed with `../` sequences, allowing unauthenticated reads of arbitrary
   files. The endpoint is unauthenticated and the container binds `0.0.0.0:47950`.
 
