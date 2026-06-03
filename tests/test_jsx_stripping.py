@@ -72,7 +72,7 @@ def _extract_jsx_tags(content: str) -> list[str]:
     """
     import re
     lines = content.split('\n')
-    jsx_re = re.compile(r'<[A-Z][a-zA-Z0-9]*(?:\s+[^>]*)?/?>')
+    jsx_re = re.compile(r'</?[A-Za-z][a-zA-Z0-9]*(?:\s+[^>]*)?/?>')
 
     # Track code block depth using a stack-based approach
     # In YAML content: ``` (just backticks) toggles depth,
@@ -177,7 +177,7 @@ def test_batch_a_raw_prose_has_no_jsx() -> None:
         # Check top-level raw_prose
         raw = data.get("raw_prose", "")
         if raw:
-            tags = re.findall(r'<[A-Z][a-zA-Z0-9]*(?:\s+[^>]*)?/?>', raw)
+            tags = re.findall(r'</?[A-Za-z][a-zA-Z0-9]*(?:\s+[^>]*)?/?>', raw)
             jsx = [t for t in tags if t.split()[0].lstrip("<") in JSX_COMPONENTS]
             assert not jsx, (
                 f"{filepath.name}: JSX in top-level raw_prose: {jsx}"
