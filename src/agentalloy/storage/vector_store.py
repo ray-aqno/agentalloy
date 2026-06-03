@@ -664,7 +664,13 @@ def open_or_create(path: str | Path) -> VectorStore:
     every open, then runs additive migrations so existing installs pick up
     columns added in later phases. Builds the BM25 FTS index on first open
     (or when missing). Use as a context manager to guarantee connection close.
+
+    T7B: Startup dimension guard — raises ``EmbeddingDimMismatch`` if an
+    existing corpus was built at a different dimension than ``EMBEDDING_DIM``.
+    Fail-fast here prevents silent mid-request crashes when a user upgrades
+    their embedding model (e.g. embeddinggemma 768-dim → qwen3-embedding 1024-dim).
     """
+    assert isinstance(path, (str, Path)), "path must be str or Path"  # P10-R5
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     conn = duckdb.connect(str(p))
@@ -678,13 +684,31 @@ def open_or_create(path: str | Path) -> VectorStore:
     except Exception:  # noqa: BLE001 — FTS extension unavailable; BM25 leg silently degrades
         pass
 
-    return VectorStore(conn)
+    # D2: construct vs before return so embedding_dim() is accessible for the guard.
+    vs = VectorStore(conn)
+    stored_dim = vs.embedding_dim()  # int | None — None means corpus is empty
+    assert stored_dim is None or stored_dim > 0, "stored embedding dim must be positive"  # P10-R5
+    if stored_dim is not None and stored_dim != EMBEDDING_DIM:
+        raise EmbeddingDimMismatch(
+            f"Corpus was built with {stored_dim}-dim embeddings but the runtime "
+            f"expects {EMBEDDING_DIM}-dim (qwen3-embedding:0.6b). "
+            f"Run `agentalloy reembed --force` to rebuild with the correct model. "
+            f"WARNING: --force deletes all existing embeddings; re-run install-packs afterward."
+        )
+    return vs
 
 
 def append_trace(db_path: Path, trace: CompositionTrace) -> None:
-    """Convenience: open the store at db_path, insert trace, close. Soft-fail."""
+    """Convenience: open the store at db_path, insert trace, close. Soft-fail.
+
+    D3: re-raises ``EmbeddingDimMismatch`` before the broad soft-fail catch —
+    a corpus dimension mismatch is a hard configuration error that must surface,
+    not be silently swallowed in the telemetry path.
+    """
     try:
         with open_or_create(db_path) as store:
             store.record_composition_trace(trace)
+    except EmbeddingDimMismatch:
+        raise  # D3: hard corpus error — propagate, do not soft-fail
     except Exception:
         pass
