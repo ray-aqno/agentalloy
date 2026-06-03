@@ -430,12 +430,24 @@ async def hook_post_tool_use(request: Request) -> JSONResponse:
     cwd_str = body.get("cwd", "")
     cwd = Path(cwd_str) if cwd_str else Path.cwd()
 
-    # Only fire on writes inside .agentalloy/contracts/
-    if tool_name in ("Edit", "Write", "MultiEdit") and ".agentalloy/contracts/" in tool_path:
+    # Only fire on writes inside .agentalloy/contracts/ — use safe_contract_path for
+    # boundary validation (resolves .. sequences; returns (None, None) on escape).
+    if tool_name in ("Edit", "Write", "MultiEdit") and tool_path:
         try:
-            from agentalloy.contracts import parse_contract, validate_contract
+            from agentalloy.contracts import (
+                parse_contract,
+                safe_contract_path,
+                validate_contract,
+            )
 
-            contract = parse_contract(Path(tool_path))
+            # Tuple unpack per contracts.py:205 signature: returns (Path|None, Path|None)
+            safe_path, project_root = safe_contract_path(tool_path, project_root=cwd)
+            if safe_path is None or project_root is None:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "invalid contract path"},
+                )
+            contract = parse_contract(safe_path)
             issues = validate_contract(contract, cwd)
             if not issues:
                 return JSONResponse(

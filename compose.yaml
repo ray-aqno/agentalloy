@@ -58,6 +58,8 @@ services:
   agentalloy-init:
     # One-shot init service: runs DB schema migrations then exits.
     # Idempotent — safe to re-run; no-ops if schemas already exist.
+    # Runs as root (no user:) to chown /app/data before the main service starts.
+    # P10-R2: chown -R bounded by files in agentalloy-data volume (O(corpus files), finite).
     build:
       context: .
       dockerfile: Containerfile
@@ -68,7 +70,7 @@ services:
       DUCKDB_PATH: "/app/data/skills.duck"
     volumes:
       - agentalloy-data:/app/data
-    entrypoint: ["uv", "run", "python", "-m", "agentalloy.migrate"]
+    entrypoint: ["sh", "-c", "chown -R 1001:0 /app/data && exec uv run python -m agentalloy.migrate"]
     restart: "no"
 
   agentalloy:
@@ -77,6 +79,7 @@ services:
       dockerfile: Containerfile
     image: agentalloy:local
     container_name: agentalloy
+    user: "1001:0"
     depends_on:
       ollama:
         condition: service_healthy
@@ -91,6 +94,13 @@ services:
       LADYBUG_DB_PATH: "/app/data/ladybug"
       DUCKDB_PATH: "/app/data/skills.duck"
       LOG_LEVEL: "INFO"
+      # --- Upstream LLM proxy (optional — enables per-turn skill injection) ---
+      # Without these, AgentAlloy runs in composition-only mode (/compose still works).
+      # To use the proxy (POST /v1/chat/completions), point your harness at port 47950
+      # and set these three vars. For a host-side Ollama: use host.docker.internal:11434.
+      # AGENTALLOY_UPSTREAM_URL: "http://host.docker.internal:11434/v1"
+      # AGENTALLOY_UPSTREAM_MODEL: "qwen3.5:0.8b"
+      # AGENTALLOY_UPSTREAM_API_KEY: ""  # leave blank for local Ollama
     volumes:
       - agentalloy-data:/app/data
     ports:
