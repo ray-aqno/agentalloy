@@ -53,10 +53,12 @@ class RuntimeCache:
         skills: dict[str, ActiveSkill],
         fragments: list[ActiveFragment],
         version_details: dict[str, VersionDetail],
+        deprecated_skill_ids: list[str] | None = None,
     ) -> None:
         self._skills: dict[str, ActiveSkill] = skills
         self._fragments: list[ActiveFragment] = fragments
         self._version_details: dict[str, VersionDetail] = version_details
+        self._deprecated_skill_ids: list[str] = list(deprecated_skill_ids or [])
         self.skill_count: int = len(skills)
         self.fragment_count: int = len(fragments)
 
@@ -98,6 +100,16 @@ class RuntimeCache:
             tag_set = set(domain_tags)
             result = [f for f in result if any(t in tag_set for t in f.domain_tags)]
         return result
+
+    def get_deprecated_skill_ids(self) -> list[str]:
+        """Return skill_ids of all skills flagged ``deprecated = true``.
+
+        The cache itself loads only non-deprecated skills (via the active reads
+        which filter ``deprecated = false``); this list is captured separately
+        at load time so retrieval can exclude deprecated fragments from the
+        DuckDB vector store, which is populated independently of the cache.
+        """
+        return list(self._deprecated_skill_ids)
 
     def get_active_fragments_for_skill(self, skill_id: str) -> list[ActiveFragment]:
         return sorted(
@@ -194,15 +206,21 @@ def load_runtime_cache(store: LadybugStore) -> RuntimeCache:
             raw_prose=str(row[5]),
         )
 
+    from agentalloy.reads import get_deprecated_skill_ids as _get_deprecated_ids
+
+    deprecated_ids = _get_deprecated_ids(store)
+
     cache = RuntimeCache(
         skills=skills_by_id,
         fragments=fragments,
         version_details=version_details,
+        deprecated_skill_ids=deprecated_ids,
     )
     logger.info(
-        "Runtime cache loaded: %d skills, %d fragments",
+        "Runtime cache loaded: %d skills, %d fragments, %d deprecated",
         cache.skill_count,
         cache.fragment_count,
+        len(deprecated_ids),
     )
     return cache
 

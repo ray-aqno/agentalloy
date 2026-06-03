@@ -9,8 +9,8 @@ domain_tags:
   - key-eviction
   - counters
 always_apply: false
-phase_scope: null
-category_scope: null
+phase_scope: [build]
+category_scope: [infrastructure]
 author: authoring-agent
 change_summary: revised draft based on critic feedback
 raw_prose: |

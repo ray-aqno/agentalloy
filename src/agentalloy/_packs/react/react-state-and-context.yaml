@@ -5,7 +5,7 @@ category: engineering
 skill_class: domain
 domain_tags: [usestate-functional-update, usereducer-action-types, context-provider-value, lifting-state-up, external-store-decision]
 always_apply: false
-phase_scope: null
+phase_scope: [build]
 category_scope: framework
 author: navistone
 change_summary: |

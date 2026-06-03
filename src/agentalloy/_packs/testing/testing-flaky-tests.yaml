@@ -9,6 +9,8 @@ domain_tags:
   - asynchronous programming
   - test isolation
   - time-dependent assertions
+phase_scope: [build, review]
+category_scope: [tooling]
 author: authoring-agent
 change_summary: initial authoring draft
 raw_prose: |

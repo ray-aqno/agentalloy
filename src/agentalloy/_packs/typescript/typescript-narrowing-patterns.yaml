@@ -9,11 +9,13 @@ domain_tags:
 - type-guards
 - discriminated-unions
 - assertions
+- control-flow-analysis
+- union-types
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [language]
 author: navistone
-change_summary: hand-authored Opus expansion (wave 2)
+change_summary: Merged deprecated typescript-narrowing-and-control-flow into this skill; absorbed typeof quirks, truthiness narrowing, boolean negations, and domain tags. Expanded with hand-authored content (wave 2).
 raw_prose: |
   # TypeScript Narrowing Patterns
 
@@ -35,6 +37,36 @@ raw_prose: |
   ```
 
   `typeof`, `instanceof`, `in`, equality, truthiness — all narrow types in their branches. Most everyday narrowing is built-in.
+
+  ## `typeof` Quirks
+
+  JavaScript's `typeof` operator returns one of these strings: `"string"`, `"number"`, `"bigint"`, `"boolean"`, `"symbol"`, `"undefined"`, `"object"`, `"function"`. It doesn't return `"null"` — in JavaScript, `typeof null === "object"`. This means checking `typeof x === "object"` doesn't distinguish null from objects:
+
+  ```ts
+  function printAll(strs: string | string[] | null) {
+      if (typeof strs === "object") {
+          for (const s of strs) {  // error: possibly null
+              console.log(s);
+          }
+      } else if (typeof strs === "string") {
+          console.log(strs);
+      }
+  }
+  ```
+
+  TypeScript narrows to `string[] | null`, not just `string[]`, because of this quirk. Fix by adding a truthiness check first:
+
+  ```ts
+  function printAll(strs: string | string[] | null) {
+      if (strs && typeof strs === "object") {
+          for (const s of strs) {  // strs: string[]
+              console.log(s);
+          }
+      } else if (typeof strs === "string") {
+          console.log(strs);
+      }
+  }
+  ```
 
   ## User-Defined Type Guards
 
@@ -147,6 +179,47 @@ raw_prose: |
   ```
 
   `Array.isArray` is a built-in type guard. Useful for input that might be a single value or array.
+
+  ## Truthiness Narrowing
+
+  In JavaScript, any expression can be used in conditionals, `if`, `&&`, `||`, etc. Values that coerce to `false`:
+
+  - `0`
+  - `NaN`
+  - `""` (the empty string)
+  - `0n` (the `bigint` version of zero)
+  - `null`
+  - `undefined`
+
+  All other values coerce to `true`. This is commonly used for guarding against `null` or `undefined`:
+
+  ```ts
+  function getUsersOnlineMessage(numUsersOnline: number) {
+      if (numUsersOnline) {
+          return `There are ${numUsersOnline} online now!`;
+      }
+      return "Nobody's here. :(";
+  }
+  ```
+
+  Be aware: truthiness checks also filter out `0`, `NaN`, and `""`. If those are valid values, use explicit checks instead.
+
+  ## Boolean Negations
+
+  Boolean negations with `!` filter out falsy values from the negated branch:
+
+  ```ts
+  function multiplyAll(
+      values: number[] | undefined,
+      factor: number
+  ): number[] | undefined {
+      if (!values) {
+          return values;
+      } else {
+          return values.map((x) => x * factor);
+      }
+  }
+  ```
 
   ## Common Pitfalls
 

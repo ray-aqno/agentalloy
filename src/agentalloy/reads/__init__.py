@@ -13,6 +13,7 @@ from agentalloy.reads.active import (
     get_active_skill_by_id,
     get_active_skills,
     get_active_version_by_id,
+    get_deprecated_skill_ids,
 )
 from agentalloy.reads.models import ActiveFragment, ActiveSkill
 
@@ -25,4 +26,5 @@ __all__ = [
     "get_active_skill_by_id",
     "get_active_skills",
     "get_active_version_by_id",
+    "get_deprecated_skill_ids",
 ]

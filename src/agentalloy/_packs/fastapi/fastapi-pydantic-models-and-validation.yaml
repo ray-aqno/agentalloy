@@ -5,7 +5,7 @@ category: engineering
 skill_class: domain
 domain_tags: [request-body-model, response-model-shape, field-constraints-validation, model-config-strict, field-validator-decorator]
 always_apply: false
-phase_scope: null
+phase_scope: [build]
 category_scope: framework
 author: navistone
 change_summary: |

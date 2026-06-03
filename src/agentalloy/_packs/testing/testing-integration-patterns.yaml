@@ -10,8 +10,8 @@ domain_tags:
   - fixture-data
   - mocking-external-apis
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build, review]
+category_scope: [tooling]
 author: navistone
 change_summary: initial authoring draft
 raw_prose: |

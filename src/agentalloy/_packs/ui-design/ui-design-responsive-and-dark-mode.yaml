@@ -8,8 +8,8 @@ domain_tags:
   - tailwindcss
   - dark-mode
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build, design]
+category_scope: [process]
 author: navistone
 change_summary: machine authoring contract for pending-qa pipeline
 raw_prose: |

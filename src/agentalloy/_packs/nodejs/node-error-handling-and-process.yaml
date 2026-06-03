@@ -5,7 +5,7 @@ category: engineering
 skill_class: domain
 domain_tags: [error-codes, uncaught-exception, unhandled-rejection, abort-controller, signal-handling]
 always_apply: false
-phase_scope: null
+phase_scope: [build]
 category_scope: language
 author: navistone
 change_summary: |

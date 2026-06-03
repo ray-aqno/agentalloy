@@ -16,7 +16,7 @@ depends_on:
 skills:
 - skill_id: react-hooks-rules-and-deps
   file: react-hooks-rules-and-deps.yaml
-  fragment_count: 10
+  fragment_count: 11
 - skill_id: react-effects-and-cleanup
   file: react-effects-and-cleanup.yaml
   fragment_count: 9
@@ -25,10 +25,10 @@ skills:
   fragment_count: 8
 - skill_id: react-server-components-and-suspense
   file: react-server-components-and-suspense.yaml
-  fragment_count: 10
+  fragment_count: 13
 - skill_id: react-rendering-keys-and-memoization
   file: react-rendering-keys-and-memoization.yaml
-  fragment_count: 10
+  fragment_count: 9
 - skill_id: react-error-boundaries
   file: react-error-boundaries.yaml
   fragment_count: 9

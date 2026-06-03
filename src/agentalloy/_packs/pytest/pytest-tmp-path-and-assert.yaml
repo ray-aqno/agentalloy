@@ -9,8 +9,8 @@ domain_tags:
   - assertions
   - introspection
 always_apply: false
-phase_scope: null
-category_scope: null
+phase_scope: [build, review]
+category_scope: [tooling]
 author: navistone
 change_summary: initial authoring draft
 raw_prose: |

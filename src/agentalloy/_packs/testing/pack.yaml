@@ -52,6 +52,8 @@ skills:
 - skill_id: testing-tdd-cycle
   file: testing-tdd-cycle.yaml
   fragment_count: 8
+  deprecated: true
+  superseded_by: test-driven-development
 - skill_id: testing-test-data-builders
   file: testing-test-data-builders.yaml
   fragment_count: 8

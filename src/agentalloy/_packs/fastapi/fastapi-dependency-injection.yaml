@@ -10,7 +10,7 @@ domain_tags:
   - annotated-injection
   - router-level-dependencies
 always_apply: false
-phase_scope: null
+phase_scope: [build]
 category_scope: framework
 author: navistone
 change_summary: "Initial authoring 2026-05-06 — scaffolded with citations against fastapi.tiangolo.com docs (tutorial/dependencies, sub-dependencies, dependencies-with-yield, global-dependencies, classes-as-dependencies). Not a verbatim copy of upstream prose."

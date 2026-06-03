@@ -10,8 +10,8 @@ domain_tags:
   - type transformation
   - object manipulation
 always_apply: false
-phase_scope: null
-category_scope: null
+phase_scope: [build]
+category_scope: [language]
 author: authoring-agent
 change_summary: initial authoring draft
 raw_prose: |

@@ -5,7 +5,7 @@ category: quality
 skill_class: domain
 domain_tags: [unit-test-attribute, integration-test-tree, doc-test-runnable, cfg-test-conditional, should-panic-attribute]
 always_apply: false
-phase_scope: null
+phase_scope: [build, review]
 category_scope: language
 author: navistone
 change_summary: |

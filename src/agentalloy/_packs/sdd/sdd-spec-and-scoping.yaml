@@ -10,8 +10,8 @@ domain_tags:
 - scoping
 - user-intent
 always_apply: false
-phase_scope: null
-category_scope: null
+phase_scope: [design]
+category_scope: [process]
 author: authoring-agent
 change_summary: initial authoring draft
 raw_prose: |

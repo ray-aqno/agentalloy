@@ -10,8 +10,8 @@ domain_tags:
 - documents
 - jsonpath
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [infrastructure]
 author: navistone
 change_summary: hand-authored Opus expansion
 raw_prose: |

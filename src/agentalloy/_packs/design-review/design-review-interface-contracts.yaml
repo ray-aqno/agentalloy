@@ -10,8 +10,8 @@ domain_tags:
   - deprecation-planning
   - one-version-rule
 always_apply: false
-phase_scope: null
-category_scope: null
+phase_scope: [design, review]
+category_scope: [process]
 author: navistone
 change_summary: machine authoring contract for pending-qa pipeline
 raw_prose: |

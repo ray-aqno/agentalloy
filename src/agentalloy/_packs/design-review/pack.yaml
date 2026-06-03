@@ -21,4 +21,4 @@ skills:
   fragment_count: 19
 - skill_id: design-review-rfc-and-adrs
   file: design-review-rfc-and-adrs.yaml
-  fragment_count: 14
+  fragment_count: 19

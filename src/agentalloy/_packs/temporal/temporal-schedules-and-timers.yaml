@@ -9,8 +9,8 @@ domain_tags:
   - timers
   - timeouts
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [ops]
 author: authoring-agent
 change_summary: initial authoring draft
 raw_prose: |

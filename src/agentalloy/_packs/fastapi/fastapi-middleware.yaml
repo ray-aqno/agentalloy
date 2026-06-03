@@ -10,10 +10,13 @@ domain_tags:
 - request-pipeline
 - cross-cutting
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [framework]
 author: navistone
-change_summary: hand-authored Opus expansion
+deprecated: true
+superseded_by: fastapi-middleware-patterns
+change_summary: |
+  hand-authored Opus expansion. Deprecated 2026-06-03: superseded by fastapi-middleware-patterns. Unique short-circuiting and security-headers content was absorbed into the keeper.
 raw_prose: |
   # FastAPI Middleware
 

@@ -10,8 +10,8 @@ domain_tags:
 - stubs
 - vitest
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build, review]
+category_scope: [tooling]
 author: navistone
 change_summary: hand-authored Opus source after 14B failed structural authoring
 raw_prose: |-

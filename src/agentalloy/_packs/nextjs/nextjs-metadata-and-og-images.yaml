@@ -5,7 +5,7 @@ category: engineering
 skill_class: domain
 domain_tags: [static-metadata-export, generatemetadata-async, opengraph-image-imageresponse, sitemap-route, robots-route]
 always_apply: false
-phase_scope: null
+phase_scope: [build]
 category_scope: framework
 author: navistone
 change_summary: |

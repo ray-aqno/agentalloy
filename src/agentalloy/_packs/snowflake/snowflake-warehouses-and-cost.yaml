@@ -9,11 +9,14 @@ domain_tags:
   - sizing
   - scaling
   - credit consumption
+  - snowflake
+  - resource monitors
+  - account usage
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [infrastructure]
 author: authoring-agent
-change_summary: initial authoring draft
+change_summary: 'initial authoring draft; merged 2026-06-03: absorbed unique content from snowflake-cost-monitoring (superseded_by: snowflake-cost-monitoring)'
 raw_prose: |
   # Snowflake Virtual Warehouses and Cost
 
@@ -189,6 +192,135 @@ raw_prose: |
   >
   > For information about cost implications of changing the RESOURCE_CONSTRAINT property, see
   > [considerations for changing RESOURCE_CONSTRAINT while a warehouse is running or suspended](warehouses-gen2.md).
+
+  ---
+
+  ## Where Credits Go — ACCOUNT_USAGE Schema
+
+  ```sql
+  -- Credits by warehouse, last 30 days
+  SELECT
+    warehouse_name,
+    SUM(credits_used) AS credits
+  FROM SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY
+  WHERE start_time > CURRENT_DATE - 30
+  GROUP BY 1
+  ORDER BY credits DESC;
+  ```
+
+  ```sql
+  -- Credits by user / role
+  SELECT
+    user_name,
+    role_name,
+    SUM(credits_used_cloud_services + execution_time / 1000 / 60 / 60 * warehouse_size_credits) AS credits
+  FROM SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY q
+  JOIN warehouse_sizes ws ON q.warehouse_size = ws.size
+  WHERE start_time > CURRENT_DATE - 30
+  GROUP BY 1, 2
+  ORDER BY credits DESC;
+  ```
+
+  Attribute spend to teams via warehouse naming convention (`analytics_wh`, `eng_wh`, `prod_wh`) and role usage.
+
+  ## Resource Monitors
+
+  ```sql
+  CREATE RESOURCE MONITOR analytics_monthly
+    CREDIT_QUOTA = 1000
+    FREQUENCY = MONTHLY
+    START_TIMESTAMP = IMMEDIATELY
+    TRIGGERS
+      ON 75 PERCENT DO NOTIFY
+      ON 90 PERCENT DO NOTIFY
+      ON 100 PERCENT DO SUSPEND
+      ON 120 PERCENT DO SUSPEND_IMMEDIATE;
+
+  ALTER WAREHOUSE analytics_wh SET RESOURCE_MONITOR = analytics_monthly;
+  ```
+
+  Notifies stakeholders at 75% / 90%; suspends the warehouse at 100% (running queries finish) or immediately at 120% (kills running queries).
+
+  Attaching to multiple warehouses caps shared spend. The pattern: per-team monitors with a budget; org-level monitor as a backstop.
+
+  ## Right-Sizing Warehouses
+
+  Bigger warehouses run queries faster but cost more per second. The sweet spot is when query duration is dominated by inherent complexity, not data scan time.
+
+  ```sql
+  -- Average duration per warehouse
+  SELECT
+    warehouse_size,
+    AVG(execution_time / 1000.0) AS avg_seconds,
+    AVG(bytes_scanned / 1024.0 / 1024 / 1024) AS avg_gb_scanned,
+    COUNT(*) AS queries
+  FROM SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY
+  WHERE start_time > CURRENT_DATE - 7
+  GROUP BY 1;
+  ```
+
+  If queries on Small finish in <30s and you bump to Medium, you'll often see ~50% reduction in time at 100% more cost — net negative.
+
+  ## Multi-Cluster Warehouses
+
+  For high concurrency:
+
+  ```sql
+  ALTER WAREHOUSE analytics_wh
+    SET MIN_CLUSTER_COUNT = 1
+    MAX_CLUSTER_COUNT = 5
+    SCALING_POLICY = 'STANDARD';
+  ```
+
+  Adds clusters when queue grows. STANDARD policy is conservative; ECONOMY waits longer before adding. Multi-cluster prevents one team's slow queries from blocking another in shared analytics warehouses.
+
+  ## Auto-Suspend and Auto-Resume
+
+  ```sql
+  ALTER WAREHOUSE small_wh
+    SET AUTO_SUSPEND = 60      -- seconds
+    AUTO_RESUME = TRUE;
+  ```
+
+  Default is 600 seconds (10 minutes) — too long for many use cases. Set to 60 for warehouses serving sporadic queries; pay only for actual work.
+
+  ## Query Result Caching
+
+  Identical queries within 24 hours return from cache for free:
+
+  ```sql
+  SET USE_CACHED_RESULT = TRUE;  -- session level
+  ALTER ACCOUNT SET USE_CACHED_RESULT = TRUE;  -- account level (default)
+  ```
+
+  If a dashboard hits the same dim_orders rollup 50 times an hour, 49 of those are free. Always-on by default.
+
+  ## Materialized Views and Dynamic Tables
+
+  For repeatedly-recomputed aggregations, materialize:
+
+  - **Materialized view** — Snowflake refreshes on source changes; compute cost when source updates.
+  - **Dynamic table** — declarative incremental; same idea but more flexible.
+
+  Cheaper than running the same aggregation on every query if it's expensive.
+
+  ## Common Pitfalls
+
+  - **One giant warehouse for everything.** No team-level cost attribution; one bad query slows everyone. Split per-team or per-workload.
+  - **Auto-suspend at the default 10 minutes.** A query at 9:00 keeps the warehouse alive to 9:10 for free, but if the next query is at 9:15, you paid 10 minutes for nothing.
+  - **No Resource Monitor.** A runaway COPY INTO from a misconfigured pipeline burns through monthly budget overnight.
+  - **Big warehouse for small queries.** A 4X-Large running a SELECT * LIMIT 10 — overkill, expensive.
+  - **Result cache disabled.** Identical queries cost compute every time. Re-enable.
+
+  ## Verification
+
+  Healthy Snowflake spend:
+
+  - ACCOUNT_USAGE shows steady-state credits matching budget.
+  - Resource Monitors at 50-75% of monthly budget by mid-month.
+  - No 'mystery warehouses' burning credits without owner.
+  - Per-team attribution visible via warehouse naming + role usage.
+  - Right-sized warehouses: avg query duration in expected range for warehouse size.
 fragments:
   - fragment_type: setup
     sequence: 1
@@ -249,3 +381,143 @@ fragments:
 
       4X-Large:
       :   Bills 128 credits per full, continuous hour that each cluster runs.
+  - fragment_type: execution
+    sequence: 8
+    content: |-
+      ## Where Credits Go — ACCOUNT_USAGE Schema
+
+      ```sql
+      -- Credits by warehouse, last 30 days
+      SELECT
+        warehouse_name,
+        SUM(credits_used) AS credits
+      FROM SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY
+      WHERE start_time > CURRENT_DATE - 30
+      GROUP BY 1
+      ORDER BY credits DESC;
+      ```
+
+      ```sql
+      -- Credits by user / role
+      SELECT
+        user_name,
+        role_name,
+        SUM(credits_used_cloud_services + execution_time / 1000 / 60 / 60 * warehouse_size_credits) AS credits
+      FROM SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY q
+      JOIN warehouse_sizes ws ON q.warehouse_size = ws.size
+      WHERE start_time > CURRENT_DATE - 30
+      GROUP BY 1, 2
+      ORDER BY credits DESC;
+      ```
+
+      Attribute spend to teams via warehouse naming convention (`analytics_wh`, `eng_wh`, `prod_wh`) and role usage.
+  - fragment_type: execution
+    sequence: 9
+    content: |-
+      ## Resource Monitors
+
+      ```sql
+      CREATE RESOURCE MONITOR analytics_monthly
+        CREDIT_QUOTA = 1000
+        FREQUENCY = MONTHLY
+        START_TIMESTAMP = IMMEDIATELY
+        TRIGGERS
+          ON 75 PERCENT DO NOTIFY
+          ON 90 PERCENT DO NOTIFY
+          ON 100 PERCENT DO SUSPEND
+          ON 120 PERCENT DO SUSPEND_IMMEDIATE;
+
+      ALTER WAREHOUSE analytics_wh SET RESOURCE_MONITOR = analytics_monthly;
+      ```
+
+      Notifies stakeholders at 75% / 90%; suspends the warehouse at 100% (running queries finish) or immediately at 120% (kills running queries). Attaching to multiple warehouses caps shared spend.
+  - fragment_type: execution
+    sequence: 10
+    content: |-
+      ## Right-Sizing Warehouses
+
+      Bigger warehouses run queries faster but cost more per second. The sweet spot is when query duration is dominated by inherent complexity, not data scan time.
+
+      ```sql
+      SELECT
+        warehouse_size,
+        AVG(execution_time / 1000.0) AS avg_seconds,
+        AVG(bytes_scanned / 1024.0 / 1024 / 1024) AS avg_gb_scanned,
+        COUNT(*) AS queries
+      FROM SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY
+      WHERE start_time > CURRENT_DATE - 7
+      GROUP BY 1;
+      ```
+
+      If queries on Small finish in <30s and you bump to Medium, you'll often see ~50% reduction in time at 100% more cost — net negative.
+  - fragment_type: execution
+    sequence: 11
+    content: |-
+      ## Multi-Cluster Warehouses
+
+      For high concurrency:
+
+      ```sql
+      ALTER WAREHOUSE analytics_wh
+        SET MIN_CLUSTER_COUNT = 1
+        MAX_CLUSTER_COUNT = 5
+        SCALING_POLICY = 'STANDARD';
+      ```
+
+      Adds clusters when queue grows. STANDARD policy is conservative; ECONOMY waits longer before adding. Multi-cluster prevents one team's slow queries from blocking another in shared analytics warehouses.
+  - fragment_type: execution
+    sequence: 12
+    content: |-
+      ## Auto-Suspend and Auto-Resume
+
+      ```sql
+      ALTER WAREHOUSE small_wh
+        SET AUTO_SUSPEND = 60      -- seconds
+        AUTO_RESUME = TRUE;
+      ```
+
+      Default is 600 seconds (10 minutes) — too long for many use cases. Set to 60 for warehouses serving sporadic queries; pay only for actual work.
+  - fragment_type: execution
+    sequence: 13
+    content: |-
+      ## Query Result Caching
+
+      Identical queries within 24 hours return from cache for free:
+
+      ```sql
+      SET USE_CACHED_RESULT = TRUE;  -- session level
+      ALTER ACCOUNT SET USE_CACHED_RESULT = TRUE;  -- account level (default)
+      ```
+
+      If a dashboard hits the same dim_orders rollup 50 times an hour, 49 of those are free. Always-on by default.
+  - fragment_type: execution
+    sequence: 14
+    content: |-
+      ## Materialized Views and Dynamic Tables
+
+      For repeatedly-recomputed aggregations, materialize:
+
+      - **Materialized view** — Snowflake refreshes on source changes; compute cost when source updates.
+      - **Dynamic table** — declarative incremental; same idea but more flexible.
+
+      Cheaper than running the same aggregation on every query if it's expensive.
+  - fragment_type: guardrail
+    sequence: 15
+    content: |-
+      ## Common Pitfalls
+
+      - **One giant warehouse for everything.** No team-level cost attribution; one bad query slows everyone. Split per-team or per-workload.
+      - **Auto-suspend at the default 10 minutes.** A query at 9:00 keeps the warehouse alive to 9:10 for free, but if the next query is at 9:15, you paid 10 minutes for nothing.
+      - **No Resource Monitor.** A runaway COPY INTO from a misconfigured pipeline burns through monthly budget overnight.
+      - **Big warehouse for small queries.** A 4X-Large running a SELECT * LIMIT 10 — overkill, expensive.
+      - **Result cache disabled.** Identical queries cost compute every time. Re-enable.
+  - fragment_type: verification
+    sequence: 16
+    content: |-
+      ## Verification — Healthy Snowflake spend
+
+      - ACCOUNT_USAGE shows steady-state credits matching budget.
+      - Resource Monitors at 50-75% of monthly budget by mid-month.
+      - No 'mystery warehouses' burning credits without owner.
+      - Per-team attribution visible via warehouse naming + role usage.
+      - Right-sized warehouses: avg query duration in expected range for warehouse size.

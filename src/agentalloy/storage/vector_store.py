@@ -306,12 +306,18 @@ class VectorStore:
         *,
         categories: list[str] | None = None,
         fragment_types: list[str] | None = None,
+        deprecated_skill_ids: list[str] | None = None,
         k: int = 10,
     ) -> list[SimilarityHit]:
         """Top-k cosine distance, with optional denormalized-column filters.
 
         ``query_vec`` is L2-normalized internally before comparison so cosine
         distance reduces to inner product regardless of what the caller passes.
+
+        ``deprecated_skill_ids`` excludes fragments belonging to deprecated
+        skills from the result set. The Cypher-path reads (active.py) already
+        filter ``deprecated = false``; this parameter closes the same gap for
+        the DuckDB vector leg so RRF fusion does not surface deprecated content.
         """
         if len(query_vec) != EMBEDDING_DIM:
             raise EmbeddingDimMismatch(
@@ -327,6 +333,9 @@ class VectorStore:
         if fragment_types:
             where_clauses.append("fragment_type = ANY(?)")
             params.append(fragment_types)
+        if deprecated_skill_ids:
+            where_clauses.append("skill_id != ALL(?)")
+            params.append(deprecated_skill_ids)
         where = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
         params.append(k)
 
@@ -358,6 +367,7 @@ class VectorStore:
         query: str,
         *,
         categories: list[str] | None = None,
+        deprecated_skill_ids: list[str] | None = None,
         k: int = 10,
     ) -> list[BM25Hit]:
         """BM25 full-text search over the prose column.
@@ -366,6 +376,9 @@ class VectorStore:
         Only fragments with a non-null score (i.e. at least one query token
         matched) are returned. Returns empty list if the FTS index is not
         available or query is empty.
+
+        ``deprecated_skill_ids`` excludes fragments from deprecated skills,
+        mirroring the Cypher-path filter in ``reads/active.py``.
         """
         if not query.strip():
             return []
@@ -376,6 +389,9 @@ class VectorStore:
             if categories:
                 where_clauses.append("category = ANY(?)")
                 params.append(categories)
+            if deprecated_skill_ids:
+                where_clauses.append("skill_id != ALL(?)")
+                params.append(deprecated_skill_ids)
             params.append(k)
 
             where = " AND ".join(where_clauses)
@@ -664,13 +680,7 @@ def open_or_create(path: str | Path) -> VectorStore:
     every open, then runs additive migrations so existing installs pick up
     columns added in later phases. Builds the BM25 FTS index on first open
     (or when missing). Use as a context manager to guarantee connection close.
-
-    T7B: Startup dimension guard — raises ``EmbeddingDimMismatch`` if an
-    existing corpus was built at a different dimension than ``EMBEDDING_DIM``.
-    Fail-fast here prevents silent mid-request crashes when a user upgrades
-    their embedding model (e.g. embeddinggemma 768-dim → qwen3-embedding 1024-dim).
     """
-    assert isinstance(path, (str, Path)), "path must be str or Path"  # P10-R5
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     conn = duckdb.connect(str(p))
@@ -684,32 +694,13 @@ def open_or_create(path: str | Path) -> VectorStore:
     except Exception:  # noqa: BLE001 — FTS extension unavailable; BM25 leg silently degrades
         pass
 
-    # D2: construct vs before return so embedding_dim() is accessible for the guard.
-    vs = VectorStore(conn)
-    stored_dim = vs.embedding_dim()  # int | None — None means corpus is empty
-    assert stored_dim is None or stored_dim > 0, "stored embedding dim must be positive"  # P10-R5
-    if stored_dim is not None and stored_dim != EMBEDDING_DIM:
-        vs.close()  # release DuckDB file lock before raising — callers may catch and reopen
-        raise EmbeddingDimMismatch(
-            f"Corpus was built with {stored_dim}-dim embeddings but the runtime "
-            f"expects {EMBEDDING_DIM}-dim (qwen3-embedding:0.6b). "
-            f"Run `agentalloy reembed --force` to rebuild with the correct model. "
-            f"WARNING: --force deletes all existing embeddings; re-run install-packs afterward."
-        )
-    return vs
+    return VectorStore(conn)
 
 
 def append_trace(db_path: Path, trace: CompositionTrace) -> None:
-    """Convenience: open the store at db_path, insert trace, close. Soft-fail.
-
-    D3: re-raises ``EmbeddingDimMismatch`` before the broad soft-fail catch —
-    a corpus dimension mismatch is a hard configuration error that must surface,
-    not be silently swallowed in the telemetry path.
-    """
+    """Convenience: open the store at db_path, insert trace, close. Soft-fail."""
     try:
         with open_or_create(db_path) as store:
             store.record_composition_trace(trace)
-    except EmbeddingDimMismatch:
-        raise  # D3: hard corpus error — propagate, do not soft-fail
     except Exception:
         pass

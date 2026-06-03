@@ -9,11 +9,15 @@ domain_tags:
   - scripting
   - functions
   - replication
+  - atomic-operations
+  - evalsha
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [infrastructure]
 author: navistone
-change_summary: initial authoring draft
+change_summary: |
+  initial authoring draft
+  merged 2026-06-03: absorbed unique content from redis-lua-scripting (superseded_by: redis-lua-scripting)
 raw_prose: |
   # Redis Lua Functions (FUNCTION LOAD)
 
@@ -102,6 +106,82 @@ raw_prose: |
   These semantics mean that all of the script's effects either have yet to happen or had already happened.
   The blocking semantics of an executed function apply to all connected clients at all times.
   Because running a function blocks the Redis server, functions are meant to finish executing quickly, so you should avoid using long-running functions.
+
+  ## EVAL (Redis pre-7.0 scripting)
+
+  For Redis versions before 7.0 — or when working with ephemeral scripts that do not need durability/replication — EVAL runs Lua server-side. The script executes atomically with respect to other Redis operations. Use for compare-and-swap patterns, conditional updates, multi-key atomic transitions. Scripts must be deterministic (same input → same output).
+
+  ### Getting started with EVAL
+
+  We'll start scripting with Redis by using the [`EVAL`](https://redis.io/docs/latest/commands/eval) command.
+
+  Here's our first example:
+
+  ```
+  > EVAL "return 'Hello, scripting!'" 0
+  "Hello, scripting!"
+  ```
+
+  In this example, [`EVAL`](https://redis.io/docs/latest/commands/eval) takes two arguments.
+  The first argument is a string that consists of the script's Lua source code.
+  The script doesn't need to include any definitions of Lua function.
+  It is just a Lua program that will run in the Redis engine's context.
+
+  The second argument is the number of arguments that follow the script's body, starting from the third argument, representing Redis key names.
+  In this example, we used the value _0_ because we didn't provide the script with any arguments, whether the names of keys or not.
+
+  ### Script parameterization
+
+  It is possible, although highly ill-advised, to have the application dynamically generate script source code per its needs.
+  For example, the application could send these two entirely different, but at the same time perfectly identical scripts:
+
+  ```
+  redis> EVAL "return 'Hello'" 0
+  "Hello"
+  redis> EVAL "return 'Scripting!'" 0
+  "Scripting!"
+  ```
+
+  Although this mode of operation isn't blocked by Redis, it is an anti-pattern due to script cache considerations. Instead of having your application generate subtle variations of the same scripts, you can parametrize them and pass any arguments needed to execute them.
+
+  The following example demonstrates how to achieve the same effects as above, but via parameterization:
+
+  ```
+  redis> EVAL "return ARGV[1]" 0 Hello
+  "Hello"
+  redis> EVAL "return ARGV[1]" 0 Parameterization!
+  "Parameterization!"
+  ```
+
+  At this point, it is essential to understand the distinction Redis makes between input arguments that are names of keys and those that aren't.
+
+  **Important:** to ensure the correct execution of scripts, both in standalone and clustered deployments, all names of keys that a script accesses must be explicitly provided as input key arguments. The script **should only** access keys whose names are given as input arguments. Scripts **should never** access keys with programmatically-generated names or based on the contents of data structures stored in the database.
+
+  Any input to the function that isn't the name of a key is a regular input argument. The execution context makes arguments available to the script through [_KEYS_](https://redis.io/docs/latest/develop/programmability/lua-api#the-keys-global-variable) and [_ARGV_](https://redis.io/docs/latest/develop/programmability/lua-api#the-argv-global-variable) global runtime variables.
+
+  ```
+  redis> EVAL "return { KEYS[1], KEYS[2], ARGV[1], ARGV[2], ARGV[3] }" 2 key1 key2 arg1 arg2 arg3
+  1) "key1"
+  2) "key2"
+  3) "arg1"
+  4) "arg2"
+  5) "arg3"
+  ```
+
+  ### Interacting with Redis from a script
+
+  It is possible to call Redis commands from a Lua script either via [`redis.call()`](https://redis.io/docs/latest/develop/programmability/lua-api#redis.call) or [`redis.pcall()`](https://redis.io/docs/latest/develop/programmability/lua-api#redis.pcall).
+
+  The two are nearly identical. Both execute a Redis command along with its provided arguments, if these represent a well-formed command. However, the difference lies in error handling. Errors raised from calling `redis.call()` are returned directly to the client. Errors encountered when calling `redis.pcall()` are returned to the script's execution context instead for possible handling.
+
+  ```
+  > EVAL "return redis.call('SET', KEYS[1], ARGV[1])" 1 foo bar
+  OK
+  ```
+
+  The above script accepts one key name and one value as its input arguments. When executed, the script calls the [`SET`](https://redis.io/docs/latest/commands/set) command to set the input key, _foo_, with the string value "bar".
+
+  EVALSHA optimization: by first calling [`SCRIPT LOAD`](https://redis.io/docs/latest/commands/script-load) to obtain the script's SHA1, the application can invoke it repeatedly afterward with its digest alone — avoiding network and compilation overhead per call.
 
 fragments:
   - fragment_type: setup
@@ -202,3 +282,59 @@ fragments:
       ## Execution
 
       The execution of Redis Functions is atomic and blocks all server activities during its entire time. This means that all effects either have yet to happen or had already happened. The blocking semantics apply to all connected clients at all times, so functions should be designed to finish quickly.
+  - fragment_type: execution
+    sequence: 5
+    content: |
+      ## EVAL (Redis pre-7.0 scripting) — getting started
+
+      For Redis versions before 7.0 — or when working with ephemeral scripts that do not need durability/replication — EVAL runs Lua server-side. The script executes atomically with respect to other Redis operations. Use for compare-and-swap patterns, conditional updates, multi-key atomic transitions. Scripts must be deterministic (same input → same output).
+
+      We'll start scripting with Redis by using the [`EVAL`](https://redis.io/docs/latest/commands/eval) command.
+
+      ```
+      > EVAL "return 'Hello, scripting!'" 0
+      "Hello, scripting!"
+      ```
+
+      In this example, [`EVAL`](https://redis.io/docs/latest/commands/eval) takes two arguments. The first argument is a string that consists of the script's Lua source code. The second argument is the number of arguments that follow the script's body, starting from the third argument, representing Redis key names.
+  - fragment_type: execution
+    sequence: 6
+    content: |
+      ## Script parameterization (EVAL)
+
+      It is possible, although highly ill-advised, to have the application dynamically generate script source code per its needs. This mode of operation is an anti-pattern due to script cache considerations. Instead of having your application generate subtle variations of the same scripts, you can parametrize them and pass any arguments needed to execute them.
+
+      ```
+      redis> EVAL "return ARGV[1]" 0 Hello
+      "Hello"
+      redis> EVAL "return ARGV[1]" 0 Parameterization!
+      "Parameterization!"
+      ```
+
+      **Important:** to ensure the correct execution of scripts, both in standalone and clustered deployments, all names of keys that a script accesses must be explicitly provided as input key arguments. The script **should only** access keys whose names are given as input arguments. Scripts **should never** access keys with programmatically-generated names or based on the contents of data structures stored in the database.
+
+      The execution context makes arguments available to the script through [_KEYS_](https://redis.io/docs/latest/develop/programmability/lua-api#the-keys-global-variable) and [_ARGV_](https://redis.io/docs/latest/develop/programmability/lua-api#the-argv-global-variable) global runtime variables.
+
+      ```
+      redis> EVAL "return { KEYS[1], KEYS[2], ARGV[1], ARGV[2], ARGV[3] }" 2 key1 key2 arg1 arg2 arg3
+      1) "key1"
+      2) "key2"
+      3) "arg1"
+      4) "arg2"
+      5) "arg3"
+      ```
+  - fragment_type: execution
+    sequence: 7
+    content: |
+      ## Interacting with Redis from a script + EVALSHA
+
+      It is possible to call Redis commands from a Lua script either via [`redis.call()`](https://redis.io/docs/latest/develop/programmability/lua-api#redis.call) or [`redis.pcall()`](https://redis.io/docs/latest/develop/programmability/lua-api#redis.pcall).
+
+      Both execute a Redis command along with its provided arguments. The difference lies in error handling. Errors raised from calling `redis.call()` are returned directly to the client. Errors encountered when calling `redis.pcall()` are returned to the script's execution context instead for possible handling.
+
+      ```
+      > EVAL "return redis.call('SET', KEYS[1], ARGV[1])" 1 foo bar
+      OK
+      ```
+
+      EVALSHA optimization: by first calling [`SCRIPT LOAD`](https://redis.io/docs/latest/commands/script-load) to obtain the script's SHA1, the application can invoke it repeatedly afterward with its digest alone — avoiding network and compilation overhead per call. The script cache can become lost (after `SCRIPT FLUSH`, restart, or replica failover), so the application is responsible for reloading scripts during runtime if any are missing.

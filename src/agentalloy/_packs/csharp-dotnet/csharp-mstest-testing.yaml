@@ -5,7 +5,7 @@ category: quality
 skill_class: domain
 domain_tags: [test-class-attribute, data-row-parameterized, assert-throws-async, test-context-cancellation, assembly-initialize-cleanup]
 always_apply: false
-phase_scope: null
+phase_scope: [build, review]
 category_scope: language
 author: navistone
 change_summary: |

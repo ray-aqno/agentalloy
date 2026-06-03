@@ -10,8 +10,8 @@ domain_tags:
   - lifecycle-events
   - robust-cli-tools
 always_apply: false
-phase_scope: null
-category_scope: null
+phase_scope: [build]
+category_scope: [language]
 author: authoring-agent
 change_summary: machine authoring contract for pending-qa pipeline
 raw_prose: |

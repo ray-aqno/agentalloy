@@ -9,8 +9,8 @@ domain_tags:
   - gcp
   - vault
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [ops]
 author: authoring-agent
 change_summary: corrected draft based on critic feedback
 raw_prose: |

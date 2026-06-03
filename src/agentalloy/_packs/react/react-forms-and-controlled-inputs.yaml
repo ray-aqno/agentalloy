@@ -10,8 +10,8 @@ domain_tags:
 - input-handling
 - validation
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [framework]
 author: navistone
 change_summary: hand-authored Opus expansion (14B over-fragmented)
 raw_prose: |

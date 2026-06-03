@@ -10,8 +10,8 @@ domain_tags:
   - defect-spotting
   - triage-checklist
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [review]
+category_scope: [process]
 author: authoring-agent
 change_summary: initial authoring draft
 raw_prose: |

@@ -23,7 +23,7 @@ skills:
   fragment_count: 10
 - skill_id: node-built-in-test-runner
   file: node-built-in-test-runner.yaml
-  fragment_count: 11
+  fragment_count: 13
 - skill_id: node-error-handling-and-process
   file: node-error-handling-and-process.yaml
   fragment_count: 11

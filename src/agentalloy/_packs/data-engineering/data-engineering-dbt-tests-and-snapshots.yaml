@@ -10,10 +10,10 @@ domain_tags:
   - data quality
   - SCD Type 2
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [infrastructure]
 author: authoring-agent
-change_summary: initial authoring draft
+change_summary: 'initial authoring draft; merged 2026-06-03: absorbed dbt snapshot implementation from data-engineering-slowly-changing-dimensions'
 raw_prose: |
   # dbt — Tests and Snapshots
 
@@ -139,6 +139,47 @@ raw_prose: |
   | [unique_key](/reference/resource-configs/unique_key) | A <Term id="primary-key" /> column(s) (string or array) or expression for the record | Yes |  `id` or `[order_id, product_id]` |
   | [check_cols](/reference/resource-configs/check_cols) | If using the `check` strategy, then the columns to check | Only if using the `check` strategy | ["status"] |
   | [updated_at](/reference/resource-configs/update
+
+  ## Implementing snapshots in dbt (SCD Type 2)
+
+  dbt's snapshot is purpose-built for Type 2:
+
+  ```sql
+  -- snapshots/customers.sql
+  {% snapshot customers_snapshot %}
+
+  {{
+      config(
+          target_schema='snapshots',
+          unique_key='customer_id',
+          strategy='timestamp',
+          updated_at='updated_at',
+      )
+  }}
+
+  SELECT * FROM {{ source('app', 'customers') }}
+
+  {% endsnapshot %}
+  ```
+
+  Each `dbt snapshot` run reads the current source, compares to the snapshot's last state, inserts new versions for changed rows, sets valid_to for previous versions. Schedule it (often hourly).
+
+  ## When Source Doesn't Have Change Timestamps
+
+  If the source table doesn't have `updated_at`, use the `check` strategy in dbt:
+
+  ```sql
+  {{
+      config(
+          target_schema='snapshots',
+          unique_key='customer_id',
+          strategy='check',
+          check_cols=['name', 'plan', 'country'],
+      )
+  }}
+  ```
+
+  dbt detects changes by comparing column values. Slower than timestamp-based but doesn't require source cooperation.
 fragments:
   - fragment_type: setup
     sequence: 1
@@ -267,3 +308,48 @@ fragments:
       | [unique_key](/reference/resource-configs/unique_key) | A <Term id="primary-key" /> column(s) (string or array) or expression for the record | Yes |  `id` or `[order_id, product_id]` |
       | [check_cols](/reference/resource-configs/check_cols) | If using the `check` strategy, then the columns to check | Only if using the `check` strategy | ["status"] |
       | [updated_at](/reference/resource-configs/update
+  - fragment_type: execution
+    sequence: 4
+    content: |
+      ## Implementing snapshots in dbt (SCD Type 2)
+
+      dbt's snapshot is purpose-built for Type 2:
+
+      ```sql
+      -- snapshots/customers.sql
+      {% snapshot customers_snapshot %}
+
+      {{
+          config(
+              target_schema='snapshots',
+              unique_key='customer_id',
+              strategy='timestamp',
+              updated_at='updated_at',
+          )
+      }}
+
+      SELECT * FROM {{ source('app', 'customers') }}
+
+      {% endsnapshot %}
+      ```
+
+      Each `dbt snapshot` run reads the current source, compares to the snapshot's last state, inserts new versions for changed rows, sets valid_to for previous versions. Schedule it (often hourly).
+  - fragment_type: rationale
+    sequence: 5
+    content: |
+      ## When Source Doesn't Have Change Timestamps
+
+      If the source table doesn't have `updated_at`, use the `check` strategy in dbt:
+
+      ```sql
+      {{
+          config(
+              target_schema='snapshots',
+              unique_key='customer_id',
+              strategy='check',
+              check_cols=['name', 'plan', 'country'],
+          )
+      }}
+      ```
+
+      dbt detects changes by comparing column values. Slower than timestamp-based but doesn't require source cooperation.

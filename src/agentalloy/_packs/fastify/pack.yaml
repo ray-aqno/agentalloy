@@ -35,7 +35,7 @@ skills:
   fragment_count: 9
 - skill_id: fastify-error-handling-deep
   file: fastify-error-handling-deep.yaml
-  fragment_count: 10
+  fragment_count: 11
 - skill_id: fastify-performance-tuning
   file: fastify-performance-tuning.yaml
   fragment_count: 11

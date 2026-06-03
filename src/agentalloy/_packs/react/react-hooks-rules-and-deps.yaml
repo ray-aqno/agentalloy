@@ -5,10 +5,11 @@ category: engineering
 skill_class: domain
 domain_tags: [rules-of-hooks, exhaustive-deps-lint, usememo-vs-usecallback, useref-mutable-box, usereducer-state-reducer]
 always_apply: false
-phase_scope: null
+phase_scope: [build]
 category_scope: framework
 author: navistone
 change_summary: |
+  merged 2026-06-03: absorbed useMemo/useCallback from react-rendering-keys-and-memoization — added the filtered-list + stable handler example.
   Initial authoring 2026-05-06. Sources — React built-in Hooks reference https://react.dev/reference/react/hooks, Rules of Hooks https://react.dev/reference/rules/rules-of-hooks, You Might Not Need an Effect https://react.dev/learn/you-might-not-need-an-effect, eslint-plugin-react-hooks exhaustive-deps lint https://react.dev/reference/eslint-plugin-react-hooks/lints/exhaustive-deps, Lifecycle of Reactive Effects https://react.dev/learn/lifecycle-of-reactive-effects (all verified 2026-05-06 against fixtures/upstream/registry.yaml entry react via tier-2 llms_url procedure). React 19+; React Compiler stable in 19. Skill scope: the Rules of Hooks (top-level call only, React-functions only, stable call order), `useState` setter semantics (no merge, functional updater, lazy init), `useEffect` lifecycle (commit, cleanup on re-run and unmount, deps-gated re-run, Strict-Mode dev double-invocation), the deps array discipline enforced by `react-hooks/exhaustive-deps`, `useMemo`/`useCallback` referential-identity use cases vs cargo-cult memoization (with a forward note on the React Compiler), `useRef` as a non-rendering mutable box, `useReducer` for co-dependent transitions, and the dominant anti-patterns (conditional hook calls, suppressing exhaustive-deps, object/array literals in deps, deriving state via Effect, reading `.current` during render). Out of scope: `useContext`, `useTransition`/`useDeferredValue`, `useSyncExternalStore`, `useEffectEvent`, custom hook composition patterns beyond a passing reference. Original authoring — scaffolded with citations against the React docs, not a verbatim copy of upstream prose.
 
 raw_prose: |
@@ -221,6 +222,27 @@ raw_prose: |
   - [ ] Every `useEffect` that opens a subscription, timer, or AbortController returns a cleanup function. Inventory with `grep -rn 'useEffect' src/`; confirm each callback either is trivially synchronous-and-pure (rare) or returns a `() => ...` cleanup.
   - [ ] React DevTools Profiler shows no component re-rendering on every parent commit when its props are referentially stable — confirms `React.memo` + `useCallback`/`useMemo` are wired correctly where used.
   - [ ] React Strict Mode is enabled in development (`<StrictMode>` wraps the app root). Components survive the dev-mode double mount/cleanup cycle without duplicating subscriptions, double-counting, or invalidating tokens.
+
+  ## `useMemo` and `useCallback` in list rendering: stabilizing props to memoized children
+
+  A second canonical use case for `useMemo`/`useCallback`: stabilizing the props of a `React.memo`-wrapped list row so the row can actually skip re-renders. `useMemo(fn, deps)` caches the result of `fn` between renders, recomputing only when a dep in `deps` changes (`Object.is` compare). `useCallback(fn, deps)` is the same idea for a function reference: the returned function is stable across renders unless deps change.
+
+  ```tsx
+  import { useMemo, useCallback } from 'react';
+
+  function TodoList({ todos, filter, onToggle }) {
+    const visible = useMemo(
+      () => todos.filter(t => filter === 'all' || (filter === 'open' && !t.done)),
+      [todos, filter]
+    );
+    const handleToggle = useCallback(id => onToggle(id), [onToggle]);
+    return visible.map(todo => (
+      <ItemRow key={todo.id} todo={todo} onToggle={handleToggle} />
+    ));
+  }
+  ```
+
+  Two reasons this is correct, not cargo-cult: (a) `handleToggle` is passed to a `React.memo`'d `ItemRow`, and an inline arrow `id => onToggle(id)` would defeat the `memo` by handing each row a fresh function identity every render; (b) the filter computation is keyed on `[todos, filter]`, so it skips work when neither changed. Wrap every value in `useMemo` and you pay bookkeeping cost for no benefit — reach for it for memoized-child props or profiled-expensive work.
 
 fragments:
   - sequence: 1
@@ -462,3 +484,27 @@ fragments:
       - [ ] Every `useEffect` that opens a subscription, timer, or AbortController returns a cleanup function. Inventory with `grep -rn 'useEffect' src/`; confirm each callback either is trivially synchronous-and-pure (rare) or returns a `() => ...` cleanup.
       - [ ] React DevTools Profiler shows no component re-rendering on every parent commit when its props are referentially stable — confirms `React.memo` + `useCallback`/`useMemo` are wired correctly where used.
       - [ ] React Strict Mode is enabled in development (`<StrictMode>` wraps the app root). Components survive the dev-mode double mount/cleanup cycle without duplicating subscriptions, double-counting, or invalidating tokens.
+
+  - sequence: 11
+    fragment_type: example
+    content: |
+      ## `useMemo` and `useCallback` in list rendering: stabilizing props to memoized children
+
+      A second canonical use case for `useMemo`/`useCallback`: stabilizing the props of a `React.memo`-wrapped list row so the row can actually skip re-renders. `useMemo(fn, deps)` caches the result of `fn` between renders, recomputing only when a dep in `deps` changes (`Object.is` compare). `useCallback(fn, deps)` is the same idea for a function reference: the returned function is stable across renders unless deps change.
+
+      ```tsx
+      import { useMemo, useCallback } from 'react';
+
+      function TodoList({ todos, filter, onToggle }) {
+        const visible = useMemo(
+          () => todos.filter(t => filter === 'all' || (filter === 'open' && !t.done)),
+          [todos, filter]
+        );
+        const handleToggle = useCallback(id => onToggle(id), [onToggle]);
+        return visible.map(todo => (
+          <ItemRow key={todo.id} todo={todo} onToggle={handleToggle} />
+        ));
+      }
+      ```
+
+      Two reasons this is correct, not cargo-cult: (a) `handleToggle` is passed to a `React.memo`'d `ItemRow`, and an inline arrow `id => onToggle(id)` would defeat the `memo` by handing each row a fresh function identity every render; (b) the filter computation is keyed on `[todos, filter]`, so it skips work when neither changed. Wrap every value in `useMemo` and you pay bookkeeping cost for no benefit — reach for it for memoized-child props or profiled-expensive work.

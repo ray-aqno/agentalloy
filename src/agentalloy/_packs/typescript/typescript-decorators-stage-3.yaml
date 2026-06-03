@@ -5,8 +5,8 @@ category: engineering
 skill_class: domain
 domain_tags: [typescript, decorators, class, method, accessor]
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [language]
 author: authoring-agent
 change_summary: initial authoring draft
 raw_prose: |

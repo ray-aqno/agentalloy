@@ -10,10 +10,12 @@ domain_tags:
   - union types
   - type guards
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [language]
 author: authoring-agent
-change_summary: initial authoring draft
+change_summary: superseded by typescript-narrowing-patterns (merged)
+deprecated: true
+superseded_by: typescript-narrowing-patterns
 raw_prose: |
   # TypeScript Narrowing and Control Flow
 

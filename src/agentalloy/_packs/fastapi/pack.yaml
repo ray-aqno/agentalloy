@@ -25,10 +25,10 @@ skills:
   fragment_count: 9
 - skill_id: fastapi-async-and-background-tasks
   file: fastapi-async-and-background-tasks.yaml
-  fragment_count: 10
+  fragment_count: 17
 - skill_id: fastapi-auth-and-security
   file: fastapi-auth-and-security.yaml
-  fragment_count: 10
+  fragment_count: 22
 - skill_id: fastapi-background-tasks-deep
   file: fastapi-background-tasks-deep.yaml
   fragment_count: 9
@@ -43,7 +43,7 @@ skills:
   fragment_count: 12
 - skill_id: fastapi-middleware-patterns
   file: fastapi-middleware-patterns.yaml
-  fragment_count: 8
+  fragment_count: 9
 - skill_id: fastapi-middleware
   file: fastapi-middleware.yaml
   fragment_count: 8

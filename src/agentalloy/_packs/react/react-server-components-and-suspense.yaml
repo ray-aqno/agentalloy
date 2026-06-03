@@ -3,12 +3,13 @@ skill_id: react-server-components-and-suspense
 canonical_name: React Server Components and Suspense (RSC, "use client", Streaming, use() for Promises)
 category: engineering
 skill_class: domain
-domain_tags: [server-component-async, use-client-boundary, suspense-fallback, use-promise-hook, streaming-error-fallback]
+domain_tags: [server-component-async, use-client-boundary, suspense-fallback, use-promise-hook, streaming-error-fallback, lazy-code-splitting, react-query-suspense-query, route-level-suspense]
 always_apply: false
-phase_scope: null
+phase_scope: [build]
 category_scope: framework
 author: navistone
 change_summary: |
+  merged 2026-06-03: absorbed unique content from react-suspense-and-streaming (superseded_by: react-suspense-and-streaming) — added lazy() code splitting, useSuspenseQuery integration, route-level Suspense, and the useEffect-doesn't-suspend note.
   Initial authoring 2026-05-06. Sources — React Server Components reference https://react.dev/reference/rsc/server-components, Suspense https://react.dev/reference/react/Suspense, 'use client' directive https://react.dev/reference/rsc/use-client, 'use server' directive https://react.dev/reference/rsc/use-server, Server Functions https://react.dev/reference/rsc/server-functions, use() hook https://react.dev/reference/react/use (all verified 2026-05-06 via tier-2 llms_url procedure against react.dev/llms-index). Skill scope: React 19+ Server Components rendered ahead of bundling on the server with `async`/`await` data access, `'use client'` as the module boundary that enters the client bundle, `'use server'` and Server Functions for client-callable mutations, `<Suspense>` boundaries with fallback rendering, streaming HTML out of order so slow data does not block the shell, the `use()` hook for reading promises and context during render, and Error Boundaries paired with Suspense for the data-error / data-loading split. Walks the boundary edge: a server component that imports a client component that imports a heavy library — the library still ships to the client because the client component crosses the boundary. Out of scope: Next.js App Router specifics, Remix-specific loaders, custom RSC bundler integration. Honest framing per R6 — RSC and `use()` are stable in React 19 (released December 2024) but the underlying APIs that bundlers and frameworks integrate against are explicitly NOT semver-stable in React 19.x per the upstream Server Functions docs; most users encounter RSC through a framework (Next.js App Router being dominant), not by wiring it themselves.
 
 raw_prose: |
@@ -234,6 +235,54 @@ raw_prose: |
   - Server Functions integrator APIs explicitly NOT semver-stable in React 19.x per react.dev/reference/rsc/server-functions, which recommends pinning React to a specific version when integrating as a bundler or framework (verified 2026-05-06).
   - `'use client'` and `'use server'` directive caveats (top-of-file placement, quote rules, comments allowed above) per react.dev/reference/rsc/use-client and react.dev/reference/rsc/use-server (verified 2026-05-06).
   - `use()` may be called in loops and conditionals, unlike standard hooks, per react.dev/reference/react/use Caveats (verified 2026-05-06).
+
+  ## Lazy code splitting with Suspense
+
+  `React.lazy()` defers loading a component module until it actually renders; `<Suspense>` shows the fallback while the chunk downloads. This is the standard route-level or feature-level code-splitting pattern, orthogonal to data-fetching Suspense.
+
+  ```tsx
+  import { lazy, Suspense } from 'react';
+  const AdminPanel = lazy(() => import('./AdminPanel'));
+
+  <Suspense fallback={<div>Loading admin...</div>}>
+    <AdminPanel />
+  </Suspense>
+  ```
+
+  The `lazy()` import call must return a Promise resolving to a module with a default export. Combine with route-level Suspense to keep initial bundles small without manual loading state.
+
+  ## Suspense-aware data libraries (React Query and similar)
+
+  Suspense is triggered by a child throwing a Promise. Plain `useEffect(() => fetch(...))` does NOT throw, so it does NOT trigger Suspense — the fallback never shows for that fetch. To make Suspense work for client-side data you need a Suspense-aware fetcher:
+
+  ```tsx
+  import { useSuspenseQuery } from '@tanstack/react-query';
+
+  function UserDetails({ id }: { id: string }) {
+    const { data: user } = useSuspenseQuery({
+      queryKey: ['user', id],
+      queryFn: () => fetchUser(id),
+    });
+    return <div>{user.name}</div>;
+  }
+  ```
+
+  `useSuspenseQuery` suspends while the query is pending; wrap the consumer in `<Suspense>` and no `isLoading` check is needed in the component body. Equivalent patterns exist in SWR, Relay, and the `use()`-with-Promise pattern from a Server Component. Ad-hoc `useState` + `useEffect` data fetches integrate via none of these and will not trigger Suspense.
+
+  ## Route-level Suspense
+
+  Route-level Suspense lets fast routes ship while slow ones stream their initial content. In React Router or Next.js you wrap the route tree (or a sub-tree) in a Suspense boundary with a page-level skeleton:
+
+  ```tsx
+  <Suspense fallback={<PageSkeleton />}>
+    <Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/heavy" element={<HeavyRoute />} />
+    </Routes>
+  </Suspense>
+  ```
+
+  Fast routes render immediately; navigation into `/heavy` shows `<PageSkeleton />` until that route's data and code are ready. Pair with feature-level Suspense boundaries inside each route for finer-grained streaming.
 
 fragments:
   - sequence: 1
@@ -488,3 +537,60 @@ fragments:
       - Server Functions integrator APIs explicitly NOT semver-stable in React 19.x per react.dev/reference/rsc/server-functions, which recommends pinning React to a specific version when integrating as a bundler or framework (verified 2026-05-06).
       - `'use client'` and `'use server'` directive caveats (top-of-file placement, quote rules, comments allowed above) per react.dev/reference/rsc/use-client and react.dev/reference/rsc/use-server (verified 2026-05-06).
       - `use()` may be called in loops and conditionals, unlike standard hooks, per react.dev/reference/react/use Caveats (verified 2026-05-06).
+
+  - sequence: 11
+    fragment_type: example
+    content: |
+      ## Lazy code splitting with Suspense
+
+      `React.lazy()` defers loading a component module until it actually renders; `<Suspense>` shows the fallback while the chunk downloads. This is the standard route-level or feature-level code-splitting pattern, orthogonal to data-fetching Suspense.
+
+      ```tsx
+      import { lazy, Suspense } from 'react';
+      const AdminPanel = lazy(() => import('./AdminPanel'));
+
+      <Suspense fallback={<div>Loading admin...</div>}>
+        <AdminPanel />
+      </Suspense>
+      ```
+
+      The `lazy()` import call must return a Promise resolving to a module with a default export. Combine with route-level Suspense to keep initial bundles small without manual loading state.
+
+  - sequence: 12
+    fragment_type: example
+    content: |
+      ## Suspense-aware data libraries (React Query and similar)
+
+      Suspense is triggered by a child throwing a Promise. Plain `useEffect(() => fetch(...))` does NOT throw, so it does NOT trigger Suspense — the fallback never shows for that fetch. To make Suspense work for client-side data you need a Suspense-aware fetcher:
+
+      ```tsx
+      import { useSuspenseQuery } from '@tanstack/react-query';
+
+      function UserDetails({ id }: { id: string }) {
+        const { data: user } = useSuspenseQuery({
+          queryKey: ['user', id],
+          queryFn: () => fetchUser(id),
+        });
+        return <div>{user.name}</div>;
+      }
+      ```
+
+      `useSuspenseQuery` suspends while the query is pending; wrap the consumer in `<Suspense>` and no `isLoading` check is needed in the component body. Equivalent patterns exist in SWR, Relay, and the `use()`-with-Promise pattern from a Server Component. Ad-hoc `useState` + `useEffect` data fetches integrate via none of these and will not trigger Suspense.
+
+  - sequence: 13
+    fragment_type: example
+    content: |
+      ## Route-level Suspense
+
+      Route-level Suspense lets fast routes ship while slow ones stream their initial content. In React Router or Next.js you wrap the route tree (or a sub-tree) in a Suspense boundary with a page-level skeleton:
+
+      ```tsx
+      <Suspense fallback={<PageSkeleton />}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/heavy" element={<HeavyRoute />} />
+        </Routes>
+      </Suspense>
+      ```
+
+      Fast routes render immediately; navigation into `/heavy` shows `<PageSkeleton />` until that route's data and code are ready. Pair with feature-level Suspense boundaries inside each route for finer-grained streaming.

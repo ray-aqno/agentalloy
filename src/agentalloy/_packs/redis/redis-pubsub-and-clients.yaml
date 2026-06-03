@@ -10,8 +10,8 @@ domain_tags:
   - connection-pooling
   - async-clients
 always_apply: false
-phase_scope: null
-category_scope: null
+phase_scope: [build]
+category_scope: [infrastructure]
 author: navistone
 change_summary: machine authoring contract for pending-qa pipeline
 raw_prose: |

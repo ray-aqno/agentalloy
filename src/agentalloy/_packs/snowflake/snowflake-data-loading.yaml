@@ -1,27 +1,27 @@
 skill_type: domain
 skill_id: snowflake-data-loading
-canonical_name: Snowflake Data Loading — COPY and Snowpipe
+canonical_name: Snowflake Data Loading — COPY INTO and Stages
 category: engineering
 skill_class: domain
 domain_tags:
   - data loading
   - snowflake
   - copy into
-  - snowpipe
+  - stages
   - file formats
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [infrastructure]
 author: authoring-agent
-change_summary: initial authoring draft
+change_summary: 'initial authoring draft; merged 2026-06-03: Snowpipe overview moved to snowflake-snowpipe-auto-ingest'
 raw_prose: |
-  # Snowflake Data Loading — COPY and Snowpipe
+  # Snowflake Data Loading — COPY INTO and Stages
 
   ## Overview
 
-  Snowflake supports two ingestion paths: bulk COPY INTO commands for batch loads from stages, and Snowpipe for continuous serverless ingestion triggered by cloud-storage events. Both support CSV, JSON, Parquet, Avro, ORC, and XML via FILE FORMAT objects. This skill covers both paths.
+  Snowflake bulk-ingests data via COPY INTO commands from stages (external S3/GCS/Azure or internal user/table/named stages). Supports CSV, JSON, Parquet, Avro, ORC, and XML via FILE FORMAT objects. For continuous serverless ingestion triggered by cloud-storage events, see snowflake-snowpipe-auto-ingest.
 
-  Sourced from https://docs.snowflake.com/en/user-guide/data-load-overview.html and https://docs.snowflake.com/en/user-guide/data-load-snowpipe-intro.html.
+  Sourced from https://docs.snowflake.com/en/user-guide/data-load-overview.html.
 
   > ## Documentation Index
   > Fetch the complete documentation index at: https://docs.snowflake.com/llms.txt
@@ -36,7 +36,7 @@ raw_prose: |
   ## Supported file locations
 
   Snowflake refers to the location of data files in cloud storage as a *stage*.
-  The [COPY INTO <table>](../sql-reference/sql/copy-into-table.md) command used for both bulk and continuous data loads (Snowpipe) supports
+  The [COPY INTO <table>](../sql-reference/sql/copy-into-table.md) command used for bulk data loads supports
   cloud storage accounts managed by your business entity (*external stages*) as well as cloud storage contained in your Snowflake account
   (*internal stages*).
 
@@ -75,63 +75,13 @@ raw_prose: |
 
   Upload files to any of the internal stage types from your local file system using the [PUT](../sql-reference/sql/put.md) command.
 
-  > ## Documentation Index
-  > Fetch the complete documentation index at: https://docs.snowflake.com/llms.txt
-  > Use this file to discover all available pages before exploring further.
-
-  # Snowpipe
-
-  Snowpipe enables loading data from files as soon as they’re available in a stage. This means you can load data from files in micro-batches, making it available to users within minutes, rather than manually executing COPY statements on a schedule to load larger batches.
-
-  ## How does Snowpipe work?
-
-  Snowpipe loads data from files as soon as they are available in a stage. The data is loaded according to the COPY statement defined in a referenced pipe.
-
-  A pipe is a named, first-class Snowflake object that contains a COPY statement used by Snowpipe. The COPY statement identifies the source location of the data files (i.e., a stage) and a target table. All data types are supported, including semi-structured data types such as JSON and Avro.
-
-  Different mechanisms for detecting the staged files are available:
-
-  * Automating Snowpipe using cloud messaging
-
-    Automated data loads leverage event notifications for cloud storage to inform Snowpipe of the arrival of new data files to load. Snowpipe
-    polls the event notifications from a queue. By using the metadata in the queue, Snowpipe loads the new data files into the target table in a continuous, serverless fashion based on the parameters
-    defined in a specified pipe object.
-  * Calling Snowpipe REST endpoints
-
-    Your client application calls a public REST endpoint with the name of a pipe object and a list of data filenames. If new data files
-    matching the list are discovered in the stage referenced by the pipe object, they are queued for loading. Snowflake-provided compute
-    resources load data from the queue into a Snowflake table based on parameters defined in the pipe.
-
-  ### Supported Cloud Storage services
-
-  The following table indicates the cloud storage service support for automated Snowpipe and Snowpipe REST API calls from Snowflake accounts hosted on each
-  [cloud platform](intro-cloud-platforms.md):
-
-  | Snowflake Account Host | Amazon S3 | Google Cloud Storage | Microsoft Azure Blob storage | Microsoft Data Lake Storage Gen2 | Microsoft Azure General-purpose v2 |
-  | --- | --- | --- | --- | --- | --- |
-  | Amazon Web Services | ✔ | ✔ | ✔ | ✔ | ✔ |
-  | Google Cloud | ✔ | ✔ | ✔ | ✔ | ✔ |
-  | Microsoft Azure | ✔ | ✔ | ✔ | ✔ | ✔ |
-
-  For more information, see [Automate continuous data loading with cloud messaging](data-load-snowpipe-auto.md) and [Overview of the Snowpipe REST endpoints to load data](data-load-snowpipe-rest-overview.md).
-
-  Note that the government regions of the cloud providers do not allow event notifications to be sent to or from other commercial regions. For more information, see [AWS GovCloud (US)](https://docs.aws.amazon.com/govcloud-us/latest/UserGuide/govcloud-s3.html) and [Azure Government](https://learn.microsoft.com/en-us/azure/azure-government/).
-
-  > **Important:**
-  >
-  > Snowflake recommends that you enable cloud event filtering for Snowpipe to reduce costs, event noise, and latency. For more information about configuring event filtering for each cloud provider, see the following pages:
-  >
-  > * [Configuring event notifications using object key name filtering - Amazon S3](https://docs.aws.amazon.com/AmazonS3/latest/userguide/notification-how-to-filtering.html)
-  > * [Understand event filtering for Event Grid subscriptions - Azure](https://docs.microsoft.com/en-us/azure/event-grid/event-filtering)
-  > * [Filtering messages - Google Pub/Sub](https://cloud.google.com/pubsub/docs/filtering)
-
 fragments:
   - fragment_type: setup
     sequence: 1
     content: |
-      Snowflake supports two ingestion paths: bulk COPY INTO commands for batch loads from stages, and Snowpipe for continuous serverless ingestion triggered by cloud-storage events. Both support CSV, JSON, Parquet, Avro, ORC, and XML via FILE FORMAT objects. This skill covers both paths.
+      Snowflake's bulk ingestion path is the COPY INTO command, which loads batched files from internal or external stages into a target table. COPY INTO supports CSV, JSON, Parquet, Avro, ORC, and XML via FILE FORMAT objects. This skill scopes to bulk COPY INTO and stage management; for continuous serverless ingestion via cloud-storage events, see `snowflake-snowpipe-auto-ingest`.
 
-      Sourced from https://docs.snowflake.com/en/user-guide/data-load-overview.html and https://docs.snowflake.com/en/user-guide/data-load-snowpipe-intro.html.
+      Sourced from https://docs.snowflake.com/en/user-guide/data-load-overview.html.
   - fragment_type: execution
     sequence: 2
     content: |
@@ -140,7 +90,7 @@ fragments:
     sequence: 3
     content: |
       Snowflake refers to the location of data files in cloud storage as a *stage*.
-      The [COPY INTO <table>](../sql-reference/sql/copy-into-table.md) command used for both bulk and continuous data loads (Snowpipe) supports
+      The [COPY INTO <table>](../sql-reference/sql/copy-into-table.md) command used for bulk data loads supports
       cloud storage accounts managed by your business entity (*external stages*) as well as cloud storage contained in your Snowflake account
       (*internal stages*).
 
@@ -178,48 +128,3 @@ fragments:
     sequence: 6
     content: |
       Upload files to any of the internal stage types from your local file system using the [PUT](../sql-reference/sql/put.md) command.
-
-      Snowpipe enables loading data from files as soon as they’re available in a stage. This means you can load data from files in micro-batches, making it available to users within minutes, rather than manually executing COPY statements on a schedule to load larger batches.
-  - fragment_type: execution
-    sequence: 7
-    content: |
-      Snowpipe loads data from files as soon as they are available in a stage. The data is loaded according to the COPY statement defined in a referenced pipe.
-
-      A pipe is a named, first-class Snowflake object that contains a COPY statement used by Snowpipe. The COPY statement identifies the source location of the data files (i.e., a stage) and a target table. All data types are supported, including semi-structured data types such as JSON and Avro.
-  - fragment_type: execution
-    sequence: 8
-    content: |
-      Different mechanisms for detecting the staged files are available:
-
-      * Automating Snowpipe using cloud messaging
-
-        Automated data loads leverage event notifications for cloud storage to inform Snowpipe of the arrival of new data files to load. Snowpipe
-        polls the event notifications from a queue. By using the metadata in the queue, Snowpipe loads the new data files into the target table in a continuous, serverless fashion based on the parameters
-        defined in a specified pipe object.
-      * Calling Snowpipe REST endpoints
-
-        Your client application calls a public REST endpoint with the name of a pipe object and a list of data filenames. If new data files
-        matching the list are discovered in the stage referenced by the pipe object, they are queued for loading. Snowflake-provided compute
-        resources load data from the queue into a Snowflake table based on parameters defined in the pipe.
-  - fragment_type: setup
-    sequence: 9
-    content: |
-      The following table indicates the cloud storage service support for automated Snowpipe and Snowpipe REST API calls from Snowflake accounts hosted on each
-      [cloud platform](intro-cloud-platforms.md):
-
-      | Snowflake Account Host | Amazon S3 | Google Cloud Storage | Microsoft Azure Blob storage | Microsoft Data Lake Storage Gen2 | Microsoft Azure General-purpose v2 |
-      | --- | --- | --- | --- | --- | --- |
-      | Amazon Web Services | ✔ | ✔ | ✔ | ✔ | ✔ |
-      | Google Cloud | ✔ | ✔ | ✔ | ✔ | ✔ |
-      | Microsoft Azure | ✔ | ✔ | ✔ | ✔ | ✔ |
-
-      For more information, see [Automate continuous data loading with cloud messaging](data-load-snowpipe-auto.md) and [Overview of the Snowpipe REST endpoints to load data](data-load-snowpipe-rest-overview.md).
-
-      Note that the government regions of the cloud providers do not allow event notifications to be sent to or from other commercial regions. For more information, see [AWS GovCloud (US)](https://docs.aws.amazon.com/govcloud-us/latest/UserGuide/govcloud-s3.html) and [Azure Government](https://learn.microsoft.com/en-us/azure/azure-government/).
-  - fragment_type: setup
-    sequence: 10
-    content: |
-      Snowflake recommends that you enable cloud event filtering for Snowpipe to reduce costs, event noise, and latency. For more information about configuring event filtering for each cloud provider, see the following pages:
-      * [Configuring event notifications using object key name filtering - Amazon S3](https://docs.aws.amazon.com/AmazonS3/latest/userguide/notification-how-to-filtering.html)
-      * [Understand event filtering for Event Grid subscriptions - Azure](https://docs.microsoft.com/en-us/azure/event-grid/event-filtering)
-      * [Filtering messages - Google Pub/Sub](https://cloud.google.com/pubsub/docs/filtering)

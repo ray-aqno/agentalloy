@@ -3,6 +3,8 @@ skill_id: nextjs-isr-and-revalidation
 canonical_name: Next.js ISR and Revalidation
 category: engineering
 skill_class: domain
+deprecated: true
+superseded_by: nextjs-data-fetching-and-caching
 domain_tags:
   - nextjs
   - isr
@@ -10,10 +12,11 @@ domain_tags:
   - static-site-generation
   - on-demand-rendering
 always_apply: false
-phase_scope: []
-category_scope: []
+phase_scope: [build]
+category_scope: [framework]
 author: authoring-agent
-change_summary: initial authoring draft
+change_summary: |
+  initial authoring draft. Deprecated 2026-06-03: superseded by nextjs-data-fetching-and-caching
 raw_prose: |
   # Next.js ISR and Revalidation
 
@@ -21,14 +24,9 @@ raw_prose: |
 
   ISR is Next.js's strategy for static-with-updates pages. Time-based via `revalidate`; on-demand via `revalidatePath`/`revalidateTag`. This skill covers both modes + their trade-offs.
 
-  <details>
-    <summary>Examples</summary>
-
   - [Next.js Commerce](https://vercel.com/templates/next.js/nextjs-commerce)
   - [On-Demand ISR](https://on-demand-isr.vercel.app)
   - [Next.js Forms](https://github.com/vercel/next.js/tree/canary/examples/next-forms)
-
-  </details>
 
   Incremental Static Regeneration (ISR) enables you to:
 
@@ -239,14 +237,9 @@ fragments:
 
       ISR is Next.js's strategy for static-with-updates pages. Time-based via `revalidate`; on-demand via `revalidatePath`/`revalidateTag`. This skill covers both modes + their trade-offs.
 
-      <details>
-        <summary>Examples</summary>
-
       - [Next.js Commerce](https://vercel.com/templates/next.js/nextjs-commerce)
       - [On-Demand ISR](https://on-demand-isr.vercel.app)
       - [Next.js Forms](https://github.com/vercel/next.js/tree/canary/examples/next-forms)
-
-      </details>
 
       Incremental Static Regeneration (ISR) enables you to:
 
