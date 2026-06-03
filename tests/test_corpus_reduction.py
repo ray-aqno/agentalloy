@@ -11,12 +11,9 @@ python/python-packaging-pyproject (keeper).  Verifies:
 
 from __future__ import annotations
 
-import textwrap
 from pathlib import Path
 
-import pytest
 import yaml
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -132,7 +129,7 @@ def test_a7_fastapi_background_tasks_deprecated_flags() -> None:
 def test_a7_fastapi_background_tasks_keeper_has_absorbed_content() -> None:
     """Keeper must contain all unique content from the deprecated skill."""
     keeper = _load_a7_skill(_A7_KEEPER_ID)
-    dep = _load_a7_skill(_A7_DEPRECATED_ID)
+    _load_a7_skill(_A7_DEPRECATED_ID)
 
     # Combine raw_prose + all fragment content for the keeper
     keeper_text = _raw_prose(keeper) + "\n\n" + _fragment_content_concat(keeper)
@@ -297,7 +294,7 @@ _UNIQUE_DEPRECATED_SECTIONS = [
 def test_a1_python_packaging_keeper_has_absorbed_content() -> None:
     """Keeper must contain all unique content from the deprecated skill."""
     keeper = _load_skill("python-packaging-pyproject")
-    dep = _load_skill("python-packaging-and-pyproject")
+    _load_skill("python-packaging-and-pyproject")
 
     # Combine raw_prose + all fragment content for the keeper
     keeper_text = _raw_prose(keeper) + "\n\n" + _fragment_content_concat(keeper)
@@ -518,7 +515,7 @@ _A4_UNIQUE_DEPRECATED_SECTIONS = [
 def test_a4_fastify_error_handling_keeper_has_absorbed_content() -> None:
     """Keeper must contain all unique content from the deprecated skill."""
     keeper = _load_skill("fastify-error-handling-deep", category="fastify")
-    dep = _load_skill("fastify-error-handling", category="fastify")
+    _load_skill("fastify-error-handling", category="fastify")
 
     # Combine raw_prose + all fragment content for the keeper
     keeper_text = _raw_prose(keeper) + "\n\n" + _fragment_content_concat(keeper)
@@ -684,7 +681,7 @@ _A3_UNIQUE_DEPRECATED_SECTIONS = [
 def test_a3_node_test_runner_keeper_has_absorbed_content() -> None:
     """Keeper must contain all unique content from the deprecated skill."""
     keeper = _load_skill("node-built-in-test-runner", category="nodejs")
-    dep = _load_skill("nodejs-native-test-runner", category="nodejs")
+    _load_skill("nodejs-native-test-runner", category="nodejs")
 
     # Combine raw_prose + all fragment content for the keeper
     keeper_text = _raw_prose(keeper) + "\n\n" + _fragment_content_concat(keeper)
@@ -1101,7 +1098,7 @@ _A8_UNIQUE_DEPRECATED_SECTIONS = [
 def test_a8_fastapi_oauth2_scopes_keeper_has_absorbed_content() -> None:
     """Keeper must contain all unique content from the deprecated skill."""
     keeper = _load_a7_skill("fastapi-auth-and-security")
-    dep = _load_a7_skill("fastapi-oauth2-scopes")
+    _load_a7_skill("fastapi-oauth2-scopes")
 
     # Combine raw_prose + all fragment content for the keeper
     keeper_text = _raw_prose(keeper) + "\n\n" + _fragment_content_concat(keeper)
@@ -1494,7 +1491,7 @@ _A2_UNIQUE_DEPRECATED_SECTIONS = [
 def test_a2_typescript_narrowing_keeper_has_absorbed_content() -> None:
     """Keeper must contain all unique content from the deprecated skill."""
     keeper = _load_skill("typescript-narrowing-patterns", category="typescript")
-    dep = _load_skill("typescript-narrowing-and-control-flow", category="typescript")
+    _load_skill("typescript-narrowing-and-control-flow", category="typescript")
 
     keeper_text = _raw_prose(keeper) + "\n\n" + _fragment_content_concat(keeper)
 
@@ -1621,7 +1618,7 @@ def test_a2_typescript_narrowing_keeper_has_merged_domain_tags() -> None:
     dep = _load_skill("typescript-narrowing-and-control-flow", category="typescript")
 
     keeper_tags = keeper.get("domain_tags", [])
-    dep_tags = dep.get("domain_tags", [])
+    dep.get("domain_tags", [])
 
     # Original keeper tags
     assert "typescript" in keeper_tags, "Keeper must retain original 'typescript' tag"

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -20,7 +19,6 @@ import pytest
 from agentalloy.install.subcommands.wrap import (
     _run,
 )
-
 
 # ---------------------------------------------------------------------------
 # Shared fixture: temporary XDG state directory
@@ -371,14 +369,16 @@ class TestLegacyWireHarnessGuard:
         raise SystemExit with a clear error message, not KeyError."""
         from agentalloy.install.subcommands import wire_harness as wh_module
 
-        with pytest.raises(SystemExit) as exc_info:
-            with patch("agentalloy.install.subcommands.wire_harness.REGISTRY", {"test": None}):
-                wh_module.wire_harness(
-                    "unknown-harness-that-is-not-in-legacy-registry",
-                    port=8000,
-                    root=tmp_path,
-                    legacy=True,
-                )
+        with (
+            pytest.raises(SystemExit) as exc_info,
+            patch("agentalloy.install.subcommands.wire_harness.REGISTRY", {"test": None}),
+        ):
+            wh_module.wire_harness(
+                "unknown-harness-that-is-not-in-legacy-registry",
+                port=8000,
+                root=tmp_path,
+                legacy=True,
+            )
 
         assert exc_info.value.code == 1
 

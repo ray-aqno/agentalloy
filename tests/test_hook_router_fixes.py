@@ -46,11 +46,11 @@ class TestHookRouterToolNameFix:
 
     def test_pre_tool_use_passes_tool_name_from_body(self):
         """The pre-tool-use endpoint extracts tool_name from request body."""
-        from fastapi.testclient import TestClient
-        from agentalloy.api.hook_router import router
-
         # Build a minimal test app
         from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from agentalloy.api.hook_router import router
 
         app = FastAPI()
         app.include_router(router)
@@ -69,10 +69,10 @@ class TestHookRouterToolNameFix:
 
     def test_user_prompt_submit_passes_none_tool_name(self):
         """UserPromptSubmit endpoint should pass tool_name=None."""
-        from fastapi.testclient import TestClient
-        from agentalloy.api.hook_router import router
-
         from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from agentalloy.api.hook_router import router
 
         app = FastAPI()
         app.include_router(router)
