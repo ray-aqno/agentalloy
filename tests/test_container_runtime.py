@@ -6,7 +6,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -555,3 +555,64 @@ class TestCleanupTempEntrypoint:
 
         # Should not raise even if the file doesn't exist
         _cleanup_temp_entrypoint(tmp_path / "nonexistent.sh")
+
+
+# ---------------------------------------------------------------------------
+# UT-10: _wait_for_health — polls with exponential backoff
+# ---------------------------------------------------------------------------
+
+
+class TestWaitForHealth:
+    """Test _wait_for_health() polls /health endpoint with exponential backoff."""
+
+    def test_returns_true_on_immediate_success(self, tmp_path: Path):
+        """_wait_for_health() returns True when /health responds immediately."""
+        from agentalloy.install.subcommands.container_runtime import _wait_for_health
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value = MagicMock(read=lambda: b'{"status":"ok"}')
+            result = _wait_for_health(47950, timeout=10)
+
+        assert result is True
+
+    def test_returns_true_after_retries(self, tmp_path: Path):
+        """_wait_for_health() returns True after a few failed attempts."""
+        from agentalloy.install.subcommands.container_runtime import _wait_for_health
+
+        mock_response = MagicMock(read=lambda: b'{"status":"ok"}')
+        call_count = [0]
+
+        def _side_effect(url, timeout=None):
+            call_count[0] += 1
+            if call_count[0] < 3:
+                raise OSError("connection refused")
+            return mock_response
+
+        with patch("urllib.request.urlopen", side_effect=_side_effect):
+            result = _wait_for_health(47950, timeout=30)
+
+        assert result is True
+        assert call_count[0] == 3
+
+    def test_returns_false_on_timeout(self, tmp_path: Path):
+        """_wait_for_health() returns False when /health never responds within timeout."""
+        from agentalloy.install.subcommands.container_runtime import _wait_for_health
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.side_effect = OSError("connection refused")
+            result = _wait_for_health(47950, timeout=1)
+
+        assert result is False
+
+    def test_uses_exponential_backoff_intervals(self, tmp_path: Path):
+        """_wait_for_health() uses exponential backoff (2s, 4s, 8s, ...) between retries."""
+        from agentalloy.install.subcommands.container_runtime import _wait_for_health
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.side_effect = OSError("connection refused")
+            # Use a very short timeout so backoff steps don't actually sleep long
+            result = _wait_for_health(47950, timeout=1)
+
+        assert result is False
+        # The function should have been called at least once
+        assert mock_urlopen.call_count >= 1

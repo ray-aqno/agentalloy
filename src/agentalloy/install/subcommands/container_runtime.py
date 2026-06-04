@@ -379,3 +379,117 @@ def _cleanup_temp_entrypoint(entrypoint: Path) -> None:
     """
     if entrypoint.exists():
         entrypoint.unlink()
+
+
+# ---------------------------------------------------------------------------
+# Container run
+# ---------------------------------------------------------------------------
+
+
+def _run_container(runtime: str, entrypoint: Path, packs: str) -> int:
+    """Run the agentalloy container with volumes, env, and port mapping.
+
+    Runs ``{runtime} run --replace -d --name agentalloy`` with:
+
+    * Volume mounts: ``agentalloy-data:/app/data`` and ``~/.ollama:/root/.ollama``
+    * Env vars: ``AGENTIALLOY_PACKS``, ``ENTRYPOINT``, ``LADYBUG_DB_PATH``,
+      ``DUCKDB_PATH``, ``LOG_LEVEL``
+    * Port mapping: ``-p 47950:47950``
+
+    Parameters
+    ----------
+    runtime : str
+        Container runtime binary (e.g. ``"podman"`` or ``"docker"``).
+    entrypoint : Path
+        Path to the generated entrypoint script (mounted as a volume).
+    packs : str
+        Comma-separated list of packs to install.
+
+    Returns
+    -------
+    int
+        Exit code from the runtime command.
+    """
+    env = {
+        "AGENTIALLOY_PACKS": packs,
+        "ENTRYPOINT": str(entrypoint),
+        "LADYBUG_DB_PATH": "/app/data/ladybug.db",
+        "DUCKDB_PATH": "/app/data/ladybug.db",
+        "LOG_LEVEL": "info",
+    }
+    env_cmd: list[str] = []
+    for k, v in env.items():
+        env_cmd.extend(["-e", f"{k}={v}"])
+
+    home = Path.home()
+    cmd = [
+        runtime,
+        "run",
+        "--replace",
+        "-d",
+        "--name",
+        "agentalloy",
+        "-p",
+        "47950:47950",
+        "-v",
+        "agentalloy-data:/app/data",
+        "-v",
+        f"{home}/.ollama:/root/.ollama",
+        "-v",
+        f"{entrypoint}:/app/entrypoint.sh:ro",
+        *env_cmd,
+        "agentalloy:local",
+        "/app/entrypoint.sh",
+    ]
+
+    try:
+        subprocess.run(cmd, check=True, timeout=300)
+        return 0
+    except subprocess.CalledProcessError as exc:
+        return exc.returncode
+    except subprocess.TimeoutExpired:
+        _print("  [red]Container run timed out after 300s[/red]")
+        return 1
+
+
+# ---------------------------------------------------------------------------
+# Health check
+# ---------------------------------------------------------------------------
+
+
+def _wait_for_health(port: int, timeout: int = 300) -> bool:
+    """Poll the container's /health endpoint with exponential backoff.
+
+    Starts with a 2-second initial interval and doubles each retry
+    (2, 4, 8, 16, …) up to the given *timeout*.
+
+    Parameters
+    ----------
+    port : int
+        The port on which the container exposes the /health endpoint.
+    timeout : int, optional
+        Maximum seconds to wait (default 300).
+
+    Returns
+    -------
+    bool
+        True if the endpoint responds, False on timeout.
+    """
+    import time
+
+    url = f"http://127.0.0.1:{port}/health"
+    interval = 2
+    start = time.monotonic()
+
+    while True:
+        try:
+            import urllib.request
+
+            urllib.request.urlopen(url, timeout=5)
+            return True
+        except OSError:
+            elapsed = time.monotonic() - start
+            if elapsed >= timeout:
+                return False
+            time.sleep(interval)
+            interval = min(interval * 2, 30)
