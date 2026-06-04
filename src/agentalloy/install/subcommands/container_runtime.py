@@ -269,17 +269,17 @@ def _generate_entrypoint(packs: str) -> Path:
 
     The entrypoint is a bash script that handles in-container bootstrap:
 
-    1. Check if Ollama is installed; download and install if needed.
-    2. Start ``ollama serve`` in the background on ``127.0.0.1:11434``.
-    3. Poll ``http://127.0.0.1:11434`` until Ollama is ready (30 s timeout).
-    4. Check if the embedding model (``qwen3-embedding:0.6b``) is cached;
+    1. Check if ``$APP_DIR/.bootstrap-complete`` exists — if so, skip to uvicorn.
+    2. Check if Ollama is installed; download and install if needed.
+    3. Start ``ollama serve`` in the background on ``127.0.0.1:11434``.
+    4. Poll ``http://127.0.0.1:11434`` until Ollama is ready (30 s timeout).
+    5. Check if the embedding model (``qwen3-embedding:0.6b``) is cached;
        pull it if not.
-    5. Check if ``/app/.bootstrap-complete`` exists — if so, skip to step 9.
     6. Run migrations (``python -m agentalloy.migrate``).
     7. If *packs* is non-empty, run ``install-packs --packs <packs>``.
-    8. Create the ``/app/.bootstrap-complete`` flag file.
-    9. Start uvicorn on ``0.0.0.0:47950``.
-    10. Trap SIGTERM for graceful shutdown.
+    8. Create the ``$APP_DIR/.bootstrap-complete`` flag file.
+    9. Trap SIGTERM for graceful shutdown (only if Ollama was started).
+    10. Start uvicorn on ``0.0.0.0:47950``.
 
     Parameters
     ----------
@@ -304,42 +304,45 @@ def _build_entrypoint_script(packs: str) -> str:
         "#!/bin/bash",
         "set -e",
         "",
-        "# ── Ollama installation ──────────────────────────────────────────────",
-        'if ! command -v ollama &> /dev/null; then',
-        '    echo ">> Installing Ollama..."',
-        "    curl -fsSL https://ollama.ai/install.sh | sh",
-        "fi",
+        "# App directory (configurable via APP_DIR env var, default /app)",
+        "APP_DIR=${APP_DIR:-/app}",
         "",
-        "# ── Start Ollama ─────────────────────────────────────────────────────",
-        'echo ">> Starting Ollama..."',
-        "ollama serve --host 127.0.0.1:11434 &",
-        "OLLAMA_PID=$!",
-        "",
-        "# Wait for Ollama to be ready (30 s timeout)",
-        "for i in $(seq 1 30); do",
-        '    if curl -sf http://127.0.0.1:11434 > /dev/null 2>&1; then',
-        '        echo ">> Ollama is ready"',
-        "        break",
-        "    fi",
-        "    sleep 1",
-        "done",
-        "",
-        "# ── Pull embedding model ─────────────────────────────────────────────",
-        'echo ">> Checking embedding model..."',
-        "if ! ollama list | grep -q qwen3-embedding; then",
-        '    echo ">> Pulling qwen3-embedding:0.6b..."',
-        "    ollama pull qwen3-embedding:0.6b",
-        "fi",
-        "",
-        "# ── Bootstrap completion check ───────────────────────────────────────",
-        "if [ -f /app/.bootstrap-complete ]; then",
-        '    echo ">> Bootstrap already complete — skipping to uvicorn"',
+        "# Bootstrap completion check (early exit if already complete)",
+        'if [ -f "$APP_DIR/.bootstrap-complete" ]; then',
+        '    echo ">> Bootstrap already complete - skipping to uvicorn"',
         "else",
-        "    # ── Run migrations ────────────────────────────────────────────",
+        "    # Ollama installation",
+        '    if ! command -v ollama &> /dev/null; then',
+        '        echo ">> Installing Ollama..."',
+        "        curl -fsSL https://ollama.ai/install.sh | sh",
+        "    fi",
+        "",
+        "    # Start Ollama",
+        '    echo ">> Starting Ollama..."',
+        "    ollama serve --host 127.0.0.1:11434 &",
+        "    OLLAMA_PID=$!",
+        "",
+        "    # Wait for Ollama to be ready (30 s timeout)",
+        "    for i in $(seq 1 30); do",
+        '        if curl -sf http://127.0.0.1:11434 > /dev/null 2>&1; then',
+        '            echo ">> Ollama is ready"',
+        "            break",
+        "        fi",
+        "        sleep 1",
+        "    done",
+        "",
+        "    # Pull embedding model",
+        '    echo ">> Checking embedding model..."',
+        "    if ! ollama list | grep -q qwen3-embedding; then",
+        '        echo ">> Pulling qwen3-embedding:0.6b..."',
+        "        ollama pull qwen3-embedding:0.6b",
+        "    fi",
+        "",
+        "    # Run migrations",
         '    echo ">> Running migrations..."',
         "    python -m agentalloy.migrate",
         "",
-        "    # ── Pack installation (conditional) ───────────────────────────",
+        "    # Pack installation (conditional)",
     ]
 
     if packs.strip():
@@ -348,18 +351,20 @@ def _build_entrypoint_script(packs: str) -> str:
             f"    install-packs --packs {packs}",
         ])
     else:
-        lines.append('    echo ">> No packs specified — skipping pack installation"')
+        lines.append('    echo ">> No packs specified - skipping pack installation"')
 
     lines.extend([
         "",
-        "    # ── Mark bootstrap complete ───────────────────────────────────",
-        "    touch /app/.bootstrap-complete",
+        "# Mark bootstrap complete",
+        '    touch "$APP_DIR/.bootstrap-complete"',
         "fi",
         "",
-        "# ── SIGTERM trap for graceful shutdown ──────────────────────────────",
-        'trap "kill $OLLAMA_PID 2>/dev/null; exit 0" SIGTERM',
+        "# SIGTERM trap for graceful shutdown (only if Ollama was started)",
+        'if [ -n "${OLLAMA_PID:-}" ]; then',
+        '    trap "kill ${OLLAMA_PID} 2>/dev/null; exit 0" SIGTERM',
+        "fi",
         "",
-        "# ── Start uvicorn ────────────────────────────────────────────────────",
+        "# Start uvicorn",
         'echo ">> Starting uvicorn..."',
         'exec uvicorn agentalloy.api:create_app --host 0.0.0.0 --port 47950 --log-level info',
     ])

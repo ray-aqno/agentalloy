@@ -616,3 +616,197 @@ class TestWaitForHealth:
         assert result is False
         # The function should have been called at least once
         assert mock_urlopen.call_count >= 1
+
+
+# ---------------------------------------------------------------------------
+# Helper for E2E entrypoint tests
+# ---------------------------------------------------------------------------
+
+def _setup_entrypoint_test(
+    tmp_path: Path,
+    bootstrap_complete: bool = False,
+    packs: str = "",
+) -> tuple[Path, dict[str, str], Path]:
+    """Helper to set up an entrypoint test with mock binaries and a temp app dir.
+
+    Creates:
+    - /tmp/app/ directory (via APP_DIR env var)
+    - Mock ollama, curl, python, uvicorn (and optionally install-packs)
+    - Optionally /tmp/app/.bootstrap-complete
+
+    Returns (entrypoint_path, env_dict, app_dir).
+    """
+    from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+
+    script = _build_entrypoint_script(packs)
+    entrypoint = tmp_path / "entrypoint.sh"
+    entrypoint.write_text(script)
+    entrypoint.chmod(0o755)
+
+    # Use /tmp/app as the app directory (configurable via APP_DIR env var)
+    app_dir = Path("/tmp/app")
+    app_dir.mkdir(exist_ok=True)
+    # Clean up any leftover bootstrap flag so tests are isolated
+    boot_flag = app_dir / ".bootstrap-complete"
+    if boot_flag.exists():
+        boot_flag.unlink()
+    if bootstrap_complete:
+        boot_flag.write_text("")
+
+    bin_dir = tmp_path / "mock_bin"
+    bin_dir.mkdir()
+
+    # Mock ollama
+    (bin_dir / "ollama").write_text(
+        "#!/bin/sh\necho \"OLLAMA: $*\" >> /tmp/ollama_calls.log\n"
+    )
+    (bin_dir / "ollama").chmod(0o755)
+    # Mock curl — always succeeds immediately
+    (bin_dir / "curl").write_text("#!/bin/sh\necho OK\n")
+    (bin_dir / "curl").chmod(0o755)
+    # Mock python (for agentalloy.migrate)
+    (bin_dir / "python").write_text(
+        "#!/bin/sh\necho \"PYTHON: $*\" >> /tmp/python_calls.log\n"
+    )
+    (bin_dir / "python").chmod(0o755)
+    # Mock uvicorn
+    (bin_dir / "uvicorn").write_text(
+        "#!/bin/sh\necho \"UVICORN STARTED\" >> /tmp/uvicorn_calls.log\n"
+    )
+    (bin_dir / "uvicorn").chmod(0o755)
+
+    # Mock install-packs if packs are specified
+    if packs.strip():
+        (bin_dir / "install-packs").write_text(
+            "#!/bin/sh\necho \"INSTALL-PACKS: $*\" >> /tmp/packs_calls.log\n"
+        )
+        (bin_dir / "install-packs").chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = str(bin_dir) + ":" + env.get("PATH", "")
+    env["APP_DIR"] = str(app_dir)
+    env["LADYBUG_DB_PATH"] = str(app_dir / "ladybug")
+    env["DUCKDB_PATH"] = str(app_dir / "skills.duck")
+
+    return entrypoint, env, app_dir
+
+
+# ---------------------------------------------------------------------------
+# E2E-3: Container restart skips Ollama install, model pull, migrations
+#        when .bootstrap-complete exists
+# ---------------------------------------------------------------------------
+
+
+class TestEntrypointBootstrapComplete:
+    """E2E: entrypoint script skips bootstrap when /app/.bootstrap-complete exists."""
+
+    def test_skips_ollama_install_when_bootstrap_complete(self, tmp_path: Path):
+        """When .bootstrap-complete exists, the entrypoint should not attempt Ollama install."""
+        entrypoint, env, app_dir = _setup_entrypoint_test(
+            tmp_path, bootstrap_complete=True
+        )
+
+        result = subprocess.run(
+            ["bash", str(entrypoint)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        assert result.returncode == 0
+        # The entrypoint should have gone straight to uvicorn when bootstrap is complete
+        assert "Installing Ollama" not in result.stdout
+        assert "ollama.ai/install.sh" not in result.stdout
+
+    def test_skips_migrations_when_bootstrap_complete(self, tmp_path: Path):
+        """When .bootstrap-complete exists, migrations should not run."""
+        entrypoint, env, app_dir = _setup_entrypoint_test(
+            tmp_path, bootstrap_complete=True
+        )
+
+        result = subprocess.run(
+            ["bash", str(entrypoint)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        assert result.returncode == 0
+        # Verify migrations were NOT called
+        assert "agentalloy.migrate" not in result.stdout
+        # Verify uvicorn WAS started
+        assert "Starting uvicorn" in result.stdout
+
+    def test_skips_model_pull_when_bootstrap_complete(self, tmp_path: Path):
+        """When .bootstrap-complete exists, model pull should not happen."""
+        entrypoint, env, app_dir = _setup_entrypoint_test(
+            tmp_path, bootstrap_complete=True
+        )
+
+        result = subprocess.run(
+            ["bash", str(entrypoint)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        assert result.returncode == 0
+        # Verify model pull was NOT attempted
+        assert "Pulling qwen3-embedding" not in result.stdout
+        # Verify the skip message is present
+        assert "Bootstrap already complete" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# E2E-4: Container restart after crash re-runs migrations and install-packs
+# ---------------------------------------------------------------------------
+
+
+class TestEntrypointCrashRestart:
+    """E2E: entrypoint script runs full bootstrap when .bootstrap-complete does NOT exist."""
+
+    def test_reruns_migrations_on_crash_restart(self, tmp_path: Path):
+        """When .bootstrap-complete is missing, migrations should run."""
+        entrypoint, env, app_dir = _setup_entrypoint_test(
+            tmp_path, bootstrap_complete=False
+        )
+
+        result = subprocess.run(
+            ["bash", str(entrypoint)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        assert result.returncode == 0
+        # Verify migrations WERE called
+        assert "Running migrations" in result.stdout
+        # Verify bootstrap-complete flag was created
+        assert (app_dir / ".bootstrap-complete").exists()
+        # Verify uvicorn started
+        assert "Starting uvicorn" in result.stdout
+
+    def test_reruns_install_packs_on_crash_restart(self, tmp_path: Path):
+        """When .bootstrap-complete is missing and packs are specified, install-packs should run."""
+        entrypoint, env, app_dir = _setup_entrypoint_test(
+            tmp_path, bootstrap_complete=False, packs="foundation,tooling"
+        )
+
+        result = subprocess.run(
+            ["bash", str(entrypoint)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        assert result.returncode == 0
+        # Verify install-packs was called with the right packs
+        assert "Installing packs: foundation,tooling" in result.stdout
+        assert "foundation,tooling" in result.stdout
+        # Verify bootstrap-complete was created
+        assert (app_dir / ".bootstrap-complete").exists()
