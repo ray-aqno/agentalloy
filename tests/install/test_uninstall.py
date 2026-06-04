@@ -55,7 +55,7 @@ class TestContainerUninstall:
         """State with deployment='container' stops and removes the container."""
         state: dict[str, Any] = {
             "deployment": "container",
-            "runtime_binary": "podman compose",
+            "runtime_binary": "podman",
         }
         warnings: list[str] = []
 
@@ -86,7 +86,7 @@ class TestContainerUninstall:
         """Docker container variant works identically."""
         state: dict[str, Any] = {
             "deployment": "container",
-            "runtime_binary": "docker compose",
+            "runtime_binary": "docker",
         }
         warnings: list[str] = []
 
@@ -107,7 +107,7 @@ class TestContainerUninstall:
         """Custom container_name from state is used."""
         state: dict[str, Any] = {
             "deployment": "container",
-            "runtime_binary": "podman compose",
+            "runtime_binary": "podman",
             "container_name": "my-agentalloy",
         }
         warnings: list[str] = []
@@ -146,7 +146,7 @@ class TestContainerUninstall:
         """OSError on stop and rm adds warnings for both."""
         state: dict[str, Any] = {
             "deployment": "container",
-            "runtime_binary": "podman compose",
+            "runtime_binary": "podman",
         }
         warnings: list[str] = []
 
@@ -192,7 +192,7 @@ class TestContainerUninstall:
         """
         state: dict[str, Any] = {
             "deployment": "container",
-            "runtime_binary": "podman compose",
+            "runtime_binary": "podman",
         }
         warnings: list[str] = []
         mock_result = MagicMock()
@@ -230,7 +230,7 @@ class TestContainerUninstall:
         ("not found") error strings are recognized."""
         state: dict[str, Any] = {
             "deployment": "container",
-            "runtime_binary": "docker compose",
+            "runtime_binary": "docker",
         }
         warnings: list[str] = []
 
@@ -260,10 +260,10 @@ class TestContainerUninstall:
         assert "agentalloy-ollama-models" in warnings[0]
 
     def test_container_stop_invalid_label_warns(self, tmp_path: Path):
-        """Invalid runtime_binary label (no space) is rejected."""
+        """Empty runtime_binary label is rejected."""
         state: dict[str, Any] = {
             "deployment": "container",
-            "runtime_binary": "podman",  # missing "compose" part
+            "runtime_binary": "  ",  # whitespace-only is effectively empty
         }
         warnings: list[str] = []
         _actions = _stop_container_stack(state, warnings)
@@ -275,7 +275,7 @@ class TestContainerUninstall:
         """subprocess returns non-zero on stop and rm, warnings added."""
         state: dict[str, Any] = {
             "deployment": "container",
-            "runtime_binary": "podman compose",
+            "runtime_binary": "podman",
         }
         warnings: list[str] = []
 
@@ -297,7 +297,7 @@ class TestContainerUninstall:
         """subprocess timeout on stop and rm adds warnings."""
         state: dict[str, Any] = {
             "deployment": "container",
-            "runtime_binary": "podman compose",
+            "runtime_binary": "podman",
         }
         warnings: list[str] = []
 

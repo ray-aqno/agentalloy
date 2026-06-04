@@ -266,9 +266,7 @@ def _resolve_compose_binary(st: dict[str, Any]) -> str | None:
     if not isinstance(compose_binary_label, str) or not compose_binary_label:
         return None
     parts = compose_binary_label.split()
-    if len(parts) < 2:
-        return None
-    return parts[0]
+    return parts[0] if parts else None
 
 
 def _remove_compose_volumes(
@@ -360,13 +358,13 @@ def _stop_container_stack(
 
     # Determine the binary name from the label (e.g. "podman compose" -> "podman")
     parts = runtime_binary_label.split()
-    if len(parts) < 2:
+    binary_name = parts[0] if parts else None
+    if binary_name is None:
         warnings.append(
             f"Invalid runtime_binary label in state: {runtime_binary_label!r} — "
             "skipping container teardown."
         )
         return actions
-    binary_name = parts[0]
 
     # For v4+ single-container model: stop and remove the container directly
     # instead of using compose down (which requires the compose file)
