@@ -986,6 +986,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         )
         return 1
     binary_path = shutil.which(label)
+    assert binary_path is not None, f"{label} not found on PATH despite _detect_runtime_binary returning it"
     cfg.runtime_binary = label
     _print(f"  Runtime binary: {label} at {binary_path}")
 
