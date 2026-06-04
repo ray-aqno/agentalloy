@@ -287,8 +287,8 @@ def _generate_entrypoint(packs: str) -> Path:
     4. Poll ``http://127.0.0.1:11434`` until Ollama is ready (30 s timeout).
     5. Check if the embedding model (``qwen3-embedding:0.6b``) is cached;
        pull it if not.
-    6. Run migrations (``python -m agentalloy.migrate``).
-    7. If *packs* is non-empty, run ``install-packs --packs <packs>``.
+    6. Run migrations (``uv run agentalloy migrate``).
+    7. If *packs* is non-empty, run ``uv run agentalloy install-packs --packs <packs>``.
     8. Create the ``$APP_DIR/.bootstrap-complete`` flag file.
     9. Trap SIGTERM for graceful shutdown (only if Ollama was started).
     10. Start uvicorn on ``0.0.0.0:47950``.

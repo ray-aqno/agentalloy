@@ -525,7 +525,7 @@ class TestGenerateEntrypoint:
 
         content = _generate_entrypoint("").read_text()
 
-        assert "agentalloy.migrate" in content
+        assert "agentalloy migrate" in content
 
     def test_generate_entrypoint_contains_uvicorn_start(self, tmp_path: Path):
         """Generated entrypoint contains uvicorn start step."""
@@ -901,7 +901,7 @@ def _setup_entrypoint_test(
 
     Creates:
     - /tmp/app/ directory (via APP_DIR env var)
-    - Mock ollama, curl, python, uvicorn (and optionally install-packs)
+    - Mock ollama, curl, uv, agentalloy, python, uvicorn (and optionally install-packs)
     - Optionally /tmp/app/.bootstrap-complete
 
     Returns (entrypoint_path, env_dict, app_dir).
@@ -932,6 +932,24 @@ def _setup_entrypoint_test(
     # Mock curl — always succeeds immediately
     (bin_dir / "curl").write_text("#!/bin/sh\necho OK\n")
     (bin_dir / "curl").chmod(0o755)
+    # Mock uv — strips "uv run" prefix and executes the remaining command
+    (bin_dir / "uv").write_text(
+        '#!/usr/bin/env python3\n'
+        'import sys, subprocess\n'
+        'subprocess.run(sys.argv[2:], check=True)\n'
+    )
+    (bin_dir / "uv").chmod(0o755)
+    # Mock agentalloy CLI (handles migrate and install-packs subcommands)
+    (bin_dir / "agentalloy").write_text(
+        '#!/bin/sh\n'
+        'case "$1" in\n'
+        '  migrate) echo "AGENTIALLOY: migrate" >> /tmp/agentalloy_calls.log ;;\n'
+        '  install-packs) echo "AGENTIALLOY: install-packs $*" >> /tmp/agentalloy_calls.log ;;\n'
+        '  *) echo "AGENTIALLOY: unknown $@" >> /tmp/agentalloy_calls.log ;;\n'
+        'esac\n'
+        'exit 0\n'
+    )
+    (bin_dir / "agentalloy").chmod(0o755)
     # Mock python (for agentalloy.migrate)
     (bin_dir / "python").write_text('#!/bin/sh\necho "PYTHON: $*" >> /tmp/python_calls.log\n')
     (bin_dir / "python").chmod(0o755)
