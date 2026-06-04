@@ -304,8 +304,10 @@ def _generate_entrypoint(packs: str) -> Path:
         Path to the generated entrypoint script (in the system temp directory).
     """
     script = _build_entrypoint_script(packs)
-    entrypoint = Path(tempfile.gettempdir()) / "agentalloy-entrypoint.sh"
-    entrypoint.write_text(script)
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".sh")  # noqa: SIM115 (file must persist for container mount)
+    tmp.write(script.encode())
+    tmp.close()
+    entrypoint = Path(tmp.name)
     entrypoint.chmod(0o700)
     return entrypoint
 
@@ -352,7 +354,7 @@ def _build_entrypoint_script(packs: str) -> str:
         "",
         "    # Run migrations",
         '    echo ">> Running migrations..."',
-        "    python -m agentalloy.migrate",
+        "    uv run agentalloy migrate",
         "",
         "    # Pack installation (conditional)",
     ]
@@ -361,7 +363,7 @@ def _build_entrypoint_script(packs: str) -> str:
         lines.extend(
             [
                 f'    echo "> Installing packs: {packs}"',
-                f"    install-packs --packs {shlex.quote(packs)}",
+                f"    uv run agentalloy install-packs --packs {shlex.quote(packs)}",
             ]
         )
     else:
@@ -381,7 +383,7 @@ def _build_entrypoint_script(packs: str) -> str:
             "",
             "# Start uvicorn",
             'echo ">> Starting uvicorn..."',
-            "exec uvicorn agentalloy.api:create_app --host 0.0.0.0 --port 47950 --log-level info",
+            "exec uv run uvicorn agentalloy.app:app --host 0.0.0.0 --port 47950 --log-level info",
         ]
     )
 
