@@ -1121,7 +1121,7 @@ class TestContainerFlow:
 
         st = state_mod.load_state()
         # Should be absolute path
-        assert st["image_tag"].startswith("/")
+        assert st["image_tag"] == "agentalloy:local"
 
     def test_image_tag_resolved_from_repo_root_not_cwd(
         self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
@@ -1161,7 +1161,7 @@ class TestContainerFlow:
         import agentalloy.install.state as state_mod
 
         st = state_mod.load_state()
-        assert st["image_tag"].endswith("compose.yaml")
+        assert st["image_tag"] == "agentalloy:local"
 
     def test_image_tag_resolved_from_cwd_when_present(
         self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
@@ -1192,7 +1192,7 @@ class TestContainerFlow:
         import agentalloy.install.state as state_mod
 
         st = state_mod.load_state()
-        assert st["image_tag"].endswith("compose.yaml")
+        assert st["image_tag"] == "agentalloy:local"
 
     def test_container_fails_clearly_when_no_repo_and_no_git(
         self,

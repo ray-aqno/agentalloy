@@ -515,9 +515,11 @@ def _migrate(data: dict[str, Any], from_version: int) -> dict[str, Any]:
         data.setdefault("data_volume", None)
         # Migrate old compose fields to new runtime fields if present
         if "compose_binary" in data:
-            data["runtime_binary"] = data.pop("compose_binary")
+            data["runtime_binary"] = data["compose_binary"].split()[0]
+            data.pop("compose_binary")
         if "compose_file" in data:
-            data["image_tag"] = data.pop("compose_file")
+            data.pop("compose_file")
+        data["image_tag"] = "agentalloy:local"
         data.pop("compose_binary_path", None)
     # Forward-compatibility: ensure newly added optional fields exist on
     # older state files. Not a version bump because the field is purely

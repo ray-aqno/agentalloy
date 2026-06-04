@@ -1144,13 +1144,14 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         if ans in ("n", "no"):
             custom = input("  Enter compose file path (or repo dir): ").strip()
             compose_path = _resolve_user_path(custom)
-    cfg.image_tag = str(compose_path.resolve())
+    cfg.image_tag = "agentalloy:local"
 
     # 4. Run container preflight
     _print("  [dim]-> Preflight (container)[/dim]")
     container_preflight = preflight.run_preflight(
         phase="container",
-        build_context=str(compose_path.resolve()),
+        build_context=str(compose_path.parent),
+        runtime=cfg.runtime_binary,
     )
     container_fatal = [
         c["name"]
