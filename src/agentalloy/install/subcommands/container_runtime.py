@@ -436,8 +436,8 @@ def _run_container(runtime: str, entrypoint: Path, packs: str) -> int:
     env = {
         "AGENTIALLOY_PACKS": packs,
         "ENTRYPOINT": str(entrypoint),
-        "LADYBUG_DB_PATH": "/app/data/ladybug.db",
-        "DUCKDB_PATH": "/app/data/ladybug.db",
+        "LADYBUG_DB_PATH": "/app/data/ladybug",
+        "DUCKDB_PATH": "/app/data/skills.duck",
         "LOG_LEVEL": "info",
     }
     env_cmd: list[str] = []

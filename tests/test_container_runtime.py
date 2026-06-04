@@ -934,20 +934,18 @@ def _setup_entrypoint_test(
     (bin_dir / "curl").chmod(0o755)
     # Mock uv — strips "uv run" prefix and executes the remaining command
     (bin_dir / "uv").write_text(
-        '#!/usr/bin/env python3\n'
-        'import sys, subprocess\n'
-        'subprocess.run(sys.argv[2:], check=True)\n'
+        "#!/usr/bin/env python3\nimport sys, subprocess\nsubprocess.run(sys.argv[2:], check=True)\n"
     )
     (bin_dir / "uv").chmod(0o755)
     # Mock agentalloy CLI (handles migrate and install-packs subcommands)
     (bin_dir / "agentalloy").write_text(
-        '#!/bin/sh\n'
+        "#!/bin/sh\n"
         'case "$1" in\n'
         '  migrate) echo "AGENTIALLOY: migrate" >> /tmp/agentalloy_calls.log ;;\n'
         '  install-packs) echo "AGENTIALLOY: install-packs $*" >> /tmp/agentalloy_calls.log ;;\n'
         '  *) echo "AGENTIALLOY: unknown $@" >> /tmp/agentalloy_calls.log ;;\n'
-        'esac\n'
-        'exit 0\n'
+        "esac\n"
+        "exit 0\n"
     )
     (bin_dir / "agentalloy").chmod(0o755)
     # Mock python (for agentalloy.migrate)
