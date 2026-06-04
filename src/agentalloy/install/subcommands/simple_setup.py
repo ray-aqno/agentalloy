@@ -972,7 +972,13 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
 
     # 2. Detect container runtime (standalone, before image selection)
     from agentalloy.install.subcommands.container_runtime import (  # noqa: PLC0415
+        _build_image,
+        _cleanup_temp_entrypoint,
         _detect_runtime_binary,
+        _ensure_ollama_dir,
+        _ensure_volume,
+        _generate_entrypoint,
+        _run_container,
     )
 
     label = _detect_runtime_binary()
@@ -1249,239 +1255,47 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
             return 1
         _print("  [green]  Removed.[/green]\n")
 
-    # 7. Bring up the stack piecewise so the corpus ingest doesn't race the
-    # main service for the kuzu DB lock. kuzu is single-writer: if the
-    # agentalloy service is already up when we run `install-packs`, every
-    # ingest opens a second kuzu handle against /app/data/ladybug and dies
-    # with "Could not set lock on file". So:
-    #   (a) up agentalloy-init alone (no depends_on; runs schema
-    #       migrations and exits),
-    #   (b) up ollama + ollama-pull and wait for the model to cache (8a),
-    #   (c) run install-packs in a one-shot container that joins
-    #       ollama's network namespace (8b), while no one holds the lock,
-    #   (d) up the main agentalloy service (step 9).
+    # 7. Build the image, start the single agentalloy container, and wait
+    # for it to become healthy.  The entrypoint script handles the full
+    # bootstrap sequence internally (in order):
+    #
+    #   1. Run DB schema migrations  (agentalloy-init equivalent)
+    #   2. Start Ollama and wait for it to be healthy
+    #   3. Pull the embedding model  (ollama-pull equivalent)
+    #   4. Install skill packs       (if cfg.packs is non-empty)
+    #   5. Start uvicorn
+    #
+    # This replaces the old multi-container compose model
+    # (agentalloy-init, ollama, ollama-pull, agentalloy) with a single
+    # container.  The entrypoint script's sequential flow (set -e) ensures
+    # no race conditions between steps — migrations finish before ollama
+    # starts, ollama is healthy before the model is pulled, the model is
+    # cached before packs are installed, and uvicorn only starts after all
+    # bootstrap steps succeed.
     log_path = _container_setup_log_path()
     _print("[bold]Running container setup...[/bold]")
     _print(f"  [dim]Full setup log: {log_path}[/dim]")
-    _print("  [dim]-> Building image and running migrations (1-2 min)...[/dim]")
-    init_cmd = [
-        binary_path,
-        "compose",
-        "-f",
-        str(compose_path.resolve()),
-        "up",
-        "-d",
-        "--build",
-        "agentalloy-init",
-    ]
-    rc = _run_quiet(init_cmd, label="compose up (init)", timeout=600, log_file=log_path)
+
+    # 7a. Build the agentalloy image (or use existing).
+    _print("  [dim]-> Building container image (1-2 min)...[/dim]")
+    build_ctx = compose_path.parent  # build context is the compose file's dir
+    build_rc = _build_image(binary_path, build_ctx)
+    if build_rc != 0:
+        return build_rc
+
+    # 7b. Ensure the agentalloy-data volume exists.
+    _ensure_volume(binary_path)
+
+    # 7c. Ensure ~/.ollama exists on the host (bind-mounted into the container).
+    _ensure_ollama_dir()
+
+    # 7d. Generate the entrypoint script and start the container.
+    _print("  [dim]-> Starting agentalloy container (1-3 min)...[/dim]")
+    entrypoint = _generate_entrypoint(cfg.packs)
+    rc = _run_container(binary_path, entrypoint, cfg.packs)
     if rc != 0:
         return rc
-
-    # Wait for the one-shot init container to exit. `podman wait` blocks
-    # until the container stops and prints its exit code on stdout.
-    init_rc = _wait_for_one_shot(binary_path, "agentalloy-init", timeout=300)
-    if init_rc is None:
-        # Unknown status is fatal: if `podman wait` failed or timed out we
-        # can't confirm migrations finished, and running install-packs
-        # against a half-migrated kuzu DB would either race the still-live
-        # init container for the lock or write into an inconsistent schema.
-        _print(
-            "  [red]  Could not confirm agentalloy-init completed "
-            "(wait failed or timed out after 5 min); aborting.[/red]"
-        )
-        return 1
-    if init_rc != 0:
-        _print(f"  [red]  agentalloy-init exited {init_rc}; aborting.[/red]")
-        return 1
-    _print("  [green]  Init complete (migrations applied).[/green]")
-
-    # 8a. Bring up ollama + ollama-pull before install-packs. The
-    # `agentalloy-init` service has no depends_on (it only needs the
-    # data volume), so the prior `compose up` step did NOT transitively
-    # start ollama. install-packs' bulk-reembed step embeds against
-    # the ollama container, so without this step every embed call
-    # fails and the corpus ships without vectors. We also wait for
-    # `ollama-pull` (one-shot) to finish so the embedding model is
-    # cached before install-packs starts its first embed call.
-    ollama_up_cmd = [
-        binary_path,
-        "compose",
-        "-f",
-        str(compose_path.resolve()),
-        "up",
-        "-d",
-        "ollama",
-        "ollama-pull",
-    ]
-    _print("  [dim]-> Starting ollama and pulling embedding model (1-3 min)...[/dim]")
-    rc = _run_quiet(ollama_up_cmd, label="compose up (ollama)", timeout=300, log_file=log_path)
-    if rc != 0:
-        return rc
-
-    # Wait for ollama-pull (one-shot) to finish so the embedding model is
-    # cached before install-packs starts. Without this, the first batch
-    # of embed calls 404s on missing model.
-    pull_rc = _wait_for_one_shot(binary_path, "agentalloy-ollama-pull", timeout=600)
-    if pull_rc is None:
-        _print(
-            "  [yellow]  Could not confirm ollama-pull completed "
-            "(wait failed or timed out after 10 min); embeddings may "
-            "fail until the model finishes downloading.[/yellow]"
-        )
-    elif pull_rc != 0:
-        _print(
-            f"  [yellow]  ollama-pull exited {pull_rc}; embeddings may "
-            "fail. Continuing anyway.[/yellow]"
-        )
-    else:
-        _print("  [green]  Embedding model ready.[/green]")
-
-    # 8b. Install skill packs in a one-shot container BEFORE the main
-    # service starts. We use `podman run` directly rather than
-    # `compose run` because podman-compose 1.x's `run` subcommand
-    # translates the service's `depends_on:` into `podman run
-    # --requires=...` flags, and podman's dependency-graph resolver
-    # chokes on stale container references left over from prior project
-    # runs — exiting 127 before the install-packs command ever executes.
-    # Image has no ENTRYPOINT, only CMD, so trailing argv replaces CMD.
-    _print("  [dim]-> Installing skill packs (2-5 min)...[/dim]")
-    # Network: join the ollama container's network namespace directly
-    # (`--network container:agentalloy-ollama`) instead of attaching to
-    # `agentalloy_default`. Two wins:
-    #   1. No assumption about the compose project name. The default
-    #      network is `{project}_default` where project = compose-dir
-    #      basename or COMPOSE_PROJECT_NAME — clones into differently-
-    #      named dirs would otherwise miss `agentalloy_default`.
-    #   2. We reach ollama via `localhost:11434` (shared netns) which
-    #      sidesteps any podman-rootless DNS quirks for compose-network
-    #      aliases.
-    # The ollama container name itself IS hardcoded in compose.yaml
-    # (`container_name: agentalloy-ollama`), so it's stable regardless
-    # of project name.
-    packs_cmd = [
-        binary_path,
-        "run",
-        "--rm",
-        "--network",
-        "container:agentalloy-ollama",
-        "-v",
-        "agentalloy-data:/app/data",
-        "-e",
-        "RUNTIME_EMBED_BASE_URL=http://localhost:11434",
-        "-e",
-        "RUNTIME_EMBEDDING_MODEL=qwen3-embedding:0.6b",
-        "-e",
-        "EMBEDDING_PROVIDER=openai_compat",
-        "-e",
-        "LADYBUG_DB_PATH=/app/data/ladybug",
-        "-e",
-        "DUCKDB_PATH=/app/data/skills.duck",
-        "agentalloy:local",
-        "uv",
-        "run",
-        "agentalloy",
-        "install-packs",
-    ]
-    # Pass the user's pack selection through to the one-shot. --ignore-unknown
-    # is belt-and-suspenders: 5b already stripped unknowns against the host's
-    # seeds/packs, so any name reaching here is valid on the host. If the
-    # image somehow disagrees we'd rather install the rest than exit 1 and
-    # leave the corpus empty.
-    if cfg.packs:
-        packs_cmd.extend(["--packs", cfg.packs, "--ignore-unknown"])
-    rc = _run_quiet(packs_cmd, label="install-packs", timeout=600, log_file=log_path)
-    if rc != 0:
-        # install-packs returns 0 even when reembed soft-failed; if we get
-        # here something harder broke (timeout, image missing, etc.).
-        # _run_quiet already dumped the tail. Soft-fail rather than abort:
-        # the user can re-run install-packs manually, and verify will
-        # surface the low skill count.
-        _print(
-            "  [yellow]  install-packs returned "
-            f"{rc}; verify may report a low skill count. Retry with "
-            "`agentalloy install-packs` once the container is up.[/yellow]"
-        )
-    else:
-        _print("  [green]  Skill packs installed.[/green]")
-
-    # 9. Start the main agentalloy service via direct `podman run --replace`,
-    # NOT `podman compose up`. Same reason install-packs (step 8b) uses direct
-    # run: podman-compose 1.0.6's `up <service>` always re-resolves the full
-    # depends_on graph, even with `--no-deps`. It tries to recreate every dep
-    # we already brought up piecewise in steps 7 + 8a, hits "name already in
-    # use", papers over with `podman start`, and then the new agentalloy
-    # container's `--requires=<dep-ids>` flag (injected from depends_on) points
-    # at internal IDs that no longer line up with podman's stored graph,
-    # exiting 125 with "depends on container ... not found in input list".
-    #
-    # The agentalloy service config below MUST stay in sync with the
-    # `agentalloy:` block in compose.yaml. `--replace` cleans up any dangling
-    # container from a prior failed run. `--requires` is intentionally omitted
-    # — we already waited on each dep above, so podman doesn't need to walk
-    # the graph here.
-    #
-    # Compose project and network are discovered from the running ollama
-    # container, NOT hardcoded: podman-compose derives the project name from
-    # the compose-file dir basename (or COMPOSE_PROJECT_NAME), so a clone
-    # into e.g. ~/code/agentalloy-fork yields project=agentalloy-fork and
-    # network=agentalloy-fork_default. Hardcoding either breaks setup in
-    # those checkouts and breaks `compose ps/down` interop for this container.
-    project_name, network_name = _inspect_ollama_project(binary_path)
-    _print("  [dim]-> Starting agentalloy service[/dim]")
-    up_cmd = [
-        binary_path,
-        "run",
-        "-d",
-        "--replace",
-        "--name",
-        "agentalloy",
-        "--network",
-        network_name,
-        "--network-alias",
-        "agentalloy",
-        "-v",
-        "agentalloy-data:/app/data",
-        "-p",
-        f"{cfg.port}:47950",
-        "-e",
-        "RUNTIME_EMBED_BASE_URL=http://ollama:11434",
-        "-e",
-        "RUNTIME_EMBEDDING_MODEL=qwen3-embedding:0.6b",
-        "-e",
-        "EMBEDDING_PROVIDER=openai_compat",
-        "-e",
-        "LADYBUG_DB_PATH=/app/data/ladybug",
-        "-e",
-        "DUCKDB_PATH=/app/data/skills.duck",
-        "-e",
-        "LOG_LEVEL=INFO",
-        "--restart",
-        "unless-stopped",
-        "--health-cmd",
-        "curl -fsS --max-time 3 http://127.0.0.1:47950/health",
-        "--health-interval",
-        "15s",
-        "--health-timeout",
-        "5s",
-        "--health-start-period",
-        "30s",
-        "--health-retries",
-        "5",
-        # Compose labels so `podman compose ps`, `down`, and our own
-        # _list_project_containers preflight all recognize the container
-        # as part of the project.
-        "--label",
-        f"io.podman.compose.project={project_name}",
-        "--label",
-        f"com.docker.compose.project={project_name}",
-        "--label",
-        "com.docker.compose.service=agentalloy",
-        "agentalloy:local",
-    ]
-    rc = _run_quiet(up_cmd, label="podman run (agentalloy)", timeout=300, log_file=log_path)
-    if rc != 0:
-        return rc
+    _cleanup_temp_entrypoint(entrypoint)
     _print("  [green]  Done.[/green]")
 
     # 10. Poll health endpoint
