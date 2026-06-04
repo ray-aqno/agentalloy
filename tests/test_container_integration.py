@@ -536,3 +536,118 @@ class TestContainerServiceEdgeCases:
             # Second stop: no process found, returns False (no-op)
             result2 = stop_service_in_container()
             assert result2 is False
+
+
+# ---------------------------------------------------------------------------
+# Council acceptance gate — single stop/restart across multi-pack install-packs
+# ---------------------------------------------------------------------------
+
+
+class TestInstallPacksGuardSingleStopRestart:
+    """Council acceptance gate (2026-06-02): _run_container_guard owns the
+    AGENTALLOY_DB_LOCK_HELD lifecycle — exactly ONE stop and ONE restart for
+    an install-packs invocation that processes N>1 packs.
+
+    Patch target: agentalloy.install.container_service.* (inline import inside
+    _run_container_guard picks up patched attributes from sys.modules at call time).
+
+    Structural guard: if the inline import is ever hoisted to module level in
+    install_packs.py, the patch target must change to the install_packs namespace.
+    The assertion below converts that silent false-pass into an immediate failure.
+    """
+
+    def test_install_packs_single_stop_restart_via_run(self, tmp_path: Path) -> None:
+        """Prove stop_service_in_container and restart_service_in_container are
+        each called exactly ONCE when _run() processes 2 packs in container mode.
+
+        Entry point is _run() (not _run_container_guard directly) so the test
+        validates the wiring at install_packs.py line 143.
+        """
+        import argparse
+
+        import agentalloy.install.subcommands.install_packs as install_packs
+
+        # Structural guard: if this import is hoisted to module level in install_packs,
+        # the container_service patch below stops intercepting — update the target then.
+        assert not hasattr(install_packs, "stop_service_in_container"), (
+            "stop_service_in_container is now a module-level name in install_packs; "
+            "update patch target from container_service namespace to install_packs namespace"
+        )
+
+        stop_calls: list[bool] = []
+        restart_calls: list[bool] = []
+
+        def fake_stop() -> bool:
+            stop_calls.append(True)
+            return True
+
+        def fake_restart() -> bool:
+            restart_calls.append(True)
+            return True
+
+        def fake_install_local_pack(
+            pack_dir: Path, *, root: Path, no_restart: bool = False
+        ) -> dict:  # type: ignore[return]
+            return {"action": "ingested"}
+
+        # Two fake pack directories so the loop runs twice.
+        fake_packs_root = tmp_path / "packs"
+        fake_packs_root.mkdir()
+        (fake_packs_root / "alpha").mkdir()
+        (fake_packs_root / "beta").mkdir()
+
+        args = argparse.Namespace(
+            no_restart=False,
+            packs="alpha,beta",
+            non_interactive=True,
+            ignore_unknown=False,
+            list=False,
+            quiet=True,
+        )
+
+        with (
+            patch(
+                "agentalloy.install.container_service.is_in_container",
+                return_value=True,
+            ),
+            patch(
+                "agentalloy.install.container_service.stop_service_in_container",
+                side_effect=fake_stop,
+            ),
+            patch(
+                "agentalloy.install.container_service.restart_service_in_container",
+                side_effect=fake_restart,
+            ),
+            patch(
+                "agentalloy.install.subcommands.install_packs.install_local_pack",
+                side_effect=fake_install_local_pack,
+            ),
+            patch(
+                "agentalloy.install.subcommands.install_packs._bulk_reembed",
+                return_value=0,
+            ),
+            patch(
+                "agentalloy.install.subcommands.install_packs._packs_dir",
+                return_value=fake_packs_root,
+            ),
+            patch(
+                "agentalloy.install.subcommands.install_packs._discover_packs",
+                return_value={"alpha": {}, "beta": {}},
+            ),
+            patch(
+                "agentalloy.install.subcommands.install_packs._select_packs",
+                return_value=(["alpha", "beta"], set(), False),
+            ),
+            patch("agentalloy.install.state.save_output_file"),
+        ):
+            from agentalloy.install.subcommands.install_packs import _run
+
+            rc = _run(args)
+
+        assert rc == 0, f"_run() returned non-zero: {rc}"
+        assert len(stop_calls) == 1, (
+            f"stop_service_in_container called {len(stop_calls)} time(s); expected exactly 1"
+        )
+        assert len(restart_calls) == 1, (
+            f"restart_service_in_container called {len(restart_calls)} time(s); expected exactly 1"
+        )

@@ -154,8 +154,10 @@ def _anthropic_to_openai(request: AnthropicRequest) -> ProxyRequest:
     if request.system is not None:
         if isinstance(request.system, str):
             messages.append(ProxyMessage(role="system", content=request.system))
-        elif isinstance(request.system, list):
-            # Content-block array for system — merge to string
+        else:
+            # Content-block array for system — merge to string. The remaining
+            # type is list[AnthropicContentBlock] (None and str are eliminated
+            # by the branches above), so no isinstance(list) check is needed.
             text_parts: list[str] = []
             for block in request.system:
                 if isinstance(block, dict) and block.get("type") == "text":

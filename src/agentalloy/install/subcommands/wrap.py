@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import json
 import os
 import signal
 import subprocess
@@ -130,24 +129,17 @@ def _run(args: argparse.Namespace) -> int:
     via = args.via  # "hook" or "proxy"
     no_start_server = args.no_start_server
     child_args = args.child_args
-    json_output = getattr(args, "json", False)
-
-    child_pid: int | None = None
 
     # ------------------------------------------------------------------
     # 1. Validate harness
     # ------------------------------------------------------------------
     if harness not in VALID_HARNESSES:
-        result = {
-            "action": "wrap",
-            "error": f"Unknown harness '{harness}'",
-            "harness": harness,
-        }
-        if json_output:
-            print(json.dumps(result, indent=2))
-        else:
-            print_rich_stderr(f"ERROR: Unknown harness '{harness}'.")
-            print_rich_stderr(f"FIX:   Use one of: {', '.join(sorted(VALID_HARNESSES))}.")
+        print_rich_stderr(
+            f"ERROR: Unknown harness '{harness}'.",
+        )
+        print_rich_stderr(
+            f"FIX:   Use one of: {', '.join(sorted(VALID_HARNESSES))}.",
+        )
         return 1
 
     # ------------------------------------------------------------------
@@ -239,20 +231,12 @@ def _run(args: argparse.Namespace) -> int:
     # 6. Spawn child process
     # ------------------------------------------------------------------
     if not child_args:
-        result = {
-            "action": "wrap",
-            "error": "No child process specified. Pass args after --.",
-            "harness": harness,
-        }
-        if json_output:
-            print(json.dumps(result, indent=2))
-        else:
-            print_rich_stderr(
-                "ERROR: No child process specified. Pass args after --.",
-            )
-            print_rich_stderr(
-                "FIX:   agentalloy wrap <harness> -- <command> [args]",
-            )
+        print_rich_stderr(
+            "ERROR: No child process specified. Pass args after --.",
+        )
+        print_rich_stderr(
+            "FIX:   agentalloy wrap <harness> -- <command> [args]",
+        )
         return 1
 
     print_rich(f"  Spawning child: {' '.join(child_args)}")
@@ -265,6 +249,9 @@ def _run(args: argparse.Namespace) -> int:
     # We keep the server PID file as well.
 
     try:
+        # start_new_session=True puts the child in its own process group so the
+        # SIGINT/SIGTERM handler below can call os.killpg on the child's group
+        # without also terminating this wrapper or the invoking shell.
         proc = subprocess.Popen(
             child_args,
             env=child_env,
@@ -272,17 +259,8 @@ def _run(args: argparse.Namespace) -> int:
         )
         child_pid = proc.pid
     except FileNotFoundError as e:
-        result = {
-            "action": "wrap",
-            "error": f"Child process not found: {child_args[0]}",
-            "details": str(e),
-            "harness": harness,
-        }
-        if json_output:
-            print(json.dumps(result, indent=2))
-        else:
-            print_rich_stderr(f"ERROR: Child process not found: {child_args[0]}")
-            print_rich_stderr(f"       {e}")
+        print_rich_stderr(f"ERROR: Child process not found: {child_args[0]}")
+        print_rich_stderr(f"       {e}")
         return 2
 
     print_rich(f"  Child PID: {child_pid}")
@@ -350,25 +328,6 @@ def _run(args: argparse.Namespace) -> int:
 
     print_rich("  Teardown complete.")
 
-    # ------------------------------------------------------------------
-    # 9. Produce output
-    # ------------------------------------------------------------------
-    result: dict[str, Any] = {
-        "action": "wrap",
-        "harness": harness,
-        "port": port,
-        "via": via,
-        "child_pid": child_pid,
-        "exit_code": exit_code,
-        "server_started": server_started,
-        "files_written": files_written,
-    }
-
-    if json_output:
-        print(json.dumps(result, indent=2))
-    else:
-        _render_human(result)
-
     return exit_code
 
 
@@ -404,12 +363,6 @@ def add_parser(
         "--no-start-server",
         action="store_true",
         help="Do not start the server; expect it to be already running.",
-    )
-    p.add_argument(
-        "--json",
-        action="store_true",
-        default=False,
-        help="Output result as JSON.",
     )
     p.add_argument(
         "child_args",

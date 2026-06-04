@@ -49,10 +49,21 @@ class SignalResult:
 
 
 def _extract_task_from_messages(request: ProxyRequest) -> str | None:
-    """Extract the first user message text as the task prompt."""
+    """Extract the first user message text as the task prompt.
+
+    ``ProxyMessage.content`` may be a plain string or a list of
+    Anthropic-style content blocks. Flatten the block form to text so the
+    return type stays ``str | None`` as annotated.
+    """
     for msg in request.messages:
-        if msg.role == "user" and msg.content:
+        if msg.role != "user" or not msg.content:
+            continue
+        if isinstance(msg.content, str):
             return msg.content
+        parts = [block.get("text", "") for block in msg.content if block.get("type") == "text"]
+        joined = "".join(parts)
+        if joined:
+            return joined
     return None
 
 

@@ -474,17 +474,16 @@ def _wire_legacy(
     This is the OLD behavior — used only when ``--legacy`` is passed.
     Extracted from the inline legacy path in ``wire_harness()``.
     """
+    # _HARNESS_REGISTRY is the legacy subset and may not include every harness
+    # that the modern REGISTRY does. Fail with a clear error instead of letting
+    # the dict lookup raise KeyError into the caller.
     if harness not in _HARNESS_REGISTRY:
-        print(
-            f"ERROR: Legacy wiring not available for harness '{harness}'.",
-            file=sys.stderr,
+        legacy_supported = ", ".join(sorted(_HARNESS_REGISTRY))
+        raise SystemExit(
+            f"wire-harness --legacy does not support harness '{harness}'. "
+            f"Legacy-supported harnesses: {legacy_supported}. "
+            f"Re-run without --legacy to use the modern provider registry."
         )
-        print(
-            f"FIX:   '{harness}' is not in the legacy _HARNESS_REGISTRY. "
-            "Use the default proxy path (omit --legacy) or pick a supported harness.",
-            file=sys.stderr,
-        )
-        raise SystemExit(1)
     reg = _HARNESS_REGISTRY[harness]
     files_written: list[dict[str, Any]] = []
 
