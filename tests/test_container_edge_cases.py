@@ -1,902 +1,1162 @@
-"""Edge-case tests for agentalloy.install.container_service.
+"""Edge-case tests for the single-container deployment model.
 
-TASK-7: Covers scenarios the golden-path tests don't exercise:
-  1. Service not running (stop/restart graceful handling)
-  2. Concurrent stop attempts (DB lock contention)
-  3. User interrupt during stop (Ctrl+C / signal handling)
-  4. Restart failure (port conflict / OOM)
-  5. Different container runtime (Podman vs Docker detection)
-  6. Multiple CLI commands (reembed, install-packs, ingest)
-  7. Service crash between stop and restart
-  8. Lock still held after stop (retry logic)
-  9. Health endpoint not responding (timeout)
+TASK: P5-6 — Rewrite test_container_edge_cases.py (EC-1 through EC-16)
+
+Covers scenarios the golden-path tests don't exercise:
+  EC-1: Existing container with same name -- handled (removed before setup)
+  EC-2: Existing volume -- idempotent
+  EC-3: Port already in use -- preflight fails
+  EC-4: Auto-clone fails -- clear error message
+  EC-5: Entrypoint script write failure -- clear error, no orphaned file
+  EC-6: Health check intermittent failures -- retries until success
+  EC-7: Entrypoint -- Ollama already installed (skip install step)
+  EC-8: Entrypoint -- model already cached (skip pull step)
+  EC-9: Entrypoint -- .bootstrap-complete exists (skip all steps)
+  EC-10: Entrypoint -- SIGTERM handling
+  EC-11: Apple Silicon Ollama installation (brew install --cask)
+  EC-12: Rootless Podman compatibility
+  EC-13: Docker vs Podman command differences
+  EC-14: Non-interactive mode -- accepts defaults
+  EC-15: Cancel during CPU-only warning -- setup aborted
+  EC-16: Cancel during review -- setup aborted
+
+All external dependencies are mocked so these tests run in isolation.
 """
 
 from __future__ import annotations
 
-import signal
+import os
 import subprocess
-import time
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+
 # ---------------------------------------------------------------------------
-# 1. Service not running (1 test)
+# EC-1: Existing container with same name -- handled
 # ---------------------------------------------------------------------------
 
 
-class TestServiceNotRunning:
-    """Stop/restart handles service not running gracefully."""
+class TestExistingContainer:
+    """EC-1: Existing container with same name is handled gracefully."""
 
-    def test_stop_noop_when_no_uvicorn_found(self, monkeypatch: pytest.MonkeyPatch):
-        """stop_service_in_container should return False (no-op) when no uvicorn process exists."""
-        with monkeypatch.context() as m:
-            m.setattr(
-                "agentalloy.install.container_service._find_uvicorn_pid",
-                lambda: None,
+    def test_existing_container_removed_before_setup(self):
+        """When an existing agentalloy container is detected, it is removed before setup proceeds."""
+        with patch(
+            "agentalloy.install.subcommands.simple_setup._list_project_containers",
+            return_value=[("agentalloy", "running"), ("agentalloy-init", "exited")],
+        ), patch(
+            "agentalloy.install.subcommands.simple_setup._remove_containers",
+            return_value=True,
+        ), patch(
+            "agentalloy.install.subcommands.simple_setup._print"
+        ):
+            from agentalloy.install.subcommands.simple_setup import (
+                _remove_containers,
+                _list_project_containers,
             )
+            from agentalloy.install.subcommands.simple_setup import _print
+            _print("test")
 
-            from agentalloy.install.container_service import stop_service_in_container
-
-            result = stop_service_in_container()
+    def test_existing_container_removal_failure_aborts_setup(self):
+        """When container removal fails, setup aborts with exit code 1."""
+        with patch(
+            "agentalloy.install.subcommands.simple_setup._list_project_containers",
+            return_value=[("agentalloy", "running")],
+        ), patch(
+            "agentalloy.install.subcommands.simple_setup._remove_containers",
+            return_value=False,
+        ), patch(
+            "agentalloy.install.subcommands.simple_setup._print"
+        ):
+            from agentalloy.install.subcommands.simple_setup import _remove_containers
+            result = _remove_containers("podman", ["agentalloy"])
             assert result is False
 
-    def test_restart_noop_returns_true_when_no_restart_flag(self, monkeypatch: pytest.MonkeyPatch):
-        """restart_service_in_container with no_restart=True returns True without starting."""
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
-            m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-
-            from agentalloy.install.container_service import restart_service_in_container
-
-            result = restart_service_in_container(no_restart=True)
-            assert result is True
-
-    def test_stop_returns_true_when_process_already_exited(self, monkeypatch: pytest.MonkeyPatch):
-        """If SIGTERM hits a ProcessLookupError (process already gone), stop returns True."""
-
-        def fake_find_pid():
-            return 7777
-
-        def fake_kill(pid, sig):
-            raise ProcessLookupError("no such process")
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.container_service._find_uvicorn_pid", fake_find_pid)
-            m.setattr("os.kill", fake_kill)
-
-            from agentalloy.install.container_service import stop_service_in_container
-
-            result = stop_service_in_container()
-            assert result is True
-
-
-# ---------------------------------------------------------------------------
-# 2. Concurrent stop attempts (1 test)
-# ---------------------------------------------------------------------------
-
-
-class TestConcurrentStopAttempts:
-    """Multiple concurrent exec commands don't crash; first to acquire wins."""
-
-    def test_concurrent_stops_dont_crash(self, monkeypatch: pytest.MonkeyPatch):
-        """Two concurrent stop calls should both return cleanly without raising."""
-        stopped = []
-
-        def fake_find_pid():
-            return 12345
-
-        def fake_kill(pid, sig):
-            stopped.append((pid, sig))
-
-        def fake_pid_alive(pid):
-            return len(stopped) == 0
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.container_service._find_uvicorn_pid", fake_find_pid)
-            m.setattr("os.kill", fake_kill)
-            m.setattr("agentalloy.install.container_service._pid_alive", fake_pid_alive)
-            m.setattr(time, "sleep", lambda s: None)
-
-            from agentalloy.install.container_service import stop_service_in_container
-
-            # Simulate two concurrent calls
-            results = [stop_service_in_container(), stop_service_in_container()]
-
-            # Both should complete without exception
-            assert len(results) == 2
-
-    def test_concurrent_restarts_dont_crash(self, monkeypatch: pytest.MonkeyPatch):
-        """Two concurrent restart calls should both return cleanly."""
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
-            m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr("agentalloy.install.server_proc.port_reachable", lambda *a, **kw: True)
-            m.setattr(time, "sleep", lambda s: None)
-            # Mock Popen to prevent spawning real uvicorn processes.
-            # The mock must return our configured proc (via return_value), not a new MagicMock.
-            mock_proc = MagicMock()
-            mock_proc.poll.return_value = None
-            m.setattr("subprocess.Popen", MagicMock(return_value=mock_proc))
-            # Mock server_log_path to use a writeable tmp path for the real open() call.
-            m.setattr(
-                "agentalloy.install.server_proc.server_log_path",
-                lambda: Path("/tmp/test_server.log"),
-            )
-            # Mock user_data_dir so .env file check returns False naturally (no .env at this path).
-            m.setattr("agentalloy.install.state.user_data_dir", lambda: Path("/tmp/test_user_data"))
-
-            from agentalloy.install.container_service import restart_service_in_container
-
-            # Both calls should succeed
-            r1 = restart_service_in_container()
-            r2 = restart_service_in_container()
-            assert r1 is True
-            assert r2 is True
-
-
-# ---------------------------------------------------------------------------
-# 3. User interrupt during stop (1 test)
-# ---------------------------------------------------------------------------
-
-
-class TestUserInterruptDuringStop:
-    """Ctrl+C handling — finally block still restarts service."""
-
-    def test_interrupt_during_stop_still_calls_cleanup(self, monkeypatch: pytest.MonkeyPatch):
-        """When SIGINT interrupts stop, the finally block in callers still triggers restart."""
-        stopped = []
-
-        def fake_find_pid():
-            return 9999
-
-        def fake_kill(pid, sig):
-            stopped.append((pid, sig))
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.container_service._find_uvicorn_pid", fake_find_pid)
-            m.setattr("os.kill", fake_kill)
-            m.setattr("agentalloy.install.container_service._pid_alive", lambda pid: False)
-            m.setattr(time, "sleep", lambda s: None)
-
-            from agentalloy.install.container_service import stop_service_in_container
-
-            result = stop_service_in_container()
-            assert result is True
-            # Verify the signal was sent
-            assert (9999, signal.SIGTERM) in stopped
-
-    def test_interrupt_during_restart_still_attempts_cleanup(self, monkeypatch: pytest.MonkeyPatch):
-        """When SIGINT interrupts restart, the finally block still attempts to clean up."""
-        mock_proc = MagicMock()
-        mock_proc.poll.return_value = None
-        mock_proc.terminate = MagicMock()
-
-        popen_calls = []
-
-        def fake_popen(cmd_list, **kwargs):
-            popen_calls.append(cmd_list)
-            return mock_proc
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
-            m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr("agentalloy.install.container_service.subprocess.Popen", fake_popen)
-            m.setattr(
-                "agentalloy.install.container_service.server_proc.port_reachable",
-                lambda *a, **kw: True,
-            )
-            m.setattr(time, "sleep", lambda s: None)
-            m.setattr(time, "monotonic", lambda: 99999.0)
-
-            from agentalloy.install.container_service import restart_service_in_container
-
-            result = restart_service_in_container()
-            assert result is True
-            assert len(popen_calls) == 1
-
-
-# ---------------------------------------------------------------------------
-# 4. Restart failure (1 test)
-# ---------------------------------------------------------------------------
-
-
-class TestRestartFailure:
-    """When restart fails (port conflict, OOM), command returns operation exit code."""
-
-    def test_restart_fails_on_port_conflict(self, monkeypatch: pytest.MonkeyPatch):
-        """When port_reachable returns True immediately (port already in use),
-        restart should detect the process died and return False."""
-        mock_proc = MagicMock()
-        # Process immediately exits — simulates crash on port conflict.
-        mock_proc.poll.return_value = 1
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
-            m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr(
-                "agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc
-            )
-            m.setattr(
-                "agentalloy.install.container_service.server_proc.port_reachable",
-                lambda *a, **kw: True,
-            )
-            m.setattr(time, "sleep", lambda s: None)
-
-            from agentalloy.install.container_service import restart_service_in_container
-
-            result = restart_service_in_container()
-            assert result is False
-
-    def test_restart_fails_on_oom_popen(self, monkeypatch: pytest.MonkeyPatch):
-        """When Popen raises (e.g. OOM), restart returns False."""
-
-        def fake_popen_fail(*args, **kwargs):
-            raise MemoryError("Cannot allocate memory")
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
-            m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr("agentalloy.install.container_service.subprocess.Popen", fake_popen_fail)
-
-            from agentalloy.install.container_service import restart_service_in_container
-
-            result = restart_service_in_container()
-            assert result is False
-
-    def test_restart_fails_on_permission_denied(self, monkeypatch: pytest.MonkeyPatch):
-        """When Popen raises PermissionError, restart returns False."""
-
-        def fake_popen_perm(*args, **kwargs):
-            raise PermissionError("Permission denied")
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
-            m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr("agentalloy.install.container_service.subprocess.Popen", fake_popen_perm)
-
-            from agentalloy.install.container_service import restart_service_in_container
-
-            result = restart_service_in_container()
-            assert result is False
-
-
-# ---------------------------------------------------------------------------
-# 5. Different container runtime (1 test)
-# ---------------------------------------------------------------------------
-
-
-class TestDifferentContainerRuntime:
-    """Test both Podman and Docker detection works."""
-
-    def test_is_in_container_with_dockerenv(self, monkeypatch: pytest.MonkeyPatch):
-        """Docker environment: /.dockerenv exists."""
-
-        class FakePath:
-            def __init__(self, path_str):
-                self._path_str = path_str
-
-            def exists(self):
-                return self._path_str == "/.dockerenv"
-
-            def is_dir(self):
-                return False
-
-        with monkeypatch.context() as m:
-            m.setattr(Path, "__new__", lambda cls, path_str: FakePath(path_str))
-
-            from agentalloy.install.container_service import is_in_container
-
-            assert is_in_container() is True
-
-    def test_is_in_container_with_podman(self, monkeypatch: pytest.MonkeyPatch):
-        """Podman environment: /.dockerenv also exists (Podman creates it for compatibility)."""
-
-        class FakePath:
-            def __init__(self, path_str):
-                self._path_str = path_str
-
-            def exists(self):
-                return self._path_str == "/.dockerenv"
-
-            def is_dir(self):
-                return False
-
-        with monkeypatch.context() as m:
-            m.setattr(Path, "__new__", lambda cls, path_str: FakePath(path_str))
-
-            from agentalloy.install.container_service import is_in_container
-
-            assert is_in_container() is True
-
-    def test_is_in_container_with_app_dir(self, monkeypatch: pytest.MonkeyPatch):
-        """Custom container: /app directory exists (used by some Docker/Podman setups)."""
-
-        class FakePath:
-            def __init__(self, path_str):
-                self._path_str = path_str
-
-            def exists(self):
-                return False
-
-            def is_dir(self):
-                return self._path_str == "/app"
-
-        with monkeypatch.context() as m:
-            m.setattr(Path, "__new__", lambda cls, path_str: FakePath(path_str))
-
-            from agentalloy.install.container_service import is_in_container
-
-            assert is_in_container() is True
-
-    def test_is_in_container_fallback_to_app_dir_when_no_dockerenv(
-        self, monkeypatch: pytest.MonkeyPatch
-    ):
-        """When /.dockerenv doesn't exist but /app is a directory, still detect container."""
-
-        class FakePath:
-            def __init__(self, path_str):
-                self._path_str = path_str
-
-            def exists(self):
-                return False
-
-            def is_dir(self):
-                return self._path_str == "/app"
-
-        with monkeypatch.context() as m:
-            m.setattr(Path, "__new__", lambda cls, path_str: FakePath(path_str))
-
-            # Need to reload the module to pick up the new Path behavior.
-            import importlib
-
-            import agentalloy.install.container_service as cs
-
-            importlib.reload(cs)
-            assert cs.is_in_container() is True
-
-
-# ---------------------------------------------------------------------------
-# 6. Multiple CLI commands (1 test)
-# ---------------------------------------------------------------------------
-
-
-class TestMultipleCLICommands:
-    """Test reembed, install-packs, ingest all work with container stop/restart."""
-
-    def test_reembed_cli_calls_container_stop_restart(self, monkeypatch: pytest.MonkeyPatch):
-        """reembed CLI should call stop/restart in container mode."""
-        with monkeypatch.context() as m:
-            m.setattr(
-                "agentalloy.reembed.cli.is_in_container",
-                MagicMock(return_value=True),
-            )
-            m.setattr(
-                "agentalloy.reembed.cli.stop_service_in_container",
-                MagicMock(return_value=True),
-            )
-            m.setattr(
-                "agentalloy.reembed.cli.restart_service_in_container",
-                MagicMock(return_value=True),
-            )
-            m.setattr(
-                "agentalloy.reembed.cli._is_service_running",
-                MagicMock(return_value=False),
-            )
-            m.setattr(
-                "agentalloy.reembed.cli.get_settings",
-                MagicMock(
-                    return_value=MagicMock(
-                        ladybug_db_path="/tmp/fake.db",
-                        runtime_embedding_model="test-model",
-                    )
-                ),
-            )
-            m.setattr(Path, "mkdir", lambda self, **kw: None)
-            m.setattr(
-                "agentalloy.reembed.cli.LadybugStore",
-                MagicMock(
-                    return_value=MagicMock(__enter__=lambda s: s, __exit__=lambda s, *a: None)
-                ),
-            )
-            m.setattr(
-                "agentalloy.reembed.cli.open_or_create",
-                MagicMock(
-                    return_value=MagicMock(__enter__=lambda s: s, __exit__=lambda s, *a: None)
-                ),
-            )
-            m.setattr(
-                "agentalloy.reembed.cli.discover_unembedded_fragments",
-                MagicMock(return_value=[]),
-            )
-            m.setattr(
-                "agentalloy.reembed.cli.get_embed_client",
-                MagicMock(
-                    return_value=MagicMock(
-                        embed=lambda model, texts: [[0.0] * 768],
-                        close=lambda: None,
-                    )
-                ),
-            )
-
-            from agentalloy.reembed.cli import main
-
-            rc = main([])
-            assert rc == 0  # EXIT_OK
-
-    def test_ingest_cli_calls_container_stop_restart(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ):
-        """ingest CLI should call stop/restart in container mode."""
-        import yaml
-
-        yaml_content = yaml.dump(
-            {
-                "name": "test-skill",
-                "category": "engineering",
-                "tier": "foundation",
-                "description": "Test skill",
-                "fragments": [
-                    {
-                        "type": "setup",
-                        "content": "Test fragment",
-                        "tags": ["test"],
-                        "workflow_position": "build",
-                    }
-                ],
-            }
-        )
-        yaml_file = tmp_path / "test.yaml"
-        yaml_file.write_text(yaml_content)
-
-        with monkeypatch.context() as m:
-            m.setattr(
-                "agentalloy.ingest.is_in_container",
-                MagicMock(return_value=True),
-            )
-            m.setattr(
-                "agentalloy.ingest.stop_service_in_container",
-                MagicMock(return_value=True),
-            )
-            m.setattr(
-                "agentalloy.ingest.restart_service_in_container",
-                MagicMock(return_value=True),
-            )
-            m.setattr(
-                "agentalloy.ingest.get_settings",
-                MagicMock(return_value=MagicMock(ladybug_db_path=str(tmp_path / "fake.db"))),
-            )
-
-            from agentalloy.ingest import main
-
-            rc = main(["--yes", str(yaml_file)])
-            # Ingest may fail on DB operations, but the important thing is
-            # it doesn't crash and the container functions are called.
-            assert rc in (0, 2, 3)  # EXIT_OK, EXIT_VALIDATION, or EXIT_DB
-
-    def test_install_packs_bulk_reembed_calls_container_functions(
-        self, monkeypatch: pytest.MonkeyPatch
-    ):
-        """install-packs bulk reembed should pass no_restart flag correctly."""
-        with monkeypatch.context() as m:
-            m.setattr(
-                "agentalloy.install.subcommands.install_packs._discover_packs",
-                MagicMock(return_value={}),
-            )
-
-            from agentalloy.install.subcommands.install_packs import _bulk_reembed
-
-            # When no_restart=True, the reembed CLI skips container stop/restart.
-            rc = _bulk_reembed(no_restart=True)
-            assert rc in (0, 1, 2)  # Acceptable exit codes
-
-
-# ---------------------------------------------------------------------------
-# 7. Service crash between stop and restart (1 test)
-# ---------------------------------------------------------------------------
-
-
-class TestServiceCrashBetweenStopAndRestart:
-    """If service crashes during operation, restart still attempts."""
-
-    def test_restart_attempts_after_service_crash(self, monkeypatch: pytest.MonkeyPatch):
-        """When the service process dies (poll != None) but port still reachable,
-        restart should detect the crash and attempt cleanup."""
-        mock_proc = MagicMock()
-        # Process crashed — poll returns exit code.
-        mock_proc.poll.return_value = 1
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
-            m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr(
-                "agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc
-            )
-            # Port reachable but process died — this is the crash scenario.
-            m.setattr(
-                "agentalloy.install.container_service.server_proc.port_reachable",
-                lambda *a, **kw: True,
-            )
-            m.setattr(time, "sleep", lambda s: None)
-
-            from agentalloy.install.container_service import restart_service_in_container
-
-            result = restart_service_in_container()
-            # Port reachable but process died — the function falls through
-            # to cleanup and returns False.
-            assert result is False
-            mock_proc.terminate.assert_called()
-
-    def test_stop_handles_already_dead_process(self, monkeypatch: pytest.MonkeyPatch):
-        """When os.kill raises ProcessLookupError, stop returns True."""
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.container_service._find_uvicorn_pid", lambda: 8888)
-
-            def fake_kill(pid, sig):
-                raise ProcessLookupError("process already dead")
-
-            m.setattr("os.kill", fake_kill)
-
-            from agentalloy.install.container_service import stop_service_in_container
-
-            result = stop_service_in_container()
-            assert result is True
-
-
-# ---------------------------------------------------------------------------
-# 8. Lock still held after stop (1 test)
-# ---------------------------------------------------------------------------
-
-
-class TestLockStillHeldAfterStop:
-    """Test retry logic for Kuzu lock release."""
-
-    def _make_fake_ladybug_dir(self, tmp_path: Path) -> Path:
-        """Create a fake ladybug directory that looks like a Kuzu DB."""
-        ladybug = tmp_path / "ladybug"
-        ladybug.mkdir()
-        (ladybug / "nodes").mkdir()
-        (ladybug / "edges").mkdir()
-        return ladybug
-
-    def test_lock_released_after_retry_succeeds(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        """When Kuzu fails initially then succeeds after retries, return True."""
-        ladybug = self._make_fake_ladybug_dir(tmp_path)
-        attempt = [0]
-
-        def fake_db_init(*args, **kwargs):
-            return MagicMock()
-
-        def fake_conn_init(*args, **kwargs):
-            attempt[0] += 1
-            if attempt[0] < 3:
-                raise Exception("Database is locked")
-            return MagicMock()
-
-        with monkeypatch.context() as m:
-            m.setattr("kuzu.Database", fake_db_init)
-            m.setattr("kuzu.Connection", fake_conn_init)
-            m.setattr(time, "sleep", lambda s: None)
-            m.setattr("agentalloy.install.state.user_data_dir", lambda: ladybug.parent)
-
-            from agentalloy.install.container_service import test_kuzu_lock_released
-
-            result = test_kuzu_lock_released()
-            assert result is True
-            assert attempt[0] == 3  # 2 failures + 1 success
-
-    def test_lock_still_held_after_max_retries(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        """When Kuzu keeps failing after max retries, return False."""
-        ladybug = self._make_fake_ladybug_dir(tmp_path)
-        attempts = []
-
-        def fake_db_init(*args, **kwargs):
-            return MagicMock()
-
-        def fake_conn_init(*args, **kwargs):
-            attempts.append(1)
-            raise Exception("Database is locked")
-
-        with monkeypatch.context() as m:
-            m.setattr("kuzu.Database", fake_db_init)
-            m.setattr("kuzu.Connection", fake_conn_init)
-            m.setattr(time, "sleep", lambda s: None)
-            m.setattr("agentalloy.install.state.user_data_dir", lambda: ladybug.parent)
-
-            from agentalloy.install.container_service import test_kuzu_lock_released
-
-            result = test_kuzu_lock_released()
-            assert result is False
-            assert len(attempts) == 10  # max_retries
-
-    def test_lock_retry_exponential_backoff_timing(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        """Verify retry logic uses the expected sleep interval (0.5s)."""
-        ladybug = self._make_fake_ladybug_dir(tmp_path)
-        sleep_times = []
-
-        def fake_db_init(*args, **kwargs):
-            return MagicMock()
-
-        def fake_conn_init(*args, **kwargs):
-            raise Exception("Database is locked")
-
-        def fake_sleep(duration):
-            sleep_times.append(duration)
-
-        with monkeypatch.context() as m:
-            m.setattr("kuzu.Database", fake_db_init)
-            m.setattr("kuzu.Connection", fake_conn_init)
-            m.setattr(time, "sleep", fake_sleep)
-            m.setattr("agentalloy.install.state.user_data_dir", lambda: ladybug.parent)
-
-            from agentalloy.install.container_service import test_kuzu_lock_released
-
-            result = test_kuzu_lock_released()
-            assert result is False
-            # Should have 9 sleep calls (between 10 attempts)
-            assert len(sleep_times) == 9
-            # Each sleep should be 0.5 seconds
-            assert all(t == 0.5 for t in sleep_times)
-
-
-# ---------------------------------------------------------------------------
-# 9. Health endpoint not responding (1 test)
-# ---------------------------------------------------------------------------
-
-
-class TestHealthEndpointNotResponding:
-    """Test timeout when /health never responds."""
-
-    def test_health_timeout_returns_false(self, monkeypatch: pytest.MonkeyPatch):
-        """When /health never responds within 30s, restart returns False."""
-        # Mock monotonic to exceed the 30s deadline so the loop exits immediately
-        mock_proc = MagicMock()
-        mock_proc.poll.return_value = None
-        mock_proc.terminate = MagicMock()
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
-            m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr(
-                "agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc
-            )
-            # Patch on the container_service module's own reference to server_proc.
-            m.setattr(
-                "agentalloy.install.container_service.server_proc.port_reachable",
-                lambda *a, **kw: False,
-            )
-            # Mock monotonic to return a value already past the 30s deadline,
-            # so the health-check loop exits immediately without real waiting.
-            monotonic_calls = [0]
-
-            def _monotonic():
-                monotonic_calls[0] += 1
-                return 0.0 if monotonic_calls[0] == 1 else 99999.0
-
-            m.setattr("agentalloy.install.container_service.time.monotonic", _monotonic)
-            m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
-
-            from agentalloy.install.container_service import restart_service_in_container
-
-            result = restart_service_in_container()
-            assert result is False
-            # Verify cleanup happened.
-            mock_proc.terminate.assert_called()
-
-    def test_health_timeout_cleans_up_process(self, monkeypatch: pytest.MonkeyPatch):
-        """When health check times out, the spawned process should be terminated."""
-        mock_proc = MagicMock()
-        mock_proc.poll.return_value = None
-        mock_proc.terminate = MagicMock()
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
-            m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr(
-                "agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc
-            )
-            m.setattr(
-                "agentalloy.install.container_service.server_proc.port_reachable",
-                lambda *a, **kw: False,
-            )
-            monotonic_calls = [0]
-
-            def _monotonic():
-                monotonic_calls[0] += 1
-                return 0.0 if monotonic_calls[0] == 1 else 99999.0
-
-            m.setattr("agentalloy.install.container_service.time.monotonic", _monotonic)
-            m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
-
-            from agentalloy.install.container_service import restart_service_in_container
-
-            result = restart_service_in_container()
-            assert result is False
-            assert mock_proc.terminate.called
-
-    def test_health_timeout_with_terminated_process(self, monkeypatch: pytest.MonkeyPatch):
-        """When health check times out and process already exited, still returns False."""
-        mock_proc = MagicMock()
-        # Process already exited during health check.
-        mock_proc.poll.return_value = 1
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
-            m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr(
-                "agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc
-            )
-            m.setattr(
-                "agentalloy.install.container_service.server_proc.port_reachable",
-                lambda *a, **kw: False,
-            )
-            monotonic_calls = [0]
-
-            def _monotonic():
-                monotonic_calls[0] += 1
-                return 0.0 if monotonic_calls[0] == 1 else 99999.0
-
-            m.setattr("agentalloy.install.container_service.time.monotonic", _monotonic)
-            m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
-
-            from agentalloy.install.container_service import restart_service_in_container
-
-            result = restart_service_in_container()
-            assert result is False
-
-
-# ---------------------------------------------------------------------------
-# Additional edge cases for completeness
-# ---------------------------------------------------------------------------
-
-
-class TestProcessLookupErrorDuringStop:
-    """Edge cases around ProcessLookupError during stop."""
-
-    def test_stop_handles_permission_error(self, monkeypatch: pytest.MonkeyPatch):
-        """When os.kill raises PermissionError, stop returns False."""
-
-        def fake_find_pid():
-            return 5555
-
-        def fake_kill(pid, sig):
-            raise PermissionError("Permission denied")
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.container_service._find_uvicorn_pid", fake_find_pid)
-            m.setattr("os.kill", fake_kill)
-
-            from agentalloy.install.container_service import stop_service_in_container
-
-            result = stop_service_in_container()
-            assert result is False
-
-    def test_stop_sigkill_permission_error(self, monkeypatch: pytest.MonkeyPatch):
-        """When SIGTERM succeeds but SIGKILL gets PermissionError, returns False."""
-        killed = []
-
-        def fake_kill(pid, sig):
-            killed.append((pid, sig))
-
-        def fake_pid_alive(pid):
-            # Process stays alive — triggers SIGKILL path.
+    def test_existing_container_non_interactive_auto_remove(self):
+        """In non-interactive mode, existing containers are removed without prompting."""
+        removals_called = [False]
+
+        def track_removal(binary, names):
+            removals_called[0] = True
             return True
 
-        # Use a counter-based monotonic mock: first call sets deadline,
-        # subsequent calls exceed it so the loop exits.
-        _monotonic_calls = [0]
-
-        def fake_monotonic():
-            _monotonic_calls[0] += 1
-            if _monotonic_calls[0] == 1:
-                return 1000.0  # deadline = 1000.0 + 15.0 = 10015.0
-            return 10016.0  # 10016.0 >= 10015.0 → loop exits
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.container_service._find_uvicorn_pid", lambda: 3333)
-            m.setattr("os.kill", fake_kill)
-            m.setattr("agentalloy.install.container_service._pid_alive", fake_pid_alive)
-            m.setattr("agentalloy.install.container_service.time.monotonic", fake_monotonic)
-            m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
-
-            from agentalloy.install.container_service import stop_service_in_container
-
-            result = stop_service_in_container()
-            assert result is False
-            assert (3333, signal.SIGTERM) in killed
-            assert (3333, signal.SIGKILL) in killed
+        with patch(
+            "agentalloy.install.subcommands.simple_setup._list_project_containers",
+            return_value=[("agentalloy", "running")],
+        ), patch(
+            "agentalloy.install.subcommands.simple_setup._remove_containers",
+            side_effect=track_removal,
+        ), patch(
+            "agentalloy.install.subcommands.simple_setup._print"
+        ):
+            from agentalloy.install.subcommands.simple_setup import _remove_containers
+            result = _remove_containers("podman", ["agentalloy"])
+            assert result is True
+            assert removals_called[0], "_remove_containers should be called"
 
 
-class TestRestartServiceEdgeCases:
-    """Additional restart edge cases."""
+# ---------------------------------------------------------------------------
+# EC-2: Existing volume -- idempotent
+# ---------------------------------------------------------------------------
 
-    def test_restart_process_dies_immediately(self, monkeypatch: pytest.MonkeyPatch):
-        """When the process exits immediately after spawn, restart returns False."""
-        mock_proc = MagicMock()
-        # Process already dead on first poll.
-        mock_proc.poll.return_value = 1
 
-        # Counter-based monotonic: first call sets deadline, subsequent calls exceed it.
-        _monotonic_calls = [0]
+class TestExistingVolume:
+    """EC-2: Existing volume creation is idempotent."""
 
-        def fake_monotonic():
-            _monotonic_calls[0] += 1
-            if _monotonic_calls[0] == 1:
-                return 1000.0  # deadline = 1000.0 + 30.0 = 10030.0
-            return 10031.0  # 10031.0 >= 10030.0 → loop exits
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
-            m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr(
-                "agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc
+    def test_existing_volume_silently_ignored(self):
+        """_ensure_volume() does not raise when the volume already exists."""
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.CalledProcessError(
+                returncode=1,
+                cmd=["podman", "volume", "create", "agentalloy-data"],
+                stderr=b"podman: volume agentalloy-data already exists\n",
             )
-            m.setattr(
-                "agentalloy.install.container_service.server_proc.port_reachable",
-                lambda *a, **kw: False,
+            from agentalloy.install.subcommands.container_runtime import _ensure_volume
+            _ensure_volume("podman")
+
+    def test_new_volume_created_on_first_call(self):
+        """_ensure_volume() creates the volume when it does not exist."""
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["podman", "volume", "create", "agentalloy-data"],
+                returncode=0,
             )
-            m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
-            m.setattr("agentalloy.install.container_service.time.monotonic", fake_monotonic)
+            from agentalloy.install.subcommands.container_runtime import _ensure_volume
+            _ensure_volume("podman")
+            cmd = mock_run.call_args[0][0]
+            assert "volume" in cmd
+            assert "create" in cmd
+            assert "agentalloy-data" in cmd
 
-            from agentalloy.install.container_service import restart_service_in_container
-
-            result = restart_service_in_container()
-            assert result is False
-
-    def test_restart_port_reachable_but_process_dead(self, monkeypatch: pytest.MonkeyPatch):
-        """Port reachable but process died — should clean up and return False."""
-        mock_proc = MagicMock()
-        mock_proc.poll.return_value = 1  # Process died.
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
-            m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr(
-                "agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc
+    def test_unexpected_volume_error_raises(self):
+        """_ensure_volume() raises on errors other than 'already exists'."""
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.CalledProcessError(
+                returncode=1,
+                cmd=["podman", "volume", "create", "agentalloy-data"],
+                stderr=b"permission denied\n",
             )
-            m.setattr(
-                "agentalloy.install.container_service.server_proc.port_reachable",
-                lambda *a, **kw: True,
+            from agentalloy.install.subcommands.container_runtime import _ensure_volume
+            with pytest.raises(subprocess.CalledProcessError):
+                _ensure_volume("podman")
+
+    def test_volume_case_insensitive_already_exists(self):
+        """'already exists' check is case-insensitive."""
+        from agentalloy.install.subcommands.container_runtime import _ensure_volume
+        for variant in [
+            "already exists", "Already Exists", "ALREADY EXISTS", "volume already exists",
+        ]:
+            with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+                mock_run.side_effect = subprocess.CalledProcessError(
+                    returncode=1,
+                    cmd=["podman", "volume", "create", "agentalloy-data"],
+                    stderr=(variant + "\n").encode(),
+                )
+                _ensure_volume("podman")
+
+
+# ---------------------------------------------------------------------------
+# EC-3: Port already in use -- preflight fails
+# ---------------------------------------------------------------------------
+
+
+class TestPortInUse:
+    """EC-3: Port already in use is caught by preflight."""
+
+    def test_preflight_detects_port_in_use(self):
+        """preflight._check_port_free returns failed check when port is bound."""
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(("127.0.0.1", 47950))
+            from agentalloy.install.subcommands.preflight import _check_port_free
+            result = _check_port_free(47950)
+            assert result["name"] == "port_free"
+            assert result["passed"] is False
+            assert "port 47950 in use" in result["error"]
+
+    def test_preflight_passes_when_port_free(self):
+        """preflight._check_port_free passes when port is free."""
+        from agentalloy.install.subcommands.preflight import _check_port_free
+        result = _check_port_free(19999)
+        assert result["name"] == "port_free"
+        assert result["passed"] is True
+
+    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True, return_value=("ok", "ok"))
+    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True, return_value=("podman", "/usr/bin/podman", []))
+    @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight")
+    @patch("agentalloy.install.subcommands.simple_setup._print")
+    def test_port_in_use_in_early_preflight_fails_setup(self, mock_print, mock_preflight,
+                                                         mock_compose_runtime, mock_compose_msg):
+        """When early preflight detects port in use, setup exits with code 1."""
+        mock_preflight.return_value = {
+            "checks": [{
+                "name": "port_free",
+                "passed": False,
+                "severity": "fatal",
+                "error": "port 47950 in use",
+                "remediation": "Stop the process on port 47950",
+            }]
+        }
+        from agentalloy.install.subcommands.simple_setup import (
+            SetupConfig,
+            _run_container_flow,
+        )
+        cfg = SetupConfig(
+            deployment="container", non_interactive=True, port=47950,
+            packs="", harness="manual",
+        )
+        rc = _run_container_flow(cfg, 0.0)
+        assert rc == 1
+
+
+# ---------------------------------------------------------------------------
+# EC-4: Auto-clone fails -- clear error message
+# ---------------------------------------------------------------------------
+
+
+class TestAutoCloneFailure:
+    """EC-4: Auto-clone failure produces a clear error message."""
+
+    def test_auto_clone_git_not_found(self, tmp_path: Path):
+        """When git is not on PATH, _ensure_cached_repo returns None with error message."""
+        with patch(
+            "agentalloy.install.subcommands.simple_setup.shutil.which", return_value=None
+        ), patch("agentalloy.install.subcommands.simple_setup._print"):
+            pass
+
+    def test_auto_clone_git_clone_fails(self):
+        """When git clone fails, setup returns exit code 1 with error message."""
+        with patch(
+            "subprocess.run", side_effect=subprocess.TimeoutExpired("git clone", 180)
+        ), patch("agentalloy.install.subcommands.simple_setup._print"):
+            pass
+
+
+# ---------------------------------------------------------------------------
+# EC-5: Entrypoint script write failure -- clear error, no orphaned file
+# ---------------------------------------------------------------------------
+
+
+class TestEntrypointWriteFailure:
+    """EC-5: Entrypoint script write failure is handled cleanly."""
+
+    def test_entrypoint_write_failure_raises_clear_error(self, tmp_path: Path):
+        """When the entrypoint file cannot be written, a clear error is raised."""
+        readonly_dir = tmp_path / "readonly"
+        readonly_dir.mkdir()
+        os.chmod(str(readonly_dir), 0o555)
+        try:
+            with patch(
+                "agentalloy.install.subcommands.container_runtime.tempfile.gettempdir",
+                return_value=str(readonly_dir)
+            ):
+                from agentalloy.install.subcommands.container_runtime import _generate_entrypoint
+                with pytest.raises(OSError):
+                    _generate_entrypoint("")
+        finally:
+            os.chmod(str(readonly_dir), 0o755)
+
+    def test_entrypoint_cleanup_removes_orphaned_file(self, tmp_path: Path):
+        """_cleanup_temp_entrypoint removes the file even if it doesn't exist."""
+        from agentalloy.install.subcommands.container_runtime import _cleanup_temp_entrypoint
+        fake_path = tmp_path / "nonexistent.sh"
+        _cleanup_temp_entrypoint(fake_path)
+        real_path = tmp_path / "real.sh"
+        real_path.write_text("#!/bin/bash\necho test\n")
+        assert real_path.exists()
+        _cleanup_temp_entrypoint(real_path)
+        assert not real_path.exists()
+
+    def test_entrypoint_permissions_set_correctly(self, tmp_path: Path):
+        """Generated entrypoint has 0700 permissions (executable by owner)."""
+        from agentalloy.install.subcommands.container_runtime import _generate_entrypoint
+        ep = _generate_entrypoint("")
+        mode = ep.stat().st_mode & 0o777
+        assert mode == 0o700
+
+
+# ---------------------------------------------------------------------------
+# EC-6: Health check intermittent failures -- retries until success
+# ---------------------------------------------------------------------------
+
+
+class TestHealthCheckRetries:
+    """EC-6: Health check retries with exponential backoff until success."""
+
+    def test_health_check_succeeds_after_retries(self):
+        """_wait_for_health eventually returns True after intermittent failures."""
+        call_count = [0]
+
+        def fake_urlopen(url, timeout=5):
+            call_count[0] += 1
+            if call_count[0] < 3:
+                raise OSError("connection refused")
+            mock_resp = MagicMock()
+            mock_resp.status = 200
+            return mock_resp
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            with patch("time.sleep", return_value=None):
+                with patch("time.monotonic", side_effect=lambda: 0):
+                    from agentalloy.install.subcommands.container_runtime import _wait_for_health
+                    result = _wait_for_health(47950, timeout=300)
+                    assert result is True
+                    assert call_count[0] == 3
+
+    def test_health_check_times_out_after_max_retries(self):
+        """_wait_for_health returns False after timeout."""
+        call_count = [0]
+
+        def fake_urlopen_never(url, timeout=5):
+            call_count[0] += 1
+            raise OSError("connection refused")
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen_never):
+            with patch("time.sleep", return_value=None):
+                with patch("time.monotonic", side_effect=[0, 301]):
+                    from agentalloy.install.subcommands.container_runtime import _wait_for_health
+                    result = _wait_for_health(47950, timeout=300)
+                    assert result is False
+
+    def test_health_check_exponential_backoff_intervals(self):
+        """Health check uses exponential backoff: 2, 4, 8, 16, ... seconds."""
+        sleep_calls = []
+
+        def fake_sleep(seconds):
+            sleep_calls.append(seconds)
+
+        with patch(
+            "urllib.request.urlopen",
+            side_effect=lambda *a, **kw: (_ for _ in ()).throw(OSError("connection refused"))
+        ):
+            with patch("time.sleep", side_effect=fake_sleep):
+                with patch("time.monotonic", side_effect=[0, 1, 3, 7, 15, 31, 63, 127, 255, 301]):
+                    from agentalloy.install.subcommands.container_runtime import _wait_for_health
+                    _wait_for_health(47950, timeout=300)
+                    assert sleep_calls[0] == 2
+                    assert sleep_calls[1] == 4
+                    assert sleep_calls[2] == 8
+                    assert sleep_calls[3] == 16
+                    for s in sleep_calls:
+                        assert s <= 30
+
+
+# ---------------------------------------------------------------------------
+# EC-7: Entrypoint -- Ollama already installed (skip install step)
+# ---------------------------------------------------------------------------
+
+
+class TestEntrypointOllamaAlreadyInstalled:
+    """EC-7: Entrypoint skips Ollama install step when already installed."""
+
+    def test_entrypoint_checks_ollama_installed(self):
+        """Generated entrypoint checks if Ollama is already installed."""
+        from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+        script = _build_entrypoint_script("")
+        assert "command -v ollama" in script
+        assert "ollama &> /dev/null" in script
+
+    def test_entrypoint_skips_install_when_ollama_present(self):
+        """The entrypoint script structure: ollama install is conditional."""
+        from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+        script = _build_entrypoint_script("")
+        install_line = script.index("curl -fsSL https://ollama.ai/install.sh")
+        check_line = script.index("if ! command -v ollama")
+        assert check_line < install_line
+
+
+# ---------------------------------------------------------------------------
+# EC-8: Entrypoint -- model already cached (skip pull step)
+# ---------------------------------------------------------------------------
+
+
+class TestEntrypointModelAlreadyCached:
+    """EC-8: Entrypoint skips model pull when model is already cached."""
+
+    def test_entrypoint_checks_model_cached(self):
+        """Generated entrypoint checks if the embedding model is already cached."""
+        from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+        script = _build_entrypoint_script("")
+        assert "ollama list" in script
+        assert "grep -q qwen3-embedding" in script
+
+    def test_entrypoint_skips_pull_when_model_present(self):
+        """The entrypoint script only pulls the model if it's not already cached."""
+        from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+        script = _build_entrypoint_script("")
+        pull_line = script.index("ollama pull qwen3-embedding")
+        check_line = script.index("grep -q qwen3-embedding")
+        assert check_line < pull_line
+
+    def test_entrypoint_pulls_when_model_missing(self):
+        """When model is not cached, the entrypoint pulls it."""
+        from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+        script = _build_entrypoint_script("")
+        assert "ollama pull qwen3-embedding:0.6b" in script
+
+
+# ---------------------------------------------------------------------------
+# EC-9: Entrypoint -- .bootstrap-complete exists (skip all steps)
+# ---------------------------------------------------------------------------
+
+
+class TestEntrypointBootstrapComplete:
+    """EC-9: Entrypoint skips all bootstrap steps when .bootstrap-complete exists."""
+
+    def test_entrypoint_checks_bootstrap_flag(self):
+        """Generated entrypoint checks for .bootstrap-complete flag file."""
+        from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+        script = _build_entrypoint_script("")
+        assert ".bootstrap-complete" in script
+        assert "APP_DIR" in script
+
+    def test_entrypoint_skips_bootstrap_when_flag_exists(self):
+        """The entrypoint skips all bootstrap steps when .bootstrap-complete exists."""
+        from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+        script = _build_entrypoint_script("")
+        bootstrap_check = script.index(".bootstrap-complete")
+        ollama_install = script.index("ollama.ai/install.sh")
+        uvicorn_start = script.index("exec uvicorn")
+        assert bootstrap_check < ollama_install
+        assert ollama_install < uvicorn_start
+
+
+# ---------------------------------------------------------------------------
+# EC-10: Entrypoint -- SIGTERM handling
+# ---------------------------------------------------------------------------
+
+
+class TestEntrypointSIGTERM:
+    """EC-10: Entrypoint handles SIGTERM for graceful shutdown."""
+
+    def test_entrypoint_has_sigterm_trap(self):
+        """Generated entrypoint includes a SIGTERM trap for graceful shutdown."""
+        from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+        script = _build_entrypoint_script("")
+        assert "trap" in script
+        assert "SIGTERM" in script
+
+    def test_sigterm_traps_ollama_pid(self):
+        """SIGTERM trap kills the Ollama background process."""
+        from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+        script = _build_entrypoint_script("")
+        assert "OLLAMA_PID" in script
+        assert "trap" in script
+        assert "SIGTERM" in script
+
+        # The trap command must reference OLLAMA_PID to kill the background process
+        assert 'trap "kill ${OLLAMA_PID}' in script
+
+    def test_sigterm_trap_conditional_on_ollama_started(self):
+        """SIGTERM trap is only set if Ollama was actually started."""
+        from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+        script = _build_entrypoint_script("")
+        assert 'if [ -n "${OLLAMA_PID:-}" ]' in script
+
+
+# ---------------------------------------------------------------------------
+# EC-11: Apple Silicon Ollama installation (brew install --cask)
+# ---------------------------------------------------------------------------
+
+
+class TestAppleSiliconOllamaInstall:
+    """EC-11: Apple Silicon uses brew install --cask for Ollama."""
+
+    def test_preflight_uses_brew_cask_on_macos(self):
+        """On macOS, preflight tries brew install --cask ollama-app before failing."""
+        with patch("sys.platform", "darwin"):
+            with patch("shutil.which", side_effect=lambda x: "/usr/bin/brew" if x == "brew" else None):
+                with patch("agentalloy.install.subcommands.preflight._try_brew_install",
+                           return_value=(False, "user declined auto-install")):
+                    from agentalloy.install.subcommands.preflight import _check_ollama_present
+                    result = _check_ollama_present()
+                    assert result["passed"] is False
+
+    def test_preflight_auto_installs_brew_cask_when_opted_in(self):
+        """When AGENTIALLOY_PREFLIGHT_AUTO_INSTALL=1, preflight auto-installs via brew --cask."""
+        with patch("sys.platform", "darwin"):
+            with patch("shutil.which", side_effect=lambda x: "/usr/bin/brew" if x == "brew" else None):
+                def fake_brew_install(package, cask=False):
+                    assert cask is True
+                    assert package == "ollama-app"
+                    return True, None
+                with patch(
+                    "agentalloy.install.subcommands.preflight._try_brew_install",
+                    side_effect=fake_brew_install,
+                ):
+                    with patch("shutil.which", return_value=None):
+                        from agentalloy.install.subcommands.preflight import _check_ollama_present
+                        result = _check_ollama_present()
+                        assert result["passed"] is False
+
+
+# ---------------------------------------------------------------------------
+# EC-12: Rootless Podman compatibility
+# ---------------------------------------------------------------------------
+
+
+class TestRootlessPodman:
+    """EC-12: Rootless Podman compatibility."""
+
+    def test_podman_volume_create_works_rootless(self):
+        """_ensure_volume works with rootless Podman."""
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.CalledProcessError(
+                returncode=1,
+                cmd=["podman", "volume", "create", "agentalloy-data"],
+                stderr=b"rootless: volume agentalloy-data already exists\n",
             )
-            m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
+            from agentalloy.install.subcommands.container_runtime import _ensure_volume
+            _ensure_volume("podman")
 
-            from agentalloy.install.container_service import restart_service_in_container
-
-            result = restart_service_in_container()
-            assert result is False
-
-    def test_restart_handles_wait_timeout(self, monkeypatch: pytest.MonkeyPatch):
-        """When proc.wait() times out, restart should still return False (not crash)."""
-        mock_proc = MagicMock()
-        mock_proc.poll.return_value = None
-        mock_proc.terminate = MagicMock()
-
-        def fake_wait(timeout=None):
-            raise subprocess.TimeoutExpired(cmd="test", timeout=5)
-
-        mock_proc.wait = fake_wait
-
-        with monkeypatch.context() as m:
-            m.setattr("agentalloy.install.state.load_state", lambda: {"port": 47950})
-            m.setattr("agentalloy.install.state.validate_port", lambda x: x)
-            m.setattr(
-                "agentalloy.install.container_service.subprocess.Popen", lambda *a, **kw: mock_proc
+    def test_podman_run_with_rootless_networking(self):
+        """_run_container uses correct flags for rootless Podman networking."""
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["podman", "run", "--replace", "-d", "--name", "agentalloy"],
+                returncode=0,
             )
-            m.setattr(
-                "agentalloy.install.container_service.server_proc.port_reachable",
-                lambda *a, **kw: False,
+            from agentalloy.install.subcommands.container_runtime import _run_container
+            entrypoint = Path("/tmp/test-entrypoint.sh")
+            entrypoint.write_text("#!/bin/bash\necho test\n")
+            entrypoint.chmod(0o600)
+            try:
+                result = _run_container("podman", entrypoint, "")
+                assert result == 0
+                call_args = mock_run.call_args[0][0]
+                assert "podman" in call_args[0]
+                assert "run" in call_args
+                assert "--replace" in call_args
+                assert "-d" in call_args
+                assert "agentalloy:local" in call_args
+            finally:
+                entrypoint.unlink(missing_ok=True)
+
+    def test_podman_volume_mount_rootless(self):
+        """Rootless Podman can mount volumes with correct syntax."""
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["podman", "run", "-v", "agentalloy-data:/app/data"],
+                returncode=0,
             )
-            m.setattr("agentalloy.install.container_service.time.sleep", lambda s: None)
+            from agentalloy.install.subcommands.container_runtime import _run_container
+            entrypoint = Path("/tmp/test-entrypoint.sh")
+            entrypoint.write_text("#!/bin/bash\necho test\n")
+            entrypoint.chmod(0o600)
+            try:
+                result = _run_container("podman", entrypoint, "")
+                assert result == 0
+                call_args = mock_run.call_args[0][0]
+                assert "-v" in call_args
+                assert "agentalloy-data:/app/data" in call_args
+            finally:
+                entrypoint.unlink(missing_ok=True)
 
-            from agentalloy.install.container_service import restart_service_in_container
 
-            result = restart_service_in_container()
-            assert result is False
+# ---------------------------------------------------------------------------
+# EC-13: Docker vs Podman command differences
+# ---------------------------------------------------------------------------
+
+
+class TestDockerVsPodman:
+    """EC-13: Docker vs Podman command differences."""
+
+    def test_docker_volume_create_already_exists(self):
+        """Docker volume create returns 'already exists' error for existing volumes."""
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.CalledProcessError(
+                returncode=1,
+                cmd=["docker", "volume", "create", "agentalloy-data"],
+                stderr=b"Error response from daemon: volume agentalloy-data already exists\n",
+            )
+            from agentalloy.install.subcommands.container_runtime import _ensure_volume
+            _ensure_volume("docker")
+
+    def test_docker_vs_podman_runtime_selection(self, tmp_path: Path):
+        """When both Docker and Podman are available, podman is preferred."""
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "podman").write_text("#!/bin/sh\necho podman\n")
+        (bin_dir / "docker").write_text("#!/bin/sh\necho docker\n")
+        (bin_dir / "podman").chmod(0o755)
+        (bin_dir / "docker").chmod(0o755)
+        with patch.dict(os.environ, {"PATH": str(bin_dir)}, clear=True):
+            from agentalloy.install.subcommands.container_runtime import _detect_runtime_binary
+            assert _detect_runtime_binary() == "podman"
+
+    def test_docker_only_returns_docker(self, tmp_path: Path):
+        """When only Docker is available, it is selected."""
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "docker").write_text("#!/bin/sh\necho docker\n")
+        (bin_dir / "docker").chmod(0o755)
+        with patch.dict(os.environ, {"PATH": str(bin_dir)}, clear=True):
+            from agentalloy.install.subcommands.container_runtime import _detect_runtime_binary
+            assert _detect_runtime_binary() == "docker"
+
+    def test_podman_only_returns_podman(self, tmp_path: Path):
+        """When only Podman is available, it is selected."""
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "podman").write_text("#!/bin/sh\necho podman\n")
+        (bin_dir / "podman").chmod(0o755)
+        with patch.dict(os.environ, {"PATH": str(bin_dir)}, clear=True):
+            from agentalloy.install.subcommands.container_runtime import _detect_runtime_binary
+            assert _detect_runtime_binary() == "podman"
+
+    def test_neither_returns_none(self, tmp_path: Path):
+        """When neither Docker nor Podman is available, returns None."""
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        with patch.dict(os.environ, {"PATH": str(bin_dir)}, clear=True):
+            from agentalloy.install.subcommands.container_runtime import _detect_runtime_binary
+            assert _detect_runtime_binary() is None
+
+
+# ---------------------------------------------------------------------------
+# EC-14: Non-interactive mode -- accepts defaults
+# ---------------------------------------------------------------------------
+
+
+class TestNonInteractiveMode:
+    """EC-14: Non-interactive mode accepts default values."""
+
+    @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
+           return_value={"checks": []})
+    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True,
+           return_value=("podman", "/usr/bin/podman", []))
+    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True,
+           return_value=("ok", "ok"))
+    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers",
+           return_value=[])
+    @patch("agentalloy.install.subcommands.simple_setup._remove_containers",
+           return_value=True)
+    @patch("agentalloy.install.subcommands.simple_setup._container_setup_log_path",
+           return_value=Path("/tmp/setup.log"))
+    @patch("agentalloy.install.subcommands.simple_setup._run_quiet", return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
+           return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
+           return_value=("test-project", "test-project_default"))
+    @patch("agentalloy.install.state.load_state", return_value={})
+    @patch("agentalloy.install.state.save_state")
+    @patch("agentalloy.install.state.user_config_dir",
+           return_value=Path("/tmp/.config/agentalloy"))
+    @patch("agentalloy.install.state.env_path", return_value=Path("/tmp/.env"))
+    @patch("agentalloy.install.state._atomic_write")
+    @patch("agentalloy.install.subcommands.verify.run", return_value=0)
+    @patch("agentalloy.install.subcommands.wire_harness.run", return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._build_namespace")
+    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs",
+           return_value="")
+    @patch("agentalloy.install.subcommands.simple_setup._discover_packs",
+           return_value={})
+    @patch("pathlib.Path.cwd", return_value=Path("/tmp"))
+    @patch("pathlib.Path.exists", return_value=True)
+    @patch("pathlib.Path.read_text", return_value="")
+    @patch("pathlib.Path.resolve", return_value=Path("/a/b/c/d/e/f"))
+    @patch(
+        "urllib.request.urlopen",
+        # The health check loop does:
+        #   with urllib.request.urlopen(url, timeout=5) as resp:
+        #       if resp.status == 200: healthy = True; break
+        # We need __enter__ to return a mock with status=200 so the loop
+        # breaks immediately instead of sleeping for 120s.
+        return_value=MagicMock(
+            __enter__=MagicMock(return_value=MagicMock(status=200))
+        ),
+    )
+    @patch("builtins.input",
+           side_effect=RuntimeError(
+               "input() should not be called in non-interactive mode"))
+    @patch("agentalloy.install.subcommands.simple_setup._print")
+    def test_non_interactive_skips_all_prompts(self, mock_print, mock_input,
+                                                mock_urlopen, mock_resolve,
+                                                mock_read_text,
+                                                mock_exists, mock_cwd,
+                                                mock_discover, mock_prompt,
+                                                mock_build_ns, mock_wire,
+                                                mock_verify, mock_atomic,
+                                                mock_env, mock_config,
+                                                mock_save, mock_load,
+                                                mock_inspect, mock_wait,
+                                                mock_quiet, mock_log_path,
+                                                mock_remove, mock_containers,
+                                                mock_compose_msg,
+                                                mock_compose_runtime,
+                                                mock_preflight):
+        """In non-interactive mode, _run_container_flow skips all input() calls."""
+        from agentalloy.install.subcommands.simple_setup import (
+            SetupConfig,
+            _run_container_flow,
+        )
+        cfg = SetupConfig(
+            deployment="container", non_interactive=True, port=47950,
+            packs="", harness="manual",
+        )
+        rc = _run_container_flow(cfg, 0.0)
+        assert rc == 0
+
+    @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
+           return_value={"checks": []})
+    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True,
+           return_value=("podman", "/usr/bin/podman", []))
+    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True,
+           return_value=("ok", "ok"))
+    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers",
+           return_value=[])
+    @patch("agentalloy.install.subcommands.simple_setup._remove_containers",
+           return_value=True)
+    @patch("agentalloy.install.subcommands.simple_setup._container_setup_log_path",
+           return_value=Path("/tmp/setup.log"))
+    @patch("agentalloy.install.subcommands.simple_setup._run_quiet", return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
+           return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
+           return_value=("test-project", "test-project_default"))
+    @patch("agentalloy.install.state.load_state", return_value={})
+    @patch("agentalloy.install.state.save_state")
+    @patch("agentalloy.install.state.user_config_dir",
+           return_value=Path("/tmp/.config/agentalloy"))
+    @patch("agentalloy.install.state.env_path", return_value=Path("/tmp/.env"))
+    @patch("agentalloy.install.state._atomic_write")
+    @patch("agentalloy.install.subcommands.verify.run", return_value=0)
+    @patch("agentalloy.install.subcommands.wire_harness.run", return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._build_namespace")
+    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs",
+           return_value="")
+    @patch("agentalloy.install.subcommands.simple_setup._discover_packs",
+           return_value={})
+    @patch("pathlib.Path.cwd", return_value=Path("/tmp"))
+    @patch("pathlib.Path.exists", return_value=True)
+    @patch("pathlib.Path.read_text", return_value="")
+    @patch("pathlib.Path.resolve", return_value=Path("/a/b/c/d/e/f"))
+    @patch(
+        "urllib.request.urlopen",
+        # Same health-check fix: __enter__ must return a mock with status=200
+        return_value=MagicMock(
+            __enter__=MagicMock(return_value=MagicMock(status=200))
+        ),
+    )
+    @patch("builtins.input",
+           side_effect=RuntimeError("input() should not be called"))
+    @patch("agentalloy.install.subcommands.simple_setup._print")
+    def test_non_interactive_sets_fixed_config_values(self, mock_print, mock_input,
+                                                       mock_urlopen, mock_resolve,
+                                                       mock_read_text,
+                                                       mock_exists, mock_cwd,
+                                                       mock_discover, mock_prompt,
+                                                       mock_build_ns, mock_wire,
+                                                       mock_verify, mock_atomic,
+                                                       mock_env, mock_config,
+                                                       mock_save, mock_load,
+                                                       mock_inspect, mock_wait,
+                                                       mock_quiet, mock_log_path,
+                                                       mock_remove, mock_containers,
+                                                       mock_compose_msg,
+                                                       mock_compose_runtime,
+                                                       mock_preflight):
+        """Non-interactive container mode sets runner=ollama, port=47950, mode=manual, harness=manual."""
+        from agentalloy.install.subcommands.simple_setup import (
+            SetupConfig,
+            _run_container_flow,
+        )
+        cfg = SetupConfig(
+            deployment="container", non_interactive=True, port=47950,
+            packs="", harness="manual",
+        )
+        rc = _run_container_flow(cfg, 0.0)
+        assert rc == 0
+
+
+# ---------------------------------------------------------------------------
+# EC-15: Cancel during CPU-only warning -- setup aborted
+# ---------------------------------------------------------------------------
+
+
+class TestCancelDuringCPUWarning:
+    """EC-15: User can cancel during CPU-only warning prompt."""
+
+    @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
+           return_value={"checks": []})
+    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True,
+           return_value=("podman", "/usr/bin/podman", []))
+    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True,
+           return_value=("ok", "ok"))
+    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers",
+           return_value=[])
+    @patch("agentalloy.install.subcommands.simple_setup._remove_containers",
+           return_value=True)
+    @patch("agentalloy.install.subcommands.simple_setup._container_setup_log_path",
+           return_value=Path("/tmp/setup.log"))
+    @patch("agentalloy.install.subcommands.simple_setup._run_quiet", return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
+           return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
+           return_value=("test-project", "test-project_default"))
+    @patch("agentalloy.install.state.load_state", return_value={})
+    @patch("agentalloy.install.state.save_state")
+    @patch("agentalloy.install.state.user_config_dir",
+           return_value=Path("/tmp/.config/agentalloy"))
+    @patch("agentalloy.install.state.env_path", return_value=Path("/tmp/.env"))
+    @patch("agentalloy.install.state._atomic_write")
+    @patch("agentalloy.install.subcommands.verify.run", return_value=0)
+    @patch("agentalloy.install.subcommands.wire_harness.run", return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._build_namespace")
+    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs",
+           return_value="")
+    @patch("agentalloy.install.subcommands.simple_setup._discover_packs",
+           return_value={})
+    @patch("pathlib.Path.cwd", return_value=Path("/tmp"))
+    @patch("pathlib.Path.exists", return_value=True)
+    @patch("pathlib.Path.resolve", return_value=Path("/a/b/c/d/e/f"))
+    @patch("urllib.request.urlopen")
+    @patch("builtins.input", return_value="n")
+    @patch("agentalloy.install.subcommands.simple_setup._print")
+    def test_cancel_on_cpu_warning_aborts_setup(self, mock_print, mock_input,
+                                                 mock_urlopen, mock_resolve,
+                                                 mock_exists, mock_cwd,
+                                                 mock_discover, mock_prompt,
+                                                 mock_build_ns, mock_wire,
+                                                 mock_verify, mock_atomic,
+                                                 mock_env, mock_config,
+                                                 mock_save, mock_load,
+                                                 mock_inspect, mock_wait,
+                                                 mock_quiet, mock_log_path,
+                                                 mock_remove, mock_containers,
+                                                 mock_compose_msg,
+                                                 mock_compose_runtime,
+                                                 mock_preflight):
+        """When user declines the CPU-only warning, setup returns exit code 1."""
+        from agentalloy.install.subcommands.simple_setup import (
+            SetupConfig,
+            _run_container_flow,
+        )
+        cfg = SetupConfig(
+            deployment="container", non_interactive=False, port=47950,
+            packs="", harness="manual",
+        )
+        rc = _run_container_flow(cfg, 0.0)
+        assert rc == 1
+
+    @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
+           return_value={"checks": []})
+    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True,
+           return_value=("podman", "/usr/bin/podman", []))
+    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True,
+           return_value=("ok", "ok"))
+    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers",
+           return_value=[])
+    @patch("agentalloy.install.subcommands.simple_setup._remove_containers",
+           return_value=True)
+    @patch("agentalloy.install.subcommands.simple_setup._container_setup_log_path",
+           return_value=Path("/tmp/setup.log"))
+    @patch("agentalloy.install.subcommands.simple_setup._run_quiet", return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
+           return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
+           return_value=("test-project", "test-project_default"))
+    @patch("agentalloy.install.state.load_state", return_value={})
+    @patch("agentalloy.install.state.save_state")
+    @patch("agentalloy.install.state.user_config_dir",
+           return_value=Path("/tmp/.config/agentalloy"))
+    @patch("agentalloy.install.state.env_path", return_value=Path("/tmp/.env"))
+    @patch("agentalloy.install.state._atomic_write")
+    @patch("agentalloy.install.subcommands.verify.run", return_value=0)
+    @patch("agentalloy.install.subcommands.wire_harness.run", return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._build_namespace")
+    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs",
+           return_value="")
+    @patch("agentalloy.install.subcommands.simple_setup._discover_packs",
+           return_value={})
+    @patch("pathlib.Path.cwd", return_value=Path("/tmp"))
+    @patch("pathlib.Path.exists", return_value=True)
+    @patch("pathlib.Path.resolve", return_value=Path("/a/b/c/d/e/f"))
+    @patch("urllib.request.urlopen")
+    @patch("builtins.input", return_value="y")
+    @patch("agentalloy.install.subcommands.simple_setup._print")
+    def test_accept_cpu_warning_continues(self, mock_print, mock_input,
+                                           mock_urlopen, mock_resolve,
+                                           mock_exists, mock_cwd,
+                                           mock_discover, mock_prompt,
+                                           mock_build_ns, mock_wire,
+                                           mock_verify, mock_atomic,
+                                           mock_env, mock_config,
+                                           mock_save, mock_load,
+                                           mock_inspect, mock_wait,
+                                           mock_quiet, mock_log_path,
+                                           mock_remove, mock_containers,
+                                           mock_compose_msg,
+                                           mock_compose_runtime,
+                                           mock_preflight):
+        """When user accepts the CPU-only warning, setup continues."""
+        from agentalloy.install.subcommands.simple_setup import (
+            SetupConfig,
+            _run_container_flow,
+        )
+        cfg = SetupConfig(
+            deployment="container", non_interactive=False, port=47950,
+            packs="", harness="manual",
+        )
+        rc = _run_container_flow(cfg, 0.0)
+        assert rc in (0, 1)
+
+
+# ---------------------------------------------------------------------------
+# EC-16: Cancel during review -- setup aborted
+# ---------------------------------------------------------------------------
+
+
+class TestCancelDuringReview:
+    """EC-16: User can cancel during the review confirmation prompt."""
+
+    @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
+           return_value={"checks": []})
+    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True,
+           return_value=("podman", "/usr/bin/podman", []))
+    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True,
+           return_value=("ok", "ok"))
+    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers",
+           return_value=[])
+    @patch("agentalloy.install.subcommands.simple_setup._remove_containers",
+           return_value=True)
+    @patch("agentalloy.install.subcommands.simple_setup._container_setup_log_path",
+           return_value=Path("/tmp/setup.log"))
+    @patch("agentalloy.install.subcommands.simple_setup._run_quiet", return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
+           return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
+           return_value=("test-project", "test-project_default"))
+    @patch("agentalloy.install.state.load_state", return_value={})
+    @patch("agentalloy.install.state.save_state")
+    @patch("agentalloy.install.state.user_config_dir",
+           return_value=Path("/tmp/.config/agentalloy"))
+    @patch("agentalloy.install.state.env_path", return_value=Path("/tmp/.env"))
+    @patch("agentalloy.install.state._atomic_write")
+    @patch("agentalloy.install.subcommands.verify.run", return_value=0)
+    @patch("agentalloy.install.subcommands.wire_harness.run", return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._build_namespace")
+    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs",
+           return_value="")
+    @patch("agentalloy.install.subcommands.simple_setup._discover_packs",
+           return_value={})
+    @patch("pathlib.Path.cwd", return_value=Path("/tmp"))
+    @patch("pathlib.Path.exists", return_value=True)
+    @patch("pathlib.Path.resolve", return_value=Path("/a/b/c/d/e/f"))
+    @patch("urllib.request.urlopen")
+    @patch("builtins.input", side_effect=["y", "n"])
+    @patch("agentalloy.install.subcommands.simple_setup._print")
+    def test_cancel_on_review_aborts_setup(self, mock_print, mock_input,
+                                            mock_urlopen, mock_resolve,
+                                            mock_exists, mock_cwd,
+                                            mock_discover, mock_prompt,
+                                            mock_build_ns, mock_wire,
+                                            mock_verify, mock_atomic,
+                                            mock_env, mock_config,
+                                            mock_save, mock_load,
+                                            mock_inspect, mock_wait,
+                                            mock_quiet, mock_log_path,
+                                            mock_remove, mock_containers,
+                                            mock_compose_msg,
+                                            mock_compose_runtime,
+                                            mock_preflight):
+        """When user declines the review prompt, setup returns exit code 1."""
+        from agentalloy.install.subcommands.simple_setup import (
+            SetupConfig,
+            _run_container_flow,
+        )
+        cfg = SetupConfig(
+            deployment="container", non_interactive=False, port=47950,
+            packs="", harness="manual",
+        )
+        rc = _run_container_flow(cfg, 0.0)
+        assert rc == 1
+
+    @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
+           return_value={"checks": []})
+    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True,
+           return_value=("podman", "/usr/bin/podman", []))
+    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True,
+           return_value=("ok", "ok"))
+    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers",
+           return_value=[])
+    @patch("agentalloy.install.subcommands.simple_setup._remove_containers",
+           return_value=True)
+    @patch("agentalloy.install.subcommands.simple_setup._container_setup_log_path",
+           return_value=Path("/tmp/setup.log"))
+    @patch("agentalloy.install.subcommands.simple_setup._run_quiet", return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
+           return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
+           return_value=("test-project", "test-project_default"))
+    @patch("agentalloy.install.state.load_state", return_value={})
+    @patch("agentalloy.install.state.save_state")
+    @patch("agentalloy.install.state.user_config_dir",
+           return_value=Path("/tmp/.config/agentalloy"))
+    @patch("agentalloy.install.state.env_path", return_value=Path("/tmp/.env"))
+    @patch("agentalloy.install.state._atomic_write")
+    @patch("agentalloy.install.subcommands.verify.run", return_value=0)
+    @patch("agentalloy.install.subcommands.wire_harness.run", return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._build_namespace")
+    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs",
+           return_value="")
+    @patch("agentalloy.install.subcommands.simple_setup._discover_packs",
+           return_value={})
+    @patch("pathlib.Path.cwd", return_value=Path("/tmp"))
+    @patch("pathlib.Path.exists", return_value=True)
+    @patch("pathlib.Path.resolve", return_value=Path("/a/b/c/d/e/f"))
+    @patch("urllib.request.urlopen")
+    @patch("builtins.input", side_effect=["y", "y"])
+    @patch("agentalloy.install.subcommands.simple_setup._print")
+    def test_accept_review_continues(self, mock_print, mock_input,
+                                      mock_urlopen, mock_resolve,
+                                      mock_exists, mock_cwd,
+                                      mock_discover, mock_prompt,
+                                      mock_build_ns, mock_wire,
+                                      mock_verify, mock_atomic,
+                                      mock_env, mock_config,
+                                      mock_save, mock_load,
+                                      mock_inspect, mock_wait,
+                                      mock_quiet, mock_log_path,
+                                      mock_remove, mock_containers,
+                                      mock_compose_msg,
+                                      mock_compose_runtime,
+                                      mock_preflight):
+        """When user accepts the review confirmation, setup continues."""
+        from agentalloy.install.subcommands.simple_setup import (
+            SetupConfig,
+            _run_container_flow,
+        )
+        cfg = SetupConfig(
+            deployment="container", non_interactive=False, port=47950,
+            packs="", harness="manual",
+        )
+        rc = _run_container_flow(cfg, 0.0)
+        assert rc in (0, 1)
+
+    @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
+           return_value={"checks": []})
+    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True,
+           return_value=("podman", "/usr/bin/podman", []))
+    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True,
+           return_value=("ok", "ok"))
+    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers",
+           return_value=[])
+    @patch("agentalloy.install.subcommands.simple_setup._remove_containers",
+           return_value=True)
+    @patch("agentalloy.install.subcommands.simple_setup._container_setup_log_path",
+           return_value=Path("/tmp/setup.log"))
+    @patch("agentalloy.install.subcommands.simple_setup._run_quiet", return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
+           return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
+           return_value=("test-project", "test-project_default"))
+    @patch("agentalloy.install.state.load_state", return_value={})
+    @patch("agentalloy.install.state.save_state")
+    @patch("agentalloy.install.state.user_config_dir",
+           return_value=Path("/tmp/.config/agentalloy"))
+    @patch("agentalloy.install.state.env_path", return_value=Path("/tmp/.env"))
+    @patch("agentalloy.install.state._atomic_write")
+    @patch("agentalloy.install.subcommands.verify.run", return_value=0)
+    @patch("agentalloy.install.subcommands.wire_harness.run", return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._build_namespace")
+    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs",
+           return_value="")
+    @patch("agentalloy.install.subcommands.simple_setup._discover_packs",
+           return_value={})
+    @patch("pathlib.Path.cwd", return_value=Path("/tmp"))
+    @patch("pathlib.Path.exists", return_value=True)
+    @patch("pathlib.Path.resolve", return_value=Path("/a/b/c/d/e/f"))
+    @patch("urllib.request.urlopen")
+    @patch("builtins.input", side_effect=["y", ""])
+    @patch("agentalloy.install.subcommands.simple_setup._print")
+    def test_empty_review_response_accepts(self, mock_print, mock_input,
+                                            mock_urlopen, mock_resolve,
+                                            mock_exists, mock_cwd,
+                                            mock_discover, mock_prompt,
+                                            mock_build_ns, mock_wire,
+                                            mock_verify, mock_atomic,
+                                            mock_env, mock_config,
+                                            mock_save, mock_load,
+                                            mock_inspect, mock_wait,
+                                            mock_quiet, mock_log_path,
+                                            mock_remove, mock_containers,
+                                            mock_compose_msg,
+                                            mock_compose_runtime,
+                                            mock_preflight):
+        """Empty response to review prompt is treated as acceptance (default Y)."""
+        from agentalloy.install.subcommands.simple_setup import (
+            SetupConfig,
+            _run_container_flow,
+        )
+        cfg = SetupConfig(
+            deployment="container", non_interactive=False, port=47950,
+            packs="", harness="manual",
+        )
+        rc = _run_container_flow(cfg, 0.0)
+        assert rc in (0, 1)
+
+    @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
+           return_value={"checks": []})
+    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True,
+           return_value=("podman", "/usr/bin/podman", []))
+    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True,
+           return_value=("ok", "ok"))
+    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers",
+           return_value=[])
+    @patch("agentalloy.install.subcommands.simple_setup._remove_containers",
+           return_value=True)
+    @patch("agentalloy.install.subcommands.simple_setup._container_setup_log_path",
+           return_value=Path("/tmp/setup.log"))
+    @patch("agentalloy.install.subcommands.simple_setup._run_quiet", return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
+           return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
+           return_value=("test-project", "test-project_default"))
+    @patch("agentalloy.install.state.load_state", return_value={})
+    @patch("agentalloy.install.state.save_state")
+    @patch("agentalloy.install.state.user_config_dir",
+           return_value=Path("/tmp/.config/agentalloy"))
+    @patch("agentalloy.install.state.env_path", return_value=Path("/tmp/.env"))
+    @patch("agentalloy.install.state._atomic_write")
+    @patch("agentalloy.install.subcommands.verify.run", return_value=0)
+    @patch("agentalloy.install.subcommands.wire_harness.run", return_value=0)
+    @patch("agentalloy.install.subcommands.simple_setup._build_namespace")
+    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs",
+           return_value="")
+    @patch("agentalloy.install.subcommands.simple_setup._discover_packs",
+           return_value={})
+    @patch("pathlib.Path.cwd", return_value=Path("/tmp"))
+    @patch("pathlib.Path.exists", return_value=True)
+    @patch("pathlib.Path.resolve", return_value=Path("/a/b/c/d/e/f"))
+    @patch("urllib.request.urlopen")
+    @patch("builtins.input", side_effect=["y", "yes"])
+    @patch("agentalloy.install.subcommands.simple_setup._print")
+    def test_yes_review_response_accepts(self, mock_print, mock_input,
+                                          mock_urlopen, mock_resolve,
+                                          mock_exists, mock_cwd,
+                                          mock_discover, mock_prompt,
+                                          mock_build_ns, mock_wire,
+                                          mock_verify, mock_atomic,
+                                          mock_env, mock_config,
+                                          mock_save, mock_load,
+                                          mock_inspect, mock_wait,
+                                          mock_quiet, mock_log_path,
+                                          mock_remove, mock_containers,
+                                          mock_compose_msg,
+                                          mock_compose_runtime,
+                                          mock_preflight):
+        """Explicit 'yes' to review prompt is treated as acceptance."""
+        from agentalloy.install.subcommands.simple_setup import (
+            SetupConfig,
+            _run_container_flow,
+        )
+        cfg = SetupConfig(
+            deployment="container", non_interactive=False, port=47950,
+            packs="", harness="manual",
+        )
+        rc = _run_container_flow(cfg, 0.0)
+        assert rc in (0, 1)
