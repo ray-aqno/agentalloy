@@ -388,7 +388,7 @@ If any check fails:
 > ASK
 > "Do you want AgentAlloy to start automatically in the background, or will you start it manually each session?
 >  1. Persistent — native service (systemd on Linux / launchd on macOS, starts at login)
->  2. Persistent — container (podman or docker compose, starts on demand)
+>  2. Persistent — container (single-container model, starts on demand)
 >  3. Manual — I'll run `agentalloy serve` myself"
 
 Then based on the answer:
@@ -405,9 +405,9 @@ Then based on the answer:
 > agentalloy enable-service --mode manual
 > ```
 
-The subcommand detects the available service manager (systemd/launchd) or container runtime (podman preferred, docker fallback), writes the appropriate unit/plist/compose invocation, starts the service, and polls `/health` for up to 30s to confirm startup. Container deployments always use `compose.yaml`, which bundles agentalloy + an Ollama sidecar (CPU-only inference; GPU acceleration requires the native install). On success, the mode is recorded in `install-state.json`.
+The subcommand detects the available service manager (systemd/launchd) or container runtime (podman preferred, docker fallback), writes the appropriate unit/plist/startup invocation, starts the service, and polls `/health` for up to 30s to confirm startup. Container deployments use the single-container model (`agentalloy setup --deployment container`), which bundles agentalloy + Ollama in one container with a runtime-generated entrypoint script (CPU-only inference; GPU acceleration requires the native install). On success, the mode is recorded in `install-state.json`.
 
-> **Container deployments build from source.** `compose.yaml` builds the image from local source (`build: { context: . }`), so `Containerfile`, `pyproject.toml`, `uv.lock`, `src/`, and `README.md` must sit alongside the compose file. The wizard auto-handles this in three steps: (a) checks `cwd` for the repo, (b) checks the editable-install source root, (c) falls back to a shallow `git clone` of `https://github.com/nrmeyers/agentalloy.git` into `~/.cache/agentalloy/repo` and uses that as the build context. A `uv tool install`'d CLI works fine — `git` is the only host prereq beyond the compose runtime. Native mode has no such requirement.
+> **Container deployments build from source.** The `Containerfile` builds the image from local source, so `Containerfile`, `pyproject.toml`, `uv.lock`, `src/`, and `README.md` must be available as the build context. The wizard auto-handles this in three steps: (a) checks `cwd` for the repo, (b) checks the editable-install source root, (c) falls back to a shallow `git clone` of `https://github.com/nrmeyers/agentalloy.git` into `~/.cache/agentalloy/repo` and uses that as the build context. A `uv tool install`'d CLI works fine — `git` and a container runtime (`podman` or `docker`) are the only host prereqs. Native mode has no such requirement.
 
 ---
 
@@ -470,6 +470,28 @@ Operator commands the user can run later (these are NOT part of this runbook —
 | `agentalloy reset-step <name>` | Clear a specific install step (escape hatch for changing config without full uninstall) |
 | `agentalloy uninstall` | Full teardown — see below for exactly what's removed |
 
+### Container operational commands
+
+For container deployments (`--deployment container`), use these commands to manage the running container:
+
+| Command | What it does |
+|---|---|
+| `podman logs agentalloy` | View container logs (add `-f` to follow) |
+| `podman logs --tail 100 agentalloy` | Last 100 lines of container logs |
+| `podman inspect agentalloy` | Inspect container metadata and configuration |
+| `podman ps --filter name=agentalloy` | Check if the container is running |
+| `podman exec -it agentalloy sh` | Open an interactive shell inside the container |
+| `podman restart agentalloy` | Restart the container |
+| `podman stop agentalloy` | Stop the container (graceful shutdown) |
+| `podman rm -f agentalloy` | Force-remove the container |
+| `podman volume inspect agentalloy-data` | Inspect the persistent data volume |
+| `curl http://localhost:47950/health` | Check the service health endpoint |
+| `podman exec agentalloy uv run agentalloy reembed` | Re-embed corpus inside the container |
+| `podman exec agentalloy uv run agentalloy install-packs --packs all` | Install skill packs inside the container |
+| `podman exec agentalloy uv run agentalloy install-packs --packs all --no-restart` | Install packs without restarting the service |
+
+The container uses a runtime-generated entrypoint script (`/app/entrypoint.sh`) that handles bootstrap: Ollama installation, model pull, migrations, and pack installation. On subsequent starts, the entrypoint skips all bootstrap steps if `.bootstrap-complete` exists.
+
 ### Uninstall — what it removes
 
 `agentalloy uninstall` is the one-shot teardown. The default preset is **full uninstall** — it removes everything:
@@ -495,6 +517,17 @@ Operator commands the user can run later (these are NOT part of this runbook —
 agentalloy uninstall --remove-data
 ```
 This used to require a manual `rm -rf ~/.local/share/agentalloy` afterwards — no longer.
+
+### Uninstalling the container model
+
+For container deployments (`--deployment container`), `agentalloy uninstall` also handles teardown:
+
+- Stops and removes the `agentalloy` container (`podman rm -f agentalloy` or `docker rm -f agentalloy`)
+- Removes the `agentalloy-data` volume (`podman volume rm agentalloy-data` or `docker volume rm agentalloy-data`)
+- Removes the `~/.ollama` symlink created during setup
+- Cleans up harness wiring and state files (same as native model)
+
+If the user wants to keep their corpus and model cache, use `--preset keep-data` — this preserves the volume and Ollama models while removing wiring and `.env`.
 
 ---
 

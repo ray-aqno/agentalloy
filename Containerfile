@@ -2,7 +2,11 @@
 # Compatible with Podman (project preference) and Docker (works as Dockerfile via --file Containerfile).
 #
 # Build:  podman build -t agentalloy -f Containerfile .
-# Run:    via compose.yaml (recommended) or `podman run --rm -p 47950:47950 -v ./data:/app/data agentalloy`
+# Run:    agentalloy setup --deployment container  (recommended — single-container with entrypoint)
+#         or manually: podman run --replace -d --name agentalloy -p 47950:47950 \
+#                      -v agentalloy-data:/app/data -v ~/.ollama:/root/.ollama \
+#                      -e AGENTIALLOY_PACKS= -e ENTRYPOINT=/app/entrypoint.sh \
+#                      agentalloy:local /app/entrypoint.sh
 
 FROM python:3.12-slim AS base
 
@@ -31,8 +35,9 @@ COPY src/ ./src/
 # Create an empty data dir so the image is runnable without a bind mount.
 # The corpus (LadybugDB + DuckDB) is not shipped in the repo — it's
 # generated locally on first install via `agentalloy install-packs` and
-# `agentalloy.migrate`. compose.yaml bind-mounts a host volume onto
-# /app/data so user data persists across container restarts.
+# `agentalloy.migrate`. The entrypoint script (generated at runtime by
+# `agentalloy setup --deployment container`) bind-mounts a host volume
+# onto /app/data so user data persists across container restarts.
 RUN mkdir -p data
 
 RUN uv sync --frozen --no-dev
@@ -43,8 +48,9 @@ ENV LADYBUG_DB_PATH=/app/data/ladybug \
 
 EXPOSE 47950
 
-# Note: HEALTHCHECK is intentionally defined in compose.yaml rather than here.
-# Podman's default OCI image format does not honor inline HEALTHCHECK directives;
-# the compose-level healthcheck works on both Podman and Docker.
+# Note: HEALTHCHECK is intentionally omitted — the container runtime module
+# uses _wait_for_health() to poll /health with exponential backoff rather
+# than relying on the OCI HEALTHCHECK directive (which Podman doesn't always
+# honor in its default OCI image format).
 
 CMD ["uv", "run", "uvicorn", "agentalloy.app:app", "--host", "0.0.0.0", "--port", "47950"]

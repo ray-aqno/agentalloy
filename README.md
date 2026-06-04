@@ -30,7 +30,7 @@
 
 This gives smaller models the leverage to punch above their weight class, and gives larger models a runtime reminder of how they should be operating — both of which mean getting it right the first time, not the third.
 
-Phase-aware, intent-aware, and zero paid-LLM tokens spent on routing. No generative LLM in the hot path. No remote calls. No containers (unless you want them). The whole loop runs locally on one 0.6B embed model plus embedded [LadybugDB](https://docs.ladybugdb.com/) + DuckDB.
+Phase-aware, intent-aware, and zero paid-LLM tokens spent on routing. No generative LLM in the hot path. No remote calls. No containers (unless you want them — `agentalloy setup --deployment container` gives you a single-container deployment). The whole loop runs locally on one 0.6B embed model plus embedded [LadybugDB](https://docs.ladybugdb.com/) + DuckDB.
 
 Things your agent gets composed-and-injected without you pasting them into the prompt:
 
@@ -50,6 +50,7 @@ Things your agent gets composed-and-injected without you pasting them into the p
 - [What makes the composition different](#what-makes-the-composition-different)
 - [How it works: phases, contracts, signal layer](#how-it-works-phases-contracts-signal-layer)
 - [How to use it](#how-to-use-it)
+- [Container deployment](#container-deployment)
 - [Profiles](#profiles)
 - [Harness support](#harness-support)
 - [Standalone CLI](#standalone-cli)
@@ -102,9 +103,9 @@ git clone https://github.com/nrmeyers/agentalloy.git && cd agentalloy
 
 Works in any of the [supported harnesses](#harness-support).
 
-**Container alternative.** `agentalloy setup` → choose container. The default `compose.yaml` runs agentalloy + a bundled Ollama sidecar on the compose-internal network with `qwen3-embedding:0.6b` auto-pulled on first start. Port 47950 is the only external surface. Container inference is CPU-only on every host; for GPU acceleration (NVIDIA/AMD/Metal) pick the native install instead.
+**Container alternative.** `agentalloy setup --deployment container` — runs agentalloy + Ollama in a single container with `qwen3-embedding:0.6b` auto-pulled on first start. Port 47950 is the only external surface. Container inference is CPU-only on every host; for GPU acceleration (NVIDIA/AMD/Metal) pick the native install instead.
 
-> **Container install builds from source.** `compose.yaml` uses `build: { context: . }`, so the wizard needs the repo on disk for the build context. The wizard handles this automatically: if you ran `uv tool install agentalloy` without a manual `git clone`, setup falls back to a shallow clone of the repo into `~/.cache/agentalloy/repo` and uses that as the build context. The only extra host prereq beyond `podman` / `docker compose` is `git`.
+> **Container install builds from source.** The container image is built from the repo's `Containerfile`, so setup needs the repo on disk for the build context. Setup handles this automatically: if you ran `uv tool install agentalloy` without a manual `git clone`, setup falls back to a shallow clone of the repo into `~/.cache/agentalloy/repo` and uses that as the build context. The only extra host prereq beyond `podman` / `docker` is `git`.
 
 ---
 
@@ -124,6 +125,130 @@ $ curl -s -X POST http://localhost:47950/compose \
 ```
 
 Your agent calls `/compose`, gets back the relevant raw skill prose, and assembles it inside its own prompt. No LLM-in-the-loop, no token tax, no API key roulette. Sub-50ms p95 on a warm cache.
+
+---
+
+## Container deployment
+
+AgentAlloy can run as a single container (`agentalloy:local`) that bundles the service and its embedding model (Ollama) in one process. This is the recommended deployment for users who want zero host-side inference dependencies.
+
+### How it works
+
+```bash
+agentalloy setup --deployment container
+```
+
+The setup wizard:
+
+1. **Detects** your container runtime (`podman` preferred, `docker` fallback).
+2. **Builds** the container image from `Containerfile` (multi-stage build: Python 3.12-slim → uv → deps → project).
+3. **Creates** a named volume `agentalloy-data` for persistent corpus data.
+4. **Generates** an entrypoint script that handles in-container bootstrap.
+5. **Runs** the container with volume mounts, env vars, and port mapping.
+6. **Waits** for the health endpoint (`/health`) to respond.
+
+### Container architecture
+
+```
+┌─────────────────────────────────────────────┐
+│  agentalloy:local  (podman run --replace)   │
+│                                             │
+│  /app/entrypoint.sh (bash)                  │
+│  ├── Check .bootstrap-complete (skip if done)│
+│  ├── Install Ollama (if missing)             │
+│  ├── Start ollama serve --host 127.0.0.1    │
+│  ├── Pull qwen3-embedding:0.6b (if missing)  │
+│  ├── Run migrations                          │
+│  ├── install-packs --packs <packs>           │
+│  ├── Touch .bootstrap-complete               │
+│  ├── exec uvicorn (main service)             │
+│                                             │
+│  ENV: AGENTIALLOY_PACKS, LADYBUG_DB_PATH     │
+│      DUCKDB_PATH, LOG_LEVEL                  │
+└───────────┬─────────────────────────────────┘
+            │ -p 47950:47950
+            ▼
+   localhost:47950  (external)
+
+Volume mounts:
+  agentalloy-data → /app/data     (corpus, database)
+  ~/.ollama       → /root/.ollama (Ollama models)
+```
+
+### Volume layout
+
+| Volume / Path | Purpose | Persists across restarts? |
+|---|---|---|
+| `agentalloy-data:/app/data` | LadybugDB index, DuckDB skills database | Yes (named volume) |
+| `~/.ollama:/root/.ollama` | Ollama model cache (`qwen3-embedding:0.6b`) | Yes (host bind mount) |
+
+### Entrypoint bootstrap sequence
+
+The entrypoint script (`/app/entrypoint.sh`) runs on every container start:
+
+1. **Bootstrap check** — If `$APP_DIR/.bootstrap-complete` exists, skip all bootstrap steps and go straight to uvicorn.
+2. **Ollama install** — If `ollama` binary is missing, download and run the official install script.
+3. **Start Ollama** — Launch `ollama serve --host 127.0.0.1:11434` in the background.
+4. **Wait for ready** — Poll `http://127.0.0.1:11434` for up to 30 seconds.
+5. **Pull model** — If `qwen3-embedding:0.6b` is not cached, pull it from the Ollama library.
+6. **Run migrations** — Execute `python -m agentalloy.migrate` to initialize database schemas.
+7. **Install packs** — If `AGENTIALLOY_PACKS` is set, run `install-packs --packs <packs>`.
+8. **Flag complete** — Touch `$APP_DIR/.bootstrap-complete`.
+9. **Start service** — `exec uvicorn agentalloy.api:create_app --host 0.0.0.0 --port 47950`.
+
+Steps 2–7 are skipped on subsequent starts (idempotent bootstrap).
+
+### Operational commands
+
+```bash
+# Start the container (first-time setup)
+agentalloy setup --deployment container
+
+# View logs
+podman logs agentalloy
+podman logs -f agentalloy          # follow
+podman logs --tail 100 agentalloy  # last 100 lines
+
+# Check health
+curl http://localhost:47950/health
+
+# Inspect container
+podman inspect agentalloy
+podman ps --filter name=agentalloy
+
+# Exec into the container
+podman exec -it agentalloy sh
+
+# Restart the container
+podman restart agentalloy
+
+# Stop and remove
+podman stop agentalloy
+podman rm -f agentalloy
+
+# Inspect volumes
+podman volume inspect agentalloy-data
+
+# Re-embed corpus in the container
+podman exec agentalloy uv run agentalloy reembed
+
+# Install skill packs in the container
+podman exec agentalloy uv run agentalloy install-packs --packs all
+
+# Suppress restart after pack install
+podman exec agentalloy uv run agentalloy install-packs --packs all --no-restart
+```
+
+### Hardware requirements
+
+Container deployment is **CPU-only** on every host. GPU acceleration (NVIDIA CUDA, AMD ROCm, Apple Metal) only works with a native install. The bundled Ollama runs on CPU using `qwen3-embedding:0.6b` — functional for embeddings but slower than GPU.
+
+| Requirement | Minimum |
+|---|---|
+| RAM | 8 GB |
+| Disk (image + model + data) | ~4 GB |
+| Container runtime | Podman (recommended) or Docker |
+| Git | Required for auto-clone build context |
 
 ---
 
