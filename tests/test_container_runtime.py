@@ -817,8 +817,8 @@ class TestRunContainer:
             assert "-e" in cmd
             assert "AGENTIALLOY_PACKS=foundation" in cmd_str
             assert "ENTRYPOINT=" in cmd_str
-            assert "LADYBUG_DB_PATH=/app/data/ladybug.db" in cmd_str
-            assert "DUCKDB_PATH=/app/data/ladybug.db" in cmd_str
+            assert "LADYBUG_DB_PATH=/app/data/ladybug" in cmd_str
+            assert "DUCKDB_PATH=/app/data/skills.duck" in cmd_str
             assert "LOG_LEVEL=info" in cmd_str
 
     def test_run_container_returns_exit_code_on_failure(self, tmp_path: Path):
