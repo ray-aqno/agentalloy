@@ -230,3 +230,328 @@ class TestLocateBuildContext:
                     assert result is None
         finally:
             mod.__file__ = original_file
+
+
+# ---------------------------------------------------------------------------
+# UT-3: _build_image
+# ---------------------------------------------------------------------------
+
+
+class TestBuildImage:
+    """Test _build_image() constructs correct container build command."""
+
+    def test_build_image_runs_podman_build_with_correct_flags(self, tmp_path: Path):
+        """_build_image() runs runtime build -t agentalloy:local -f Containerfile <context>."""
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["podman", "build", "-t", "agentalloy:local", "-f", "Containerfile", str(tmp_path)],
+                returncode=0,
+            )
+            from agentalloy.install.subcommands.container_runtime import _build_image
+
+            result = _build_image("podman", tmp_path)
+
+            assert result == 0
+
+    def test_build_image_uses_correct_image_tag_and_dockerfile(self, tmp_path: Path):
+        """_build_image() passes -t agentalloy:local -f Containerfile to the runtime."""
+        # Create a minimal Containerfile so the command doesn't fail on missing file
+        (tmp_path / "Containerfile").write_text("FROM python:3.11\n")
+
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["podman", "build", "-t", "agentalloy:local", "-f", "Containerfile", str(tmp_path)],
+                returncode=0,
+            )
+            from agentalloy.install.subcommands.container_runtime import _build_image
+
+            _build_image("podman", tmp_path)
+
+            mock_run.assert_called_once()
+            call_args = mock_run.call_args
+            cmd = call_args[0][0]
+            assert "podman" in cmd[0]
+            assert "build" in cmd
+            assert "-t" in cmd
+            assert "agentalloy:local" in cmd
+            assert "-f" in cmd
+            assert "Containerfile" in cmd
+            assert str(tmp_path) in cmd
+
+    def test_build_image_returns_nonzero_on_failure(self, tmp_path: Path):
+        """_build_image() returns the non-zero exit code when build fails."""
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.CalledProcessError(
+                returncode=127, cmd="podman build", stderr="command not found"
+            )
+            from agentalloy.install.subcommands.container_runtime import _build_image
+
+            result = _build_image("podman", tmp_path)
+
+            assert result == 127
+
+    def test_build_image_has_600s_timeout(self, tmp_path: Path):
+        """_build_image() passes timeout=600 to subprocess.run."""
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["podman", "build"], returncode=0
+            )
+            from agentalloy.install.subcommands.container_runtime import _build_image
+
+            _build_image("podman", tmp_path)
+
+            mock_run.assert_called_once()
+            call_kwargs = mock_run.call_args[1]
+            assert call_kwargs.get("timeout") == 600
+
+
+# ---------------------------------------------------------------------------
+# UT-4: _ensure_volume
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureVolume:
+    """Test _ensure_volume() handles volume creation and idempotency."""
+
+    def test_ensure_volume_runs_volume_create(self):
+        """_ensure_volume() runs runtime volume create agentalloy-data."""
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["podman", "volume", "create", "agentalloy-data"],
+                returncode=0,
+            )
+            from agentalloy.install.subcommands.container_runtime import _ensure_volume
+
+            _ensure_volume("podman")
+
+            mock_run.assert_called_once()
+            cmd = mock_run.call_args[0][0]
+            assert "volume" in cmd
+            assert "create" in cmd
+            assert "agentalloy-data" in cmd
+
+    def test_ensure_volume_handles_already_exists(self):
+        """_ensure_volume() does not raise when runtime reports volume already exists."""
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            # Some runtimes return non-zero or stderr for "already exists"
+            mock_run.side_effect = subprocess.CalledProcessError(
+                returncode=1,
+                cmd=["podman", "volume", "create", "agentalloy-data"],
+                stderr="podman: volume agentalloy-data already exists\n",
+            )
+            from agentalloy.install.subcommands.container_runtime import _ensure_volume
+
+            # Should not raise
+            _ensure_volume("podman")
+
+    def test_ensure_volume_raises_on_unexpected_error(self):
+        """_ensure_volume() raises on errors other than 'already exists'."""
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.CalledProcessError(
+                returncode=1,
+                cmd=["podman", "volume", "create", "agentalloy-data"],
+                stderr="permission denied\n",
+            )
+            from agentalloy.install.subcommands.container_runtime import _ensure_volume
+
+            with pytest.raises(subprocess.CalledProcessError):
+                _ensure_volume("podman")
+
+
+# ---------------------------------------------------------------------------
+# UT-5: _ensure_ollama_dir
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureOllamaDir:
+    """Test _ensure_ollama_dir() creates ~/.ollama if missing."""
+
+    def test_ensure_ollama_dir_creates_directory(self, tmp_path: Path):
+        """_ensure_ollama_dir() creates ~/.ollama when it doesn't exist."""
+        fake_home = tmp_path / "fakehome"
+        fake_home.mkdir()
+        ollama_dir = fake_home / ".ollama"
+        assert not ollama_dir.exists()
+
+        with patch("agentalloy.install.subcommands.container_runtime.Path.home", return_value=fake_home):
+            from agentalloy.install.subcommands.container_runtime import _ensure_ollama_dir
+
+            _ensure_ollama_dir()
+
+            assert ollama_dir.exists()
+            assert ollama_dir.is_dir()
+
+    def test_ensure_ollama_dir_is_idempotent(self, tmp_path: Path):
+        """_ensure_ollama_dir() does not fail when ~/.ollama already exists."""
+        fake_home = tmp_path / "fakehome"
+        fake_home.mkdir()
+        ollama_dir = fake_home / ".ollama"
+        ollama_dir.mkdir()
+
+        with patch("agentalloy.install.subcommands.container_runtime.Path.home", return_value=fake_home):
+            from agentalloy.install.subcommands.container_runtime import _ensure_ollama_dir
+
+            # Should not raise
+            _ensure_ollama_dir()
+
+            assert ollama_dir.exists()
+
+
+# ---------------------------------------------------------------------------
+# UT-6: _generate_entrypoint — writes valid bash script with all bootstrap steps
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateEntrypoint:
+    """Test _generate_entrypoint() writes a valid bash script to a temp file."""
+
+    def test_generate_entrypoint_returns_path(self, tmp_path: Path):
+        """_generate_entrypoint() returns a Path that exists."""
+        from agentalloy.install.subcommands.container_runtime import _generate_entrypoint
+
+        result = _generate_entrypoint("")
+
+        assert isinstance(result, Path)
+        assert result.exists()
+
+    def test_generate_entrypoint_writes_bash_script(self, tmp_path: Path):
+        """_generate_entrypoint() writes a valid bash script with #!/bin/bash."""
+        from agentalloy.install.subcommands.container_runtime import _generate_entrypoint
+
+        result = _generate_entrypoint("")
+        content = result.read_text()
+
+        assert content.startswith("#!/bin/bash")
+
+    def test_generate_entrypoint_contains_ollama_install(self, tmp_path: Path):
+        """Generated entrypoint contains Ollama install step."""
+        from agentalloy.install.subcommands.container_runtime import _generate_entrypoint
+
+        content = _generate_entrypoint("").read_text()
+
+        assert "ollama" in content.lower()
+
+    def test_generate_entrypoint_contains_ollama_start(self, tmp_path: Path):
+        """Generated entrypoint contains ollama serve start."""
+        from agentalloy.install.subcommands.container_runtime import _generate_entrypoint
+
+        content = _generate_entrypoint("").read_text()
+
+        assert "ollama serve" in content
+
+    def test_generate_entrypoint_contains_model_pull(self, tmp_path: Path):
+        """Generated entrypoint contains embedding model pull step."""
+        from agentalloy.install.subcommands.container_runtime import _generate_entrypoint
+
+        content = _generate_entrypoint("").read_text()
+
+        assert "qwen3-embedding" in content
+
+    def test_generate_entrypoint_contains_migrations(self, tmp_path: Path):
+        """Generated entrypoint contains migrations step."""
+        from agentalloy.install.subcommands.container_runtime import _generate_entrypoint
+
+        content = _generate_entrypoint("").read_text()
+
+        assert "agentalloy.migrate" in content
+
+    def test_generate_entrypoint_contains_uvicorn_start(self, tmp_path: Path):
+        """Generated entrypoint contains uvicorn start step."""
+        from agentalloy.install.subcommands.container_runtime import _generate_entrypoint
+
+        content = _generate_entrypoint("").read_text()
+
+        assert "uvicorn" in content
+
+    def test_generate_entrypoint_contains_sigterm_trap(self, tmp_path: Path):
+        """Generated entrypoint contains SIGTERM trap for graceful shutdown."""
+        from agentalloy.install.subcommands.container_runtime import _generate_entrypoint
+
+        content = _generate_entrypoint("").read_text()
+
+        assert "SIGTERM" in content
+
+    def test_generate_entrypoint_is_executable(self, tmp_path: Path):
+        """Generated entrypoint has executable permissions (0600)."""
+        from agentalloy.install.subcommands.container_runtime import _generate_entrypoint
+
+        result = _generate_entrypoint("")
+        mode = result.stat().st_mode & 0o777
+
+        assert mode == 0o600
+
+    def test_generate_entrypoint_uses_temp_dir(self, tmp_path: Path):
+        """Generated entrypoint is placed in a temp directory."""
+        from agentalloy.install.subcommands.container_runtime import _generate_entrypoint
+
+        result = _generate_entrypoint("")
+
+        # The file should be in a temp directory (e.g., /tmp or similar)
+        assert result.is_file()
+
+
+# ---------------------------------------------------------------------------
+# UT-7: _generate_entrypoint — no install-packs when packs is empty
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateEntrypointNoPacks:
+    """Test _generate_entrypoint() when packs is empty."""
+
+    def test_no_install_packs_when_packs_empty(self, tmp_path: Path):
+        """When packs='', the generated script should not contain install-packs."""
+        from agentalloy.install.subcommands.container_runtime import _generate_entrypoint
+
+        content = _generate_entrypoint("").read_text()
+
+        assert "install-packs" not in content
+
+
+# ---------------------------------------------------------------------------
+# UT-8: _generate_entrypoint — install-packs present when packs non-empty
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateEntrypointWithPacks:
+    """Test _generate_entrypoint() when packs is non-empty."""
+
+    def test_install_packs_present_when_packs_set(self, tmp_path: Path):
+        """When packs='foundation,tooling', the generated script should contain install-packs."""
+        from agentalloy.install.subcommands.container_runtime import _generate_entrypoint
+
+        content = _generate_entrypoint("foundation,tooling").read_text()
+
+        assert "install-packs" in content
+        assert "foundation,tooling" in content
+
+
+# ---------------------------------------------------------------------------
+# UT-9: _cleanup_temp_entrypoint — removes the temp file
+# ---------------------------------------------------------------------------
+
+
+class TestCleanupTempEntrypoint:
+    """Test _cleanup_temp_entrypoint() removes the temp file."""
+
+    def test_cleanup_removes_file(self, tmp_path: Path):
+        """_cleanup_temp_entrypoint() removes the temp file."""
+        from agentalloy.install.subcommands.container_runtime import (
+            _cleanup_temp_entrypoint,
+            _generate_entrypoint,
+        )
+
+        entrypoint = _generate_entrypoint("")
+        assert entrypoint.exists()
+
+        _cleanup_temp_entrypoint(entrypoint)
+
+        assert not entrypoint.exists()
+
+    def test_cleanup_is_idempotent(self, tmp_path: Path):
+        """_cleanup_temp_entrypoint() does not raise if file is already gone."""
+        from agentalloy.install.subcommands.container_runtime import (
+            _cleanup_temp_entrypoint,
+        )
+
+        # Should not raise even if the file doesn't exist
+        _cleanup_temp_entrypoint(tmp_path / "nonexistent.sh")

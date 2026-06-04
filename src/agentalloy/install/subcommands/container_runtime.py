@@ -9,6 +9,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -165,3 +166,216 @@ def _locate_build_context() -> Path | None:
         return cached / default_compose
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Image build
+# ---------------------------------------------------------------------------
+
+
+def _build_image(runtime: str, context: Path) -> int:
+    """Build the agentalloy container image.
+
+    Runs ``{runtime} build -t agentalloy:local -f Containerfile <context>``
+    with a 600-second timeout.  Returns the exit code (0 on success).
+
+    Parameters
+    ----------
+    runtime : str
+        Container runtime binary (e.g. ``"podman"`` or ``"docker"``).
+    context : Path
+        Path to the build context directory.
+
+    Returns
+    -------
+    int
+        Exit code from the runtime command.
+    """
+    try:
+        subprocess.run(
+            [
+                runtime,
+                "build",
+                "-t",
+                "agentalloy:local",
+                "-f",
+                "Containerfile",
+                str(context),
+            ],
+            check=True,
+            timeout=600,
+        )
+        return 0
+    except subprocess.CalledProcessError as exc:
+        return exc.returncode
+    except subprocess.TimeoutExpired:
+        _print("  [red]Build timed out after 600s[/red]")
+        return 1
+
+
+# ---------------------------------------------------------------------------
+# Volume management
+# ---------------------------------------------------------------------------
+
+
+def _ensure_volume(runtime: str) -> None:
+    """Create the agentalloy data volume if it doesn't already exist.
+
+    Idempotent — silently ignores the "volume already exists" error.
+
+    Parameters
+    ----------
+    runtime : str
+        Container runtime binary (e.g. ``"podman"`` or ``"docker"``).
+
+    Raises
+    ------
+    subprocess.CalledProcessError
+        If the volume creation fails for a reason other than "already exists".
+    """
+    try:
+        subprocess.run(
+            [runtime, "volume", "create", "agentalloy-data"],
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or "").lower()
+        if "already exists" in stderr:
+            return
+        raise
+
+
+# ---------------------------------------------------------------------------
+# Ollama directory
+# ---------------------------------------------------------------------------
+
+
+def _ensure_ollama_dir() -> None:
+    """Ensure ``~/.ollama`` exists.
+
+    Creates the directory (with ``parents=True``) if it doesn't already
+    exist.  Idempotent — no-op if the directory already exists.
+    """
+    Path.home().joinpath(".ollama").mkdir(parents=True, exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Entrypoint generation
+# ---------------------------------------------------------------------------
+
+
+def _generate_entrypoint(packs: str) -> Path:
+    """Generate an entrypoint wrapper script and return its temp file path.
+
+    The entrypoint is a bash script that handles in-container bootstrap:
+
+    1. Check if Ollama is installed; download and install if needed.
+    2. Start ``ollama serve`` in the background on ``127.0.0.1:11434``.
+    3. Poll ``http://127.0.0.1:11434`` until Ollama is ready (30 s timeout).
+    4. Check if the embedding model (``qwen3-embedding:0.6b``) is cached;
+       pull it if not.
+    5. Check if ``/app/.bootstrap-complete`` exists — if so, skip to step 9.
+    6. Run migrations (``python -m agentalloy.migrate``).
+    7. If *packs* is non-empty, run ``install-packs --packs <packs>``.
+    8. Create the ``/app/.bootstrap-complete`` flag file.
+    9. Start uvicorn on ``0.0.0.0:47950``.
+    10. Trap SIGTERM for graceful shutdown.
+
+    Parameters
+    ----------
+    packs : str
+        Comma-separated list of packs to install, or empty string.
+
+    Returns
+    -------
+    Path
+        Path to the generated entrypoint script (in the system temp directory).
+    """
+    script = _build_entrypoint_script(packs)
+    entrypoint = Path(tempfile.gettempdir()) / "agentalloy-entrypoint.sh"
+    entrypoint.write_text(script)
+    entrypoint.chmod(0o600)
+    return entrypoint
+
+
+def _build_entrypoint_script(packs: str) -> str:
+    """Build the entrypoint wrapper script as a string."""
+    lines = [
+        "#!/bin/bash",
+        "set -e",
+        "",
+        "# ── Ollama installation ──────────────────────────────────────────────",
+        'if ! command -v ollama &> /dev/null; then',
+        '    echo ">> Installing Ollama..."',
+        "    curl -fsSL https://ollama.ai/install.sh | sh",
+        "fi",
+        "",
+        "# ── Start Ollama ─────────────────────────────────────────────────────",
+        'echo ">> Starting Ollama..."',
+        "ollama serve --host 127.0.0.1:11434 &",
+        "OLLAMA_PID=$!",
+        "",
+        "# Wait for Ollama to be ready (30 s timeout)",
+        "for i in $(seq 1 30); do",
+        '    if curl -sf http://127.0.0.1:11434 > /dev/null 2>&1; then',
+        '        echo ">> Ollama is ready"',
+        "        break",
+        "    fi",
+        "    sleep 1",
+        "done",
+        "",
+        "# ── Pull embedding model ─────────────────────────────────────────────",
+        'echo ">> Checking embedding model..."',
+        "if ! ollama list | grep -q qwen3-embedding; then",
+        '    echo ">> Pulling qwen3-embedding:0.6b..."',
+        "    ollama pull qwen3-embedding:0.6b",
+        "fi",
+        "",
+        "# ── Bootstrap completion check ───────────────────────────────────────",
+        "if [ -f /app/.bootstrap-complete ]; then",
+        '    echo ">> Bootstrap already complete — skipping to uvicorn"',
+        "else",
+        "    # ── Run migrations ────────────────────────────────────────────",
+        '    echo ">> Running migrations..."',
+        "    python -m agentalloy.migrate",
+        "",
+        "    # ── Pack installation (conditional) ───────────────────────────",
+    ]
+
+    if packs.strip():
+        lines.extend([
+            f'    echo ">> Installing packs: {packs}"',
+            f"    install-packs --packs {packs}",
+        ])
+    else:
+        lines.append('    echo ">> No packs specified — skipping pack installation"')
+
+    lines.extend([
+        "",
+        "    # ── Mark bootstrap complete ───────────────────────────────────",
+        "    touch /app/.bootstrap-complete",
+        "fi",
+        "",
+        "# ── SIGTERM trap for graceful shutdown ──────────────────────────────",
+        'trap "kill $OLLAMA_PID 2>/dev/null; exit 0" SIGTERM',
+        "",
+        "# ── Start uvicorn ────────────────────────────────────────────────────",
+        'echo ">> Starting uvicorn..."',
+        'exec uvicorn agentalloy.api:create_app --host 0.0.0.0 --port 47950 --log-level info',
+    ])
+
+    return "\n".join(lines) + "\n"
+
+
+def _cleanup_temp_entrypoint(entrypoint: Path) -> None:
+    """Remove the temporary entrypoint file.
+
+    Idempotent — silently ignores missing files.
+
+    Parameters
+    ----------
+    entrypoint : Path
+        Path to the entrypoint script to remove.
+    """
+    if entrypoint.exists():
+        entrypoint.unlink()
