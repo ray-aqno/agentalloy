@@ -135,28 +135,18 @@ def _run(args: argparse.Namespace) -> int:
 
     print(f"install-packs: installing {len(selected)} pack(s)", file=sys.stderr)
     t0 = time.monotonic()
-    install_results: list[dict[str, Any]] = []
     failed: list[str] = []
-    for pack_name in selected:
-        pack_dir = packs_root / pack_name
-        print(f"  → {pack_name}", file=sys.stderr, flush=True)
-        r = install_local_pack(pack_dir, root=root)
-        install_results.append(r)
-        if r.get("ingest_failures", 0) > 0:
-            # ingest_failures > 0 can be benign (skill_id already in corpus
-            # from a prior run); that's recorded but not counted as a hard
-            # failure here.
-            pass
-        # `already_installed` is a successful no-op (every skill in the
-        # pack was already in the corpus). `ingested_with_errors` had
-        # real failures but at least some progress; we still track which
-        # packs that affects via per-pack ingest_failures, not here.
-        if r.get("action") not in ("ingested", "ingested_with_errors", "already_installed"):
-            failed.append(pack_name)
 
-    # Bulk reembed once at the end (idempotent — only embeds new fragments).
-    print("install-packs: bulk reembed", file=sys.stderr)
-    reembed_rc = _bulk_reembed(no_restart=getattr(args, "no_restart", False))
+    # T1: single container stop/restart wrapping all ingests + reembed.
+    # _run_container_guard() owns the AGENTALLOY_DB_LOCK_HELD lifecycle;
+    # child ingest subprocesses inherit the sentinel via POSIX env and no-op.
+    install_results, named_results, reembed_rc = _run_container_guard(
+        args, selected, packs_root, root
+    )
+
+    for pack_name, r in named_results:
+        if r.get("action") not in ("ingested", "ingested_with_errors", "already_installed"):
+            failed.append(pack_name)  # use original pack name, not a path from the result dict
 
     duration_ms = int((time.monotonic() - t0) * 1000)
     summary = {
@@ -499,6 +489,64 @@ def _ordered_with_deps(
     for n in sorted(closed):
         visit(n)
     return ordered
+
+
+def _run_container_guard(
+    args: argparse.Namespace,
+    selected: list[str],
+    packs_root: Path,
+    root: Path,
+) -> tuple[list[dict[str, Any]], list[tuple[str, dict[str, Any]]], int]:
+    """Install packs with a single container stop/restart surrounding all DB writes.
+
+    Owns the AGENTALLOY_DB_LOCK_HELD lifecycle for the full install-packs
+    invocation: stop once, run all ingests with no_restart=True (sentinel
+    handles child processes via POSIX env inheritance), reembed once, restart.
+
+    P10-R2: for-loop bounded by len(selected) ≤ total registry pack count.
+    P10-R4: ≤40 lines.
+    """
+    from agentalloy.install.container_service import (
+        is_in_container,
+        restart_service_in_container,
+        stop_service_in_container,
+    )
+
+    no_restart: bool = getattr(args, "no_restart", False)
+    assert isinstance(no_restart, bool), "no_restart must be bool"  # P10-R5
+
+    container_stopped: bool = False
+    if is_in_container() and not no_restart:
+        container_stopped = stop_service_in_container()
+        assert isinstance(container_stopped, bool), "stop must return bool"  # P10-R5
+        if container_stopped:
+            print(
+                "[agentalloy] Service stopped; ingesting packs with --no-restart", file=sys.stderr
+            )
+
+    # list[tuple[pack_name, result]] so _run() can build failed list by name, not path
+    named_results: list[tuple[str, dict[str, Any]]] = []
+    reembed_rc: int = 0
+    try:
+        for pack_name in selected:  # P10-R2: bounded by len(selected)
+            pack_dir = packs_root / pack_name
+            print(f"  → {pack_name}", file=sys.stderr, flush=True)
+            r = install_local_pack(pack_dir, root=root, no_restart=True)
+            named_results.append((pack_name, r))
+        # no_restart=True: reembed does NOT restart — this guard owns the lifecycle.
+        reembed_rc = _bulk_reembed(no_restart=True)
+    finally:
+        if container_stopped and not no_restart:
+            ok: bool = restart_service_in_container()
+            assert isinstance(ok, bool), "restart must return bool"  # P10-R5
+            if not ok:
+                print(
+                    "[agentalloy] WARNING: Failed to restart service after install-packs. "
+                    "Run `podman restart agentalloy` manually.",
+                    file=sys.stderr,
+                )
+
+    return [r for _, r in named_results], named_results, reembed_rc
 
 
 def _bulk_reembed(no_restart: bool = False) -> int:

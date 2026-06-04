@@ -474,17 +474,6 @@ def _wire_legacy(
     This is the OLD behavior — used only when ``--legacy`` is passed.
     Extracted from the inline legacy path in ``wire_harness()``.
     """
-    if harness not in _HARNESS_REGISTRY:
-        print(
-            f"ERROR: Legacy wiring not available for harness '{harness}'.",
-            file=sys.stderr,
-        )
-        print(
-            f"FIX:   '{harness}' is not in the legacy _HARNESS_REGISTRY. "
-            "Use the default proxy path (omit --legacy) or pick a supported harness.",
-            file=sys.stderr,
-        )
-        raise SystemExit(1)
     reg = _HARNESS_REGISTRY[harness]
     files_written: list[dict[str, Any]] = []
 
