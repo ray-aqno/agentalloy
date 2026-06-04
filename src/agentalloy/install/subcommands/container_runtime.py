@@ -9,7 +9,6 @@ from __future__ import annotations
 import shlex
 import shutil
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -178,7 +177,8 @@ def _build_image(runtime: str, context: Path) -> int:
     """Build the agentalloy container image.
 
     Runs ``{runtime} build -t agentalloy:local -f Containerfile <context>``
-    with a 600-second timeout.  Returns the exit code (0 on success).
+    with a 600-second timeout.  Build output is captured and written to a
+    log file on failure for debugging.  Returns the exit code (0 on success).
 
     Parameters
     ----------
@@ -192,6 +192,7 @@ def _build_image(runtime: str, context: Path) -> int:
     int
         Exit code from the runtime command.
     """
+    log_path = Path(tempfile.gettempdir()) / "agentalloy-build.log"
     try:
         subprocess.run(
             [
@@ -205,9 +206,18 @@ def _build_image(runtime: str, context: Path) -> int:
             ],
             check=True,
             timeout=600,
+            capture_output=True,
         )
         return 0
     except subprocess.CalledProcessError as exc:
+        # Write captured build output to log file for debugging
+        log_path.write_text(
+            f"=== agentalloy build failed (exit {exc.returncode}) ===\n"
+            f"Command: {shlex.join(exc.cmd)}\n\n"
+            f"--- stdout ---\n{(exc.output or b'').decode(errors='replace')}\n"
+            f"--- stderr ---\n{(exc.stderr or b'').decode(errors='replace')}\n"
+        )
+        _print(f"  [red]Build failed (exit {exc.returncode}) — log: {log_path}[/red]")
         return exc.returncode
     except subprocess.TimeoutExpired:
         _print("  [red]Build timed out after 600s[/red]")
@@ -238,9 +248,10 @@ def _ensure_volume(runtime: str) -> None:
         subprocess.run(
             [runtime, "volume", "create", "agentalloy-data"],
             check=True,
+            capture_output=True,
         )
     except subprocess.CalledProcessError as exc:
-        stderr = (exc.stderr or "").lower()
+        stderr = (exc.stderr or b"").decode(errors="replace").lower()
         if "already exists" in stderr:
             return
         raise
@@ -313,7 +324,7 @@ def _build_entrypoint_script(packs: str) -> str:
         '    echo ">> Bootstrap already complete - skipping to uvicorn"',
         "else",
         "    # Ollama installation",
-        '    if ! command -v ollama &> /dev/null; then',
+        "    if ! command -v ollama &> /dev/null; then",
         '        echo ">> Installing Ollama..."',
         "        curl -fsSL https://ollama.ai/install.sh | sh",
         "    fi",
@@ -325,7 +336,7 @@ def _build_entrypoint_script(packs: str) -> str:
         "",
         "    # Wait for Ollama to be ready (30 s timeout)",
         "    for i in $(seq 1 30); do",
-        '        if curl -sf http://127.0.0.1:11434 > /dev/null 2>&1; then',
+        "        if curl -sf http://127.0.0.1:11434 > /dev/null 2>&1; then",
         '            echo ">> Ollama is ready"',
         "            break",
         "        fi",
@@ -347,28 +358,32 @@ def _build_entrypoint_script(packs: str) -> str:
     ]
 
     if packs.strip():
-        lines.extend([
-            f'    echo "> Installing packs: {packs}"',
-            f"    install-packs --packs {shlex.quote(packs)}",
-        ])
+        lines.extend(
+            [
+                f'    echo "> Installing packs: {packs}"',
+                f"    install-packs --packs {shlex.quote(packs)}",
+            ]
+        )
     else:
         lines.append('    echo ">> No packs specified - skipping pack installation"')
 
-    lines.extend([
-        "",
-        "# Mark bootstrap complete",
-        '    touch "$APP_DIR/.bootstrap-complete"',
-        "fi",
-        "",
-        "# SIGTERM trap for graceful shutdown (only if Ollama was started)",
-        'if [ -n "${OLLAMA_PID:-}" ]; then',
-        '    trap "kill ${OLLAMA_PID} 2>/dev/null; exit 0" SIGTERM',
-        "fi",
-        "",
-        "# Start uvicorn",
-        'echo ">> Starting uvicorn..."',
-        'exec uvicorn agentalloy.api:create_app --host 0.0.0.0 --port 47950 --log-level info',
-    ])
+    lines.extend(
+        [
+            "",
+            "# Mark bootstrap complete",
+            '    touch "$APP_DIR/.bootstrap-complete"',
+            "fi",
+            "",
+            "# SIGTERM trap for graceful shutdown (only if Ollama was started)",
+            'if [ -n "${OLLAMA_PID:-}" ]; then',
+            '    trap "kill ${OLLAMA_PID} 2>/dev/null; exit 0" SIGTERM',
+            "fi",
+            "",
+            "# Start uvicorn",
+            'echo ">> Starting uvicorn..."',
+            "exec uvicorn agentalloy.api:create_app --host 0.0.0.0 --port 47950 --log-level info",
+        ]
+    )
 
     return "\n".join(lines) + "\n"
 
@@ -498,4 +513,4 @@ def _wait_for_health(port: int, timeout: int = 300) -> bool:
             if elapsed >= timeout:
                 return False
             time.sleep(interval)
-            interval = min(interval * 2, 30)
+            interval = min(interval * 2, timeout)

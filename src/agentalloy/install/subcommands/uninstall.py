@@ -254,11 +254,15 @@ def _resolve_compose_binary(st: dict[str, Any]) -> str | None:
     binary (e.g. ``/usr/bin/podman`` or ``docker``), or None if state
     doesn't have enough info. Matches the resolution logic used by
     ``_stop_container_stack``.
+
+    Reads ``runtime_binary`` (label e.g. ``"podman compose"``) from state
+    and falls back to ``shutil.which`` on the binary name.
     """
     compose_binary_path = st.get("compose_binary_path")
     if compose_binary_path and Path(compose_binary_path).exists():
         return str(compose_binary_path)
-    compose_binary_label = st.get("compose_binary")
+    # v4+: read from runtime_binary (migrated from compose_binary)
+    compose_binary_label = st.get("runtime_binary")
     if not isinstance(compose_binary_label, str) or not compose_binary_label:
         return None
     parts = compose_binary_label.split()
@@ -286,7 +290,7 @@ def _remove_compose_volumes(
     binary = _resolve_compose_binary(st)
     if binary is None:
         warnings.append(
-            "Container deployment detected but compose binary unresolved — "
+            "Container deployment detected but runtime binary unresolved — "
             "skipping volume cleanup. Remove manually with your runtime: "
             f"`<podman|docker> volume rm -f {' '.join(_COMPOSE_NAMED_VOLUMES)}`"
         )
@@ -329,11 +333,12 @@ def _stop_container_stack(
     st: dict[str, Any],
     warnings: list[str],
 ) -> list[dict[str, Any]]:
-    """Stop and remove container stack via compose down -v.
+    """Stop and remove container stack.
 
-    Reads ``compose_binary`` (label e.g. ``"podman compose"``) and
-    ``compose_file`` (absolute path) from state. Splits the label to get
-    the binary name and runs ``[binary, "compose", "-f", file, "down", "-v"]``.
+    Reads ``runtime_binary`` (label e.g. ``"podman compose"``) and
+    ``image_tag`` (compose file path for v3 states, image tag for v4+)
+    from state. For v4+ single-container model, uses direct container
+    operations (stop + rm) instead of compose down.
 
     Returns a list of action dicts. On failure, adds warnings but continues.
     """
@@ -342,113 +347,89 @@ def _stop_container_stack(
     if st.get("deployment") != "container":
         return actions
 
-    compose_binary_label = st.get("compose_binary")
-    compose_file = st.get("compose_file")
+    # v4+: read from runtime_binary (migrated from compose_binary)
+    runtime_binary_label = st.get("runtime_binary")
+    container_name = st.get("container_name") or "agentalloy"
 
-    if not compose_binary_label:
+    if not runtime_binary_label:
         warnings.append(
-            "Container deployment detected but compose_binary is missing in state — "
-            "skipping compose down."
+            "Container deployment detected but runtime_binary is missing in state — "
+            "skipping container teardown."
         )
         return actions
 
-    if compose_file is None:
+    # Determine the binary name from the label (e.g. "podman compose" -> "podman")
+    parts = runtime_binary_label.split()
+    if len(parts) < 2:
         warnings.append(
-            "Container deployment detected but compose_file is None in state — "
-            "skipping compose down."
+            f"Invalid runtime_binary label in state: {runtime_binary_label!r} — "
+            "skipping container teardown."
         )
         return actions
+    binary_name = parts[0]
 
-    # Verify compose file still exists. Pre-simplification (when compose.radeon.yaml
-    # still existed) some users have install-state.json pointing at it. After it
-    # was deleted, fall back to compose.yaml in the same directory so uninstall
-    # can still run `compose down -v` cleanly instead of asking the user to do it
-    # manually.
-    cf_path = Path(compose_file)
-    if not cf_path.exists():
-        if cf_path.name == "compose.radeon.yaml":
-            fallback = cf_path.parent / "compose.yaml"
-            if fallback.exists():
-                warnings.append(
-                    f"Recorded compose file {compose_file} no longer exists "
-                    "(compose.radeon.yaml was retired). Falling back to "
-                    f"{fallback} for `compose down`."
-                )
-                compose_file = str(fallback)
-                cf_path = fallback
-        if not cf_path.exists():
-            warnings.append(
-                f"Compose file missing: {compose_file} — skipping compose down. "
-                "Clean up containers manually."
-            )
-            return actions
-
-    # Use stored absolute path if available; fall back to splitting label
-    compose_binary_path = st.get("compose_binary_path")
-    binary_name: str
-
-    if compose_binary_path and Path(compose_binary_path).exists():
-        binary_name = compose_binary_path
-    else:
-        # Split label "podman compose" -> ["podman", "compose"]
-        parts = compose_binary_label.split()
-        if len(parts) < 2:
-            warnings.append(
-                f"Invalid compose_binary label in state: {compose_binary_label!r} — "
-                "skipping compose down."
-            )
-            return actions
-        binary_name = parts[0]
-
+    # For v4+ single-container model: stop and remove the container directly
+    # instead of using compose down (which requires the compose file)
     try:
+        # Stop the container
         result = subprocess.run(
-            [binary_name, "compose", "-f", compose_file, "down", "-v"],
+            [binary_name, "stop", container_name],
             capture_output=True,
             text=True,
             timeout=60,
         )
         if result.returncode == 0:
-            actions.append(
-                {
-                    "action": "compose_down",
-                    "path": compose_file,
-                    "compose_file": compose_file,
-                    "compose_binary": compose_binary_label,
-                }
-            )
+            actions.append({"action": "container_stopped", "container": container_name})
         else:
             stderr = result.stderr.strip() if result.stderr else "unknown error"
-            warnings.append(f"compose down failed: {stderr}")
-            actions.append(
-                {
-                    "action": "compose_down_failed",
-                    "path": compose_file,
-                    "compose_file": compose_file,
-                    "compose_binary": compose_binary_label,
-                    "error": stderr,
-                }
-            )
+            # Container may already be stopped — that's OK
+            if "no such container" in stderr.lower() or "not found" in stderr.lower():
+                actions.append({"action": "container_already_stopped", "container": container_name})
+            else:
+                warnings.append(f"container stop failed: {stderr}")
+                actions.append(
+                    {
+                        "action": "container_stop_failed",
+                        "container": container_name,
+                        "error": stderr,
+                    }
+                )
     except OSError as exc:
-        warnings.append(f"compose down: binary not found ({binary_name}): {exc}")
+        warnings.append(f"container stop: binary not found ({binary_name}): {exc}")
         actions.append(
-            {
-                "action": "compose_down_skipped",
-                "path": compose_file,
-                "compose_file": compose_file,
-                "compose_binary": compose_binary_label,
-                "error": str(exc),
-            }
+            {"action": "container_stop_skipped", "container": container_name, "error": str(exc)}
         )
     except subprocess.TimeoutExpired:
-        warnings.append("compose down timed out after 60s")
-        actions.append(
-            {
-                "action": "compose_down_timeout",
-                "path": compose_file,
-                "compose_file": compose_file,
-                "compose_binary": compose_binary_label,
-            }
+        warnings.append("container stop timed out after 60s")
+        actions.append({"action": "container_stop_timeout", "container": container_name})
+
+    # Remove the container
+    try:
+        result = subprocess.run(
+            [binary_name, "rm", "-f", container_name],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
+        if result.returncode == 0:
+            actions.append({"action": "container_removed", "container": container_name})
+        else:
+            stderr = result.stderr.strip() if result.stderr else "unknown error"
+            if "no such container" in stderr.lower():
+                actions.append({"action": "container_already_gone", "container": container_name})
+            else:
+                warnings.append(f"container rm failed: {stderr}")
+                actions.append(
+                    {"action": "container_rm_failed", "container": container_name, "error": stderr}
+                )
+    except OSError as exc:
+        warnings.append(f"container rm: binary not found ({binary_name}): {exc}")
+        actions.append(
+            {"action": "container_rm_skipped", "container": container_name, "error": str(exc)}
+        )
+    except subprocess.TimeoutExpired:
+        warnings.append("container rm timed out after 30s")
+        actions.append({"action": "container_rm_timeout", "container": container_name})
 
     return actions
 

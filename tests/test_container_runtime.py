@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
-import shutil
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # UT-1: _detect_runtime_binary
@@ -102,7 +101,9 @@ class TestLocateBuildContext:
         ctx_dir.mkdir()
         self._make_minimal_context(ctx_dir)
 
-        with patch("agentalloy.install.subcommands.container_runtime.Path.cwd", return_value=ctx_dir):
+        with patch(
+            "agentalloy.install.subcommands.container_runtime.Path.cwd", return_value=ctx_dir
+        ):
             from agentalloy.install.subcommands.container_runtime import (
                 _locate_build_context,
             )
@@ -127,8 +128,7 @@ class TestLocateBuildContext:
         # Fake module path mirrors real structure:
         #   ctx_dir/src/agentalloy/install/subcommands/container_runtime.py
         fake_module_file = str(
-            ctx_dir / "src" / "agentalloy" / "install" / "subcommands"
-            / "container_runtime.py"
+            ctx_dir / "src" / "agentalloy" / "install" / "subcommands" / "container_runtime.py"
         )
         Path(fake_module_file).parents[0].mkdir(parents=True, exist_ok=True)
 
@@ -141,7 +141,9 @@ class TestLocateBuildContext:
         mod.__file__ = fake_module_file
 
         try:
-            with patch("agentalloy.install.subcommands.container_runtime.Path.cwd", return_value=fake_cwd):
+            with patch(
+                "agentalloy.install.subcommands.container_runtime.Path.cwd", return_value=fake_cwd
+            ):
                 result = _locate_build_context()
                 assert result == ctx_dir / "compose.yaml"
         finally:
@@ -168,8 +170,7 @@ class TestLocateBuildContext:
 
         original_file = mod.__file__
         fake_module_file = str(
-            repo_root / "src" / "agentalloy" / "install" / "subcommands"
-            / "container_runtime.py"
+            repo_root / "src" / "agentalloy" / "install" / "subcommands" / "container_runtime.py"
         )
         mod.__file__ = fake_module_file
 
@@ -185,10 +186,20 @@ class TestLocateBuildContext:
             def _has_assets_side_effect(d: Path) -> bool:
                 return d == cache_dir
 
-            with patch("agentalloy.install.subcommands.container_runtime.Path.cwd", return_value=fake_cwd):
-                with patch("agentalloy.install.subcommands.container_runtime.Path.home", return_value=fake_home):
-                    with patch("agentalloy.install.subcommands.container_runtime.shutil.which", return_value="/usr/bin/git"):
-                        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            with patch(
+                "agentalloy.install.subcommands.container_runtime.Path.cwd", return_value=fake_cwd
+            ):
+                with patch(
+                    "agentalloy.install.subcommands.container_runtime.Path.home",
+                    return_value=fake_home,
+                ):
+                    with patch(
+                        "agentalloy.install.subcommands.container_runtime.shutil.which",
+                        return_value="/usr/bin/git",
+                    ):
+                        with patch(
+                            "agentalloy.install.subcommands.container_runtime.subprocess.run"
+                        ) as mock_run:
                             mock_run.return_value = subprocess.CompletedProcess(
                                 args=["git", "clone"], returncode=0
                             )
@@ -224,8 +235,13 @@ class TestLocateBuildContext:
         mod.__file__ = fake_module_file
 
         try:
-            with patch("agentalloy.install.subcommands.container_runtime.Path.cwd", return_value=fake_cwd):
-                with patch("agentalloy.install.subcommands.container_runtime.shutil.which", return_value=None):
+            with patch(
+                "agentalloy.install.subcommands.container_runtime.Path.cwd", return_value=fake_cwd
+            ):
+                with patch(
+                    "agentalloy.install.subcommands.container_runtime.shutil.which",
+                    return_value=None,
+                ):
                     result = _locate_build_context()
                     assert result is None
         finally:
@@ -244,7 +260,15 @@ class TestBuildImage:
         """_build_image() runs runtime build -t agentalloy:local -f Containerfile <context>."""
         with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
-                args=["podman", "build", "-t", "agentalloy:local", "-f", "Containerfile", str(tmp_path)],
+                args=[
+                    "podman",
+                    "build",
+                    "-t",
+                    "agentalloy:local",
+                    "-f",
+                    "Containerfile",
+                    str(tmp_path),
+                ],
                 returncode=0,
             )
             from agentalloy.install.subcommands.container_runtime import _build_image
@@ -260,7 +284,15 @@ class TestBuildImage:
 
         with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
-                args=["podman", "build", "-t", "agentalloy:local", "-f", "Containerfile", str(tmp_path)],
+                args=[
+                    "podman",
+                    "build",
+                    "-t",
+                    "agentalloy:local",
+                    "-f",
+                    "Containerfile",
+                    str(tmp_path),
+                ],
                 returncode=0,
             )
             from agentalloy.install.subcommands.container_runtime import _build_image
@@ -282,13 +314,49 @@ class TestBuildImage:
         """_build_image() returns the non-zero exit code when build fails."""
         with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.CalledProcessError(
-                returncode=127, cmd="podman build", stderr="command not found"
+                returncode=127, cmd=["podman", "build"], stderr=b"command not found"
             )
             from agentalloy.install.subcommands.container_runtime import _build_image
 
             result = _build_image("podman", tmp_path)
 
             assert result == 127
+
+    def test_build_image_writes_log_on_failure(self, tmp_path: Path):
+        """_build_image() writes build output to a log file on failure."""
+        import tempfile
+        from pathlib import Path
+
+        log_path = Path(tempfile.gettempdir()) / "agentalloy-build.log"
+        # Remove any pre-existing log
+        if log_path.exists():
+            log_path.unlink()
+
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.CalledProcessError(
+                returncode=1,
+                cmd=[
+                    "podman",
+                    "build",
+                    "-t",
+                    "agentalloy:local",
+                    "-f",
+                    "Containerfile",
+                    str(tmp_path),
+                ],
+                output=b"Step 1/3 : FROM python:3.11\n",
+                stderr=b"error: failed to solve: no such file or directory",
+            )
+            from agentalloy.install.subcommands.container_runtime import _build_image
+
+            result = _build_image("podman", tmp_path)
+
+            assert result == 1
+            assert log_path.exists()
+            content = log_path.read_text()
+            assert "exit 1" in content
+            assert "failed to solve" in content
+            assert "FROM python:3.11" in content
 
     def test_build_image_has_600s_timeout(self, tmp_path: Path):
         """_build_image() passes timeout=600 to subprocess.run."""
@@ -337,7 +405,7 @@ class TestEnsureVolume:
             mock_run.side_effect = subprocess.CalledProcessError(
                 returncode=1,
                 cmd=["podman", "volume", "create", "agentalloy-data"],
-                stderr="podman: volume agentalloy-data already exists\n",
+                stderr=b"podman: volume agentalloy-data already exists\n",
             )
             from agentalloy.install.subcommands.container_runtime import _ensure_volume
 
@@ -350,7 +418,7 @@ class TestEnsureVolume:
             mock_run.side_effect = subprocess.CalledProcessError(
                 returncode=1,
                 cmd=["podman", "volume", "create", "agentalloy-data"],
-                stderr="permission denied\n",
+                stderr=b"permission denied\n",
             )
             from agentalloy.install.subcommands.container_runtime import _ensure_volume
 
@@ -373,7 +441,9 @@ class TestEnsureOllamaDir:
         ollama_dir = fake_home / ".ollama"
         assert not ollama_dir.exists()
 
-        with patch("agentalloy.install.subcommands.container_runtime.Path.home", return_value=fake_home):
+        with patch(
+            "agentalloy.install.subcommands.container_runtime.Path.home", return_value=fake_home
+        ):
             from agentalloy.install.subcommands.container_runtime import _ensure_ollama_dir
 
             _ensure_ollama_dir()
@@ -388,7 +458,9 @@ class TestEnsureOllamaDir:
         ollama_dir = fake_home / ".ollama"
         ollama_dir.mkdir()
 
-        with patch("agentalloy.install.subcommands.container_runtime.Path.home", return_value=fake_home):
+        with patch(
+            "agentalloy.install.subcommands.container_runtime.Path.home", return_value=fake_home
+        ):
             from agentalloy.install.subcommands.container_runtime import _ensure_ollama_dir
 
             # Should not raise
@@ -617,10 +689,208 @@ class TestWaitForHealth:
         # The function should have been called at least once
         assert mock_urlopen.call_count >= 1
 
+    def test_backoff_cap_respects_timeout(self, tmp_path: Path):
+        """_wait_for_health() caps backoff interval at the timeout value, not a fixed 30s."""
+        from agentalloy.install.subcommands.container_runtime import _wait_for_health
+
+        sleep_calls: list[float] = []
+
+        def _capture_sleep(seconds: float) -> None:
+            sleep_calls.append(seconds)
+            # Don't actually sleep — we're testing interval math
+            if len(sleep_calls) >= 5:
+                raise TimeoutError("stop")
+
+        with patch("urllib.request.urlopen", side_effect=OSError("refused")):
+            with patch("time.sleep", side_effect=_capture_sleep):
+                with contextlib.suppress(TimeoutError):
+                    _wait_for_health(47950, timeout=300)
+
+        # After several doublings: 2, 4, 8, 16, 32 — interval should reach 32
+        # (not capped at 30). With timeout=300 the cap is 300 so it doubles freely.
+        assert len(sleep_calls) >= 4
+        # Verify the interval grows beyond 30 (proves cap is not 30)
+        assert max(sleep_calls) > 30
+
+    def test_backoff_cap_at_low_timeout(self, tmp_path: Path):
+        """_wait_for_health() caps backoff interval at timeout when timeout < 30."""
+        from agentalloy.install.subcommands.container_runtime import _wait_for_health
+
+        sleep_calls: list[float] = []
+
+        def _capture_sleep(seconds: float) -> None:
+            sleep_calls.append(seconds)
+            if len(sleep_calls) >= 4:
+                raise TimeoutError("stop")
+
+        with patch("urllib.request.urlopen", side_effect=OSError("refused")):
+            with patch("time.sleep", side_effect=_capture_sleep):
+                with contextlib.suppress(TimeoutError):
+                    _wait_for_health(47950, timeout=5)
+
+        # With timeout=5, intervals should be: 2, 4, capped at 5
+        # So max sleep should be <= 5
+        assert max(sleep_calls) <= 5
+
+
+# ---------------------------------------------------------------------------
+# UT-10b: _run_container — correct flags, volumes, env, port
+# ---------------------------------------------------------------------------
+
+
+class TestRunContainer:
+    """Test _run_container() constructs the correct container run command."""
+
+    def test_run_container_uses_correct_flags(self, tmp_path: Path):
+        """_run_container() runs --replace -d --name agentalloy."""
+        entrypoint = tmp_path / "entrypoint.sh"
+        entrypoint.write_text("#!/bin/bash\n")
+
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["podman", "run"], returncode=0
+            )
+            from agentalloy.install.subcommands.container_runtime import _run_container
+
+            result = _run_container("podman", entrypoint, "")
+
+            assert result == 0
+            mock_run.assert_called_once()
+            cmd = mock_run.call_args[0][0]
+            assert "podman" in cmd[0]
+            assert "run" in cmd
+            assert "--replace" in cmd
+            assert "-d" in cmd
+            assert "--name" in cmd
+            assert "agentalloy" in cmd
+
+    def test_run_container_has_port_mapping(self, tmp_path: Path):
+        """_run_container() maps port 47950:47950."""
+        entrypoint = tmp_path / "entrypoint.sh"
+        entrypoint.write_text("#!/bin/bash\n")
+
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["podman", "run"], returncode=0
+            )
+            from agentalloy.install.subcommands.container_runtime import _run_container
+
+            _run_container("podman", entrypoint, "")
+
+            cmd = mock_run.call_args[0][0]
+            assert "-p" in cmd
+            assert "47950:47950" in cmd
+
+    def test_run_container_has_volume_mounts(self, tmp_path: Path):
+        """_run_container() mounts agentalloy-data:/app/data and ~/.ollama:/root/.ollama."""
+        entrypoint = tmp_path / "entrypoint.sh"
+        entrypoint.write_text("#!/bin/bash\n")
+
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["podman", "run"], returncode=0
+            )
+            from agentalloy.install.subcommands.container_runtime import _run_container
+
+            _run_container("podman", entrypoint, "")
+
+            cmd = mock_run.call_args[0][0]
+            cmd_str = " ".join(cmd)
+            assert "agentalloy-data:/app/data" in cmd_str
+            assert "/root/.ollama" in cmd_str
+
+    def test_run_container_sets_env_vars(self, tmp_path: Path):
+        """_run_container() sets AGENTIALLOY_PACKS, ENTRYPOINT, LADYBUG_DB_PATH, DUCKDB_PATH, LOG_LEVEL."""
+        entrypoint = tmp_path / "entrypoint.sh"
+        entrypoint.write_text("#!/bin/bash\n")
+
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["podman", "run"], returncode=0
+            )
+            from agentalloy.install.subcommands.container_runtime import _run_container
+
+            _run_container("podman", entrypoint, "foundation")
+
+            cmd = mock_run.call_args[0][0]
+            cmd_str = " ".join(cmd)
+            assert "-e" in cmd
+            assert "AGENTIALLOY_PACKS=foundation" in cmd_str
+            assert "ENTRYPOINT=" in cmd_str
+            assert "LADYBUG_DB_PATH=/app/data/ladybug.db" in cmd_str
+            assert "DUCKDB_PATH=/app/data/ladybug.db" in cmd_str
+            assert "LOG_LEVEL=info" in cmd_str
+
+    def test_run_container_returns_exit_code_on_failure(self, tmp_path: Path):
+        """_run_container() returns the non-zero exit code on failure."""
+        entrypoint = tmp_path / "entrypoint.sh"
+        entrypoint.write_text("#!/bin/bash\n")
+
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.CalledProcessError(
+                returncode=125, cmd=["podman", "run"]
+            )
+            from agentalloy.install.subcommands.container_runtime import _run_container
+
+            result = _run_container("podman", entrypoint, "")
+
+            assert result == 125
+
+    def test_run_container_has_300s_timeout(self, tmp_path: Path):
+        """_run_container() passes timeout=300 to subprocess.run."""
+        entrypoint = tmp_path / "entrypoint.sh"
+        entrypoint.write_text("#!/bin/bash\n")
+
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["podman", "run"], returncode=0
+            )
+            from agentalloy.install.subcommands.container_runtime import _run_container
+
+            _run_container("podman", entrypoint, "")
+
+            call_kwargs = mock_run.call_args[1]
+            assert call_kwargs.get("timeout") == 300
+
+    def test_run_container_mounts_entrypoint_as_ro(self, tmp_path: Path):
+        """_run_container() mounts the entrypoint script read-only."""
+        entrypoint = tmp_path / "entrypoint.sh"
+        entrypoint.write_text("#!/bin/bash\n")
+
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["podman", "run"], returncode=0
+            )
+            from agentalloy.install.subcommands.container_runtime import _run_container
+
+            _run_container("podman", entrypoint, "")
+
+            cmd = mock_run.call_args[0][0]
+            entrypoint_mount = f"{entrypoint}:/app/entrypoint.sh:ro"
+            assert entrypoint_mount in cmd
+
+    def test_run_container_uses_correct_image_and_entrypoint(self, tmp_path: Path):
+        """_run_container() uses agentalloy:local image and /app/entrypoint.sh."""
+        entrypoint = tmp_path / "entrypoint.sh"
+        entrypoint.write_text("#!/bin/bash\n")
+
+        with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["podman", "run"], returncode=0
+            )
+            from agentalloy.install.subcommands.container_runtime import _run_container
+
+            _run_container("podman", entrypoint, "")
+
+            cmd = mock_run.call_args[0][0]
+            assert "agentalloy:local" in cmd
+            assert "/app/entrypoint.sh" in cmd
+
 
 # ---------------------------------------------------------------------------
 # Helper for E2E entrypoint tests
 # ---------------------------------------------------------------------------
+
 
 def _setup_entrypoint_test(
     tmp_path: Path,
@@ -657,28 +927,24 @@ def _setup_entrypoint_test(
     bin_dir.mkdir()
 
     # Mock ollama
-    (bin_dir / "ollama").write_text(
-        "#!/bin/sh\necho \"OLLAMA: $*\" >> /tmp/ollama_calls.log\n"
-    )
+    (bin_dir / "ollama").write_text('#!/bin/sh\necho "OLLAMA: $*" >> /tmp/ollama_calls.log\n')
     (bin_dir / "ollama").chmod(0o755)
     # Mock curl — always succeeds immediately
     (bin_dir / "curl").write_text("#!/bin/sh\necho OK\n")
     (bin_dir / "curl").chmod(0o755)
     # Mock python (for agentalloy.migrate)
-    (bin_dir / "python").write_text(
-        "#!/bin/sh\necho \"PYTHON: $*\" >> /tmp/python_calls.log\n"
-    )
+    (bin_dir / "python").write_text('#!/bin/sh\necho "PYTHON: $*" >> /tmp/python_calls.log\n')
     (bin_dir / "python").chmod(0o755)
     # Mock uvicorn
     (bin_dir / "uvicorn").write_text(
-        "#!/bin/sh\necho \"UVICORN STARTED\" >> /tmp/uvicorn_calls.log\n"
+        '#!/bin/sh\necho "UVICORN STARTED" >> /tmp/uvicorn_calls.log\n'
     )
     (bin_dir / "uvicorn").chmod(0o755)
 
     # Mock install-packs if packs are specified
     if packs.strip():
         (bin_dir / "install-packs").write_text(
-            "#!/bin/sh\necho \"INSTALL-PACKS: $*\" >> /tmp/packs_calls.log\n"
+            '#!/bin/sh\necho "INSTALL-PACKS: $*" >> /tmp/packs_calls.log\n'
         )
         (bin_dir / "install-packs").chmod(0o755)
 
@@ -702,9 +968,7 @@ class TestEntrypointBootstrapComplete:
 
     def test_skips_ollama_install_when_bootstrap_complete(self, tmp_path: Path):
         """When .bootstrap-complete exists, the entrypoint should not attempt Ollama install."""
-        entrypoint, env, app_dir = _setup_entrypoint_test(
-            tmp_path, bootstrap_complete=True
-        )
+        entrypoint, env, app_dir = _setup_entrypoint_test(tmp_path, bootstrap_complete=True)
 
         result = subprocess.run(
             ["bash", str(entrypoint)],
@@ -721,9 +985,7 @@ class TestEntrypointBootstrapComplete:
 
     def test_skips_migrations_when_bootstrap_complete(self, tmp_path: Path):
         """When .bootstrap-complete exists, migrations should not run."""
-        entrypoint, env, app_dir = _setup_entrypoint_test(
-            tmp_path, bootstrap_complete=True
-        )
+        entrypoint, env, app_dir = _setup_entrypoint_test(tmp_path, bootstrap_complete=True)
 
         result = subprocess.run(
             ["bash", str(entrypoint)],
@@ -741,9 +1003,7 @@ class TestEntrypointBootstrapComplete:
 
     def test_skips_model_pull_when_bootstrap_complete(self, tmp_path: Path):
         """When .bootstrap-complete exists, model pull should not happen."""
-        entrypoint, env, app_dir = _setup_entrypoint_test(
-            tmp_path, bootstrap_complete=True
-        )
+        entrypoint, env, app_dir = _setup_entrypoint_test(tmp_path, bootstrap_complete=True)
 
         result = subprocess.run(
             ["bash", str(entrypoint)],
@@ -770,9 +1030,7 @@ class TestEntrypointCrashRestart:
 
     def test_reruns_migrations_on_crash_restart(self, tmp_path: Path):
         """When .bootstrap-complete is missing, migrations should run."""
-        entrypoint, env, app_dir = _setup_entrypoint_test(
-            tmp_path, bootstrap_complete=False
-        )
+        entrypoint, env, app_dir = _setup_entrypoint_test(tmp_path, bootstrap_complete=False)
 
         result = subprocess.run(
             ["bash", str(entrypoint)],

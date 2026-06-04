@@ -18,9 +18,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -90,34 +87,42 @@ def _all_common_patches(tmp_path: Path):
     """
     _inject_preflight_mocks()
     return [
-        patch("agentalloy.install.subcommands.preflight._probe_compose_runtime",
-              return_value=("podman", "/usr/bin/podman", [])),
-        patch("agentalloy.install.subcommands.preflight._compose_failure_message",
-              return_value=("ok", "ok")),
-        patch("agentalloy.install.subcommands.preflight.run_preflight",
-              return_value={"checks": []}),
-        patch("agentalloy.install.subcommands.simple_setup._list_project_containers",
-              return_value=[]),
-        patch("agentalloy.install.subcommands.simple_setup._remove_containers",
-              return_value=True),
-        patch("agentalloy.install.subcommands.simple_setup._container_setup_log_path",
-              return_value=tmp_path / "setup.log"),
-        patch("agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
-              return_value=("test-project", "test-project_default")),
+        patch(
+            "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+            return_value=("podman", "/usr/bin/podman", []),
+        ),
+        patch(
+            "agentalloy.install.subcommands.preflight._compose_failure_message",
+            return_value=("ok", "ok"),
+        ),
+        patch(
+            "agentalloy.install.subcommands.preflight.run_preflight", return_value={"checks": []}
+        ),
+        patch(
+            "agentalloy.install.subcommands.simple_setup._list_project_containers", return_value=[]
+        ),
+        patch("agentalloy.install.subcommands.simple_setup._remove_containers", return_value=True),
+        patch(
+            "agentalloy.install.subcommands.simple_setup._container_setup_log_path",
+            return_value=tmp_path / "setup.log",
+        ),
+        patch(
+            "agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
+            return_value=("test-project", "test-project_default"),
+        ),
         patch("agentalloy.install.state.load_state", return_value={}),
         patch("agentalloy.install.state.save_state"),
-        patch("agentalloy.install.state.user_config_dir",
-              return_value=tmp_path / ".config" / "agentalloy"),
-        patch("agentalloy.install.state.env_path",
-              return_value=tmp_path / ".env"),
+        patch(
+            "agentalloy.install.state.user_config_dir",
+            return_value=tmp_path / ".config" / "agentalloy",
+        ),
+        patch("agentalloy.install.state.env_path", return_value=tmp_path / ".env"),
         patch("agentalloy.install.state._atomic_write"),
         patch("agentalloy.install.subcommands.verify.run", return_value=0),
         patch("agentalloy.install.subcommands.wire_harness.run", return_value=0),
         patch("agentalloy.install.subcommands.simple_setup._build_namespace"),
-        patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs",
-              return_value=""),
-        patch("agentalloy.install.subcommands.simple_setup._discover_packs",
-              return_value={}),
+        patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs", return_value=""),
+        patch("agentalloy.install.subcommands.simple_setup._discover_packs", return_value={}),
         patch("pathlib.Path.cwd", return_value=tmp_path),
         patch("time.sleep", return_value=None),
         patch("builtins.input", return_value="y"),
@@ -153,21 +158,15 @@ def _run_container_flow_all_mocked(
     mock_monotonic = MagicMock(return_value=0.0)
 
     # Apply default mocks
-    patches.append(
-        patch("agentalloy.install.subcommands.simple_setup._run_quiet", mock_run_quiet)
-    )
+    patches.append(patch("agentalloy.install.subcommands.simple_setup._run_quiet", mock_run_quiet))
     patches.append(
         patch(
             "agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
             mock_wait_for_one_shot,
         )
     )
-    patches.append(
-        patch("urllib.request.urlopen", mock_urlopen)
-    )
-    patches.append(
-        patch("time.monotonic", mock_monotonic)
-    )
+    patches.append(patch("urllib.request.urlopen", mock_urlopen))
+    patches.append(patch("time.monotonic", mock_monotonic))
 
     # Apply mock overrides BEFORE entering the ExitStack so the
     # mock objects already have the correct behavior when called.
@@ -220,7 +219,7 @@ class TestFullContainerSetup:
         """_run_container_flow returns 0 when every step succeeds."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            compose_file = _make_compose_file(tmp_path)
+            _make_compose_file(tmp_path)
             _make_containerfile(tmp_path)
 
             rc = _run_container_flow_all_mocked(tmp_path)
@@ -240,7 +239,7 @@ class TestFullContainerSetup:
         """
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            compose_file = _make_compose_file(tmp_path)
+            _make_compose_file(tmp_path)
             _make_containerfile(tmp_path)
 
             call_order = []
@@ -264,7 +263,7 @@ class TestFullContainerSetup:
         """After successful setup, state is saved with deployment=container."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            compose_file = _make_compose_file(tmp_path)
+            _make_compose_file(tmp_path)
             _make_containerfile(tmp_path)
 
             saved_state = {}
@@ -289,7 +288,7 @@ class TestFullContainerSetup:
         """In non-interactive mode, no prompts are shown and setup proceeds."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            compose_file = _make_compose_file(tmp_path)
+            _make_compose_file(tmp_path)
             _make_containerfile(tmp_path)
 
             input_calls = []
@@ -329,7 +328,7 @@ class TestModelPullBootstrap:
         """The ollama + ollama-pull compose up step is called."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            compose_file = _make_compose_file(tmp_path)
+            _make_compose_file(tmp_path)
             _make_containerfile(tmp_path)
 
             compose_up_calls = []
@@ -355,7 +354,7 @@ class TestModelPullBootstrap:
         """When ollama-pull succeeds, 'Embedding model ready' is printed."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            compose_file = _make_compose_file(tmp_path)
+            _make_compose_file(tmp_path)
             _make_containerfile(tmp_path)
 
             printed_messages = []
@@ -366,8 +365,10 @@ class TestModelPullBootstrap:
             rc = _run_container_flow_all_mocked(
                 tmp_path,
                 extra_patches=[
-                    patch("agentalloy.install.subcommands.simple_setup._print",
-                          side_effect=capture_print),
+                    patch(
+                        "agentalloy.install.subcommands.simple_setup._print",
+                        side_effect=capture_print,
+                    ),
                 ],
                 # wait_for_one_shot returns 0 by default (ollama-pull succeeded)
             )
@@ -381,7 +382,7 @@ class TestModelPullBootstrap:
         """When ollama-pull fails, a warning is printed but setup continues."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            compose_file = _make_compose_file(tmp_path)
+            _make_compose_file(tmp_path)
             _make_containerfile(tmp_path)
 
             printed_messages = []
@@ -395,15 +396,15 @@ class TestModelPullBootstrap:
             rc = _run_container_flow_all_mocked(
                 tmp_path,
                 extra_patches=[
-                    patch("agentalloy.install.subcommands.simple_setup._print",
-                          side_effect=capture_print),
+                    patch(
+                        "agentalloy.install.subcommands.simple_setup._print",
+                        side_effect=capture_print,
+                    ),
                 ],
                 mock_overrides={"wait_for_one_shot": iter(wait_results)},
             )
 
-            assert rc == 0, (
-                f"Expected setup to continue after model pull failure, got {rc}"
-            )
+            assert rc == 0, f"Expected setup to continue after model pull failure, got {rc}"
             assert any("embeddings may fail" in m for m in printed_messages), (
                 f"Expected warning about embeddings, got: {printed_messages}"
             )
@@ -437,9 +438,7 @@ class TestBootstrapIdempotency:
         assert bootstrap_check < ollama_install, (
             ".bootstrap-complete check should come before ollama install"
         )
-        assert ollama_install < uvicorn_start, (
-            "ollama install should come before uvicorn start"
-        )
+        assert ollama_install < uvicorn_start, "ollama install should come before uvicorn start"
 
     def test_entrypoint_skips_all_steps_when_complete(self):
         """When .bootstrap-complete exists, only uvicorn runs."""
@@ -453,7 +452,7 @@ class TestBootstrapIdempotency:
         # if bootstrap-complete exists -> skip to uvicorn
         # else -> do all bootstrap steps
         assert "if [ -f" in script and ".bootstrap-complete" in script
-        assert "echo \">> Bootstrap already complete" in script
+        assert 'echo ">> Bootstrap already complete' in script
         assert "skip to uvicorn" in script.lower() or "skipping to uvicorn" in script.lower()
 
     def test_entrypoint_skips_ollama_install_when_present(self):
@@ -468,9 +467,7 @@ class TestBootstrapIdempotency:
         ollama_check = script.index("command -v ollama")
         ollama_install = script.index("ollama.ai/install.sh")
 
-        assert ollama_check < ollama_install, (
-            "ollama presence check should come before install"
-        )
+        assert ollama_check < ollama_install, "ollama presence check should come before install"
 
     def test_entrypoint_skips_model_pull_when_cached(self):
         """When the model is already cached, the pull step is skipped."""
@@ -484,9 +481,7 @@ class TestBootstrapIdempotency:
         model_check = script.index("grep -q qwen3-embedding")
         model_pull = script.index("ollama pull qwen3-embedding")
 
-        assert model_check < model_pull, (
-            "model cache check should come before pull"
-        )
+        assert model_check < model_pull, "model cache check should come before pull"
 
 
 # ---------------------------------------------------------------------------
@@ -505,7 +500,7 @@ class TestCrashRecovery:
         """When agentalloy-init (migrations) fails, setup exits with code 1."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            compose_file = _make_compose_file(tmp_path)
+            _make_compose_file(tmp_path)
             _make_containerfile(tmp_path)
 
             call_count = [0]
@@ -531,7 +526,7 @@ class TestCrashRecovery:
         """
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            compose_file = _make_compose_file(tmp_path)
+            _make_compose_file(tmp_path)
             _make_containerfile(tmp_path)
 
             # _run_quiet is called 4 times: init, ollama, install-packs, main.
@@ -548,7 +543,7 @@ class TestCrashRecovery:
         """When the main agentalloy container fails to start, setup exits 1."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            compose_file = _make_compose_file(tmp_path)
+            _make_compose_file(tmp_path)
             _make_containerfile(tmp_path)
 
             call_count = [0]
@@ -571,7 +566,7 @@ class TestCrashRecovery:
         """When health check times out, a warning is printed but setup continues."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            compose_file = _make_compose_file(tmp_path)
+            _make_compose_file(tmp_path)
             _make_containerfile(tmp_path)
 
             printed_messages = []
@@ -585,8 +580,10 @@ class TestCrashRecovery:
             rc = _run_container_flow_all_mocked(
                 tmp_path,
                 extra_patches=[
-                    patch("agentalloy.install.subcommands.simple_setup._print",
-                          side_effect=capture_print),
+                    patch(
+                        "agentalloy.install.subcommands.simple_setup._print",
+                        side_effect=capture_print,
+                    ),
                 ],
                 mock_overrides={
                     "urlopen": OSError("connection refused"),
@@ -594,9 +591,7 @@ class TestCrashRecovery:
                 },
             )
 
-            assert rc == 0, (
-                f"Expected setup to continue after health check timeout, got {rc}"
-            )
+            assert rc == 0, f"Expected setup to continue after health check timeout, got {rc}"
             assert any("not healthy" in m.lower() for m in printed_messages), (
                 f"Expected health warning, got: {printed_messages}"
             )
@@ -605,7 +600,7 @@ class TestCrashRecovery:
         """When preflight fails, setup exits 1 without any subprocess calls."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            compose_file = _make_compose_file(tmp_path)
+            _make_compose_file(tmp_path)
             _make_containerfile(tmp_path)
 
             subprocess_calls = []
@@ -617,18 +612,20 @@ class TestCrashRecovery:
             rc = _run_container_flow_all_mocked(
                 tmp_path,
                 extra_patches=[
-                    patch("agentalloy.install.subcommands.preflight.run_preflight",
-                          return_value={
-                              "checks": [
-                                  {
-                                      "name": "port_free",
-                                      "passed": False,
-                                      "severity": "fatal",
-                                      "error": "port 47950 in use",
-                                      "remediation": "Stop the process on port 47950",
-                                  }
-                              ]
-                          }),
+                    patch(
+                        "agentalloy.install.subcommands.preflight.run_preflight",
+                        return_value={
+                            "checks": [
+                                {
+                                    "name": "port_free",
+                                    "passed": False,
+                                    "severity": "fatal",
+                                    "error": "port 47950 in use",
+                                    "remediation": "Stop the process on port 47950",
+                                }
+                            ]
+                        },
+                    ),
                 ],
             )
 

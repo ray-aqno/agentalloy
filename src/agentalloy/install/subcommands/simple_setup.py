@@ -76,8 +76,12 @@ class SetupConfig:
 
     # Deployment type: "native" (default) or "container"
     deployment: str = ""
-    compose_binary: str = ""  # "podman compose" | "docker compose"
-    compose_file: str = ""  # abs path to compose yaml used
+
+    # Container runtime fields (used when deployment="container")
+    runtime_binary: str = ""  # resolved path to container runtime (podman/docker)
+    image_tag: str = "agentalloy:local"  # container image tag
+    container_name: str = "agentalloy"  # base name for containers
+    data_volume: str = "agentalloy-data"  # named volume for persistent data
 
     # Upstream LLM (proxy target)
     upstream_url: str = "http://localhost:2099/v1"
@@ -947,11 +951,6 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     Skips native prompts (runner, model, hardware, port, mode, packs).
     Validates container prerequisites, runs compose up, and validates.
     """
-    from agentalloy.install.subcommands.preflight import (  # noqa: PLC0415
-        _compose_failure_message,  # pyright: ignore[reportPrivateUsage]
-        _probe_compose_runtime,  # pyright: ignore[reportPrivateUsage]
-    )
-
     # 1. Run early preflight
     _print("  [dim]-> Preflight (early)[/dim]")
     preflight_result = preflight.run_preflight(phase="early", port=47950)
@@ -971,17 +970,24 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         return 1
     _print("  [green]  Preflight (early) passed.[/green]")
 
-    # 2. Detect compose binary (standalone, before compose file selection)
-    label, binary_path, probes = _probe_compose_runtime()
+    # 2. Detect container runtime (standalone, before image selection)
+    from agentalloy.install.subcommands.container_runtime import (  # noqa: PLC0415
+        _detect_runtime_binary,
+    )
+
+    label = _detect_runtime_binary()
     if label is None:
-        error, remediation = _compose_failure_message(probes)
-        _print(f"  [red]{error}[/red]")
-        for line in remediation.splitlines():
-            _print(f"  {line}")
+        _print(
+            "  [red]Neither `podman` nor `docker` found on PATH.[/red]\n"
+            "  Install Podman (recommended) or Docker:\n"
+            "    Linux:   sudo apt install podman\n"
+            "    macOS:   brew install podman\n"
+            "  Verify:  podman --version"
+        )
         return 1
-    cfg.compose_binary = label
-    assert binary_path is not None  # _probe_compose_runtime returns both or neither
-    _print(f"  Compose binary: {label} at {binary_path}")
+    binary_path = shutil.which(label)
+    cfg.runtime_binary = label
+    _print(f"  Runtime binary: {label} at {binary_path}")
 
     # 2b. Container = CPU-only, on every host. GPU passthrough is intentionally
     # out of scope: nvidia needs nvidia-container-toolkit + deploy.resources,
@@ -1135,11 +1141,14 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         if ans in ("n", "no"):
             custom = input("  Enter compose file path (or repo dir): ").strip()
             compose_path = _resolve_user_path(custom)
-    cfg.compose_file = str(compose_path.resolve())
+    cfg.image_tag = str(compose_path.resolve())
 
     # 4. Run container preflight
     _print("  [dim]-> Preflight (container)[/dim]")
-    container_preflight = preflight.run_preflight(phase="container", compose_file=cfg.compose_file)
+    container_preflight = preflight.run_preflight(
+        phase="container",
+        build_context=str(compose_path.resolve()),
+    )
     container_fatal = [
         c["name"]
         for c in container_preflight.get("checks", [])
@@ -1187,8 +1196,8 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     _print("\n[dim]" + "─" * 40)
     _print("\n[bold]Review your container setup:[/bold]")
     _print("  Deployment:   container")
-    _print(f"  Compose file: {cfg.compose_file}")
-    _print(f"  Compose binary: {cfg.compose_binary}")
+    _print(f"  Runtime:      {cfg.runtime_binary}")
+    _print(f"  Image:        {cfg.image_tag}")
     _print(f"  Port:         {cfg.port}")
     _print(f"  Packs:        {cfg.packs or '(always-on only)'}")
 
@@ -1212,7 +1221,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         for name, status in existing:
             _print(f"  - {name}  [dim]({status})[/dim]")
         _print(
-            f"  [dim]{cfg.compose_binary} will misbehave if these stay around "
+            f"  [dim]{cfg.runtime_binary} will misbehave if these stay around "
             "(name collisions, stale exit codes, dangling dependency graphs).[/dim]"
         )
         if cfg.non_interactive:
@@ -1255,7 +1264,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         binary_path,
         "compose",
         "-f",
-        cfg.compose_file,
+        str(compose_path.resolve()),
         "up",
         "-d",
         "--build",
@@ -1295,7 +1304,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         binary_path,
         "compose",
         "-f",
-        cfg.compose_file,
+        str(compose_path.resolve()),
         "up",
         "-d",
         "ollama",
@@ -1494,9 +1503,10 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     # 10. Record state + write .env (before verify so it reads fresh values)
     st = install_state.load_state()
     st["deployment"] = "container"
-    st["compose_file"] = cfg.compose_file
-    st["compose_binary"] = cfg.compose_binary
-    st["compose_binary_path"] = binary_path
+    st["runtime_binary"] = cfg.runtime_binary
+    st["image_tag"] = cfg.image_tag
+    st["container_name"] = cfg.container_name
+    st["data_volume"] = cfg.data_volume
     st["port"] = cfg.port
     install_state.save_state(st)
 
@@ -1560,12 +1570,13 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         f"\n[green]  Container setup complete in {int((time.monotonic() - t0) * 1000)}ms[/green]\n"
     )
     _print(f"  URL:      http://localhost:{cfg.port}")
-    _print(f"  Compose:  {cfg.compose_file}")
-    _print(f"  Logs:     {cfg.compose_binary.split()[0]} compose -f {cfg.compose_file} logs -f")
+    _print(f"  Runtime:  {cfg.runtime_binary}")
+    _print(f"  Image:    {cfg.image_tag}")
+    _print(f"  Container: {cfg.container_name}")
+    _print(f"  Volume:   {cfg.data_volume}")
 
-    _print(
-        f"\n  [bold]Stop:[/bold] {cfg.compose_binary.split()[0]} compose -f {cfg.compose_file} down"
-    )
+    _print(f"\n  [bold]Logs:[/bold] {cfg.runtime_binary} logs {cfg.container_name}")
+    _print(f"\n  [bold]Stop:[/bold] {cfg.runtime_binary} stop {cfg.container_name}")
     return 0
 
 

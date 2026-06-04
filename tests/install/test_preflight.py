@@ -356,7 +356,6 @@ class TestContainerPhaseEnvelope:
 
     def test_container_phase_all_pass(self, tmp_path: Path):
         """IT-10: Preflight container phase — all checks pass."""
-        from agentalloy.install.subcommands.preflight import run_preflight
 
         # Create build context assets
         (tmp_path / "Containerfile").touch()
@@ -406,7 +405,6 @@ class TestContainerPhaseEnvelope:
 
     def test_container_phase_mixed_failures(self, tmp_path: Path):
         """IT-11: Preflight container phase — mixed failures."""
-        from agentalloy.install.subcommands.preflight import run_preflight
 
         # Create build context assets
         (tmp_path / "Containerfile").touch()
@@ -426,7 +424,8 @@ class TestContainerPhaseEnvelope:
             if "ps" in cmd_str and "--filter" in cmd_str:
                 return mock_existing_container
             return mock
-        mock_ok = MagicMock(returncode=0)
+
+        MagicMock(returncode=0)
 
         def which_side_effect(cmd: str) -> str | None:
             return str(tmp_path / cmd) if cmd == "podman" else None
@@ -445,4 +444,3 @@ class TestContainerPhaseEnvelope:
         check_map = {c["name"]: c for c in result["checks"]}
         assert check_map["name_conflicts"]["passed"] is False
         assert "name_conflicts" in result["fatal_failures"]
-

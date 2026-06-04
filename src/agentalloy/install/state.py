@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 STATE_DIR_NAME = "agentalloy"  # under XDG_CONFIG_HOME
 STATE_FILE_NAME = "install-state.json"
@@ -314,15 +314,15 @@ def _empty_state() -> dict[str, Any]:
         # Deployment type: "native" (direct host install) or "container"
         # (podman/docker compose). None until setup has been run.
         "deployment": None,
-        # Absolute path to the compose YAML file used for container deploys.
-        "compose_file": None,
-        # Compose binary label for display/state: "podman compose" or
-        # "docker compose". Used by uninstall to reconstruct the command.
-        "compose_binary": None,
-        # Absolute path to the compose binary detected at install time
-        # (e.g. "/usr/bin/podman"). Used by uninstall so PATH changes
-        # between install and uninstall don't break compose down.
-        "compose_binary_path": None,
+        # Resolved container runtime binary (e.g. "podman compose" or
+        # "docker compose"). Used by uninstall to reconstruct commands.
+        "runtime_binary": None,
+        # Container image tag for the agentalloy image.
+        "image_tag": None,
+        # Base name for containers created during deployment.
+        "container_name": None,
+        # Named volume for persistent data.
+        "data_volume": None,
     }
 
 
@@ -506,11 +506,19 @@ def _migrate(data: dict[str, Any], from_version: int) -> dict[str, Any]:
             entry.setdefault("harness", legacy_harness)
             if legacy_repo_root:
                 entry.setdefault("repo_root", legacy_repo_root)
-    if from_version < 3:
-        # v2 -> v3: add container deployment fields
+    if from_version < 4:
+        # v3 -> v4: container deployment fields (compose → runtime)
         data.setdefault("deployment", None)
-        data.setdefault("compose_file", None)
-        data.setdefault("compose_binary", None)
+        data.setdefault("runtime_binary", None)
+        data.setdefault("image_tag", None)
+        data.setdefault("container_name", None)
+        data.setdefault("data_volume", None)
+        # Migrate old compose fields to new runtime fields if present
+        if "compose_binary" in data:
+            data["runtime_binary"] = data.pop("compose_binary")
+        if "compose_file" in data:
+            data["image_tag"] = data.pop("compose_file")
+        data.pop("compose_binary_path", None)
     # Forward-compatibility: ensure newly added optional fields exist on
     # older state files. Not a version bump because the field is purely
     # additive and defaults to None.

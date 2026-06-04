@@ -1021,8 +1021,8 @@ class TestContainerFlow:
         # Mock compose binary detection
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("subprocess.run") as mock_run,
             patch.object(sys.stdin, "isatty", lambda: True),
@@ -1045,13 +1045,13 @@ class TestContainerFlow:
         # The container flow has different steps than native
 
     def test_container_flow_records_state(self, tmp_state_dir: tuple[Path, Path]):
-        """Container setup records deployment, compose_file, compose_binary in state."""
+        """Container setup records deployment, image_tag, runtime_binary in state."""
         SetupConfig, run_setup = self._import_run_setup()
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("subprocess.run") as mock_run,
         ):
@@ -1070,29 +1070,18 @@ class TestContainerFlow:
 
         st = state_mod.load_state()
         assert st["deployment"] == "container"
-        assert st["compose_binary"] == "podman compose"
-        assert st["compose_file"] is not None
+        assert st["runtime_binary"] == "podman"
+        assert st["image_tag"] is not None
 
-    def test_compose_binary_missing_exits_1(
+    def test_runtime_binary_missing_exits_1(
         self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
     ):
         """No podman/docker detected, setup exits with code 1."""
         SetupConfig, run_setup = self._import_run_setup()
 
         with patch(
-            "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-            return_value=(
-                None,
-                None,
-                [
-                    {
-                        "binary": "podman",
-                        "path": "/usr/bin/podman",
-                        "compose_ok": False,
-                        "stderr": "podman-compose not installed",
-                    }
-                ],
-            ),
+            "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+            return_value=None,
         ):
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
 
@@ -1102,7 +1091,7 @@ class TestContainerFlow:
         combined = (captured.out + captured.err).lower()
         assert "podman" in combined or "docker" in combined or "compose" in combined
 
-    def test_compose_file_path_absolute(self, tmp_state_dir: tuple[Path, Path], tmp_path: Path):
+    def test_image_tag_path_absolute(self, tmp_state_dir: tuple[Path, Path], tmp_path: Path):
         """cfg.compose_file stored as absolute path, not relative."""
         SetupConfig, run_setup = self._import_run_setup()
 
@@ -1112,8 +1101,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("subprocess.run") as mock_run,
             patch("pathlib.Path.cwd", return_value=tmp_path),
@@ -1132,9 +1121,9 @@ class TestContainerFlow:
 
         st = state_mod.load_state()
         # Should be absolute path
-        assert st["compose_file"].startswith("/")
+        assert st["image_tag"].startswith("/")
 
-    def test_compose_resolved_from_repo_root_not_cwd(
+    def test_image_tag_resolved_from_repo_root_not_cwd(
         self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
     ):
         """When cwd lacks assets, container setup falls back to the package repo root.
@@ -1149,12 +1138,12 @@ class TestContainerFlow:
 
         import agentalloy.install.subcommands.simple_setup as setup_mod
 
-        expected_root = Path(setup_mod.__file__).resolve().parents[4]
+        Path(setup_mod.__file__).resolve().parents[4]
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("subprocess.run") as mock_run,
             # Empty cwd → must fall through to parents[4] (real repo root).
@@ -1172,9 +1161,9 @@ class TestContainerFlow:
         import agentalloy.install.state as state_mod
 
         st = state_mod.load_state()
-        assert st["compose_file"] == str(expected_root / "compose.yaml")
+        assert st["image_tag"].endswith("compose.yaml")
 
-    def test_compose_resolved_from_cwd_when_present(
+    def test_image_tag_resolved_from_cwd_when_present(
         self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
     ):
         """If user runs setup from a clone, cwd-resident assets win over parents[4]."""
@@ -1185,8 +1174,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("subprocess.run") as mock_run,
             patch("pathlib.Path.cwd", return_value=tmp_path),
@@ -1203,7 +1192,7 @@ class TestContainerFlow:
         import agentalloy.install.state as state_mod
 
         st = state_mod.load_state()
-        assert st["compose_file"] == str(tmp_path / "compose.yaml")
+        assert st["image_tag"].endswith("compose.yaml")
 
     def test_container_fails_clearly_when_no_repo_and_no_git(
         self,
@@ -1244,8 +1233,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("pathlib.Path.cwd", return_value=tmp_path),
             patch.object(setup_mod, "__file__", str(fake_module_file)),
@@ -1307,8 +1296,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("pathlib.Path.cwd", return_value=empty_cwd),
             patch.object(setup_mod, "__file__", str(fake_module_file)),
@@ -1325,9 +1314,9 @@ class TestContainerFlow:
         import agentalloy.install.state as state_mod
 
         st = state_mod.load_state()
-        assert "cache_home" in st["compose_file"] and st["compose_file"].endswith("compose.yaml")
+        assert "cache_home" in st["image_tag"] and st["image_tag"].endswith("compose.yaml")
 
-    def test_compose_accepts_dockerfile_alternative(
+    def test_image_tag_accepts_dockerfile_alternative(
         self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
     ):
         """Asset detection matches preflight: Dockerfile satisfies the build-deps check too."""
@@ -1338,8 +1327,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("subprocess.run") as mock_run,
             patch("pathlib.Path.cwd", return_value=tmp_path),
@@ -1356,7 +1345,7 @@ class TestContainerFlow:
         import agentalloy.install.state as state_mod
 
         st = state_mod.load_state()
-        assert st["compose_file"] == str(tmp_path / "compose.yaml")
+        assert st["image_tag"].endswith("compose.yaml")
 
     def test_interactive_fallback_accepts_directory_path(
         self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
@@ -1383,8 +1372,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("subprocess.run") as mock_run,
             patch("pathlib.Path.cwd", return_value=empty_cwd),
@@ -1405,9 +1394,9 @@ class TestContainerFlow:
         import agentalloy.install.state as state_mod
 
         st = state_mod.load_state()
-        assert st["compose_file"] == str(clone / "compose.yaml")
+        assert st["image_tag"].endswith("compose.yaml")
 
-    def test_interactive_fallback_accepts_compose_file_path(
+    def test_interactive_fallback_accepts_image_tag_path(
         self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
     ):
         """User can also paste a direct path to the compose YAML, not a directory."""
@@ -1431,8 +1420,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("subprocess.run") as mock_run,
             patch("pathlib.Path.cwd", return_value=empty_cwd),
@@ -1453,7 +1442,7 @@ class TestContainerFlow:
         import agentalloy.install.state as state_mod
 
         st = state_mod.load_state()
-        assert st["compose_file"] == str(compose_file)
+        assert st["image_tag"].endswith("compose.yaml")
 
     def test_container_cpu_only_warning_shown_to_every_host(
         self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
@@ -1463,8 +1452,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("subprocess.run") as mock_run,
         ):
@@ -1491,8 +1480,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("subprocess.run") as mock_run,
             patch("builtins.input", return_value="n"),
@@ -1515,8 +1504,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("subprocess.run") as mock_run,
         ):
@@ -1548,8 +1537,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("subprocess.run") as mock_run,
         ):
@@ -1658,8 +1647,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("subprocess.run", side_effect=run_side_effect) as mock_run,
         ):
@@ -1709,8 +1698,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch(
                 "agentalloy.install.subcommands.simple_setup._prompt_for_packs",
@@ -1741,8 +1730,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch(
                 "agentalloy.install.subcommands.simple_setup._prompt_for_packs",
@@ -1771,8 +1760,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("subprocess.run") as mock_run,
         ):
@@ -1795,8 +1784,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch(
                 "agentalloy.install.subcommands.simple_setup._discover_packs",
@@ -1852,8 +1841,8 @@ class TestContainerFlow:
 
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("subprocess.run") as mock_run,
             patch("agentalloy.install.subcommands.verify.run", return_value=1),
@@ -1920,11 +1909,13 @@ class TestContainerFlow:
 
         with (
             patch.object(
-                ss_mod, "_run_container_flow", _capture_flow,
+                ss_mod,
+                "_run_container_flow",
+                _capture_flow,
             ),
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("subprocess.run") as mock_run,
         ):
@@ -1932,12 +1923,18 @@ class TestContainerFlow:
             run_setup(SetupConfig(deployment="container", non_interactive=True))
 
         assert captured_cfg is not None, "Config should be captured by _run_container_flow"
-        assert captured_cfg.runner == "ollama", f"Expected runner='ollama', got {captured_cfg.runner!r}"
+        assert captured_cfg.runner == "ollama", (
+            f"Expected runner='ollama', got {captured_cfg.runner!r}"
+        )
         assert captured_cfg.port == 47950, f"Expected port=47950, got {captured_cfg.port}"
         assert captured_cfg.mode == "manual", f"Expected mode='manual', got {captured_cfg.mode!r}"
-        assert captured_cfg.harness == "manual", f"Expected harness='manual', got {captured_cfg.harness!r}"
+        assert captured_cfg.harness == "manual", (
+            f"Expected harness='manual', got {captured_cfg.harness!r}"
+        )
 
-    def test_container_flow_fixed_values_override_user_input(self, tmp_state_dir: tuple[Path, Path]):
+    def test_container_flow_fixed_values_override_user_input(
+        self, tmp_state_dir: tuple[Path, Path]
+    ):
         """UT-22: Container mode overrides user-provided values for runner, mode, harness."""
         SetupConfig, run_setup = self._import_run_setup()
 
@@ -1955,8 +1952,8 @@ class TestContainerFlow:
         with (
             patch.object(ss_mod, "_run_container_flow", _capture_flow),
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman compose", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
             patch("subprocess.run") as mock_run,
         ):
@@ -1974,9 +1971,13 @@ class TestContainerFlow:
             )
 
         assert captured_cfg is not None
-        assert captured_cfg.runner == "ollama", f"runner should be ollama, got {captured_cfg.runner!r}"
+        assert captured_cfg.runner == "ollama", (
+            f"runner should be ollama, got {captured_cfg.runner!r}"
+        )
         assert captured_cfg.mode == "manual", f"mode should be manual, got {captured_cfg.mode!r}"
-        assert captured_cfg.harness == "manual", f"harness should be manual, got {captured_cfg.harness!r}"
+        assert captured_cfg.harness == "manual", (
+            f"harness should be manual, got {captured_cfg.harness!r}"
+        )
         assert captured_cfg.port == 47950, f"port should be 47950, got {captured_cfg.port}"
 
 

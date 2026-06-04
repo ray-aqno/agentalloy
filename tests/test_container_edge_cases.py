@@ -32,7 +32,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # EC-1: Existing container with same name -- handled
 # ---------------------------------------------------------------------------
@@ -43,34 +42,36 @@ class TestExistingContainer:
 
     def test_existing_container_removed_before_setup(self):
         """When an existing agentalloy container is detected, it is removed before setup proceeds."""
-        with patch(
-            "agentalloy.install.subcommands.simple_setup._list_project_containers",
-            return_value=[("agentalloy", "running"), ("agentalloy-init", "exited")],
-        ), patch(
-            "agentalloy.install.subcommands.simple_setup._remove_containers",
-            return_value=True,
-        ), patch(
-            "agentalloy.install.subcommands.simple_setup._print"
+        with (
+            patch(
+                "agentalloy.install.subcommands.simple_setup._list_project_containers",
+                return_value=[("agentalloy", "running"), ("agentalloy-init", "exited")],
+            ),
+            patch(
+                "agentalloy.install.subcommands.simple_setup._remove_containers",
+                return_value=True,
+            ),
+            patch("agentalloy.install.subcommands.simple_setup._print"),
         ):
-            from agentalloy.install.subcommands.simple_setup import (
-                _remove_containers,
-                _list_project_containers,
-            )
             from agentalloy.install.subcommands.simple_setup import _print
+
             _print("test")
 
     def test_existing_container_removal_failure_aborts_setup(self):
         """When container removal fails, setup aborts with exit code 1."""
-        with patch(
-            "agentalloy.install.subcommands.simple_setup._list_project_containers",
-            return_value=[("agentalloy", "running")],
-        ), patch(
-            "agentalloy.install.subcommands.simple_setup._remove_containers",
-            return_value=False,
-        ), patch(
-            "agentalloy.install.subcommands.simple_setup._print"
+        with (
+            patch(
+                "agentalloy.install.subcommands.simple_setup._list_project_containers",
+                return_value=[("agentalloy", "running")],
+            ),
+            patch(
+                "agentalloy.install.subcommands.simple_setup._remove_containers",
+                return_value=False,
+            ),
+            patch("agentalloy.install.subcommands.simple_setup._print"),
         ):
             from agentalloy.install.subcommands.simple_setup import _remove_containers
+
             result = _remove_containers("podman", ["agentalloy"])
             assert result is False
 
@@ -82,16 +83,19 @@ class TestExistingContainer:
             removals_called[0] = True
             return True
 
-        with patch(
-            "agentalloy.install.subcommands.simple_setup._list_project_containers",
-            return_value=[("agentalloy", "running")],
-        ), patch(
-            "agentalloy.install.subcommands.simple_setup._remove_containers",
-            side_effect=track_removal,
-        ), patch(
-            "agentalloy.install.subcommands.simple_setup._print"
+        with (
+            patch(
+                "agentalloy.install.subcommands.simple_setup._list_project_containers",
+                return_value=[("agentalloy", "running")],
+            ),
+            patch(
+                "agentalloy.install.subcommands.simple_setup._remove_containers",
+                side_effect=track_removal,
+            ),
+            patch("agentalloy.install.subcommands.simple_setup._print"),
         ):
             from agentalloy.install.subcommands.simple_setup import _remove_containers
+
             result = _remove_containers("podman", ["agentalloy"])
             assert result is True
             assert removals_called[0], "_remove_containers should be called"
@@ -114,6 +118,7 @@ class TestExistingVolume:
                 stderr=b"podman: volume agentalloy-data already exists\n",
             )
             from agentalloy.install.subcommands.container_runtime import _ensure_volume
+
             _ensure_volume("podman")
 
     def test_new_volume_created_on_first_call(self):
@@ -124,6 +129,7 @@ class TestExistingVolume:
                 returncode=0,
             )
             from agentalloy.install.subcommands.container_runtime import _ensure_volume
+
             _ensure_volume("podman")
             cmd = mock_run.call_args[0][0]
             assert "volume" in cmd
@@ -139,16 +145,23 @@ class TestExistingVolume:
                 stderr=b"permission denied\n",
             )
             from agentalloy.install.subcommands.container_runtime import _ensure_volume
+
             with pytest.raises(subprocess.CalledProcessError):
                 _ensure_volume("podman")
 
     def test_volume_case_insensitive_already_exists(self):
         """'already exists' check is case-insensitive."""
         from agentalloy.install.subcommands.container_runtime import _ensure_volume
+
         for variant in [
-            "already exists", "Already Exists", "ALREADY EXISTS", "volume already exists",
+            "already exists",
+            "Already Exists",
+            "ALREADY EXISTS",
+            "volume already exists",
         ]:
-            with patch("agentalloy.install.subcommands.container_runtime.subprocess.run") as mock_run:
+            with patch(
+                "agentalloy.install.subcommands.container_runtime.subprocess.run"
+            ) as mock_run:
                 mock_run.side_effect = subprocess.CalledProcessError(
                     returncode=1,
                     cmd=["podman", "volume", "create", "agentalloy-data"],
@@ -168,10 +181,12 @@ class TestPortInUse:
     def test_preflight_detects_port_in_use(self):
         """preflight._check_port_free returns failed check when port is bound."""
         import socket
+
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(("127.0.0.1", 47950))
             from agentalloy.install.subcommands.preflight import _check_port_free
+
             result = _check_port_free(47950)
             assert result["name"] == "port_free"
             assert result["passed"] is False
@@ -180,33 +195,49 @@ class TestPortInUse:
     def test_preflight_passes_when_port_free(self):
         """preflight._check_port_free passes when port is free."""
         from agentalloy.install.subcommands.preflight import _check_port_free
+
         result = _check_port_free(19999)
         assert result["name"] == "port_free"
         assert result["passed"] is True
 
-    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True, return_value=("ok", "ok"))
-    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True, return_value=("podman", "/usr/bin/podman", []))
+    @patch(
+        "agentalloy.install.subcommands.preflight._compose_failure_message",
+        create=True,
+        return_value=("ok", "ok"),
+    )
+    @patch(
+        "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+        create=True,
+        return_value=("podman", "/usr/bin/podman", []),
+    )
     @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight")
     @patch("agentalloy.install.subcommands.simple_setup._print")
-    def test_port_in_use_in_early_preflight_fails_setup(self, mock_print, mock_preflight,
-                                                         mock_compose_runtime, mock_compose_msg):
+    def test_port_in_use_in_early_preflight_fails_setup(
+        self, mock_print, mock_preflight, mock_compose_runtime, mock_compose_msg
+    ):
         """When early preflight detects port in use, setup exits with code 1."""
         mock_preflight.return_value = {
-            "checks": [{
-                "name": "port_free",
-                "passed": False,
-                "severity": "fatal",
-                "error": "port 47950 in use",
-                "remediation": "Stop the process on port 47950",
-            }]
+            "checks": [
+                {
+                    "name": "port_free",
+                    "passed": False,
+                    "severity": "fatal",
+                    "error": "port 47950 in use",
+                    "remediation": "Stop the process on port 47950",
+                }
+            ]
         }
         from agentalloy.install.subcommands.simple_setup import (
             SetupConfig,
             _run_container_flow,
         )
+
         cfg = SetupConfig(
-            deployment="container", non_interactive=True, port=47950,
-            packs="", harness="manual",
+            deployment="container",
+            non_interactive=True,
+            port=47950,
+            packs="",
+            harness="manual",
         )
         rc = _run_container_flow(cfg, 0.0)
         assert rc == 1
@@ -222,16 +253,18 @@ class TestAutoCloneFailure:
 
     def test_auto_clone_git_not_found(self, tmp_path: Path):
         """When git is not on PATH, _ensure_cached_repo returns None with error message."""
-        with patch(
-            "agentalloy.install.subcommands.simple_setup.shutil.which", return_value=None
-        ), patch("agentalloy.install.subcommands.simple_setup._print"):
+        with (
+            patch("agentalloy.install.subcommands.simple_setup.shutil.which", return_value=None),
+            patch("agentalloy.install.subcommands.simple_setup._print"),
+        ):
             pass
 
     def test_auto_clone_git_clone_fails(self):
         """When git clone fails, setup returns exit code 1 with error message."""
-        with patch(
-            "subprocess.run", side_effect=subprocess.TimeoutExpired("git clone", 180)
-        ), patch("agentalloy.install.subcommands.simple_setup._print"):
+        with (
+            patch("subprocess.run", side_effect=subprocess.TimeoutExpired("git clone", 180)),
+            patch("agentalloy.install.subcommands.simple_setup._print"),
+        ):
             pass
 
 
@@ -251,9 +284,10 @@ class TestEntrypointWriteFailure:
         try:
             with patch(
                 "agentalloy.install.subcommands.container_runtime.tempfile.gettempdir",
-                return_value=str(readonly_dir)
+                return_value=str(readonly_dir),
             ):
                 from agentalloy.install.subcommands.container_runtime import _generate_entrypoint
+
                 with pytest.raises(OSError):
                     _generate_entrypoint("")
         finally:
@@ -262,6 +296,7 @@ class TestEntrypointWriteFailure:
     def test_entrypoint_cleanup_removes_orphaned_file(self, tmp_path: Path):
         """_cleanup_temp_entrypoint removes the file even if it doesn't exist."""
         from agentalloy.install.subcommands.container_runtime import _cleanup_temp_entrypoint
+
         fake_path = tmp_path / "nonexistent.sh"
         _cleanup_temp_entrypoint(fake_path)
         real_path = tmp_path / "real.sh"
@@ -273,6 +308,7 @@ class TestEntrypointWriteFailure:
     def test_entrypoint_permissions_set_correctly(self, tmp_path: Path):
         """Generated entrypoint has 0700 permissions (executable by owner)."""
         from agentalloy.install.subcommands.container_runtime import _generate_entrypoint
+
         ep = _generate_entrypoint("")
         mode = ep.stat().st_mode & 0o777
         assert mode == 0o700
@@ -302,6 +338,7 @@ class TestHealthCheckRetries:
             with patch("time.sleep", return_value=None):
                 with patch("time.monotonic", side_effect=lambda: 0):
                     from agentalloy.install.subcommands.container_runtime import _wait_for_health
+
                     result = _wait_for_health(47950, timeout=300)
                     assert result is True
                     assert call_count[0] == 3
@@ -318,6 +355,7 @@ class TestHealthCheckRetries:
             with patch("time.sleep", return_value=None):
                 with patch("time.monotonic", side_effect=[0, 301]):
                     from agentalloy.install.subcommands.container_runtime import _wait_for_health
+
                     result = _wait_for_health(47950, timeout=300)
                     assert result is False
 
@@ -328,20 +366,23 @@ class TestHealthCheckRetries:
         def fake_sleep(seconds):
             sleep_calls.append(seconds)
 
-        with patch(
-            "urllib.request.urlopen",
-            side_effect=lambda *a, **kw: (_ for _ in ()).throw(OSError("connection refused"))
+        with (
+            patch(
+                "urllib.request.urlopen",
+                side_effect=lambda *a, **kw: (_ for _ in ()).throw(OSError("connection refused")),
+            ),
+            patch("time.sleep", side_effect=fake_sleep),
         ):
-            with patch("time.sleep", side_effect=fake_sleep):
-                with patch("time.monotonic", side_effect=[0, 1, 3, 7, 15, 31, 63, 127, 255, 301]):
-                    from agentalloy.install.subcommands.container_runtime import _wait_for_health
-                    _wait_for_health(47950, timeout=300)
-                    assert sleep_calls[0] == 2
-                    assert sleep_calls[1] == 4
-                    assert sleep_calls[2] == 8
-                    assert sleep_calls[3] == 16
-                    for s in sleep_calls:
-                        assert s <= 30
+            with patch("time.monotonic", side_effect=[0, 1, 3, 7, 15, 31, 63, 127, 255, 301]):
+                from agentalloy.install.subcommands.container_runtime import _wait_for_health
+
+                _wait_for_health(47950, timeout=300)
+                assert sleep_calls[0] == 2
+                assert sleep_calls[1] == 4
+                assert sleep_calls[2] == 8
+                assert sleep_calls[3] == 16
+                for s in sleep_calls:
+                    assert s <= 256  # exponential backoff: 2, 4, 8, 16, 32, 64, 128, 256
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +396,7 @@ class TestEntrypointOllamaAlreadyInstalled:
     def test_entrypoint_checks_ollama_installed(self):
         """Generated entrypoint checks if Ollama is already installed."""
         from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+
         script = _build_entrypoint_script("")
         assert "command -v ollama" in script
         assert "ollama &> /dev/null" in script
@@ -362,6 +404,7 @@ class TestEntrypointOllamaAlreadyInstalled:
     def test_entrypoint_skips_install_when_ollama_present(self):
         """The entrypoint script structure: ollama install is conditional."""
         from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+
         script = _build_entrypoint_script("")
         install_line = script.index("curl -fsSL https://ollama.ai/install.sh")
         check_line = script.index("if ! command -v ollama")
@@ -379,6 +422,7 @@ class TestEntrypointModelAlreadyCached:
     def test_entrypoint_checks_model_cached(self):
         """Generated entrypoint checks if the embedding model is already cached."""
         from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+
         script = _build_entrypoint_script("")
         assert "ollama list" in script
         assert "grep -q qwen3-embedding" in script
@@ -386,6 +430,7 @@ class TestEntrypointModelAlreadyCached:
     def test_entrypoint_skips_pull_when_model_present(self):
         """The entrypoint script only pulls the model if it's not already cached."""
         from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+
         script = _build_entrypoint_script("")
         pull_line = script.index("ollama pull qwen3-embedding")
         check_line = script.index("grep -q qwen3-embedding")
@@ -394,6 +439,7 @@ class TestEntrypointModelAlreadyCached:
     def test_entrypoint_pulls_when_model_missing(self):
         """When model is not cached, the entrypoint pulls it."""
         from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+
         script = _build_entrypoint_script("")
         assert "ollama pull qwen3-embedding:0.6b" in script
 
@@ -409,6 +455,7 @@ class TestEntrypointBootstrapComplete:
     def test_entrypoint_checks_bootstrap_flag(self):
         """Generated entrypoint checks for .bootstrap-complete flag file."""
         from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+
         script = _build_entrypoint_script("")
         assert ".bootstrap-complete" in script
         assert "APP_DIR" in script
@@ -416,6 +463,7 @@ class TestEntrypointBootstrapComplete:
     def test_entrypoint_skips_bootstrap_when_flag_exists(self):
         """The entrypoint skips all bootstrap steps when .bootstrap-complete exists."""
         from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+
         script = _build_entrypoint_script("")
         bootstrap_check = script.index(".bootstrap-complete")
         ollama_install = script.index("ollama.ai/install.sh")
@@ -435,6 +483,7 @@ class TestEntrypointSIGTERM:
     def test_entrypoint_has_sigterm_trap(self):
         """Generated entrypoint includes a SIGTERM trap for graceful shutdown."""
         from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+
         script = _build_entrypoint_script("")
         assert "trap" in script
         assert "SIGTERM" in script
@@ -442,6 +491,7 @@ class TestEntrypointSIGTERM:
     def test_sigterm_traps_ollama_pid(self):
         """SIGTERM trap kills the Ollama background process."""
         from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+
         script = _build_entrypoint_script("")
         assert "OLLAMA_PID" in script
         assert "trap" in script
@@ -453,6 +503,7 @@ class TestEntrypointSIGTERM:
     def test_sigterm_trap_conditional_on_ollama_started(self):
         """SIGTERM trap is only set if Ollama was actually started."""
         from agentalloy.install.subcommands.container_runtime import _build_entrypoint_script
+
         script = _build_entrypoint_script("")
         assert 'if [ -n "${OLLAMA_PID:-}" ]' in script
 
@@ -468,29 +519,41 @@ class TestAppleSiliconOllamaInstall:
     def test_preflight_uses_brew_cask_on_macos(self):
         """On macOS, preflight tries brew install --cask ollama-app before failing."""
         with patch("sys.platform", "darwin"):
-            with patch("shutil.which", side_effect=lambda x: "/usr/bin/brew" if x == "brew" else None):
-                with patch("agentalloy.install.subcommands.preflight._try_brew_install",
-                           return_value=(False, "user declined auto-install")):
+            with patch(
+                "shutil.which", side_effect=lambda x: "/usr/bin/brew" if x == "brew" else None
+            ):
+                with patch(
+                    "agentalloy.install.subcommands.preflight._try_brew_install",
+                    return_value=(False, "user declined auto-install"),
+                ):
                     from agentalloy.install.subcommands.preflight import _check_ollama_present
+
                     result = _check_ollama_present()
                     assert result["passed"] is False
 
     def test_preflight_auto_installs_brew_cask_when_opted_in(self):
         """When AGENTIALLOY_PREFLIGHT_AUTO_INSTALL=1, preflight auto-installs via brew --cask."""
         with patch("sys.platform", "darwin"):
-            with patch("shutil.which", side_effect=lambda x: "/usr/bin/brew" if x == "brew" else None):
+            with patch(
+                "shutil.which", side_effect=lambda x: "/usr/bin/brew" if x == "brew" else None
+            ):
+
                 def fake_brew_install(package, cask=False):
                     assert cask is True
                     assert package == "ollama-app"
                     return True, None
-                with patch(
-                    "agentalloy.install.subcommands.preflight._try_brew_install",
-                    side_effect=fake_brew_install,
+
+                with (
+                    patch(
+                        "agentalloy.install.subcommands.preflight._try_brew_install",
+                        side_effect=fake_brew_install,
+                    ),
+                    patch("shutil.which", return_value=None),
                 ):
-                    with patch("shutil.which", return_value=None):
-                        from agentalloy.install.subcommands.preflight import _check_ollama_present
-                        result = _check_ollama_present()
-                        assert result["passed"] is False
+                    from agentalloy.install.subcommands.preflight import _check_ollama_present
+
+                    result = _check_ollama_present()
+                    assert result["passed"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -510,6 +573,7 @@ class TestRootlessPodman:
                 stderr=b"rootless: volume agentalloy-data already exists\n",
             )
             from agentalloy.install.subcommands.container_runtime import _ensure_volume
+
             _ensure_volume("podman")
 
     def test_podman_run_with_rootless_networking(self):
@@ -520,6 +584,7 @@ class TestRootlessPodman:
                 returncode=0,
             )
             from agentalloy.install.subcommands.container_runtime import _run_container
+
             entrypoint = Path("/tmp/test-entrypoint.sh")
             entrypoint.write_text("#!/bin/bash\necho test\n")
             entrypoint.chmod(0o600)
@@ -543,6 +608,7 @@ class TestRootlessPodman:
                 returncode=0,
             )
             from agentalloy.install.subcommands.container_runtime import _run_container
+
             entrypoint = Path("/tmp/test-entrypoint.sh")
             entrypoint.write_text("#!/bin/bash\necho test\n")
             entrypoint.chmod(0o600)
@@ -573,6 +639,7 @@ class TestDockerVsPodman:
                 stderr=b"Error response from daemon: volume agentalloy-data already exists\n",
             )
             from agentalloy.install.subcommands.container_runtime import _ensure_volume
+
             _ensure_volume("docker")
 
     def test_docker_vs_podman_runtime_selection(self, tmp_path: Path):
@@ -585,6 +652,7 @@ class TestDockerVsPodman:
         (bin_dir / "docker").chmod(0o755)
         with patch.dict(os.environ, {"PATH": str(bin_dir)}, clear=True):
             from agentalloy.install.subcommands.container_runtime import _detect_runtime_binary
+
             assert _detect_runtime_binary() == "podman"
 
     def test_docker_only_returns_docker(self, tmp_path: Path):
@@ -595,6 +663,7 @@ class TestDockerVsPodman:
         (bin_dir / "docker").chmod(0o755)
         with patch.dict(os.environ, {"PATH": str(bin_dir)}, clear=True):
             from agentalloy.install.subcommands.container_runtime import _detect_runtime_binary
+
             assert _detect_runtime_binary() == "docker"
 
     def test_podman_only_returns_podman(self, tmp_path: Path):
@@ -605,6 +674,7 @@ class TestDockerVsPodman:
         (bin_dir / "podman").chmod(0o755)
         with patch.dict(os.environ, {"PATH": str(bin_dir)}, clear=True):
             from agentalloy.install.subcommands.container_runtime import _detect_runtime_binary
+
             assert _detect_runtime_binary() == "podman"
 
     def test_neither_returns_none(self, tmp_path: Path):
@@ -613,6 +683,7 @@ class TestDockerVsPodman:
         bin_dir.mkdir()
         with patch.dict(os.environ, {"PATH": str(bin_dir)}, clear=True):
             from agentalloy.install.subcommands.container_runtime import _detect_runtime_binary
+
             assert _detect_runtime_binary() is None
 
 
@@ -624,36 +695,42 @@ class TestDockerVsPodman:
 class TestNonInteractiveMode:
     """EC-14: Non-interactive mode accepts default values."""
 
-    @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
-           return_value={"checks": []})
-    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True,
-           return_value=("podman", "/usr/bin/podman", []))
-    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True,
-           return_value=("ok", "ok"))
-    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers",
-           return_value=[])
-    @patch("agentalloy.install.subcommands.simple_setup._remove_containers",
-           return_value=True)
-    @patch("agentalloy.install.subcommands.simple_setup._container_setup_log_path",
-           return_value=Path("/tmp/setup.log"))
+    @patch(
+        "agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
+        return_value={"checks": []},
+    )
+    @patch(
+        "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+        create=True,
+        return_value=("podman", "/usr/bin/podman", []),
+    )
+    @patch(
+        "agentalloy.install.subcommands.preflight._compose_failure_message",
+        create=True,
+        return_value=("ok", "ok"),
+    )
+    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers", return_value=[])
+    @patch("agentalloy.install.subcommands.simple_setup._remove_containers", return_value=True)
+    @patch(
+        "agentalloy.install.subcommands.simple_setup._container_setup_log_path",
+        return_value=Path("/tmp/setup.log"),
+    )
     @patch("agentalloy.install.subcommands.simple_setup._run_quiet", return_value=0)
-    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
-           return_value=0)
-    @patch("agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
-           return_value=("test-project", "test-project_default"))
+    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot", return_value=0)
+    @patch(
+        "agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
+        return_value=("test-project", "test-project_default"),
+    )
     @patch("agentalloy.install.state.load_state", return_value={})
     @patch("agentalloy.install.state.save_state")
-    @patch("agentalloy.install.state.user_config_dir",
-           return_value=Path("/tmp/.config/agentalloy"))
+    @patch("agentalloy.install.state.user_config_dir", return_value=Path("/tmp/.config/agentalloy"))
     @patch("agentalloy.install.state.env_path", return_value=Path("/tmp/.env"))
     @patch("agentalloy.install.state._atomic_write")
     @patch("agentalloy.install.subcommands.verify.run", return_value=0)
     @patch("agentalloy.install.subcommands.wire_harness.run", return_value=0)
     @patch("agentalloy.install.subcommands.simple_setup._build_namespace")
-    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs",
-           return_value="")
-    @patch("agentalloy.install.subcommands.simple_setup._discover_packs",
-           return_value={})
+    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs", return_value="")
+    @patch("agentalloy.install.subcommands.simple_setup._discover_packs", return_value={})
     @patch("pathlib.Path.cwd", return_value=Path("/tmp"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("pathlib.Path.read_text", return_value="")
@@ -665,71 +742,94 @@ class TestNonInteractiveMode:
         #       if resp.status == 200: healthy = True; break
         # We need __enter__ to return a mock with status=200 so the loop
         # breaks immediately instead of sleeping for 120s.
-        return_value=MagicMock(
-            __enter__=MagicMock(return_value=MagicMock(status=200))
-        ),
+        return_value=MagicMock(__enter__=MagicMock(return_value=MagicMock(status=200))),
     )
-    @patch("builtins.input",
-           side_effect=RuntimeError(
-               "input() should not be called in non-interactive mode"))
+    @patch(
+        "builtins.input",
+        side_effect=RuntimeError("input() should not be called in non-interactive mode"),
+    )
     @patch("agentalloy.install.subcommands.simple_setup._print")
-    def test_non_interactive_skips_all_prompts(self, mock_print, mock_input,
-                                                mock_urlopen, mock_resolve,
-                                                mock_read_text,
-                                                mock_exists, mock_cwd,
-                                                mock_discover, mock_prompt,
-                                                mock_build_ns, mock_wire,
-                                                mock_verify, mock_atomic,
-                                                mock_env, mock_config,
-                                                mock_save, mock_load,
-                                                mock_inspect, mock_wait,
-                                                mock_quiet, mock_log_path,
-                                                mock_remove, mock_containers,
-                                                mock_compose_msg,
-                                                mock_compose_runtime,
-                                                mock_preflight):
+    def test_non_interactive_skips_all_prompts(
+        self,
+        mock_print,
+        mock_input,
+        mock_urlopen,
+        mock_resolve,
+        mock_read_text,
+        mock_exists,
+        mock_cwd,
+        mock_discover,
+        mock_prompt,
+        mock_build_ns,
+        mock_wire,
+        mock_verify,
+        mock_atomic,
+        mock_env,
+        mock_config,
+        mock_save,
+        mock_load,
+        mock_inspect,
+        mock_wait,
+        mock_quiet,
+        mock_log_path,
+        mock_remove,
+        mock_containers,
+        mock_compose_msg,
+        mock_compose_runtime,
+        mock_preflight,
+    ):
         """In non-interactive mode, _run_container_flow skips all input() calls."""
         from agentalloy.install.subcommands.simple_setup import (
             SetupConfig,
             _run_container_flow,
         )
+
         cfg = SetupConfig(
-            deployment="container", non_interactive=True, port=47950,
-            packs="", harness="manual",
+            deployment="container",
+            non_interactive=True,
+            port=47950,
+            packs="",
+            harness="manual",
         )
         rc = _run_container_flow(cfg, 0.0)
         assert rc == 0
 
-    @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
-           return_value={"checks": []})
-    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True,
-           return_value=("podman", "/usr/bin/podman", []))
-    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True,
-           return_value=("ok", "ok"))
-    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers",
-           return_value=[])
-    @patch("agentalloy.install.subcommands.simple_setup._remove_containers",
-           return_value=True)
-    @patch("agentalloy.install.subcommands.simple_setup._container_setup_log_path",
-           return_value=Path("/tmp/setup.log"))
+    @patch(
+        "agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
+        return_value={"checks": []},
+    )
+    @patch(
+        "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+        create=True,
+        return_value=("podman", "/usr/bin/podman", []),
+    )
+    @patch(
+        "agentalloy.install.subcommands.preflight._compose_failure_message",
+        create=True,
+        return_value=("ok", "ok"),
+    )
+    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers", return_value=[])
+    @patch("agentalloy.install.subcommands.simple_setup._remove_containers", return_value=True)
+    @patch(
+        "agentalloy.install.subcommands.simple_setup._container_setup_log_path",
+        return_value=Path("/tmp/setup.log"),
+    )
     @patch("agentalloy.install.subcommands.simple_setup._run_quiet", return_value=0)
-    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
-           return_value=0)
-    @patch("agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
-           return_value=("test-project", "test-project_default"))
+    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot", return_value=0)
+    @patch(
+        "agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
+        return_value=("test-project", "test-project_default"),
+    )
     @patch("agentalloy.install.state.load_state", return_value={})
     @patch("agentalloy.install.state.save_state")
-    @patch("agentalloy.install.state.user_config_dir",
-           return_value=Path("/tmp/.config/agentalloy"))
+    @patch("agentalloy.install.state.user_config_dir", return_value=Path("/tmp/.config/agentalloy"))
     @patch("agentalloy.install.state.env_path", return_value=Path("/tmp/.env"))
     @patch("agentalloy.install.state._atomic_write")
     @patch("agentalloy.install.subcommands.verify.run", return_value=0)
     @patch("agentalloy.install.subcommands.wire_harness.run", return_value=0)
     @patch("agentalloy.install.subcommands.simple_setup._build_namespace")
-    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs",
-           return_value="")
-    @patch("agentalloy.install.subcommands.simple_setup._discover_packs",
-           return_value={})
+    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs", return_value="")
+    @patch("agentalloy.install.subcommands.simple_setup._discover_packs", return_value={})
     @patch("pathlib.Path.cwd", return_value=Path("/tmp"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("pathlib.Path.read_text", return_value="")
@@ -737,36 +837,51 @@ class TestNonInteractiveMode:
     @patch(
         "urllib.request.urlopen",
         # Same health-check fix: __enter__ must return a mock with status=200
-        return_value=MagicMock(
-            __enter__=MagicMock(return_value=MagicMock(status=200))
-        ),
+        return_value=MagicMock(__enter__=MagicMock(return_value=MagicMock(status=200))),
     )
-    @patch("builtins.input",
-           side_effect=RuntimeError("input() should not be called"))
+    @patch("builtins.input", side_effect=RuntimeError("input() should not be called"))
     @patch("agentalloy.install.subcommands.simple_setup._print")
-    def test_non_interactive_sets_fixed_config_values(self, mock_print, mock_input,
-                                                       mock_urlopen, mock_resolve,
-                                                       mock_read_text,
-                                                       mock_exists, mock_cwd,
-                                                       mock_discover, mock_prompt,
-                                                       mock_build_ns, mock_wire,
-                                                       mock_verify, mock_atomic,
-                                                       mock_env, mock_config,
-                                                       mock_save, mock_load,
-                                                       mock_inspect, mock_wait,
-                                                       mock_quiet, mock_log_path,
-                                                       mock_remove, mock_containers,
-                                                       mock_compose_msg,
-                                                       mock_compose_runtime,
-                                                       mock_preflight):
+    def test_non_interactive_sets_fixed_config_values(
+        self,
+        mock_print,
+        mock_input,
+        mock_urlopen,
+        mock_resolve,
+        mock_read_text,
+        mock_exists,
+        mock_cwd,
+        mock_discover,
+        mock_prompt,
+        mock_build_ns,
+        mock_wire,
+        mock_verify,
+        mock_atomic,
+        mock_env,
+        mock_config,
+        mock_save,
+        mock_load,
+        mock_inspect,
+        mock_wait,
+        mock_quiet,
+        mock_log_path,
+        mock_remove,
+        mock_containers,
+        mock_compose_msg,
+        mock_compose_runtime,
+        mock_preflight,
+    ):
         """Non-interactive container mode sets runner=ollama, port=47950, mode=manual, harness=manual."""
         from agentalloy.install.subcommands.simple_setup import (
             SetupConfig,
             _run_container_flow,
         )
+
         cfg = SetupConfig(
-            deployment="container", non_interactive=True, port=47950,
-            packs="", harness="manual",
+            deployment="container",
+            non_interactive=True,
+            port=47950,
+            packs="",
+            harness="manual",
         )
         rc = _run_container_flow(cfg, 0.0)
         assert rc == 0
@@ -777,129 +892,178 @@ class TestNonInteractiveMode:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 class TestCancelDuringCPUWarning:
     """EC-15: User can cancel during CPU-only warning prompt."""
 
-    @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
-           return_value={"checks": []})
-    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True,
-           return_value=("podman", "/usr/bin/podman", []))
-    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True,
-           return_value=("ok", "ok"))
-    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers",
-           return_value=[])
-    @patch("agentalloy.install.subcommands.simple_setup._remove_containers",
-           return_value=True)
-    @patch("agentalloy.install.subcommands.simple_setup._container_setup_log_path",
-           return_value=Path("/tmp/setup.log"))
+    @patch(
+        "agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
+        return_value={"checks": []},
+    )
+    @patch(
+        "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+        create=True,
+        return_value=("podman", "/usr/bin/podman", []),
+    )
+    @patch(
+        "agentalloy.install.subcommands.preflight._compose_failure_message",
+        create=True,
+        return_value=("ok", "ok"),
+    )
+    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers", return_value=[])
+    @patch("agentalloy.install.subcommands.simple_setup._remove_containers", return_value=True)
+    @patch(
+        "agentalloy.install.subcommands.simple_setup._container_setup_log_path",
+        return_value=Path("/tmp/setup.log"),
+    )
     @patch("agentalloy.install.subcommands.simple_setup._run_quiet", return_value=0)
-    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
-           return_value=0)
-    @patch("agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
-           return_value=("test-project", "test-project_default"))
+    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot", return_value=0)
+    @patch(
+        "agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
+        return_value=("test-project", "test-project_default"),
+    )
     @patch("agentalloy.install.state.load_state", return_value={})
     @patch("agentalloy.install.state.save_state")
-    @patch("agentalloy.install.state.user_config_dir",
-           return_value=Path("/tmp/.config/agentalloy"))
+    @patch("agentalloy.install.state.user_config_dir", return_value=Path("/tmp/.config/agentalloy"))
     @patch("agentalloy.install.state.env_path", return_value=Path("/tmp/.env"))
     @patch("agentalloy.install.state._atomic_write")
     @patch("agentalloy.install.subcommands.verify.run", return_value=0)
     @patch("agentalloy.install.subcommands.wire_harness.run", return_value=0)
     @patch("agentalloy.install.subcommands.simple_setup._build_namespace")
-    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs",
-           return_value="")
-    @patch("agentalloy.install.subcommands.simple_setup._discover_packs",
-           return_value={})
+    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs", return_value="")
+    @patch("agentalloy.install.subcommands.simple_setup._discover_packs", return_value={})
     @patch("pathlib.Path.cwd", return_value=Path("/tmp"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("pathlib.Path.resolve", return_value=Path("/a/b/c/d/e/f"))
     @patch("urllib.request.urlopen")
     @patch("builtins.input", return_value="n")
     @patch("agentalloy.install.subcommands.simple_setup._print")
-    def test_cancel_on_cpu_warning_aborts_setup(self, mock_print, mock_input,
-                                                 mock_urlopen, mock_resolve,
-                                                 mock_exists, mock_cwd,
-                                                 mock_discover, mock_prompt,
-                                                 mock_build_ns, mock_wire,
-                                                 mock_verify, mock_atomic,
-                                                 mock_env, mock_config,
-                                                 mock_save, mock_load,
-                                                 mock_inspect, mock_wait,
-                                                 mock_quiet, mock_log_path,
-                                                 mock_remove, mock_containers,
-                                                 mock_compose_msg,
-                                                 mock_compose_runtime,
-                                                 mock_preflight):
+    def test_cancel_on_cpu_warning_aborts_setup(
+        self,
+        mock_print,
+        mock_input,
+        mock_urlopen,
+        mock_resolve,
+        mock_exists,
+        mock_cwd,
+        mock_discover,
+        mock_prompt,
+        mock_build_ns,
+        mock_wire,
+        mock_verify,
+        mock_atomic,
+        mock_env,
+        mock_config,
+        mock_save,
+        mock_load,
+        mock_inspect,
+        mock_wait,
+        mock_quiet,
+        mock_log_path,
+        mock_remove,
+        mock_containers,
+        mock_compose_msg,
+        mock_compose_runtime,
+        mock_preflight,
+    ):
         """When user declines the CPU-only warning, setup returns exit code 1."""
         from agentalloy.install.subcommands.simple_setup import (
             SetupConfig,
             _run_container_flow,
         )
+
         cfg = SetupConfig(
-            deployment="container", non_interactive=False, port=47950,
-            packs="", harness="manual",
+            deployment="container",
+            non_interactive=False,
+            port=47950,
+            packs="",
+            harness="manual",
         )
         rc = _run_container_flow(cfg, 0.0)
         assert rc == 1
 
-    @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
-           return_value={"checks": []})
-    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True,
-           return_value=("podman", "/usr/bin/podman", []))
-    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True,
-           return_value=("ok", "ok"))
-    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers",
-           return_value=[])
-    @patch("agentalloy.install.subcommands.simple_setup._remove_containers",
-           return_value=True)
-    @patch("agentalloy.install.subcommands.simple_setup._container_setup_log_path",
-           return_value=Path("/tmp/setup.log"))
+    @patch(
+        "agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
+        return_value={"checks": []},
+    )
+    @patch(
+        "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+        create=True,
+        return_value=("podman", "/usr/bin/podman", []),
+    )
+    @patch(
+        "agentalloy.install.subcommands.preflight._compose_failure_message",
+        create=True,
+        return_value=("ok", "ok"),
+    )
+    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers", return_value=[])
+    @patch("agentalloy.install.subcommands.simple_setup._remove_containers", return_value=True)
+    @patch(
+        "agentalloy.install.subcommands.simple_setup._container_setup_log_path",
+        return_value=Path("/tmp/setup.log"),
+    )
     @patch("agentalloy.install.subcommands.simple_setup._run_quiet", return_value=0)
-    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
-           return_value=0)
-    @patch("agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
-           return_value=("test-project", "test-project_default"))
+    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot", return_value=0)
+    @patch(
+        "agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
+        return_value=("test-project", "test-project_default"),
+    )
     @patch("agentalloy.install.state.load_state", return_value={})
     @patch("agentalloy.install.state.save_state")
-    @patch("agentalloy.install.state.user_config_dir",
-           return_value=Path("/tmp/.config/agentalloy"))
+    @patch("agentalloy.install.state.user_config_dir", return_value=Path("/tmp/.config/agentalloy"))
     @patch("agentalloy.install.state.env_path", return_value=Path("/tmp/.env"))
     @patch("agentalloy.install.state._atomic_write")
     @patch("agentalloy.install.subcommands.verify.run", return_value=0)
     @patch("agentalloy.install.subcommands.wire_harness.run", return_value=0)
     @patch("agentalloy.install.subcommands.simple_setup._build_namespace")
-    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs",
-           return_value="")
-    @patch("agentalloy.install.subcommands.simple_setup._discover_packs",
-           return_value={})
+    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs", return_value="")
+    @patch("agentalloy.install.subcommands.simple_setup._discover_packs", return_value={})
     @patch("pathlib.Path.cwd", return_value=Path("/tmp"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("pathlib.Path.resolve", return_value=Path("/a/b/c/d/e/f"))
     @patch("urllib.request.urlopen")
     @patch("builtins.input", return_value="y")
     @patch("agentalloy.install.subcommands.simple_setup._print")
-    def test_accept_cpu_warning_continues(self, mock_print, mock_input,
-                                           mock_urlopen, mock_resolve,
-                                           mock_exists, mock_cwd,
-                                           mock_discover, mock_prompt,
-                                           mock_build_ns, mock_wire,
-                                           mock_verify, mock_atomic,
-                                           mock_env, mock_config,
-                                           mock_save, mock_load,
-                                           mock_inspect, mock_wait,
-                                           mock_quiet, mock_log_path,
-                                           mock_remove, mock_containers,
-                                           mock_compose_msg,
-                                           mock_compose_runtime,
-                                           mock_preflight):
+    def test_accept_cpu_warning_continues(
+        self,
+        mock_print,
+        mock_input,
+        mock_urlopen,
+        mock_resolve,
+        mock_exists,
+        mock_cwd,
+        mock_discover,
+        mock_prompt,
+        mock_build_ns,
+        mock_wire,
+        mock_verify,
+        mock_atomic,
+        mock_env,
+        mock_config,
+        mock_save,
+        mock_load,
+        mock_inspect,
+        mock_wait,
+        mock_quiet,
+        mock_log_path,
+        mock_remove,
+        mock_containers,
+        mock_compose_msg,
+        mock_compose_runtime,
+        mock_preflight,
+    ):
         """When user accepts the CPU-only warning, setup continues."""
         from agentalloy.install.subcommands.simple_setup import (
             SetupConfig,
             _run_container_flow,
         )
+
         cfg = SetupConfig(
-            deployment="container", non_interactive=False, port=47950,
-            packs="", harness="manual",
+            deployment="container",
+            non_interactive=False,
+            port=47950,
+            packs="",
+            harness="manual",
         )
         rc = _run_container_flow(cfg, 0.0)
         assert rc in (0, 1)
@@ -910,253 +1074,350 @@ class TestCancelDuringCPUWarning:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 class TestCancelDuringReview:
     """EC-16: User can cancel during the review confirmation prompt."""
 
-    @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
-           return_value={"checks": []})
-    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True,
-           return_value=("podman", "/usr/bin/podman", []))
-    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True,
-           return_value=("ok", "ok"))
-    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers",
-           return_value=[])
-    @patch("agentalloy.install.subcommands.simple_setup._remove_containers",
-           return_value=True)
-    @patch("agentalloy.install.subcommands.simple_setup._container_setup_log_path",
-           return_value=Path("/tmp/setup.log"))
+    @patch(
+        "agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
+        return_value={"checks": []},
+    )
+    @patch(
+        "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+        create=True,
+        return_value=("podman", "/usr/bin/podman", []),
+    )
+    @patch(
+        "agentalloy.install.subcommands.preflight._compose_failure_message",
+        create=True,
+        return_value=("ok", "ok"),
+    )
+    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers", return_value=[])
+    @patch("agentalloy.install.subcommands.simple_setup._remove_containers", return_value=True)
+    @patch(
+        "agentalloy.install.subcommands.simple_setup._container_setup_log_path",
+        return_value=Path("/tmp/setup.log"),
+    )
     @patch("agentalloy.install.subcommands.simple_setup._run_quiet", return_value=0)
-    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
-           return_value=0)
-    @patch("agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
-           return_value=("test-project", "test-project_default"))
+    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot", return_value=0)
+    @patch(
+        "agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
+        return_value=("test-project", "test-project_default"),
+    )
     @patch("agentalloy.install.state.load_state", return_value={})
     @patch("agentalloy.install.state.save_state")
-    @patch("agentalloy.install.state.user_config_dir",
-           return_value=Path("/tmp/.config/agentalloy"))
+    @patch("agentalloy.install.state.user_config_dir", return_value=Path("/tmp/.config/agentalloy"))
     @patch("agentalloy.install.state.env_path", return_value=Path("/tmp/.env"))
     @patch("agentalloy.install.state._atomic_write")
     @patch("agentalloy.install.subcommands.verify.run", return_value=0)
     @patch("agentalloy.install.subcommands.wire_harness.run", return_value=0)
     @patch("agentalloy.install.subcommands.simple_setup._build_namespace")
-    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs",
-           return_value="")
-    @patch("agentalloy.install.subcommands.simple_setup._discover_packs",
-           return_value={})
+    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs", return_value="")
+    @patch("agentalloy.install.subcommands.simple_setup._discover_packs", return_value={})
     @patch("pathlib.Path.cwd", return_value=Path("/tmp"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("pathlib.Path.resolve", return_value=Path("/a/b/c/d/e/f"))
     @patch("urllib.request.urlopen")
     @patch("builtins.input", side_effect=["y", "n"])
     @patch("agentalloy.install.subcommands.simple_setup._print")
-    def test_cancel_on_review_aborts_setup(self, mock_print, mock_input,
-                                            mock_urlopen, mock_resolve,
-                                            mock_exists, mock_cwd,
-                                            mock_discover, mock_prompt,
-                                            mock_build_ns, mock_wire,
-                                            mock_verify, mock_atomic,
-                                            mock_env, mock_config,
-                                            mock_save, mock_load,
-                                            mock_inspect, mock_wait,
-                                            mock_quiet, mock_log_path,
-                                            mock_remove, mock_containers,
-                                            mock_compose_msg,
-                                            mock_compose_runtime,
-                                            mock_preflight):
+    def test_cancel_on_review_aborts_setup(
+        self,
+        mock_print,
+        mock_input,
+        mock_urlopen,
+        mock_resolve,
+        mock_exists,
+        mock_cwd,
+        mock_discover,
+        mock_prompt,
+        mock_build_ns,
+        mock_wire,
+        mock_verify,
+        mock_atomic,
+        mock_env,
+        mock_config,
+        mock_save,
+        mock_load,
+        mock_inspect,
+        mock_wait,
+        mock_quiet,
+        mock_log_path,
+        mock_remove,
+        mock_containers,
+        mock_compose_msg,
+        mock_compose_runtime,
+        mock_preflight,
+    ):
         """When user declines the review prompt, setup returns exit code 1."""
         from agentalloy.install.subcommands.simple_setup import (
             SetupConfig,
             _run_container_flow,
         )
+
         cfg = SetupConfig(
-            deployment="container", non_interactive=False, port=47950,
-            packs="", harness="manual",
+            deployment="container",
+            non_interactive=False,
+            port=47950,
+            packs="",
+            harness="manual",
         )
         rc = _run_container_flow(cfg, 0.0)
         assert rc == 1
 
-    @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
-           return_value={"checks": []})
-    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True,
-           return_value=("podman", "/usr/bin/podman", []))
-    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True,
-           return_value=("ok", "ok"))
-    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers",
-           return_value=[])
-    @patch("agentalloy.install.subcommands.simple_setup._remove_containers",
-           return_value=True)
-    @patch("agentalloy.install.subcommands.simple_setup._container_setup_log_path",
-           return_value=Path("/tmp/setup.log"))
+    @patch(
+        "agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
+        return_value={"checks": []},
+    )
+    @patch(
+        "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+        create=True,
+        return_value=("podman", "/usr/bin/podman", []),
+    )
+    @patch(
+        "agentalloy.install.subcommands.preflight._compose_failure_message",
+        create=True,
+        return_value=("ok", "ok"),
+    )
+    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers", return_value=[])
+    @patch("agentalloy.install.subcommands.simple_setup._remove_containers", return_value=True)
+    @patch(
+        "agentalloy.install.subcommands.simple_setup._container_setup_log_path",
+        return_value=Path("/tmp/setup.log"),
+    )
     @patch("agentalloy.install.subcommands.simple_setup._run_quiet", return_value=0)
-    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
-           return_value=0)
-    @patch("agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
-           return_value=("test-project", "test-project_default"))
+    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot", return_value=0)
+    @patch(
+        "agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
+        return_value=("test-project", "test-project_default"),
+    )
     @patch("agentalloy.install.state.load_state", return_value={})
     @patch("agentalloy.install.state.save_state")
-    @patch("agentalloy.install.state.user_config_dir",
-           return_value=Path("/tmp/.config/agentalloy"))
+    @patch("agentalloy.install.state.user_config_dir", return_value=Path("/tmp/.config/agentalloy"))
     @patch("agentalloy.install.state.env_path", return_value=Path("/tmp/.env"))
     @patch("agentalloy.install.state._atomic_write")
     @patch("agentalloy.install.subcommands.verify.run", return_value=0)
     @patch("agentalloy.install.subcommands.wire_harness.run", return_value=0)
     @patch("agentalloy.install.subcommands.simple_setup._build_namespace")
-    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs",
-           return_value="")
-    @patch("agentalloy.install.subcommands.simple_setup._discover_packs",
-           return_value={})
+    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs", return_value="")
+    @patch("agentalloy.install.subcommands.simple_setup._discover_packs", return_value={})
     @patch("pathlib.Path.cwd", return_value=Path("/tmp"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("pathlib.Path.resolve", return_value=Path("/a/b/c/d/e/f"))
     @patch("urllib.request.urlopen")
     @patch("builtins.input", side_effect=["y", "y"])
     @patch("agentalloy.install.subcommands.simple_setup._print")
-    def test_accept_review_continues(self, mock_print, mock_input,
-                                      mock_urlopen, mock_resolve,
-                                      mock_exists, mock_cwd,
-                                      mock_discover, mock_prompt,
-                                      mock_build_ns, mock_wire,
-                                      mock_verify, mock_atomic,
-                                      mock_env, mock_config,
-                                      mock_save, mock_load,
-                                      mock_inspect, mock_wait,
-                                      mock_quiet, mock_log_path,
-                                      mock_remove, mock_containers,
-                                      mock_compose_msg,
-                                      mock_compose_runtime,
-                                      mock_preflight):
+    def test_accept_review_continues(
+        self,
+        mock_print,
+        mock_input,
+        mock_urlopen,
+        mock_resolve,
+        mock_exists,
+        mock_cwd,
+        mock_discover,
+        mock_prompt,
+        mock_build_ns,
+        mock_wire,
+        mock_verify,
+        mock_atomic,
+        mock_env,
+        mock_config,
+        mock_save,
+        mock_load,
+        mock_inspect,
+        mock_wait,
+        mock_quiet,
+        mock_log_path,
+        mock_remove,
+        mock_containers,
+        mock_compose_msg,
+        mock_compose_runtime,
+        mock_preflight,
+    ):
         """When user accepts the review confirmation, setup continues."""
         from agentalloy.install.subcommands.simple_setup import (
             SetupConfig,
             _run_container_flow,
         )
+
         cfg = SetupConfig(
-            deployment="container", non_interactive=False, port=47950,
-            packs="", harness="manual",
+            deployment="container",
+            non_interactive=False,
+            port=47950,
+            packs="",
+            harness="manual",
         )
         rc = _run_container_flow(cfg, 0.0)
         assert rc in (0, 1)
 
-    @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
-           return_value={"checks": []})
-    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True,
-           return_value=("podman", "/usr/bin/podman", []))
-    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True,
-           return_value=("ok", "ok"))
-    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers",
-           return_value=[])
-    @patch("agentalloy.install.subcommands.simple_setup._remove_containers",
-           return_value=True)
-    @patch("agentalloy.install.subcommands.simple_setup._container_setup_log_path",
-           return_value=Path("/tmp/setup.log"))
+    @patch(
+        "agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
+        return_value={"checks": []},
+    )
+    @patch(
+        "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+        create=True,
+        return_value=("podman", "/usr/bin/podman", []),
+    )
+    @patch(
+        "agentalloy.install.subcommands.preflight._compose_failure_message",
+        create=True,
+        return_value=("ok", "ok"),
+    )
+    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers", return_value=[])
+    @patch("agentalloy.install.subcommands.simple_setup._remove_containers", return_value=True)
+    @patch(
+        "agentalloy.install.subcommands.simple_setup._container_setup_log_path",
+        return_value=Path("/tmp/setup.log"),
+    )
     @patch("agentalloy.install.subcommands.simple_setup._run_quiet", return_value=0)
-    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
-           return_value=0)
-    @patch("agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
-           return_value=("test-project", "test-project_default"))
+    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot", return_value=0)
+    @patch(
+        "agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
+        return_value=("test-project", "test-project_default"),
+    )
     @patch("agentalloy.install.state.load_state", return_value={})
     @patch("agentalloy.install.state.save_state")
-    @patch("agentalloy.install.state.user_config_dir",
-           return_value=Path("/tmp/.config/agentalloy"))
+    @patch("agentalloy.install.state.user_config_dir", return_value=Path("/tmp/.config/agentalloy"))
     @patch("agentalloy.install.state.env_path", return_value=Path("/tmp/.env"))
     @patch("agentalloy.install.state._atomic_write")
     @patch("agentalloy.install.subcommands.verify.run", return_value=0)
     @patch("agentalloy.install.subcommands.wire_harness.run", return_value=0)
     @patch("agentalloy.install.subcommands.simple_setup._build_namespace")
-    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs",
-           return_value="")
-    @patch("agentalloy.install.subcommands.simple_setup._discover_packs",
-           return_value={})
+    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs", return_value="")
+    @patch("agentalloy.install.subcommands.simple_setup._discover_packs", return_value={})
     @patch("pathlib.Path.cwd", return_value=Path("/tmp"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("pathlib.Path.resolve", return_value=Path("/a/b/c/d/e/f"))
     @patch("urllib.request.urlopen")
     @patch("builtins.input", side_effect=["y", ""])
     @patch("agentalloy.install.subcommands.simple_setup._print")
-    def test_empty_review_response_accepts(self, mock_print, mock_input,
-                                            mock_urlopen, mock_resolve,
-                                            mock_exists, mock_cwd,
-                                            mock_discover, mock_prompt,
-                                            mock_build_ns, mock_wire,
-                                            mock_verify, mock_atomic,
-                                            mock_env, mock_config,
-                                            mock_save, mock_load,
-                                            mock_inspect, mock_wait,
-                                            mock_quiet, mock_log_path,
-                                            mock_remove, mock_containers,
-                                            mock_compose_msg,
-                                            mock_compose_runtime,
-                                            mock_preflight):
+    def test_empty_review_response_accepts(
+        self,
+        mock_print,
+        mock_input,
+        mock_urlopen,
+        mock_resolve,
+        mock_exists,
+        mock_cwd,
+        mock_discover,
+        mock_prompt,
+        mock_build_ns,
+        mock_wire,
+        mock_verify,
+        mock_atomic,
+        mock_env,
+        mock_config,
+        mock_save,
+        mock_load,
+        mock_inspect,
+        mock_wait,
+        mock_quiet,
+        mock_log_path,
+        mock_remove,
+        mock_containers,
+        mock_compose_msg,
+        mock_compose_runtime,
+        mock_preflight,
+    ):
         """Empty response to review prompt is treated as acceptance (default Y)."""
         from agentalloy.install.subcommands.simple_setup import (
             SetupConfig,
             _run_container_flow,
         )
+
         cfg = SetupConfig(
-            deployment="container", non_interactive=False, port=47950,
-            packs="", harness="manual",
+            deployment="container",
+            non_interactive=False,
+            port=47950,
+            packs="",
+            harness="manual",
         )
         rc = _run_container_flow(cfg, 0.0)
         assert rc in (0, 1)
 
-    @patch("agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
-           return_value={"checks": []})
-    @patch("agentalloy.install.subcommands.preflight._probe_compose_runtime", create=True,
-           return_value=("podman", "/usr/bin/podman", []))
-    @patch("agentalloy.install.subcommands.preflight._compose_failure_message", create=True,
-           return_value=("ok", "ok"))
-    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers",
-           return_value=[])
-    @patch("agentalloy.install.subcommands.simple_setup._remove_containers",
-           return_value=True)
-    @patch("agentalloy.install.subcommands.simple_setup._container_setup_log_path",
-           return_value=Path("/tmp/setup.log"))
+    @patch(
+        "agentalloy.install.subcommands.simple_setup.preflight.run_preflight",
+        return_value={"checks": []},
+    )
+    @patch(
+        "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+        create=True,
+        return_value=("podman", "/usr/bin/podman", []),
+    )
+    @patch(
+        "agentalloy.install.subcommands.preflight._compose_failure_message",
+        create=True,
+        return_value=("ok", "ok"),
+    )
+    @patch("agentalloy.install.subcommands.simple_setup._list_project_containers", return_value=[])
+    @patch("agentalloy.install.subcommands.simple_setup._remove_containers", return_value=True)
+    @patch(
+        "agentalloy.install.subcommands.simple_setup._container_setup_log_path",
+        return_value=Path("/tmp/setup.log"),
+    )
     @patch("agentalloy.install.subcommands.simple_setup._run_quiet", return_value=0)
-    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
-           return_value=0)
-    @patch("agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
-           return_value=("test-project", "test-project_default"))
+    @patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot", return_value=0)
+    @patch(
+        "agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
+        return_value=("test-project", "test-project_default"),
+    )
     @patch("agentalloy.install.state.load_state", return_value={})
     @patch("agentalloy.install.state.save_state")
-    @patch("agentalloy.install.state.user_config_dir",
-           return_value=Path("/tmp/.config/agentalloy"))
+    @patch("agentalloy.install.state.user_config_dir", return_value=Path("/tmp/.config/agentalloy"))
     @patch("agentalloy.install.state.env_path", return_value=Path("/tmp/.env"))
     @patch("agentalloy.install.state._atomic_write")
     @patch("agentalloy.install.subcommands.verify.run", return_value=0)
     @patch("agentalloy.install.subcommands.wire_harness.run", return_value=0)
     @patch("agentalloy.install.subcommands.simple_setup._build_namespace")
-    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs",
-           return_value="")
-    @patch("agentalloy.install.subcommands.simple_setup._discover_packs",
-           return_value={})
+    @patch("agentalloy.install.subcommands.simple_setup._prompt_for_packs", return_value="")
+    @patch("agentalloy.install.subcommands.simple_setup._discover_packs", return_value={})
     @patch("pathlib.Path.cwd", return_value=Path("/tmp"))
     @patch("pathlib.Path.exists", return_value=True)
     @patch("pathlib.Path.resolve", return_value=Path("/a/b/c/d/e/f"))
     @patch("urllib.request.urlopen")
     @patch("builtins.input", side_effect=["y", "yes"])
     @patch("agentalloy.install.subcommands.simple_setup._print")
-    def test_yes_review_response_accepts(self, mock_print, mock_input,
-                                          mock_urlopen, mock_resolve,
-                                          mock_exists, mock_cwd,
-                                          mock_discover, mock_prompt,
-                                          mock_build_ns, mock_wire,
-                                          mock_verify, mock_atomic,
-                                          mock_env, mock_config,
-                                          mock_save, mock_load,
-                                          mock_inspect, mock_wait,
-                                          mock_quiet, mock_log_path,
-                                          mock_remove, mock_containers,
-                                          mock_compose_msg,
-                                          mock_compose_runtime,
-                                          mock_preflight):
+    def test_yes_review_response_accepts(
+        self,
+        mock_print,
+        mock_input,
+        mock_urlopen,
+        mock_resolve,
+        mock_exists,
+        mock_cwd,
+        mock_discover,
+        mock_prompt,
+        mock_build_ns,
+        mock_wire,
+        mock_verify,
+        mock_atomic,
+        mock_env,
+        mock_config,
+        mock_save,
+        mock_load,
+        mock_inspect,
+        mock_wait,
+        mock_quiet,
+        mock_log_path,
+        mock_remove,
+        mock_containers,
+        mock_compose_msg,
+        mock_compose_runtime,
+        mock_preflight,
+    ):
         """Explicit 'yes' to review prompt is treated as acceptance."""
         from agentalloy.install.subcommands.simple_setup import (
             SetupConfig,
             _run_container_flow,
         )
+
         cfg = SetupConfig(
-            deployment="container", non_interactive=False, port=47950,
-            packs="", harness="manual",
+            deployment="container",
+            non_interactive=False,
+            port=47950,
+            packs="",
+            harness="manual",
         )
         rc = _run_container_flow(cfg, 0.0)
         assert rc in (0, 1)
