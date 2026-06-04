@@ -1900,6 +1900,85 @@ class TestContainerFlow:
         st = state_mod.load_state()
         assert st["deployment"] == "native"
 
+    def test_container_flow_sets_fixed_values(self, tmp_state_dir: tuple[Path, Path]):
+        """UT-22: Container mode sets runner=ollama, port=47950, mode=manual, harness=manual."""
+        SetupConfig, run_setup = self._import_run_setup()
+
+        # Patch _run_container_flow to capture the config before it runs.
+        # We capture at entry time; the real function then runs and sets the
+        # fixed values. We verify those values after the real function returns.
+        captured_cfg: SetupConfig | None = None
+
+        import agentalloy.install.subcommands.simple_setup as ss_mod
+
+        _real_container_flow = ss_mod._run_container_flow
+
+        def _capture_flow(cfg: SetupConfig, t0: float) -> int:
+            nonlocal captured_cfg
+            captured_cfg = cfg
+            return _real_container_flow(cfg, t0)
+
+        with (
+            patch.object(
+                ss_mod, "_run_container_flow", _capture_flow,
+            ),
+            patch(
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
+            ),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(returncode=0, stdout="0\n", stderr="")
+            run_setup(SetupConfig(deployment="container", non_interactive=True))
+
+        assert captured_cfg is not None, "Config should be captured by _run_container_flow"
+        assert captured_cfg.runner == "ollama", f"Expected runner='ollama', got {captured_cfg.runner!r}"
+        assert captured_cfg.port == 47950, f"Expected port=47950, got {captured_cfg.port}"
+        assert captured_cfg.mode == "manual", f"Expected mode='manual', got {captured_cfg.mode!r}"
+        assert captured_cfg.harness == "manual", f"Expected harness='manual', got {captured_cfg.harness!r}"
+
+    def test_container_flow_fixed_values_override_user_input(self, tmp_state_dir: tuple[Path, Path]):
+        """UT-22: Container mode overrides user-provided values for runner, mode, harness."""
+        SetupConfig, run_setup = self._import_run_setup()
+
+        import agentalloy.install.subcommands.simple_setup as ss_mod
+
+        _real_container_flow = ss_mod._run_container_flow
+
+        captured_cfg: SetupConfig | None = None
+
+        def _capture_flow(cfg: SetupConfig, t0: float) -> int:
+            nonlocal captured_cfg
+            captured_cfg = cfg
+            return _real_container_flow(cfg, t0)
+
+        with (
+            patch.object(ss_mod, "_run_container_flow", _capture_flow),
+            patch(
+                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
+                return_value=("podman compose", "/usr/bin/podman", []),
+            ),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(returncode=0, stdout="0\n", stderr="")
+            # User provides non-container values — these should be overridden
+            run_setup(
+                SetupConfig(
+                    deployment="container",
+                    non_interactive=True,
+                    runner="lm-studio",  # should be overridden
+                    mode="persistent",  # should be overridden
+                    harness="claude-code",  # should be overridden
+                    port=8080,  # should be overridden
+                )
+            )
+
+        assert captured_cfg is not None
+        assert captured_cfg.runner == "ollama", f"runner should be ollama, got {captured_cfg.runner!r}"
+        assert captured_cfg.mode == "manual", f"mode should be manual, got {captured_cfg.mode!r}"
+        assert captured_cfg.harness == "manual", f"harness should be manual, got {captured_cfg.harness!r}"
+        assert captured_cfg.port == 47950, f"port should be 47950, got {captured_cfg.port}"
+
 
 class TestDeploymentCliFlag:
     """Test --deployment CLI flag parsing."""

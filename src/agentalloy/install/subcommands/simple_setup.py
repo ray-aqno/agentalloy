@@ -1156,8 +1156,11 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
         return 1
     _print("  [green]  Preflight (container) passed.[/green]")
 
-    # 5. Set fixed values
+    # 5. Set fixed values (container mode overrides)
+    cfg.runner = "ollama"
     cfg.port = 47950
+    cfg.mode = "manual"
+    cfg.harness = "manual"
     cfg.deployment = "container"
 
     # 5b. Skill pack selection. Mirrors the native flow at step 6
