@@ -216,10 +216,23 @@ def _build_payload(request: ProxyRequest, upstream_model: str | None = None) -> 
 
 
 def _extract_task_prompt(request: ProxyRequest) -> str:
-    """Extract the first user message as the task prompt for telemetry."""
+    """Extract the first user message as the task prompt for telemetry.
+
+    ``ProxyMessage.content`` is ``str | list[dict[str, Any]] | None`` — the
+    list form carries Anthropic-style content blocks. For telemetry we want
+    a plain string, so flatten any blocks by concatenating their ``text``
+    fields and skip non-text blocks.
+    """
     for msg in request.messages:
-        if msg.role == "user" and msg.content:
+        if msg.role != "user" or not msg.content:
+            continue
+        if isinstance(msg.content, str):
             return msg.content
+        # list of content blocks
+        parts = [block.get("text", "") for block in msg.content if block.get("type") == "text"]
+        joined = "".join(parts)
+        if joined:
+            return joined
     return ""
 
 
