@@ -6,6 +6,7 @@ and locating the agentalloy build context (for building the container image).
 
 from __future__ import annotations
 
+import shlex
 import shutil
 import subprocess
 import sys
@@ -294,7 +295,7 @@ def _generate_entrypoint(packs: str) -> Path:
     script = _build_entrypoint_script(packs)
     entrypoint = Path(tempfile.gettempdir()) / "agentalloy-entrypoint.sh"
     entrypoint.write_text(script)
-    entrypoint.chmod(0o600)
+    entrypoint.chmod(0o700)
     return entrypoint
 
 
@@ -347,8 +348,8 @@ def _build_entrypoint_script(packs: str) -> str:
 
     if packs.strip():
         lines.extend([
-            f'    echo ">> Installing packs: {packs}"',
-            f"    install-packs --packs {packs}",
+            f'    echo "> Installing packs: {packs}"',
+            f"    install-packs --packs {shlex.quote(packs)}",
         ])
     else:
         lines.append('    echo ">> No packs specified - skipping pack installation"')

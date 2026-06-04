@@ -471,14 +471,14 @@ class TestGenerateEntrypoint:
 
         assert "SIGTERM" in content
 
-    def test_generate_entrypoint_is_executable(self, tmp_path: Path):
-        """Generated entrypoint has executable permissions (0600)."""
+    def test_generate_entrypoint_has_executable_permissions(self, tmp_path: Path):
+        """_generate_entrypoint() has executable permissions (0o700)."""
         from agentalloy.install.subcommands.container_runtime import _generate_entrypoint
 
         result = _generate_entrypoint("")
         mode = result.stat().st_mode & 0o777
 
-        assert mode == 0o600
+        assert mode == 0o700
 
     def test_generate_entrypoint_uses_temp_dir(self, tmp_path: Path):
         """Generated entrypoint is placed in a temp directory."""
