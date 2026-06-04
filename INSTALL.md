@@ -490,6 +490,45 @@ For container deployments (`--deployment container`), use these commands to mana
 | `podman exec agentalloy uv run agentalloy install-packs --packs all` | Install skill packs inside the container |
 | `podman exec agentalloy uv run agentalloy install-packs --packs all --no-restart` | Install packs without restarting the service |
 
+### Volume layout
+
+```
++-------------------+          +---------------------------+
+| Host              |          | Container (agentalloy)    |
+|-------------------|          |---------------------------|
+|                   |          |                           |
+| ~/.ollama/        | :ro:     | /root/.ollama/            |
+| (Ollama models)   |--------->| (Ollama model cache)      |
+|                   |          |                           |
+| agentalloy-data/  | :rw:     | /app/data/                |
+| (named volume)    |--------->| (LadybugDB + DuckDB)      |
+|                   |          |                           |
+| localhost:47950   | <----->  | :47950                    |
+| (health API)      |  -p      | (FastAPI service)         |
+|                   |          |                           |
++-------------------+          +---------------------------+
+
+Volume table:
+
+| Volume / Path | Purpose | Persists across restarts? |
+|---|---|---|
+| `agentalloy-data:/app/data` | LadybugDB index, DuckDB skills database | Yes (named volume) |
+| `~/.ollama:/root/.ollama` | Ollama model cache (`qwen3-embedding:0.6b`) | Yes (host bind mount) |
+
+### Health check
+
+The service exposes a health endpoint at:
+
+```bash
+curl http://localhost:47950/health
+```
+
+Expected response:
+
+```json
+{"status": "healthy", "port": 47950, "corpus_ready": true}
+```
+
 The container uses a runtime-generated entrypoint script (`/app/entrypoint.sh`) that handles bootstrap: Ollama installation, model pull, migrations, and pack installation. On subsequent starts, the entrypoint skips all bootstrap steps if `.bootstrap-complete` exists.
 
 ### Uninstall — what it removes
