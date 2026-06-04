@@ -254,12 +254,17 @@ def _check_port_free(port: int) -> dict[str, Any]:
 def _try_brew_install(package: str, *, cask: bool = False) -> tuple[bool, str | None]:
     """Run `brew install [--cask] <package>` on macOS. Returns (ok, error).
 
-    No-op on non-macOS or when brew isn't on PATH.
+    No-op on non-macOS, when brew isn't on PATH, or when the user has not
+    opted in via ``AGENTALLOY_PREFLIGHT_AUTO_INSTALL=1``. The opt-in gate
+    avoids executing a package manager during a "check" without explicit
+    consent — matching the rest of preflight's instructions-only default.
     """
     if sys.platform != "darwin":
         return False, "not macOS"
     if not shutil.which("brew"):
         return False, "brew not on PATH"
+    if os.environ.get("AGENTALLOY_PREFLIGHT_AUTO_INSTALL") != "1":
+        return False, ("auto-install disabled (set AGENTALLOY_PREFLIGHT_AUTO_INSTALL=1 to opt in)")
     cmd = ["brew", "install"]
     if cask:
         cmd.append("--cask")

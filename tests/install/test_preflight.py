@@ -239,7 +239,17 @@ class TestContainerPhaseEnvelope:
 
 
 class TestBrewAutoInstall:
-    """Test macOS brew auto-install behavior in runner-phase checks."""
+    """Test macOS brew auto-install behavior in runner-phase checks.
+
+    Brew auto-install is gated behind AGENTALLOY_PREFLIGHT_AUTO_INSTALL=1
+    (opt-in). The autouse fixture below enables that opt-in for every test in
+    this class; an explicit test verifies the gate is honored when the env
+    var is unset.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _enable_auto_install_optin(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("AGENTALLOY_PREFLIGHT_AUTO_INSTALL", "1")
 
     def test_try_brew_install_non_macos_noop(self):
         with patch("sys.platform", "linux"):
@@ -252,6 +262,17 @@ class TestBrewAutoInstall:
             ok, err = _try_brew_install("llama.cpp")
         assert ok is False
         assert err == "brew not on PATH"
+
+    def test_try_brew_install_disabled_without_optin(self, monkeypatch: pytest.MonkeyPatch):
+        """Without AGENTALLOY_PREFLIGHT_AUTO_INSTALL=1, brew install is a no-op."""
+        monkeypatch.delenv("AGENTALLOY_PREFLIGHT_AUTO_INSTALL", raising=False)
+        with (
+            patch("sys.platform", "darwin"),
+            patch("shutil.which", return_value="/opt/homebrew/bin/brew"),
+        ):
+            ok, err = _try_brew_install("ollama-app", cask=True)
+        assert ok is False
+        assert "auto-install disabled" in err
 
     def test_try_brew_install_redirects_stdout_to_stderr(self):
         """brew stdout must not corrupt --json output."""

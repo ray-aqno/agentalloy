@@ -91,7 +91,6 @@ class TestAddParser:
                 "--via",
                 "hook",
                 "--no-start-server",
-                "--json",
                 "cursor",
                 "--",
                 "echo",
@@ -102,7 +101,6 @@ class TestAddParser:
         assert args.port == 50000
         assert args.via == "hook"
         assert args.no_start_server is True
-        assert args.json is True
         assert args.child_args == ["echo", "hello"]
 
     def test_parser_defaults(self):
@@ -114,7 +112,6 @@ class TestAddParser:
         assert args.port is None
         assert args.via == "proxy"
         assert args.no_start_server is False
-        assert args.json is False
 
     def test_parser_all_harnesses_accepted(self):
         """All harnesses from VALID_HARNESSES should be accepted by the parser."""

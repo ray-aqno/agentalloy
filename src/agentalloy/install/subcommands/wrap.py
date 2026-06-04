@@ -249,10 +249,13 @@ def _run(args: argparse.Namespace) -> int:
     # We keep the server PID file as well.
 
     try:
+        # start_new_session=True puts the child in its own process group so the
+        # SIGINT/SIGTERM handler below can call os.killpg on the child's group
+        # without also terminating this wrapper or the invoking shell.
         proc = subprocess.Popen(
             child_args,
             env=child_env,
-            start_new_session=False,
+            start_new_session=True,
         )
         child_pid = proc.pid
     except FileNotFoundError as e:
@@ -315,7 +318,7 @@ def _run(args: argparse.Namespace) -> int:
     # ------------------------------------------------------------------
     # 8. Teardown on normal exit
     # ------------------------------------------------------------------
-    print_rich("\n  Child exited with code {exit_code}, tearing down ...")
+    print_rich(f"\n  Child exited with code {exit_code}, tearing down ...")
 
     # Stop server if we started it.
     if server_started and existing_pid is not None:
@@ -360,12 +363,6 @@ def add_parser(
         "--no-start-server",
         action="store_true",
         help="Do not start the server; expect it to be already running.",
-    )
-    p.add_argument(
-        "--json",
-        action="store_true",
-        default=False,
-        help="Output result as JSON.",
     )
     p.add_argument(
         "child_args",

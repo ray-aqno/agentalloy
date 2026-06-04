@@ -169,11 +169,22 @@ class TestStopServiceInContainer:
             if sig == signal.SIGKILL:
                 raise PermissionError
 
+        # Fast-forward monotonic past the 15s SIGTERM deadline so the loop
+        # escalates to SIGKILL immediately instead of busy-spinning for real time.
+        _monotonic_calls = [0]
+
+        def fake_monotonic():
+            _monotonic_calls[0] += 1
+            if _monotonic_calls[0] == 1:
+                return 1000.0  # deadline = 1000.0 + 15.0 = 1015.0
+            return 1016.0  # exceeds deadline on next read → escalate
+
         with monkeypatch.context() as m:
             m.setattr("agentalloy.install.container_service._find_uvicorn_pid", lambda: 2222)
             m.setattr("os.kill", fake_kill)
             m.setattr("agentalloy.install.container_service._pid_alive", lambda pid: True)
             m.setattr(time, "sleep", lambda s: None)
+            m.setattr("agentalloy.install.container_service.time.monotonic", fake_monotonic)
 
             from agentalloy.install.container_service import stop_service_in_container
 
@@ -187,11 +198,21 @@ class TestStopServiceInContainer:
         def fake_kill(pid: int, sig: int) -> None:
             pass
 
+        # Same fast-forward as the previous test — avoid a 15s real-time wait.
+        _monotonic_calls = [0]
+
+        def fake_monotonic():
+            _monotonic_calls[0] += 1
+            if _monotonic_calls[0] == 1:
+                return 1000.0
+            return 1016.0
+
         with monkeypatch.context() as m:
             m.setattr("agentalloy.install.container_service._find_uvicorn_pid", lambda: 3333)
             m.setattr("os.kill", fake_kill)
             m.setattr("agentalloy.install.container_service._pid_alive", lambda pid: True)
             m.setattr(time, "sleep", lambda s: None)
+            m.setattr("agentalloy.install.container_service.time.monotonic", fake_monotonic)
 
             from agentalloy.install.container_service import stop_service_in_container
 
