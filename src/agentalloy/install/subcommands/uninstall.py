@@ -16,6 +16,16 @@ Full teardown for a agentalloy install. By default removes:
 - Outputs directory (``${XDG_DATA_HOME}/agentalloy/outputs/``) and
   ``server.log`` — derivable artifacts that hold no user content.
 - The ``uv tool`` installation of agentalloy.
+- Container image (``agentalloy:local``) for container
+  deployments.
+
+With ``--remove-data`` (or the ``full`` preset), also removes:
+
+- Container named volumes (``agentalloy-data``, ``agentalloy-ollama-models``).
+- Ollama model cache (``~/.ollama``).
+- AgentAlloy download cache (``~/.cache/agentalloy``).
+- Skills datastore (corpus DB) and the entire ``${XDG_DATA_HOME}/agentalloy/``
+  directory.
 
 Preserves the corpus DB (``${XDG_DATA_HOME}/agentalloy/corpus/``) by
 default — pass ``--remove-data`` to wipe the entire user_data_dir.
@@ -325,6 +335,116 @@ def _remove_compose_volumes(
                 actions.append({"action": "volume_rm_failed", "volume": vol, "error": stderr})
 
     return actions
+
+
+# ---------------------------------------------------------------------------
+# Container image teardown
+# ---------------------------------------------------------------------------
+
+
+def _remove_container_image(
+    st: dict[str, Any],
+    warnings: list[str],
+) -> list[dict[str, Any]]:
+    """Remove the local container image after the container is gone.
+
+    Must run AFTER ``_stop_container_stack`` — ``image rm`` fails if the
+    image is still tagged by a running container. Idempotent: missing
+    images are logged but do not produce warnings.
+
+    Returns a list of action dicts (one per image attempted).
+    """
+    actions: list[dict[str, Any]] = []
+    if st.get("deployment") != "container":
+        return actions
+
+    binary = _resolve_compose_binary(st)
+    if binary is None:
+        warnings.append(
+            "Container deployment detected but runtime binary unresolved — "
+            "skipping image cleanup. Remove manually with your runtime: "
+            "`<podman|docker> rmi -f agentalloy:local`"
+        )
+        return actions
+
+    image_tag = st.get("image_tag") or "agentalloy:local"
+    try:
+        result = subprocess.run(  # noqa: S603 — fixed argv, binary resolved above
+            [binary, "rmi", "-f", image_tag],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except OSError as exc:
+        warnings.append(f"image rm: binary not found ({binary}): {exc}")
+        actions.append({"action": "image_rm_skipped", "image": image_tag, "error": str(exc)})
+        return actions
+    except subprocess.TimeoutExpired:
+        warnings.append(f"image rm {image_tag} timed out after 30s")
+        actions.append({"action": "image_rm_timeout", "image": image_tag})
+        return actions
+
+    if result.returncode == 0:
+        actions.append({"action": "image_removed", "image": image_tag})
+    else:
+        stderr = (result.stderr or "").strip()
+        if "no such image" in stderr.lower() or "not found" in stderr.lower():
+            actions.append({"action": "image_already_gone", "image": image_tag})
+        else:
+            warnings.append(f"image rm {image_tag} failed: {stderr or 'unknown error'}")
+            actions.append({"action": "image_rm_failed", "image": image_tag, "error": stderr})
+
+    return actions
+
+
+# ---------------------------------------------------------------------------
+# Ollama cache teardown
+# ---------------------------------------------------------------------------
+
+
+def _remove_ollama_cache(warnings: list[str]) -> list[dict[str, Any]]:
+    """Remove the Ollama model cache (``~/.ollama``).
+
+    Only acts when the directory exists. Idempotent: missing directory
+    is logged but does not produce warnings.
+
+    Returns a list of action dicts (always one entry).
+    """
+    ollama_dir = Path.home() / ".ollama"
+    if not ollama_dir.exists():
+        return [{"action": "ollama_cache_already_gone", "path": str(ollama_dir)}]
+
+    try:
+        shutil.rmtree(ollama_dir)
+        return [{"action": "ollama_cache_removed", "path": str(ollama_dir)}]
+    except OSError as exc:
+        warnings.append(f"Failed to remove Ollama cache at {ollama_dir}: {exc}")
+        return [{"action": "ollama_cache_rm_failed", "path": str(ollama_dir), "error": str(exc)}]
+
+
+# ---------------------------------------------------------------------------
+# AgentAlloy cache directory teardown
+# ---------------------------------------------------------------------------
+
+
+def _remove_agentalloy_cache(warnings: list[str]) -> list[dict[str, Any]]:
+    """Remove the AgentAlloy download cache (``~/.cache/agentalloy``).
+
+    Only acts when the directory exists. Idempotent: missing directory
+    is logged but does not produce warnings.
+
+    Returns a list of action dicts (always one entry).
+    """
+    cache_dir = Path.home() / ".cache" / "agentalloy"
+    if not cache_dir.exists():
+        return [{"action": "cache_already_gone", "path": str(cache_dir)}]
+
+    try:
+        shutil.rmtree(cache_dir)
+        return [{"action": "cache_removed", "path": str(cache_dir)}]
+    except OSError as exc:
+        warnings.append(f"Failed to remove AgentAlloy cache at {cache_dir}: {exc}")
+        return [{"action": "cache_rm_failed", "path": str(cache_dir), "error": str(exc)}]
 
 
 def _stop_container_stack(
@@ -825,6 +945,10 @@ def uninstall(
         # run after compose down so containers no longer hold them.
         if remove_data:
             container_actions.extend(_remove_compose_volumes(st, warnings))
+        # 0b. Remove the local container image — must run after container
+        # is stopped/removed. Image removal is independent of --remove-data;
+        # even a "keep data" uninstall should clean up the deployment image.
+        container_actions.extend(_remove_container_image(st, warnings))
     elif remove_data and st.get("deployment") == "container":
         # remove_data=True with stop_services=False is a programmatic
         # mis-use: `volume rm` would fail because containers still hold
@@ -1217,6 +1341,13 @@ def uninstall(
         if udd.exists():
             shutil.rmtree(udd)
             files_removed.append({"path": str(udd), "action": "deleted_user_data_dir"})
+        # 5a. Remove the AgentAlloy download cache (~/.cache/agentalloy).
+        # This holds cloned repos and downloaded assets that are no longer
+        # needed once AgentAlloy is uninstalled.
+        files_removed.extend(_remove_agentalloy_cache(warnings))
+        # 5b. Remove the Ollama model cache (~/.ollama). This is a full
+        # wipe — only triggered by --remove-data (full/custom preset).
+        files_removed.extend(_remove_ollama_cache(warnings))
     elif corpus.exists():
         data_kept.append(str(corpus))
 
