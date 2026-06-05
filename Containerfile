@@ -12,7 +12,7 @@ FROM python:3.12-slim AS base
 
 # Install uv (Astral) and minimal runtime deps
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash ca-certificates curl \
+    && apt-get install -y --no-install-recommends bash ca-certificates curl zstd \
     && rm -rf /var/lib/apt/lists/*
 
 # uv is the project's package manager (matches host conventions)
