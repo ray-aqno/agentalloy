@@ -307,6 +307,7 @@ class TestFullContainerSetup:
                 def tracker(*args, **kwargs):
                     call_order.append(name)
                     return ret
+
                 return tracker
 
             # We need to patch the container_runtime module's functions with
@@ -337,7 +338,10 @@ class TestFullContainerSetup:
                     ),
                     patch(
                         "agentalloy.install.subcommands.container_runtime._generate_entrypoint",
-                        side_effect=lambda packs: (call_order.append("_generate_entrypoint"), Path("/tmp/entry.sh"))[1],
+                        side_effect=lambda packs: (
+                            call_order.append("_generate_entrypoint"),
+                            Path("/tmp/entry.sh"),
+                        )[1],
                     ),
                     patch(
                         "agentalloy.install.subcommands.container_runtime._cleanup_temp_entrypoint",
@@ -356,9 +360,7 @@ class TestFullContainerSetup:
                 "_generate_entrypoint",
                 "_run_container",
                 "_cleanup_temp_entrypoint",
-            ], (
-                f"Expected container_runtime calls in order, got: {call_order}"
-            )
+            ], f"Expected container_runtime calls in order, got: {call_order}"
 
     def test_full_setup_records_state_on_success(self):
         """After successful setup, state is saved with deployment=container."""

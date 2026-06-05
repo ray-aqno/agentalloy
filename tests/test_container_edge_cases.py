@@ -724,7 +724,10 @@ class TestNonInteractiveMode:
     @patch("agentalloy.install.subcommands.container_runtime._build_image", return_value=0)
     @patch("agentalloy.install.subcommands.container_runtime._ensure_volume")
     @patch("agentalloy.install.subcommands.container_runtime._run_container", return_value=0)
-    @patch("agentalloy.install.subcommands.container_runtime._generate_entrypoint", return_value=Path("/tmp/entry.sh"))
+    @patch(
+        "agentalloy.install.subcommands.container_runtime._generate_entrypoint",
+        return_value=Path("/tmp/entry.sh"),
+    )
     @patch("agentalloy.install.subcommands.container_runtime._cleanup_temp_entrypoint")
     @patch("agentalloy.install.subcommands.container_runtime._ensure_ollama_dir")
     @patch(
@@ -840,7 +843,10 @@ class TestNonInteractiveMode:
     @patch("agentalloy.install.subcommands.container_runtime._build_image", return_value=0)
     @patch("agentalloy.install.subcommands.container_runtime._ensure_volume")
     @patch("agentalloy.install.subcommands.container_runtime._run_container", return_value=0)
-    @patch("agentalloy.install.subcommands.container_runtime._generate_entrypoint", return_value=Path("/tmp/entry.sh"))
+    @patch(
+        "agentalloy.install.subcommands.container_runtime._generate_entrypoint",
+        return_value=Path("/tmp/entry.sh"),
+    )
     @patch("agentalloy.install.subcommands.container_runtime._cleanup_temp_entrypoint")
     @patch("agentalloy.install.subcommands.container_runtime._ensure_ollama_dir")
     @patch(
@@ -1045,7 +1051,10 @@ class TestCancelDuringCPUWarning:
     @patch("agentalloy.install.subcommands.container_runtime._build_image", return_value=0)
     @patch("agentalloy.install.subcommands.container_runtime._ensure_volume")
     @patch("agentalloy.install.subcommands.container_runtime._run_container", return_value=0)
-    @patch("agentalloy.install.subcommands.container_runtime._generate_entrypoint", return_value=Path("/tmp/entry.sh"))
+    @patch(
+        "agentalloy.install.subcommands.container_runtime._generate_entrypoint",
+        return_value=Path("/tmp/entry.sh"),
+    )
     @patch("agentalloy.install.subcommands.container_runtime._cleanup_temp_entrypoint")
     @patch("agentalloy.install.subcommands.container_runtime._ensure_ollama_dir")
     @patch(
