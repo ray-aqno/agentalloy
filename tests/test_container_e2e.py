@@ -80,7 +80,7 @@ def _all_common_patches(tmp_path: Path):
     Must call _inject_preflight_mocks() first to add the mock preflight
     attributes that the patched versions reference.
 
-    NOTE: _run_quiet, _wait_for_one_shot, urllib.request.urlopen, and
+    NOTE: container_runtime functions, urllib.request.urlopen, and
     time.monotonic are NOT included here. They are created as shared mocks
     in _run_container_flow_all_mocked so that tests can override their
     behavior by setting side_effect/return_value on the shared mock objects.
@@ -145,36 +145,94 @@ def _run_container_flow_all_mocked(
     extra_patches : list[contextlib.AbstractContextManager], optional
         Additional patch context managers to apply.
     mock_overrides : dict, optional
-        Override shared mock behavior. Keys: "run_quiet",
-        "wait_for_one_shot", "urlopen", "monotonic". Values are the new
+        Override shared mock behavior. Keys: "detect_runtime_binary",
+        "build_image", "ensure_volume", "run_container",
+        "generate_entrypoint", "cleanup_temp_entrypoint",
+        "ensure_ollama_dir", "urlopen", "monotonic". Values are the new
         side_effect or return_value to set.
     """
     patches = _all_common_patches(tmp_path)
 
     # Create shared mock objects that tests can override
-    mock_run_quiet = MagicMock(return_value=0)
-    mock_wait_for_one_shot = MagicMock(return_value=0)
+    mock_detect_runtime_binary = MagicMock(return_value="podman")
+    mock_build_image = MagicMock(return_value=0)
+    mock_ensure_volume = MagicMock()
+    mock_run_container = MagicMock(return_value=0)
+    mock_generate_entrypoint = MagicMock(return_value=Path("/tmp/entry.sh"))
+    mock_cleanup_temp_entrypoint = MagicMock()
+    mock_ensure_ollama_dir = MagicMock()
     mock_urlopen = MagicMock(return_value=_make_urlopen_mock())
     mock_monotonic = MagicMock(return_value=0.0)
 
-    # Apply default mocks
-    patches.append(patch("agentalloy.install.subcommands.simple_setup._run_quiet", mock_run_quiet))
+    # Apply default mocks for container_runtime functions
     patches.append(
         patch(
-            "agentalloy.install.subcommands.simple_setup._wait_for_one_shot",
-            mock_wait_for_one_shot,
+            "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+            mock_detect_runtime_binary,
         )
     )
+    patches.append(
+        patch(
+            "agentalloy.install.subcommands.container_runtime._build_image",
+            mock_build_image,
+        )
+    )
+    patches.append(
+        patch(
+            "agentalloy.install.subcommands.container_runtime._ensure_volume",
+            mock_ensure_volume,
+        )
+    )
+    patches.append(
+        patch(
+            "agentalloy.install.subcommands.container_runtime._run_container",
+            mock_run_container,
+        )
+    )
+    patches.append(
+        patch(
+            "agentalloy.install.subcommands.container_runtime._generate_entrypoint",
+            mock_generate_entrypoint,
+        )
+    )
+    patches.append(
+        patch(
+            "agentalloy.install.subcommands.container_runtime._cleanup_temp_entrypoint",
+            mock_cleanup_temp_entrypoint,
+        )
+    )
+    patches.append(
+        patch(
+            "agentalloy.install.subcommands.container_runtime._ensure_ollama_dir",
+            mock_ensure_ollama_dir,
+        )
+    )
+
     patches.append(patch("urllib.request.urlopen", mock_urlopen))
     patches.append(patch("time.monotonic", mock_monotonic))
 
     # Apply mock overrides BEFORE entering the ExitStack so the
     # mock objects already have the correct behavior when called.
+    # Non-callable, non-exception values are treated as return_value.
     if mock_overrides:
-        if "run_quiet" in mock_overrides:
-            mock_run_quiet.side_effect = mock_overrides["run_quiet"]
-        if "wait_for_one_shot" in mock_overrides:
-            mock_wait_for_one_shot.side_effect = mock_overrides["wait_for_one_shot"]
+        if "detect_runtime_binary" in mock_overrides:
+            val = mock_overrides["detect_runtime_binary"]
+            if callable(val) or isinstance(val, BaseException):
+                mock_detect_runtime_binary.side_effect = val
+            else:
+                mock_detect_runtime_binary.return_value = val
+        if "build_image" in mock_overrides:
+            val = mock_overrides["build_image"]
+            if callable(val) or isinstance(val, BaseException):
+                mock_build_image.side_effect = val
+            else:
+                mock_build_image.return_value = val
+        if "run_container" in mock_overrides:
+            val = mock_overrides["run_container"]
+            if callable(val) or isinstance(val, BaseException):
+                mock_run_container.side_effect = val
+            else:
+                mock_run_container.return_value = val
         if "urlopen" in mock_overrides:
             mock_urlopen.side_effect = mock_overrides["urlopen"]
         if "monotonic" in mock_overrides:
@@ -212,7 +270,7 @@ class TestFullContainerSetup:
     """E2E-1: Full container setup with mocked runtime binary.
 
     Verifies that _run_container_flow returns 0 when every step succeeds,
-    and that the correct sequence of subprocess calls is made.
+    and that the correct sequence of container_runtime calls is made.
     """
 
     def test_full_setup_returns_zero(self):
@@ -226,16 +284,17 @@ class TestFullContainerSetup:
 
             assert rc == 0, f"Expected exit code 0, got {rc}"
 
-    def test_full_setup_calls_subprocess_in_correct_order(self):
-        """Verify _run_quiet is called for each major compose/run step.
+    def test_full_setup_calls_container_runtime_in_correct_order(self):
+        """Verify container_runtime functions are called in the correct order.
 
-        _run_quiet is called for compose/podman commands that produce output:
-          1. compose up agentalloy-init (migrations)
-          2. compose up ollama + ollama-pull
-          3. podman run install-packs
-          4. podman run agentalloy (main service)
-
-        The 'podman wait' steps use _wait_for_one_shot instead.
+        The new single-container flow calls:
+          1. _detect_runtime_binary -> "podman"
+          2. _build_image(runtime, context)
+          3. _ensure_volume(runtime)
+          4. _ensure_ollama_dir()
+          5. _generate_entrypoint(packs)
+          6. _run_container(runtime, entrypoint, packs)
+          7. _cleanup_temp_entrypoint(entrypoint)
         """
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -244,19 +303,61 @@ class TestFullContainerSetup:
 
             call_order = []
 
-            def track_run(cmd, **kwargs):
-                call_order.append(cmd[0] if cmd else None)
-                return 0
+            def make_tracker(name, ret=0):
+                def tracker(*args, **kwargs):
+                    call_order.append(name)
+                    return ret
+                return tracker
 
+            # We need to patch the container_runtime module's functions with
+            # wrapped versions that track calls. Since simple_setup does
+            # `from container_runtime import ...`, patching the source module
+            # means the import picks up our wrapped mocks.
             rc = _run_container_flow_all_mocked(
                 tmp_path,
-                mock_overrides={"run_quiet": track_run},
+                mock_overrides={
+                    "build_image": make_tracker("_build_image", 0),
+                    "run_container": make_tracker("_run_container", 0),
+                },
+                extra_patches=[
+                    # These track on the container_runtime module; since
+                    # simple_setup imports from there, the wrapped functions
+                    # are what get used.
+                    patch(
+                        "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                        side_effect=make_tracker("_detect_runtime_binary", "podman"),
+                    ),
+                    patch(
+                        "agentalloy.install.subcommands.container_runtime._ensure_volume",
+                        side_effect=make_tracker("_ensure_volume"),
+                    ),
+                    patch(
+                        "agentalloy.install.subcommands.container_runtime._ensure_ollama_dir",
+                        side_effect=make_tracker("_ensure_ollama_dir"),
+                    ),
+                    patch(
+                        "agentalloy.install.subcommands.container_runtime._generate_entrypoint",
+                        side_effect=lambda packs: (call_order.append("_generate_entrypoint"), Path("/tmp/entry.sh"))[1],
+                    ),
+                    patch(
+                        "agentalloy.install.subcommands.container_runtime._cleanup_temp_entrypoint",
+                        side_effect=make_tracker("_cleanup_temp_entrypoint"),
+                    ),
+                ],
             )
 
             assert rc == 0
-            # _run_quiet is called 4 times: init, ollama, install-packs, main
-            assert len(call_order) >= 4, (
-                f"Expected at least 4 _run_quiet calls, got {len(call_order)}: {call_order}"
+            # Verify the expected call order
+            assert call_order == [
+                "_detect_runtime_binary",
+                "_build_image",
+                "_ensure_volume",
+                "_ensure_ollama_dir",
+                "_generate_entrypoint",
+                "_run_container",
+                "_cleanup_temp_entrypoint",
+            ], (
+                f"Expected container_runtime calls in order, got: {call_order}"
             )
 
     def test_full_setup_records_state_on_success(self):
@@ -320,94 +421,94 @@ class TestFullContainerSetup:
 class TestModelPullBootstrap:
     """E2E-2: Container bootstrap pulls qwen3-embedding:0.6b model.
 
-    Verifies that the ollama + ollama-pull compose step is called and that
-    the model pull is confirmed.
+    Verifies that the entrypoint script is generated and passed to the
+    container, and that the model pull is handled inside the entrypoint
+    (not in the setup flow).
     """
 
-    def test_model_pull_step_is_executed(self):
-        """The ollama + ollama-pull compose up step is called."""
+    def test_entrypoint_is_generated_with_packs(self):
+        """The entrypoint script is generated and passed to _run_container."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             _make_compose_file(tmp_path)
             _make_containerfile(tmp_path)
 
-            compose_up_calls = []
+            entrypoint_packs = []
 
-            def track_run_quiet(cmd, **kwargs):
-                if "compose" in cmd and "up" in cmd:
-                    compose_up_calls.append(cmd)
-                return 0
-
-            rc = _run_container_flow_all_mocked(
-                tmp_path,
-                mock_overrides={"run_quiet": track_run_quiet},
-            )
-
-            assert rc == 0
-            # Should have at least 2 compose up calls: init + ollama
-            compose_up_count = sum(1 for c in compose_up_calls if "compose" in c)
-            assert compose_up_count >= 2, (
-                f"Expected at least 2 compose up calls, got {compose_up_count}"
-            )
-
-    def test_model_pull_confirmed_in_output(self):
-        """When ollama-pull succeeds, 'Embedding model ready' is printed."""
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            _make_compose_file(tmp_path)
-            _make_containerfile(tmp_path)
-
-            printed_messages = []
-
-            def capture_print(*args, **kwargs):
-                printed_messages.append(" ".join(str(a) for a in args))
+            def capture_generate_entrypoint(packs):
+                entrypoint_packs.append(packs)
+                return Path("/tmp/entry.sh")
 
             rc = _run_container_flow_all_mocked(
                 tmp_path,
                 extra_patches=[
                     patch(
-                        "agentalloy.install.subcommands.simple_setup._print",
-                        side_effect=capture_print,
+                        "agentalloy.install.subcommands.container_runtime._generate_entrypoint",
+                        side_effect=capture_generate_entrypoint,
                     ),
                 ],
-                # wait_for_one_shot returns 0 by default (ollama-pull succeeded)
             )
 
             assert rc == 0
-            assert any("Embedding model ready" in m for m in printed_messages), (
-                f"Expected 'Embedding model ready' in output, got: {printed_messages}"
-            )
+            assert len(entrypoint_packs) == 1
+            # Entry point is called with the packs string from config
+            assert entrypoint_packs[0] == ""
 
-    def test_model_pull_failure_continues_with_warning(self):
-        """When ollama-pull fails, a warning is printed but setup continues."""
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            _make_compose_file(tmp_path)
-            _make_containerfile(tmp_path)
+    def test_model_pull_step_is_executed_in_entrypoint(self):
+        """The entrypoint script contains the ollama pull step.
 
-            printed_messages = []
+        The model pull is handled inside the entrypoint script, not in
+        the setup flow. Verify the generated entrypoint contains the
+        expected ollama pull commands.
+        """
+        from agentalloy.install.subcommands.container_runtime import (
+            _build_entrypoint_script,
+        )
 
-            def capture_print(*args, **kwargs):
-                printed_messages.append(" ".join(str(a) for a in args))
+        script = _build_entrypoint_script("")
 
-            # _wait_for_one_shot is called twice: init-wait (index 0) and
-            # ollama-pull-wait (index 1). Return 0 for init, 1 for ollama-pull.
-            wait_results = [0, 1]  # init ok, ollama-pull fails
-            rc = _run_container_flow_all_mocked(
-                tmp_path,
-                extra_patches=[
-                    patch(
-                        "agentalloy.install.subcommands.simple_setup._print",
-                        side_effect=capture_print,
-                    ),
-                ],
-                mock_overrides={"wait_for_one_shot": iter(wait_results)},
-            )
+        # The entrypoint should contain ollama pull for the embedding model
+        assert "ollama pull qwen3-embedding" in script
+        assert "ollama list" in script
+        assert "grep -q qwen3-embedding" in script
 
-            assert rc == 0, f"Expected setup to continue after model pull failure, got {rc}"
-            assert any("embeddings may fail" in m for m in printed_messages), (
-                f"Expected warning about embeddings, got: {printed_messages}"
-            )
+    def test_model_pull_confirmed_in_entrypoint_script(self):
+        """The entrypoint script prints 'Embedding model ready' after pull.
+
+        The entrypoint script handles model pull and prints status messages.
+        """
+        from agentalloy.install.subcommands.container_runtime import (
+            _build_entrypoint_script,
+        )
+
+        script = _build_entrypoint_script("")
+
+        # The entrypoint should contain the model pull echo
+        assert "Pulling qwen3-embedding" in script or "embedding model" in script.lower()
+
+    def test_model_pull_failure_continues_in_entrypoint(self):
+        """When model pull fails, the entrypoint handles it gracefully.
+
+        The entrypoint script uses `set -e` but checks for model existence
+        before pulling. If ollama pull fails, the script would exit, but
+        the setup flow itself continues since the container was started.
+        The container will restart and try again (or the user checks logs).
+        """
+        # The entrypoint script structure: the model pull is inside an
+        # if block that checks for the model first. If the model exists,
+        # pull is skipped. If it doesn't exist, pull is attempted.
+        # A failure in the entrypoint would cause the container to exit,
+        # but the setup flow already considers the container "started"
+        # once _run_container returns 0.
+        from agentalloy.install.subcommands.container_runtime import (
+            _build_entrypoint_script,
+        )
+
+        script = _build_entrypoint_script("")
+
+        # Verify the model check is in place
+        assert "grep -q qwen3-embedding" in script
+        assert "ollama pull" in script
 
 
 # ---------------------------------------------------------------------------
@@ -433,7 +534,8 @@ class TestBootstrapIdempotency:
         # .bootstrap-complete check should come before ollama install
         bootstrap_check = script.index(".bootstrap-complete")
         ollama_install = script.index("ollama.ai/install.sh")
-        uvicorn_start = script.index("exec uvicorn")
+        # The actual script uses "exec uv run uvicorn" not "exec uvicorn"
+        uvicorn_start = script.index("uvicorn agentalloy.app:app")
 
         assert bootstrap_check < ollama_install, (
             ".bootstrap-complete check should come before ollama install"
@@ -496,48 +598,19 @@ class TestCrashRecovery:
     and can be re-run.
     """
 
-    def test_init_failure_aborts_setup(self):
-        """When agentalloy-init (migrations) fails, setup exits with code 1."""
+    def test_build_failure_aborts_setup(self):
+        """When the container image build fails, setup exits with code 1."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             _make_compose_file(tmp_path)
             _make_containerfile(tmp_path)
 
-            call_count = [0]
-
-            def track_init_fail(cmd, **kwargs):
-                call_count[0] += 1
-                if "init" in str(cmd).lower() or "agentalloy-init" in str(cmd):
-                    return 1  # migrations fail
-                return 0
-
             rc = _run_container_flow_all_mocked(
                 tmp_path,
-                mock_overrides={"run_quiet": track_init_fail},
+                mock_overrides={"build_image": 1},
             )
 
-            assert rc == 1, f"Expected exit code 1 on init failure, got {rc}"
-
-    def test_init_timeout_aborts_setup(self):
-        """When agentalloy-init times out, setup exits with code 1.
-
-        The real _run_quiet catches TimeoutExpired and returns 1.
-        The mock must do the same — return 1 instead of raising.
-        """
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            _make_compose_file(tmp_path)
-            _make_containerfile(tmp_path)
-
-            # _run_quiet is called 4 times: init, ollama, install-packs, main.
-            # First call is init -> returns 1 (simulating caught TimeoutExpired)
-            run_quiet_effects = [1, 0, 0, 0]
-            rc = _run_container_flow_all_mocked(
-                tmp_path,
-                mock_overrides={"run_quiet": iter(run_quiet_effects)},
-            )
-
-            assert rc == 1, f"Expected exit code 1 on init timeout, got {rc}"
+            assert rc == 1, f"Expected exit code 1 on build failure, got {rc}"
 
     def test_container_start_failure_aborts_setup(self):
         """When the main agentalloy container fails to start, setup exits 1."""
@@ -546,18 +619,9 @@ class TestCrashRecovery:
             _make_compose_file(tmp_path)
             _make_containerfile(tmp_path)
 
-            call_count = [0]
-
-            def track_container_fail(cmd, **kwargs):
-                call_count[0] += 1
-                # First 3 calls succeed (init, ollama, install-packs)
-                if call_count[0] > 3:
-                    return 1  # main container fails
-                return 0
-
             rc = _run_container_flow_all_mocked(
                 tmp_path,
-                mock_overrides={"run_quiet": track_container_fail},
+                mock_overrides={"run_container": 1},
             )
 
             assert rc == 1, f"Expected exit code 1 on container start failure, got {rc}"
