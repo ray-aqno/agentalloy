@@ -642,7 +642,7 @@ class TestCrashRecovery:
 
             # time.monotonic is called many times: health check loop iterations,
             # final elapsed-time calculation, etc. Provide enough values.
-            monotonic_values = [0.0, 0.0, 0.0, 121.0, 0.0, 0.0, 0.0]
+            monotonic_values = [0.0, 0.0, 0.0, 301.0, 0.0, 0.0, 0.0]
             rc = _run_container_flow_all_mocked(
                 tmp_path,
                 extra_patches=[
