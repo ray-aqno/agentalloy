@@ -1301,7 +1301,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     # 10. Poll health endpoint
     _print("  [dim]-> Waiting for service health...[/dim]")
     healthy = False
-    deadline = time.monotonic() + 120
+    deadline = time.monotonic() + 300
     while time.monotonic() < deadline:
         try:
             with urllib.request.urlopen(  # noqa: S310
@@ -1314,7 +1314,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
             pass
         time.sleep(5)
     if not healthy:
-        _print("  [yellow]  Service not healthy after 120s — check container logs.[/yellow]")
+        _print("  [yellow]  Service not healthy after 300s — check container logs.[/yellow]")
     else:
         _print("  [green]  Service healthy.[/green]")
 

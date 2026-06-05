@@ -342,9 +342,9 @@ class TestHealthCheckTimeout:
                 captured_prints.append(" ".join(str(a) for a in args))
 
             # Mock time.monotonic to exit health check loop immediately:
-            # First call sets deadline = X + 120, second call returns X + 120
-            # so while condition (X+120) < (X+120) is False → loop exits
-            _monotonic_calls = [0, 120]
+            # First call sets deadline = X + 300, second call returns X + 300
+            # so while condition (X+300) < (X+300) is False → loop exits
+            _monotonic_calls = [0, 300]
 
             def fake_monotonic():
                 result = _monotonic_calls[0]
@@ -488,7 +488,7 @@ class TestEntrypointContent:
         assert "127.0.0.1:11434" in script, "Missing Ollama bind address"
         assert "curl" in script, "Missing health check for Ollama"
         assert "qwen3-embedding" in script, "Missing embedding model pull"
-        assert "agentalloy migrate" in script, "Missing migration step"
+        assert "python -m agentalloy.migrate" in script, "Missing migration step"
         assert "install-packs" in script, "Missing pack installation step"
         assert "touch" in script and ".bootstrap-complete" in script, (
             "Missing bootstrap complete flag"

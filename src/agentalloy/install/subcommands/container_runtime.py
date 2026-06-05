@@ -287,7 +287,7 @@ def _generate_entrypoint(packs: str) -> Path:
     4. Poll ``http://127.0.0.1:11434`` until Ollama is ready (30 s timeout).
     5. Check if the embedding model (``qwen3-embedding:0.6b``) is cached;
        pull it if not.
-    6. Run migrations (``uv run agentalloy migrate``).
+    6. Run migrations (``uv run python -m agentalloy.migrate``).
     7. If *packs* is non-empty, run ``uv run agentalloy install-packs --packs <packs>``.
     8. Create the ``$APP_DIR/.bootstrap-complete`` flag file.
     9. Trap SIGTERM for graceful shutdown (only if Ollama was started).
@@ -333,7 +333,7 @@ def _build_entrypoint_script(packs: str) -> str:
         "",
         "    # Start Ollama",
         '    echo ">> Starting Ollama..."',
-        "    ollama serve --host 127.0.0.1:11434 &",
+        "    OLLAMA_HOST=127.0.0.1:11434 ollama serve &",
         "    OLLAMA_PID=$!",
         "",
         "    # Wait for Ollama to be ready (30 s timeout)",
@@ -354,7 +354,7 @@ def _build_entrypoint_script(packs: str) -> str:
         "",
         "    # Run migrations",
         '    echo ">> Running migrations..."',
-        "    uv run agentalloy migrate",
+        "    uv run python -m agentalloy.migrate",
         "",
         "    # Pack installation (conditional)",
     ]

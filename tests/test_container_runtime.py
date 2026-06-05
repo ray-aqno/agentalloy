@@ -525,7 +525,7 @@ class TestGenerateEntrypoint:
 
         content = _generate_entrypoint("").read_text()
 
-        assert "agentalloy migrate" in content
+        assert "python -m agentalloy.migrate" in content
 
     def test_generate_entrypoint_contains_uvicorn_start(self, tmp_path: Path):
         """Generated entrypoint contains uvicorn start step."""
