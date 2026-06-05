@@ -1189,6 +1189,13 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     # the one-shot install-packs container at step 8b via --packs.
     if not cfg.non_interactive and not cfg.packs:
         cfg.packs = _prompt_for_packs()
+    # Expand 'all' keyword to the full pack list before validation.
+    # Without this, 'all' is treated as an unknown pack name and silently
+    # stripped — the user gets "always-on only" instead of all packs.
+    if cfg.packs and cfg.packs.strip().lower() == "all":
+        _all_packs = _discover_packs()
+        cfg.packs = ",".join(sorted(_all_packs.keys()))
+        _print(f"  [dim]-> Resolved packs: {len(_all_packs)} packs[/dim]")
     # Strip names that don't resolve against the host's seeds/packs dir.
     # Host and image are built from the same tree, so this is a reliable
     # pre-check that turns a typo into an immediate warning instead of a

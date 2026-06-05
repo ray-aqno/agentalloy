@@ -1825,6 +1825,61 @@ class TestContainerFlow:
                         assert "bogus" not in env_val, f"Unexpected 'bogus' in {env_val}"
         assert packs_found, "AGENTIALLOY_PACKS env var not found in container run"
 
+    def test_container_flow_expands_packs_all_to_full_list(
+        self,
+        tmp_state_dir: tuple[Path, Path],
+        capsys: pytest.CaptureFixture[str],
+    ):
+        """When --packs 'all' is passed in container mode, it should be
+        expanded to the full pack list instead of being silently stripped
+        as an unknown pack name."""
+        SetupConfig, run_setup = self._import_run_setup()
+
+        with (
+            patch(
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
+            ),
+            patch(
+                "agentalloy.install.subcommands.simple_setup._discover_packs",
+                return_value={
+                    "rust": {"skills": []},
+                    "python": {"skills": []},
+                    "go": {"skills": []},
+                },
+            ),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(returncode=0, stdout="0\n", stderr="")
+            rc = run_setup(
+                SetupConfig(deployment="container", non_interactive=True, packs="all")
+            )
+
+        assert rc == 0
+        # Verify the container run call has all packs in the env var
+        run_calls = [
+            c.args[0]
+            for c in mock_run.call_args_list
+            if c.args
+            and isinstance(c.args[0], list)
+            and len(c.args[0]) >= 2
+            and c.args[0][1] == "run"
+        ]
+        assert len(run_calls) >= 1
+        packs_found = False
+        for call_args in run_calls:
+            for i, arg in enumerate(call_args):
+                if str(arg) == "-e" and i + 1 < len(call_args):
+                    env_val = str(call_args[i + 1])
+                    if env_val.startswith("AGENTIALLOY_PACKS="):
+                        packs_found = True
+                        # All three packs should be present (sorted alphabetically)
+                        expected = "AGENTIALLOY_PACKS=go,python,rust"
+                        assert env_val == expected, (
+                            f"Expected expanded packs, got {env_val}"
+                        )
+        assert packs_found, "AGENTIALLOY_PACKS env var not found in container run"
+
     def test_verify_failures_surfaced_inline(
         self,
         tmp_state_dir: tuple[Path, Path],
