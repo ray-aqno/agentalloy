@@ -1669,7 +1669,8 @@ class TestContainerFlow:
         run_calls = [
             c.args[0]
             for c in mock_run.call_args_list
-            if c.args and isinstance(c.args[0], list)
+            if c.args
+            and isinstance(c.args[0], list)
             and len(c.args[0]) >= 2
             and c.args[0][1] == "run"
         ]
@@ -1683,7 +1684,9 @@ class TestContainerFlow:
                     if env_val.startswith("AGENTIALLOY_PACKS="):
                         assert "engineering" in env_val
                         packs_found = True
-        assert packs_found, "AGENTIALLOY_PACKS env var with 'engineering' not found in container run"
+        assert packs_found, (
+            "AGENTIALLOY_PACKS env var with 'engineering' not found in container run"
+        )
 
     def test_container_flow_skips_prompt_when_packs_preset(self, tmp_state_dir: tuple[Path, Path]):
         """A preset --packs value must bypass the interactive prompt and
@@ -1713,7 +1716,8 @@ class TestContainerFlow:
         run_calls = [
             c.args[0]
             for c in mock_run.call_args_list
-            if c.args and isinstance(c.args[0], list)
+            if c.args
+            and isinstance(c.args[0], list)
             and len(c.args[0]) >= 2
             and c.args[0][1] == "run"
         ]
@@ -1750,7 +1754,8 @@ class TestContainerFlow:
         run_calls = [
             c.args[0]
             for c in mock_run.call_args_list
-            if c.args and isinstance(c.args[0], list)
+            if c.args
+            and isinstance(c.args[0], list)
             and len(c.args[0]) >= 2
             and c.args[0][1] == "run"
         ]
@@ -1803,7 +1808,8 @@ class TestContainerFlow:
         run_calls = [
             c.args[0]
             for c in mock_run.call_args_list
-            if c.args and isinstance(c.args[0], list)
+            if c.args
+            and isinstance(c.args[0], list)
             and len(c.args[0]) >= 2
             and c.args[0][1] == "run"
         ]

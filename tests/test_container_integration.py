@@ -79,13 +79,9 @@ def _run_with_all_patches(tmp_path: Path, tmp_compose: Path, extra_patches=None)
             "agentalloy.install.subcommands.simple_setup._container_setup_log_path",
             return_value=tmp_path / "setup.log",
         ),
-        patch(
-            "agentalloy.install.subcommands.container_runtime._build_image", return_value=0
-        ),
+        patch("agentalloy.install.subcommands.container_runtime._build_image", return_value=0),
         patch("agentalloy.install.subcommands.container_runtime._ensure_volume"),
-        patch(
-            "agentalloy.install.subcommands.container_runtime._run_container", return_value=0
-        ),
+        patch("agentalloy.install.subcommands.container_runtime._run_container", return_value=0),
         patch(
             "agentalloy.install.subcommands.container_runtime._wait_for_health", return_value=True
         ),
@@ -93,9 +89,7 @@ def _run_with_all_patches(tmp_path: Path, tmp_compose: Path, extra_patches=None)
             "agentalloy.install.subcommands.container_runtime._generate_entrypoint",
             return_value=Path("/tmp/entry.sh"),
         ),
-        patch(
-            "agentalloy.install.subcommands.container_runtime._cleanup_temp_entrypoint"
-        ),
+        patch("agentalloy.install.subcommands.container_runtime._cleanup_temp_entrypoint"),
         patch("agentalloy.install.state.load_state", return_value={}),
         patch("agentalloy.install.state.save_state"),
         patch(
