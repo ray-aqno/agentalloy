@@ -994,13 +994,16 @@ class TestContainerFlow:
         self.mock.mocks["_outputs_dir"] = outputs_patch.start()
         (self.tmp_data / "outputs").mkdir(parents=True, exist_ok=True)
 
-        # The container flow polls http://localhost:{port}/health for up to
-        # 120s with 5s backoff. Without a real service listening on that port
-        # this burns 120s per test on CI, so short-circuit it with a 200.
+        # The container flow polls http://localhost:{port}/readiness via
+        # ``_wait_for_readiness`` (fast-start design). The wait loop calls
+        # ``json.loads(resp.read().decode())`` and short-circuits on
+        # ``status == "ready"``, so the mock must return parseable JSON
+        # with that body.
         health_resp = MagicMock()
         health_resp.__enter__ = lambda s: s
         health_resp.__exit__ = MagicMock(return_value=False)
         health_resp.status = 200
+        health_resp.read = MagicMock(return_value=b'{"status": "ready"}')
         urlopen_patch = patch("urllib.request.urlopen", return_value=health_resp)
         self.mock.patchers.append(urlopen_patch)
         self.mock.mocks["_urlopen"] = urlopen_patch.start()
