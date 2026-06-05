@@ -14,6 +14,9 @@ from agentalloy.install.subcommands.uninstall import (
     _extract_sentinel_content,  # type: ignore[attr-defined]
     _stop_container_stack,  # type: ignore[attr-defined]
     _remove_compose_volumes,  # type: ignore[attr-defined]
+    _remove_container_image,  # type: ignore[attr-defined]
+    _remove_ollama_cache,  # type: ignore[attr-defined]
+    _remove_agentalloy_cache,  # type: ignore[attr-defined]
     _COMPOSE_NAMED_VOLUMES,  # type: ignore[attr-defined]
 )
 
@@ -312,6 +315,141 @@ class TestContainerUninstall:
         assert "timed out" in warnings[1].lower()
         assert actions[0]["action"] == "container_stop_timeout"
         assert actions[1]["action"] == "container_rm_timeout"
+
+    def test_remove_container_image_success(self, tmp_path: Path):
+        """Container image is removed when deployment='container'."""
+        state: dict[str, Any] = {
+            "deployment": "container",
+            "runtime_binary": "podman",
+            "image_tag": "agentalloy:local",
+        }
+        warnings: list[str] = []
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            actions = _remove_container_image(state, warnings)
+
+        assert len(actions) == 1
+        assert actions[0]["action"] == "image_removed"
+        assert actions[0]["image"] == "agentalloy:local"
+        mock_run.assert_called_once_with(
+            ["podman", "rmi", "-f", "agentalloy:local"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+    def test_remove_container_image_skips_native(self):
+        """Container image removal is skipped for non-container deployments."""
+        state: dict[str, Any] = {"deployment": "native"}
+        warnings: list[str] = []
+        actions = _remove_container_image(state, warnings)
+        assert actions == []
+
+    def test_remove_container_image_missing_binary_warns(self):
+        """Missing runtime binary produces a warning and empty actions."""
+        state: dict[str, Any] = {
+            "deployment": "container",
+            "runtime_binary": None,
+        }
+        warnings: list[str] = []
+        actions = _remove_container_image(state, warnings)
+        assert actions == []
+        assert len(warnings) == 1
+        assert "runtime binary unresolved" in warnings[0]
+
+    def test_remove_container_image_none_tag_defaults(self):
+        """None or missing image_tag falls back to agentalloy:local."""
+        state: dict[str, Any] = {
+            "deployment": "container",
+            "runtime_binary": "podman",
+            "image_tag": None,
+        }
+        warnings: list[str] = []
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            actions = _remove_container_image(state, warnings)
+
+        assert len(actions) == 1
+        assert actions[0]["action"] == "image_removed"
+        assert actions[0]["image"] == "agentalloy:local"
+        mock_run.assert_called_once_with(
+            ["podman", "rmi", "-f", "agentalloy:local"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+    def test_remove_container_image_missing_key_defaults(self):
+        """Missing image_tag key falls back to agentalloy:local."""
+        state: dict[str, Any] = {
+            "deployment": "container",
+            "runtime_binary": "podman",
+        }
+        warnings: list[str] = []
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result):
+            actions = _remove_container_image(state, warnings)
+
+        assert len(actions) == 1
+        assert actions[0]["action"] == "image_removed"
+        assert actions[0]["image"] == "agentalloy:local"
+
+    def test_remove_ollama_cache_success(self, tmp_path: Path):
+        """Ollama cache directory is removed when it exists."""
+        warnings: list[str] = []
+        ollama_dir = tmp_path / ".ollama"
+        ollama_dir.mkdir()
+
+        with patch("pathlib.Path.home", return_value=tmp_path):
+            actions = _remove_ollama_cache(warnings)
+
+        assert len(actions) == 1
+        assert actions[0]["action"] == "ollama_cache_removed"
+        assert not ollama_dir.exists()
+
+    def test_remove_ollama_cache_already_gone(self, tmp_path: Path):
+        """Missing Ollama cache returns 'already_gone' action."""
+        warnings: list[str] = []
+
+        with patch("pathlib.Path.home", return_value=tmp_path):
+            actions = _remove_ollama_cache(warnings)
+
+        assert len(actions) == 1
+        assert actions[0]["action"] == "ollama_cache_already_gone"
+        assert len(warnings) == 0
+
+    def test_remove_agentalloy_cache_success(self, tmp_path: Path):
+        """AgentAlloy cache directory is removed when it exists."""
+        warnings: list[str] = []
+        cache_dir = tmp_path / ".cache" / "agentalloy"
+        cache_dir.mkdir(parents=True)
+
+        with patch("pathlib.Path.home", return_value=tmp_path):
+            actions = _remove_agentalloy_cache(warnings)
+
+        assert len(actions) == 1
+        assert actions[0]["action"] == "cache_removed"
+        assert not cache_dir.exists()
+
+    def test_remove_agentalloy_cache_already_gone(self, tmp_path: Path):
+        """Missing AgentAlloy cache returns 'already_gone' action."""
+        warnings: list[str] = []
+
+        with patch("pathlib.Path.home", return_value=tmp_path):
+            actions = _remove_agentalloy_cache(warnings)
+
+        assert len(actions) == 1
+        assert actions[0]["action"] == "cache_already_gone"
+        assert len(warnings) == 0
 
 
 class TestSentinelHelpers:
