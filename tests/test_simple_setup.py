@@ -1618,7 +1618,7 @@ class TestContainerFlow:
                 "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
                 return_value="podman",
             ),
-            patch("subprocess.run", side_effect=run_side_effect) as mock_run,
+            patch("subprocess.run", side_effect=run_side_effect),
         ):
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
 
