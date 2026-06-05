@@ -1,5 +1,22 @@
-# AgentAlloy container stack (one stack, every host, CPU-only inference).
-# Works with both `podman compose up` (project preference) and `docker compose up`.
+# ============================================================================
+# DEPRECATED — do not use for new installations.
+#
+# This compose.yaml is kept for reference only. It describes the old
+# multi-service compose model (agentalloy + ollama sidecar + init service).
+#
+# New installations should use the single-container model:
+#   agentalloy setup --deployment container
+#
+# The single-container model runs agentalloy and Ollama in one container
+# via a runtime-generated entrypoint script. See Containerfile for the
+# image definition and src/agentalloy/install/subcommands/container_runtime.py
+# for the runtime setup logic.
+#
+# This file is NOT used by `agentalloy setup --deployment container`.
+# ============================================================================
+#
+# AgentAlloy container stack (DEPRECATED — one stack, every host, CPU-only inference).
+# Works with both `podman compose up` and `docker compose up`.
 #
 # GPU acceleration is intentionally out of scope here — pick the native install
 # if you want NVIDIA CUDA, AMD ROCm, or Apple Metal. Containers run on CPU.
@@ -12,7 +29,7 @@
 #   - Database schemas are initialized on first start by the `agentalloy-init` service
 #   - Persistent named volumes for corpus data and Ollama models
 #
-# Usage:
+# Usage (DEPRECATED):
 #   podman compose up -d
 #   podman compose logs -f agentalloy
 #   curl http://localhost:47950/health

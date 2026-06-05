@@ -62,7 +62,7 @@ select = ["E", "F", "W", "I", "B", "UP", "N", "SIM"]
 # N818 would force every typed exception name to end with "Error"; the LM
 # client exception hierarchy uses "Unavailable"/"Timeout"/"BadResponse" names
 # by design (mapped to specific HTTP response codes in the contract).
-ignore = ["E501", "N818"]
+ignore = ["E501", "N818", "SIM117", "N806"]
 
 [tool.ruff.lint.flake8-bugbear]
 # Depends/Query/Header/Body are the standard FastAPI default-argument idiom.

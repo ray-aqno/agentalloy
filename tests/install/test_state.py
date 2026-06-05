@@ -17,10 +17,10 @@ _empty_state = install_state._empty_state  # pyright: ignore[reportPrivateUsage]
 
 
 class TestSchemaVersion:
-    """Test CURRENT_SCHEMA_VERSION is 3."""
+    """Test CURRENT_SCHEMA_VERSION is 4."""
 
-    def test_schema_version_is_3(self):
-        assert install_state.CURRENT_SCHEMA_VERSION == 3
+    def test_schema_version_is_4(self):
+        assert install_state.CURRENT_SCHEMA_VERSION == 4
 
 
 class TestFreshState:
@@ -28,10 +28,12 @@ class TestFreshState:
 
     def test_fresh_state_has_container_fields(self):
         st = _empty_state()
-        assert st["schema_version"] == 3
+        assert st["schema_version"] == 4
         assert st["deployment"] is None
-        assert st["compose_file"] is None
-        assert st["compose_binary"] is None
+        assert st["runtime_binary"] is None
+        assert st["image_tag"] is None
+        assert st["container_name"] is None
+        assert st["data_volume"] is None
 
     def test_fresh_state_has_legacy_fields(self):
         st = _empty_state()
@@ -45,7 +47,7 @@ class TestFreshState:
 
 
 class TestV2ToV3Migration:
-    """Test that v2 state files are migrated to v3 on load."""
+    """Test that v2 state files are migrated to v4 on load (v2→v3→v4)."""
 
     def test_v2_migrated_to_v3(self, tmp_path: Path):
         """A v2 state file loads with new fields defaulted to None."""
@@ -83,11 +85,13 @@ class TestV2ToV3Migration:
             importlib.reload(install_state)
             st = install_state.load_state()
 
-            # Should have been migrated to v3
-            assert st["schema_version"] == 3
+            # Should have been migrated to v4
+            assert st["schema_version"] == 4
             assert st["deployment"] is None
-            assert st["compose_file"] is None
-            assert st["compose_binary"] is None
+            assert st["runtime_binary"] is None
+            assert st["image_tag"] == "agentalloy:local"
+            assert st["container_name"] is None
+            assert st["data_volume"] is None
         finally:
             if old_config is not None:
                 os.environ["XDG_CONFIG_HOME"] = old_config
@@ -99,7 +103,7 @@ class TestV2ToV3Migration:
                 del os.environ["XDG_DATA_HOME"]
 
     def test_v2_preserves_existing_fields(self, tmp_path: Path):
-        """Migration preserves existing v2 fields while adding v3 fields."""
+        """Migration preserves existing v2 fields while adding v4 fields."""
         config_dir = tmp_path / ".config"
         data_dir = tmp_path / ".local" / "share"
         config_dir.mkdir(parents=True)
@@ -141,8 +145,10 @@ class TestV2ToV3Migration:
             assert st["last_verify_passed_at"] == "2025-01-01T00:02:00"
             # New fields added
             assert st["deployment"] is None
-            assert st["compose_file"] is None
-            assert st["compose_binary"] is None
+            assert st["runtime_binary"] is None
+            assert st["image_tag"] == "agentalloy:local"
+            assert st["container_name"] is None
+            assert st["data_volume"] is None
         finally:
             if old_config is not None:
                 os.environ["XDG_CONFIG_HOME"] = old_config
@@ -174,16 +180,20 @@ class TestSaveAndLoadState:
             importlib.reload(install_state)
             st = _empty_state()
             st["deployment"] = "container"
-            st["compose_file"] = "/home/user/project/compose.yaml"
-            st["compose_binary"] = "podman compose"
+            st["runtime_binary"] = "podman compose"
+            st["image_tag"] = "/home/user/project/compose.yaml"
+            st["container_name"] = "agentalloy"
+            st["data_volume"] = "agentalloy-data"
 
             fp = install_state.save_state(st)
             assert fp.exists()
 
             loaded = install_state.load_state()
             assert loaded["deployment"] == "container"
-            assert loaded["compose_file"] == "/home/user/project/compose.yaml"
-            assert loaded["compose_binary"] == "podman compose"
+            assert loaded["runtime_binary"] == "podman compose"
+            assert loaded["image_tag"] == "/home/user/project/compose.yaml"
+            assert loaded["container_name"] == "agentalloy"
+            assert loaded["data_volume"] == "agentalloy-data"
         finally:
             if old_config is not None:
                 os.environ["XDG_CONFIG_HOME"] = old_config

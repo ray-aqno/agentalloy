@@ -28,7 +28,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -475,121 +475,6 @@ def _check_fastflowlm_present() -> dict[str, Any]:
     )
 
 
-# ---------------------------------------------------------------------------
-# Container-phase checks
-# ---------------------------------------------------------------------------
-
-
-class _ComposeProbe(TypedDict):
-    """Per-binary probe result. ``stderr`` is empty unless ``compose`` failed."""
-
-    binary: str
-    path: str | None
-    compose_ok: bool
-    stderr: str
-
-
-def _probe_compose_runtime() -> tuple[str | None, str | None, list[_ComposeProbe]]:
-    """Probe podman and docker for a working ``compose`` subcommand.
-
-    Returns ``(label, binary_path, probes)``. ``label`` and ``binary_path``
-    are populated for the first runtime whose ``compose version`` exits 0
-    (podman preferred, docker fallback). ``probes`` records every candidate
-    we considered — including ones we found on PATH but that lacked a working
-    compose provider — so callers can build accurate error messages.
-    """
-    probes: list[_ComposeProbe] = []
-    chosen_label: str | None = None
-    chosen_path: str | None = None
-    for candidate in ("podman", "docker"):
-        binary = shutil.which(candidate)
-        if binary is None:
-            probes.append({"binary": candidate, "path": None, "compose_ok": False, "stderr": ""})
-            continue
-        stderr = ""
-        compose_ok = False
-        try:
-            result = subprocess.run(
-                [binary, "compose", "version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            compose_ok = result.returncode == 0
-            if not compose_ok:
-                stderr = (result.stderr or result.stdout or "").strip()
-        except (subprocess.TimeoutExpired, OSError) as exc:
-            stderr = str(exc)
-        probes.append(
-            {
-                "binary": candidate,
-                "path": binary,
-                "compose_ok": compose_ok,
-                "stderr": stderr,
-            }
-        )
-        if compose_ok and chosen_label is None:
-            chosen_label = f"{candidate} compose"
-            chosen_path = binary
-    return chosen_label, chosen_path, probes
-
-
-def _detect_compose_binary() -> tuple[str | None, str | None]:
-    """Detect a compose-capable binary (podman preferred, docker fallback).
-
-    Returns ``(label, binary_path)`` where:
-      - ``label`` is ``"podman compose"`` or ``"docker compose"`` (for display/state)
-      - ``binary_path`` is the absolute path to the main binary (e.g. ``/usr/bin/podman``)
-
-    Returns ``(None, None)`` if neither found.
-    """
-    label, binary_path, _ = _probe_compose_runtime()
-    return label, binary_path
-
-
-def _compose_failure_message(probes: list[_ComposeProbe]) -> tuple[str, str]:
-    """Build (error, remediation) strings describing why no compose is available.
-
-    Distinguishes three states:
-      (a) neither binary present on PATH,
-      (b) at least one binary present but its ``compose`` subcommand failed
-          (typically: provider plugin missing — ``podman-compose`` /
-          ``docker-compose`` not installed),
-      (c) handled by the caller — at least one probe succeeded.
-    """
-    present = [p for p in probes if p["path"] is not None]
-    if not present:
-        return (
-            "Neither `podman` nor `docker` found on PATH",
-            (
-                "Install Podman (recommended) or Docker:\n"
-                "  Linux:   sudo apt install podman podman-compose\n"
-                "  macOS:   brew install podman\n"
-                "  Verify:  podman compose version (or docker compose version)"
-            ),
-        )
-    # State (b): binary present but `compose` subcommand failed.
-    lines = [
-        f"{p['binary']} found at {p['path']} but `{p['binary']} compose version` failed"
-        + (f": {p['stderr']}" if p["stderr"] else "")
-        for p in present
-    ]
-    error = "Container runtime present but no compose provider:\n  " + "\n  ".join(lines)
-    has_podman = any(p["binary"] == "podman" for p in present)
-    has_docker = any(p["binary"] == "docker" for p in present)
-    remediation_lines = ["Install a compose provider for your runtime:"]
-    if has_podman:
-        remediation_lines.append(
-            "  podman: sudo apt install podman-compose  (or: pip install podman-compose)"
-        )
-    if has_docker:
-        remediation_lines.append(
-            "  docker: sudo apt install docker-compose-plugin  (or: docker-compose)"
-        )
-    remediation_lines.append("Then verify: podman compose version (or docker compose version)")
-    return error, "\n".join(remediation_lines)
-
-
 def _check_git_present() -> dict[str, Any]:
     """Container install clones the agentalloy repo into a cache dir when the
     user runs setup without a local checkout (the Containerfile build context
@@ -625,66 +510,226 @@ def _check_git_present() -> dict[str, Any]:
     )
 
 
-def _check_compose_binary() -> dict[str, Any]:
-    t0 = time.monotonic()
-    label, binary_path, probes = _probe_compose_runtime()
-    if label is not None:
-        return _check(
-            "compose_binary",
-            passed=True,
-            started=t0,
-            detail=f"{label} at {binary_path}",
-        )
-    error, remediation = _compose_failure_message(probes)
-    return _check(
-        "compose_binary",
-        passed=False,
-        started=t0,
-        error=error,
-        remediation=remediation,
-    )
+# ---------------------------------------------------------------------------
+# Container-phase checks
+# ---------------------------------------------------------------------------
 
 
-def _check_compose_file_present(compose_file: str | None) -> dict[str, Any]:
+def _check_runtime_binary(runtime: str | None) -> dict[str, Any]:
+    """Check that a container runtime (podman or docker) is available.
+
+    Parameters
+    ----------
+    runtime : str | None
+        The runtime binary name (e.g. ``"podman"`` or ``"docker"``),
+        or ``None`` if neither was detected.
+
+    Returns
+    -------
+    dict
+        Check result with ``passed``, ``detail``/``error``, and ``remediation``.
+    """
     t0 = time.monotonic()
-    if compose_file is None:
+    if runtime is None:
         return _check(
-            "compose_file_present",
+            "runtime_binary",
             passed=False,
             started=t0,
-            error="No compose file specified",
-            remediation="Pass --compose-file <path> or select a compose file interactively.",
+            error="Neither `podman` nor `docker` found on PATH",
+            remediation=(
+                "Install Podman (recommended) or Docker:\n"
+                "  Linux:   sudo apt install podman\n"
+                "  macOS:   brew install podman\n"
+                "  Verify:  podman --version"
+            ),
         )
-    fp = Path(compose_file)
-    if fp.exists():
-        return _check(
-            "compose_file_present",
-            passed=True,
-            started=t0,
-            detail=f"compose file at {fp}",
-        )
+    binary = shutil.which(runtime)
     return _check(
-        "compose_file_present",
-        passed=False,
+        "runtime_binary",
+        passed=True,
         started=t0,
-        error=f"Compose file not found: {fp}",
-        remediation="Ensure the compose YAML file exists at the specified path.",
+        detail=f"{runtime} at {binary}",
     )
 
 
-def _check_image_build_deps(compose_file: str | None) -> dict[str, Any]:
-    """Check that a Containerfile exists next to the compose file."""
+def _check_build_context(build_context: str | None) -> dict[str, Any]:
+    """Verify the build context directory has required assets.
+
+    Checks for: Containerfile, pyproject.toml, uv.lock.
+
+    Parameters
+    ----------
+    build_context : str | None
+        Path to the build context directory.
+
+    Returns
+    -------
+    dict
+        Check result.
+    """
     t0 = time.monotonic()
-    if compose_file is None:
+    if not build_context:
+        return _check(
+            "build_context",
+            passed=False,
+            started=t0,
+            error="No build context specified",
+            remediation="Pass --build-context <path> to specify the directory containing Containerfile, pyproject.toml, and uv.lock.",
+        )
+    ctx = Path(build_context)
+    if not ctx.exists():
+        return _check(
+            "build_context",
+            passed=False,
+            started=t0,
+            error=f"Build context not found: {ctx}",
+            remediation="Ensure the build context directory exists.",
+        )
+
+    missing: list[str] = []
+    for name in ("Containerfile", "pyproject.toml", "uv.lock"):
+        if not (ctx / name).exists():
+            missing.append(name)
+
+    if missing:
+        return _check(
+            "build_context",
+            passed=False,
+            started=t0,
+            error=f"Missing assets in {ctx}: {', '.join(missing)}",
+            remediation=f"Place the missing files in {ctx} (Containerfile, pyproject.toml, uv.lock).",
+        )
+
+    return _check(
+        "build_context",
+        passed=True,
+        started=t0,
+        detail=f"Containerfile, pyproject.toml, uv.lock found in {ctx}",
+    )
+
+
+def _check_name_conflicts(runtime: str) -> dict[str, Any]:
+    """Check for an existing ``agentalloy`` container.
+
+    Parameters
+    ----------
+    runtime : str
+        Container runtime binary (e.g. ``"podman"`` or ``"docker"``).
+
+    Returns
+    -------
+    dict
+        Check result. Fails if a container named ``agentalloy`` is found.
+    """
+    t0 = time.monotonic()
+    try:
+        result = subprocess.run(
+            [runtime, "ps", "--all", "--filter", "name=agentalloy", "--format", "{{.ID}}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        container_id = (result.stdout or "").strip()
+        if container_id:
+            return _check(
+                "name_conflicts",
+                passed=False,
+                started=t0,
+                error=f"Container 'agentalloy' already exists (id={container_id})",
+                remediation=(
+                    "Stop and remove the existing container:\n"
+                    f"  {runtime} rm -f agentalloy\n"
+                    "Then re-run preflight."
+                ),
+            )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return _check(
+            "name_conflicts",
+            passed=False,
+            started=t0,
+            severity="warn",
+            error=f"Failed to check for existing container: {exc}",
+        )
+
+    return _check(
+        "name_conflicts",
+        passed=True,
+        started=t0,
+        detail="No existing 'agentalloy' container found",
+    )
+
+
+def _check_volume_exists(runtime: str) -> dict[str, Any]:
+    """Check if the ``agentalloy-data`` volume exists.
+
+    This is informational — the volume will be created during setup if
+    it doesn't exist. Preflight passes regardless.
+
+    Parameters
+    ----------
+    runtime : str
+        Container runtime binary (e.g. ``"podman"`` or ``"docker"``).
+
+    Returns
+    -------
+    dict
+        Check result (always passes).
+    """
+    t0 = time.monotonic()
+    try:
+        result = subprocess.run(
+            [runtime, "volume", "inspect", "agentalloy-data"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return _check(
+                "volume_exists",
+                passed=True,
+                started=t0,
+                detail="Volume 'agentalloy-data' already exists",
+            )
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+
+    # Volume doesn't exist — that's fine, it will be created during setup.
+    return _check(
+        "volume_exists",
+        passed=True,
+        started=t0,
+        detail="Volume 'agentalloy-data' does not exist yet (will be created during setup)",
+    )
+
+
+def _check_image_build_deps(build_context: str | None) -> dict[str, Any]:
+    """Check that a Containerfile exists in the build context.
+
+    Unlike the old compose-based check, this only looks for Containerfile
+    (no Dockerfile fallback) because the container runtime module always
+    builds with ``-f Containerfile``.
+
+    Parameters
+    ----------
+    build_context : str | None
+        Path to the build context directory, or None/empty.
+
+    Returns
+    -------
+    dict
+        Check result.
+    """
+    t0 = time.monotonic()
+    if not build_context:
         return _check(
             "image_build_deps",
             passed=True,
             started=t0,
             severity="warn",
-            detail="No compose file specified — skipping Containerfile check",
+            detail="No build context specified — skipping Containerfile check",
         )
-    compose_dir = Path(compose_file).parent
-    containerfile = compose_dir / "Containerfile"
+    ctx = Path(build_context)
+    containerfile = ctx / "Containerfile"
     if containerfile.exists():
         return _check(
             "image_build_deps",
@@ -692,21 +737,12 @@ def _check_image_build_deps(compose_file: str | None) -> dict[str, Any]:
             started=t0,
             detail=f"Containerfile at {containerfile}",
         )
-    # Also check Dockerfile as fallback
-    dockerfile = compose_dir / "Dockerfile"
-    if dockerfile.exists():
-        return _check(
-            "image_build_deps",
-            passed=True,
-            started=t0,
-            detail=f"Dockerfile at {dockerfile}",
-        )
     return _check(
         "image_build_deps",
         passed=False,
         started=t0,
-        error=f"No Containerfile or Dockerfile found in {compose_dir}",
-        remediation="Place a Containerfile (or Dockerfile) in the same directory as your compose YAML.",
+        error=f"No Containerfile found in {ctx}",
+        remediation="Place a Containerfile in the build context directory.",
     )
 
 
@@ -732,7 +768,8 @@ def run_preflight(
     phase: str = "early",
     runner: str | None = None,
     port: int = _DEFAULT_PORT,
-    compose_file: str | None = None,
+    build_context: str | None = None,
+    runtime: str | None = None,
 ) -> dict[str, Any]:
     if phase not in _PHASES:
         raise ValueError(f"invalid phase {phase!r}; must be one of {_PHASES}")
@@ -748,11 +785,20 @@ def run_preflight(
         checks.append(_check_network_reachable())
         checks.append(_check_port_free(port))
     elif phase == "container":
-        checks.append(_check_compose_binary())
+        # Detect runtime if not provided
+        if runtime is None:
+            for candidate in ("podman", "docker"):
+                if shutil.which(candidate) is not None:
+                    runtime = candidate
+                    break
+
+        checks.append(_check_runtime_binary(runtime))
         checks.append(_check_git_present())
-        checks.append(_check_compose_file_present(compose_file))
+        checks.append(_check_build_context(build_context))
+        checks.append(_check_name_conflicts(runtime or "podman"))
+        checks.append(_check_volume_exists(runtime or "podman"))
         checks.append(_check_port_free(port))
-        checks.append(_check_image_build_deps(compose_file))
+        checks.append(_check_image_build_deps(build_context))
     else:  # runner
         chosen = runner or _runner_from_models_output()
         if chosen is None:
@@ -854,9 +900,9 @@ def add_parser(
         help=f"Port to test for availability (default: {_DEFAULT_PORT}).",
     )
     p.add_argument(
-        "--compose-file",
+        "--build-context",
         default=None,
-        help="Container phase: path to the compose YAML file.",
+        help="Container phase: path to the build context directory (containing Containerfile, pyproject.toml, uv.lock).",
     )
     add_json_flag(p)
     p.set_defaults(func=_run)
@@ -883,7 +929,8 @@ def _run(args: argparse.Namespace) -> int:
         phase=args.phase,
         runner=args.runner,
         port=args.port,
-        compose_file=getattr(args, "compose_file", None),
+        build_context=getattr(args, "build_context", None),
+        runtime=None,
     )
     install_state.save_output_file(result, f"preflight-{args.phase}.json")
     write_result(result, args, human_fn=_render_human)

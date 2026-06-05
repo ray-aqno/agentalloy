@@ -51,15 +51,11 @@ def _which_none() -> WhichSideEffect:
 class TestContainerUninstall:
     """Test container-specific uninstall logic."""
 
-    def test_compose_down_on_container_deployment(self, tmp_path: Path):
-        """State with deployment='container' runs compose down -v."""
-        compose_file = tmp_path / "compose.yaml"
-        compose_file.touch()
-
+    def test_container_stop_and_rm_on_container_deployment(self, tmp_path: Path):
+        """State with deployment='container' stops and removes the container."""
         state: dict[str, Any] = {
             "deployment": "container",
-            "compose_binary": "podman compose",
-            "compose_file": str(compose_file),
+            "runtime_binary": "podman",
         }
         warnings: list[str] = []
 
@@ -69,29 +65,28 @@ class TestContainerUninstall:
         with patch("subprocess.run", return_value=mock_result) as mock_run:
             actions = _stop_container_stack(state, warnings)
 
-        # Should call subprocess with podman compose down
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args[0][0]
-        assert call_args[0] == "podman"
-        assert call_args[1] == "compose"
-        assert call_args[2] == "-f"
-        assert call_args[3] == str(compose_file)
-        assert call_args[4] == "down"
-        assert call_args[5] == "-v"
+        # Should call subprocess twice: stop, then rm
+        assert mock_run.call_count == 2
+        stop_args = mock_run.call_args_list[0][0][0]
+        assert stop_args[0] == "podman"
+        assert stop_args[1] == "stop"
+        assert stop_args[2] == "agentalloy"
+        rm_args = mock_run.call_args_list[1][0][0]
+        assert rm_args[0] == "podman"
+        assert rm_args[1] == "rm"
+        assert rm_args[2] == "-f"
+        assert rm_args[3] == "agentalloy"
 
-        assert len(actions) == 1
-        assert actions[0]["action"] == "compose_down"
+        assert len(actions) == 2
+        assert actions[0]["action"] == "container_stopped"
+        assert actions[1]["action"] == "container_removed"
         assert not warnings
 
-    def test_compose_down_docker(self, tmp_path: Path):
-        """Docker compose variant works identically."""
-        compose_file = tmp_path / "compose.yaml"
-        compose_file.touch()
-
+    def test_container_stop_and_rm_docker(self, tmp_path: Path):
+        """Docker container variant works identically."""
         state: dict[str, Any] = {
             "deployment": "container",
-            "compose_binary": "docker compose",
-            "compose_file": str(compose_file),
+            "runtime_binary": "docker",
         }
         warnings: list[str] = []
 
@@ -101,12 +96,34 @@ class TestContainerUninstall:
         with patch("subprocess.run", return_value=mock_result) as mock_run:
             actions = _stop_container_stack(state, warnings)
 
-        call_args = mock_run.call_args[0][0]
-        assert call_args[0] == "docker"
-        assert actions[0]["action"] == "compose_down"
+        stop_args = mock_run.call_args_list[0][0][0]
+        assert stop_args[0] == "docker"
+        rm_args = mock_run.call_args_list[1][0][0]
+        assert rm_args[0] == "docker"
+        assert actions[0]["action"] == "container_stopped"
+        assert actions[1]["action"] == "container_removed"
+
+    def test_container_stop_and_rm_custom_name(self, tmp_path: Path):
+        """Custom container_name from state is used."""
+        state: dict[str, Any] = {
+            "deployment": "container",
+            "runtime_binary": "podman",
+            "container_name": "my-agentalloy",
+        }
+        warnings: list[str] = []
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            actions = _stop_container_stack(state, warnings)
+
+        stop_args = mock_run.call_args_list[0][0][0]
+        assert stop_args[2] == "my-agentalloy"
+        assert len(actions) == 2
 
     def test_compose_down_skipped_native(self):
-        """Native deployment does NOT run compose down."""
+        """Native deployment does NOT stop containers."""
         state: dict[str, Any] = {
             "deployment": "native",
         }
@@ -119,123 +136,63 @@ class TestContainerUninstall:
         assert actions == []
 
     def test_compose_down_skipped_no_deployment(self):
-        """State with no deployment field skips compose down."""
+        """State with no deployment field skips container teardown."""
         state: dict[str, Any] = {}
         warnings: list[str] = []
         actions = _stop_container_stack(state, warnings)
         assert actions == []
 
-    def test_compose_down_missing_binary_warns(self, tmp_path: Path):
-        """Binary not found adds warning but continues."""
-        compose_file = tmp_path / "compose.yaml"
-        compose_file.touch()
-
+    def test_container_stop_missing_runtime_warns(self, tmp_path: Path):
+        """OSError on stop and rm adds warnings for both."""
         state: dict[str, Any] = {
             "deployment": "container",
-            "compose_binary": "podman compose",
-            "compose_file": str(compose_file),
+            "runtime_binary": "podman",
         }
         warnings: list[str] = []
 
         with patch("subprocess.run", side_effect=OSError("No such file: podman")):
             actions = _stop_container_stack(state, warnings)
 
-        assert len(warnings) == 1
+        # Both stop and rm fail
+        assert len(warnings) == 2
         assert "binary not found" in warnings[0].lower()
-        assert actions[0]["action"] == "compose_down_skipped"
+        assert "binary not found" in warnings[1].lower()
+        assert actions[0]["action"] == "container_stop_skipped"
+        assert actions[1]["action"] == "container_rm_skipped"
 
-    def test_compose_down_radeon_fallback_to_compose_yaml(self, tmp_path: Path):
-        """Existing radeon-container installs migrate cleanly when compose.radeon.yaml is gone.
-
-        Pre-simplification, install-state.json recorded `compose.radeon.yaml`.
-        After it was deleted, uninstall must still be able to bring the stack
-        down — it falls back to compose.yaml in the same directory and notes
-        the migration in warnings.
-        """
-        # compose.radeon.yaml in state is DELETED; compose.yaml lives next to it.
-        radeon_path = tmp_path / "compose.radeon.yaml"
-        compose_yaml = tmp_path / "compose.yaml"
-        compose_yaml.touch()  # only the new file exists on disk
-
+    def test_container_stop_none_in_state_warns(self):
+        """runtime_binary is None (old/corrupt state)."""
         state: dict[str, Any] = {
             "deployment": "container",
-            "compose_binary": "podman compose",
-            "compose_binary_path": "/usr/bin/podman",
-            "compose_file": str(radeon_path),
-        }
-        warnings: list[str] = []
-
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stdout = ""
-        mock_result.stderr = ""
-
-        with patch("subprocess.run", return_value=mock_result) as mock_run:
-            actions = _stop_container_stack(state, warnings)
-
-        # Migration warning fired with the right wording
-        assert any("retired" in w.lower() or "falling back" in w.lower() for w in warnings), (
-            f"expected migration warning, got: {warnings}"
-        )
-        # compose down was invoked against compose.yaml, not the missing radeon file
-        mock_run.assert_called_once()
-        argv = mock_run.call_args[0][0]
-        assert str(compose_yaml) in argv
-        assert str(radeon_path) not in argv
-        # And the action succeeded
-        assert actions
-        assert actions[0]["action"] != "compose_down_skipped"
-
-    def test_compose_down_missing_file_warns(self, tmp_path: Path):
-        """Compose file in state points to non-existent file."""
-        state: dict[str, Any] = {
-            "deployment": "container",
-            "compose_binary": "podman compose",
-            "compose_file": str(tmp_path / "nonexistent.yaml"),
+            "runtime_binary": None,
         }
         warnings: list[str] = []
         actions = _stop_container_stack(state, warnings)
 
         assert len(warnings) == 1
-        assert "missing" in warnings[0].lower() or "not found" in warnings[0].lower()
+        assert "runtime_binary" in warnings[0].lower()
         assert actions == []
 
-    def test_compose_down_none_in_state_warns(self):
-        """compose_file is None (old/corrupt state)."""
+    def test_container_stop_missing_runtime_label_warns(self):
+        """runtime_binary is missing in state."""
         state: dict[str, Any] = {
             "deployment": "container",
-            "compose_binary": "podman compose",
-            "compose_file": None,
         }
         warnings: list[str] = []
         actions = _stop_container_stack(state, warnings)
 
         assert len(warnings) == 1
-        assert "None" in warnings[0] or "compose_file" in warnings[0].lower()
-        assert actions == []
-
-    def test_compose_down_missing_binary_label_warns(self):
-        """compose_binary is missing in state."""
-        state: dict[str, Any] = {
-            "deployment": "container",
-            "compose_file": "/some/path/compose.yaml",
-        }
-        warnings: list[str] = []
-        actions = _stop_container_stack(state, warnings)
-
-        assert len(warnings) == 1
-        assert "compose_binary" in warnings[0].lower()
+        assert "runtime_binary" in warnings[0].lower()
         assert actions == []
 
     def test_remove_compose_volumes_runs_volume_rm_per_named_volume(self):
-        """`compose down -v` doesn't remove named volumes — so a separate
-        `volume rm -f` call must run for each one declared in compose.yaml.
+        """`volume rm -f` runs for each named volume declared in compose.yaml.
         Without this, fresh reinstalls silently reuse the prior corpus +
         ollama model cache.
         """
         state: dict[str, Any] = {
             "deployment": "container",
-            "compose_binary": "podman compose",
+            "runtime_binary": "podman",
         }
         warnings: list[str] = []
         mock_result = MagicMock()
@@ -273,7 +230,7 @@ class TestContainerUninstall:
         ("not found") error strings are recognized."""
         state: dict[str, Any] = {
             "deployment": "container",
-            "compose_binary": "docker compose",
+            "runtime_binary": "docker",
         }
         warnings: list[str] = []
 
@@ -292,7 +249,7 @@ class TestContainerUninstall:
     def test_remove_compose_volumes_warns_on_unresolved_binary(self):
         """When state doesn't have enough info to resolve the runtime
         binary, emit a manual-cleanup hint instead of silently no-op'ing."""
-        state: dict[str, Any] = {"deployment": "container"}  # no compose_binary
+        state: dict[str, Any] = {"deployment": "container"}  # no runtime_binary
         warnings: list[str] = []
         with patch("subprocess.run") as mock_run:
             actions = _remove_compose_volumes(state, warnings)
@@ -302,15 +259,11 @@ class TestContainerUninstall:
         assert "agentalloy-data" in warnings[0]
         assert "agentalloy-ollama-models" in warnings[0]
 
-    def test_compose_down_invalid_label_warns(self, tmp_path: Path):
-        """Invalid compose_binary label (no space) is rejected."""
-        compose_file = tmp_path / "compose.yaml"
-        compose_file.touch()
-
+    def test_container_stop_invalid_label_warns(self, tmp_path: Path):
+        """Empty runtime_binary label is rejected."""
         state: dict[str, Any] = {
             "deployment": "container",
-            "compose_binary": "podman",  # missing "compose" part
-            "compose_file": str(compose_file),
+            "runtime_binary": "  ",  # whitespace-only is effectively empty
         }
         warnings: list[str] = []
         _actions = _stop_container_stack(state, warnings)
@@ -318,38 +271,33 @@ class TestContainerUninstall:
         assert len(warnings) == 1
         assert "Invalid" in warnings[0] or "invalid" in warnings[0].lower()
 
-    def test_compose_down_failure_warns(self, tmp_path: Path):
-        """subprocess returns non-zero, warning added, action recorded."""
-        compose_file = tmp_path / "compose.yaml"
-        compose_file.touch()
-
+    def test_container_stop_failure_warns(self, tmp_path: Path):
+        """subprocess returns non-zero on stop and rm, warnings added."""
         state: dict[str, Any] = {
             "deployment": "container",
-            "compose_binary": "podman compose",
-            "compose_file": str(compose_file),
+            "runtime_binary": "podman",
         }
         warnings: list[str] = []
 
         mock_result = MagicMock()
         mock_result.returncode = 1
-        mock_result.stderr = "Error: network not found"
+        mock_result.stderr = "Error: container is running"
 
         with patch("subprocess.run", return_value=mock_result):
             actions = _stop_container_stack(state, warnings)
 
-        assert len(warnings) == 1
+        # Both stop and rm fail
+        assert len(warnings) == 2
         assert "failed" in warnings[0].lower()
-        assert actions[0]["action"] == "compose_down_failed"
+        assert "failed" in warnings[1].lower()
+        assert actions[0]["action"] == "container_stop_failed"
+        assert actions[1]["action"] == "container_rm_failed"
 
-    def test_compose_down_timeout(self, tmp_path: Path):
-        """subprocess timeout adds warning and records timeout action."""
-        compose_file = tmp_path / "compose.yaml"
-        compose_file.touch()
-
+    def test_container_stop_timeout(self, tmp_path: Path):
+        """subprocess timeout on stop and rm adds warnings."""
         state: dict[str, Any] = {
             "deployment": "container",
-            "compose_binary": "podman compose",
-            "compose_file": str(compose_file),
+            "runtime_binary": "podman",
         }
         warnings: list[str] = []
 
@@ -358,9 +306,12 @@ class TestContainerUninstall:
         ):
             actions = _stop_container_stack(state, warnings)
 
-        assert len(warnings) == 1
+        # Both stop and rm timeout
+        assert len(warnings) == 2
         assert "timed out" in warnings[0].lower()
-        assert actions[0]["action"] == "compose_down_timeout"
+        assert "timed out" in warnings[1].lower()
+        assert actions[0]["action"] == "container_stop_timeout"
+        assert actions[1]["action"] == "container_rm_timeout"
 
 
 class TestSentinelHelpers:
