@@ -23,6 +23,67 @@ from eval.tasks import TASKS
 
 AGENTALLOY_URL = os.environ.get("AGENTALLOY_URL", "http://localhost:47950")
 
+# Phase-scoped skills extracted from pack metadata.
+# Maps skill_id -> set of phases it applies to.
+_phase_scope_cache: dict[str, set[str]] | None = None
+
+
+def _load_phase_scope() -> dict[str, set[str]]:
+    global _phase_scope_cache
+    if _phase_scope_cache is not None:
+        return _phase_scope_cache
+    import yaml
+
+    scope: dict[str, set[str]] = {}
+    # Search pack YAML files for phase_scope metadata
+    pack_dirs = [
+        Path(__file__).resolve().parents[2] / "src" / "agentalloy" / "_packs",
+        Path(__file__).resolve().parents[2] / "src" / "agentalloy" / "packs",
+    ]
+    for base in pack_dirs:
+        if not base.exists():
+            continue
+        for yaml_file in base.rglob("*.yaml"):
+            try:
+                with open(yaml_file) as f:
+                    data = yaml.safe_load(f)
+                if not isinstance(data, dict):
+                    continue
+                skill_id = data.get("skill_id", yaml_file.stem)
+                phases = data.get("phase_scope")
+                if phases and isinstance(phases, list):
+                    scope[skill_id] = set(phases)
+            except Exception:
+                continue
+    _phase_scope_cache = scope
+    return scope
+
+
+def _check_phase_contamination(rows: list[RetrievalResult]) -> int:
+    """Count queries that returned skills not applicable to the query phase."""
+    scope = _load_phase_scope()
+    if not scope:
+        # No metadata available — fall back to heuristic
+        # Skills with "review", "qa", "test" in name are QA-phase
+        qa_keywords = {"review", "qa", "test", "browser", "code-review", "testing"}
+        contamination = 0
+        for row in rows:
+            if row.phase not in ("qa", "review"):
+                for skill in row.retrieved:
+                    if any(kw in skill.lower() for kw in qa_keywords):
+                        contamination += 1
+                        break
+        return contamination
+
+    contamination = 0
+    for row in rows:
+        for skill in row.retrieved:
+            if skill in scope:
+                if row.phase not in scope[skill]:
+                    contamination += 1
+                    break
+    return contamination
+
 
 @dataclass(frozen=True)
 class RetrievalResult:
@@ -104,12 +165,11 @@ def run(
     macro_precision = sum(r.precision for r in rows) / len(rows) if rows else 0.0
     mean_mrr = mrr_sum / len(rows) if rows else 0.0
 
-    # Phase contamination: check if any query returned skills from
-    # a different phase's gold_skills. This requires knowing which skills
-    # are phase-specific. For now, a simple heuristic: if a build-phase
-    # query retrieved skills whose names suggest QA-phase content.
-    # TODO: implement phase contamination check using phase metadata
-    contamination_count = 0
+    # Phase contamination: check if any query returned skills whose
+    # phase_scope does not include the query phase. We use the skill
+    # metadata from the packs directory if available; otherwise fall
+    # back to a keyword heuristic.
+    contamination_count = _check_phase_contamination(rows)
 
     summary = {
         "label": label,

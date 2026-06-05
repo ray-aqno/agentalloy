@@ -164,7 +164,8 @@ def run(
 
     print()
     print("=== Cross-Model Summary ===")
-    for name, stats in summary["per_model"].items():
+    per_model: dict[str, dict[str, float]] = summary.get("per_model", {})  # type: ignore[assignment]
+    for name, stats in per_model.items():
         print(f"  {name:10s} mean_score={stats['mean_score']:.3f}")
     print(f"wrote: {out_path}")
 
