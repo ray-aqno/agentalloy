@@ -89,7 +89,7 @@ class TestV2ToV3Migration:
             assert st["schema_version"] == 4
             assert st["deployment"] is None
             assert st["runtime_binary"] is None
-            assert st["image_tag"] is None
+            assert st["image_tag"] == "agentalloy:local"
             assert st["container_name"] is None
             assert st["data_volume"] is None
         finally:
@@ -146,7 +146,7 @@ class TestV2ToV3Migration:
             # New fields added
             assert st["deployment"] is None
             assert st["runtime_binary"] is None
-            assert st["image_tag"] is None
+            assert st["image_tag"] == "agentalloy:local"
             assert st["container_name"] is None
             assert st["data_volume"] is None
         finally:

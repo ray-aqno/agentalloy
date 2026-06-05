@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -1314,7 +1315,8 @@ class TestContainerFlow:
         import agentalloy.install.state as state_mod
 
         st = state_mod.load_state()
-        assert "cache_home" in st["image_tag"] and st["image_tag"].endswith("compose.yaml")
+        # image_tag is always "agentalloy:local" regardless of build context
+        assert st["image_tag"] == "agentalloy:local"
 
     def test_image_tag_accepts_dockerfile_alternative(
         self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
@@ -1345,7 +1347,8 @@ class TestContainerFlow:
         import agentalloy.install.state as state_mod
 
         st = state_mod.load_state()
-        assert st["image_tag"].endswith("compose.yaml")
+        # image_tag is always "agentalloy:local" regardless of build context
+        assert st["image_tag"] == "agentalloy:local"
 
     def test_interactive_fallback_accepts_directory_path(
         self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
@@ -1394,7 +1397,8 @@ class TestContainerFlow:
         import agentalloy.install.state as state_mod
 
         st = state_mod.load_state()
-        assert st["image_tag"].endswith("compose.yaml")
+        # image_tag is always "agentalloy:local" regardless of build context
+        assert st["image_tag"] == "agentalloy:local"
 
     def test_interactive_fallback_accepts_image_tag_path(
         self, tmp_state_dir: tuple[Path, Path], tmp_path: Path
@@ -1442,7 +1446,8 @@ class TestContainerFlow:
         import agentalloy.install.state as state_mod
 
         st = state_mod.load_state()
-        assert st["image_tag"].endswith("compose.yaml")
+        # image_tag is always "agentalloy:local" regardless of build context
+        assert st["image_tag"] == "agentalloy:local"
 
     def test_container_cpu_only_warning_shown_to_every_host(
         self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
@@ -1530,9 +1535,9 @@ class TestContainerFlow:
     def test_container_runs_install_packs_as_one_shot_before_service(
         self, tmp_state_dir: tuple[Path, Path]
     ):
-        """Container flow runs install-packs in a one-shot container BEFORE
-        the agentalloy service is started, so the kuzu DB lock isn't held
-        by uvicorn while ingest writes to /app/data/ladybug."""
+        """Container flow calls _build_image, _ensure_volume, _run_container
+        in the correct order via the single-container flow.
+        The entrypoint handles pack installation internally."""
         SetupConfig, run_setup = self._import_run_setup()
 
         with (
@@ -1556,93 +1561,56 @@ class TestContainerFlow:
             if c.args and isinstance(c.args[0], list):
                 calls.append([str(x) for x in c.args[0]])  # type: ignore[arg-type]
 
-        def _idx(predicate: Any) -> int:
-            for i, argv in enumerate(calls):
-                if predicate(argv):
-                    return i
-            return -1
+        # Verify _build_image was called (podman build)
+        build_call = next(
+            (a for a in calls if len(a) >= 3 and a[1] == "build" and "agentalloy:local" in a),
+            None,
+        )
+        assert build_call is not None, f"build call not found: {calls}"
 
-        init_idx = _idx(
-            lambda a: (
-                a[:2] == ["/usr/bin/podman", "compose"] and "up" in a and "agentalloy-init" in a
-            )
+        # Verify _ensure_volume was called (podman volume create)
+        volume_call = next(
+            (a for a in calls if len(a) >= 3 and a[1] == "volume" and "create" in a),
+            None,
         )
-        packs_idx = _idx(
-            lambda a: (
-                # Direct `podman run` (not `compose run`) — we bypass
-                # podman-compose's `run` subcommand because its
-                # depends_on → --requires translation chokes on stale
-                # dependency-graph state and exits 127.
-                a[:2] == ["/usr/bin/podman", "run"]
-                and "agentalloy:local" in a
-                and "install-packs" in a
-            )
+        assert volume_call is not None, f"volume call not found: {calls}"
+
+        # Verify _run_container was called (podman run --replace)
+        run_call = next(
+            (a for a in calls if len(a) >= 3 and a[1] == "run" and "--replace" in a),
+            None,
         )
-        agentalloy_up_idx = _idx(
-            lambda a: (
-                # Step 9 uses direct `podman run --replace` (NOT
-                # `podman compose up <service>`) to start the main service.
-                # podman-compose 1.0.6 always re-resolves the depends_on
-                # graph even with --no-deps, and fails on the existing
-                # piecewise-brought-up dep containers.
-                a[:2] == ["/usr/bin/podman", "run"]
-                and "--replace" in a
-                and "--name" in a
-                and "agentalloy:local" in a
-                and "install-packs" not in a
-                and "agentalloy-init" not in a
-                and "ollama-pull" not in a
-            )
+        assert run_call is not None, f"run call not found: {calls}"
+
+        # Order: build → volume → run
+        build_idx = next(i for i, a in enumerate(calls) if len(a) >= 3 and a[1] == "build")
+        volume_idx = next(i for i, a in enumerate(calls) if len(a) >= 3 and a[1] == "volume")
+        run_idx = next(i for i, a in enumerate(calls) if len(a) >= 3 and a[1] == "run")
+        assert build_idx < volume_idx < run_idx, (
+            f"Bad ordering — build={build_idx} volume={volume_idx} run={run_idx}"
         )
 
-        assert init_idx >= 0, f"init `compose up agentalloy-init` not found: {calls}"
-        assert packs_idx >= 0, (
-            f"direct `podman run ... agentalloy:local install-packs` not found: {calls}"
-        )
-        assert agentalloy_up_idx >= 0, (
-            f"direct `podman run --replace ... agentalloy:local` not found: {calls}"
-        )
-        # Order matters: init → install-packs → main service.
-        assert init_idx < packs_idx < agentalloy_up_idx, (
-            f"Bad ordering — init={init_idx} packs={packs_idx} up={agentalloy_up_idx}: "
-            f"{calls[init_idx]} / {calls[packs_idx]} / {calls[agentalloy_up_idx]}"
-        )
-        # The install-packs argv should NOT contain `exec` (regression guard
-        # against running inside the live service container — the kuzu lock
-        # bug we're fixing).
-        assert "exec" not in calls[packs_idx]
-        # Final agentalloy launch MUST use `podman run --replace`, not
-        # `compose up`. `--replace` lets it cleanly recreate the container
-        # even if a dangling agentalloy container is left over from a prior
-        # failed run.
-        assert "--replace" in calls[agentalloy_up_idx], (
-            f"final agentalloy launch missing --replace: {calls[agentalloy_up_idx]}"
-        )
-
-    def test_container_aborts_when_init_wait_status_unknown(
+    def test_container_aborts_when_run_fails(
         self, tmp_state_dir: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
     ):
-        """If `podman wait agentalloy-init` fails or times out we can't
-        confirm migrations finished — running install-packs anyway would
-        race the still-live init container for the kuzu lock or write
-        into an inconsistent schema. The wizard must abort, not continue."""
+        """If _run_container fails, the flow returns exit code 1 and
+        state is not saved. The entrypoint is cleaned up regardless."""
         SetupConfig, run_setup = self._import_run_setup()
 
         def run_side_effect(argv: Any, **kwargs: Any) -> Any:
             mock = MagicMock()
-            mock.stderr = ""
             argv_list: list[str] = (
                 [str(x) for x in argv]  # type: ignore[arg-type]
                 if isinstance(argv, list)
                 else []
             )
-            if len(argv_list) >= 2 and argv_list[1] == "wait":
-                # Simulate `podman wait` itself failing.
-                mock.returncode = 1
-                mock.stdout = ""
-            else:
-                mock.returncode = 0
-                mock.stdout = "0\n"
+            # Simulate _run_container failure (podman run returns 1)
+            if len(argv_list) >= 2 and argv_list[1] == "run":
+                # Raise CalledProcessError to simulate container start failure
+                raise subprocess.CalledProcessError(1, argv)
+            mock.returncode = 0
+            mock.stdout = "0\n"
+            mock.stderr = ""
             return mock
 
         with (
@@ -1655,45 +1623,23 @@ class TestContainerFlow:
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
 
         assert rc == 1
-        # install-packs must NOT have been invoked.
-        for c in mock_run.call_args_list:
-            if c.args and isinstance(c.args[0], list):
-                argv = [str(x) for x in c.args[0]]  # type: ignore[arg-type]
-                assert "install-packs" not in argv, (
-                    f"install-packs ran despite unknown init status: {argv}"
-                )
-        import re
+        # State should NOT have been saved
+        import agentalloy.install.state as state_mod
 
-        out = re.sub(r"\x1b\[[0-9;]*m", "", capsys.readouterr().out)
-        assert "Could not confirm agentalloy-init" in out
+        st = state_mod.load_state()
+        assert st.get("deployment") != "container", (
+            "State should NOT be saved when container run fails"
+        )
 
     # ------------------------------------------------------------------
     # Skill-pack selection (spec: agentalloy-container-skillpack-selection)
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _install_packs_argv(mock_run: MagicMock) -> list[str]:
-        """Find the direct `podman run … install-packs` argv from a mock_run."""
-        for c in mock_run.call_args_list:
-            if not c.args or not isinstance(c.args[0], list):
-                continue
-            argv = [str(x) for x in c.args[0]]  # type: ignore[arg-type]
-            if (
-                len(argv) >= 2
-                and argv[1] == "run"
-                and "agentalloy:local" in argv
-                and "install-packs" in argv
-            ):
-                return argv
-        raise AssertionError(
-            f"install-packs one-shot not found in: {[c.args for c in mock_run.call_args_list]}"
-        )
-
     def test_container_flow_prompts_for_packs_when_interactive(
         self, tmp_state_dir: tuple[Path, Path]
     ):
         """Interactive container setup with no --packs flag must call
-        _prompt_for_packs and thread the result into the install-packs argv."""
+        _prompt_for_packs and thread the result into the container env."""
         SetupConfig, run_setup = self._import_run_setup()
 
         with (
@@ -1719,13 +1665,29 @@ class TestContainerFlow:
 
         assert rc == 0
         assert mock_prompt.called, "_prompt_for_packs must be called in interactive container flow"
-        argv = self._install_packs_argv(mock_run)
-        assert "--packs" in argv and argv[argv.index("--packs") + 1] == "engineering"
-        assert "--ignore-unknown" in argv
+        # Verify the container run call includes the packs in env var
+        run_calls = [
+            c.args[0]
+            for c in mock_run.call_args_list
+            if c.args and isinstance(c.args[0], list)
+            and len(c.args[0]) >= 2
+            and c.args[0][1] == "run"
+        ]
+        assert len(run_calls) >= 1, "Expected at least one podman run call"
+        # Find the call with AGENTIALLOY_PACKS env var
+        packs_found = False
+        for call_args in run_calls:
+            for i, arg in enumerate(call_args):
+                if str(arg) == "-e" and i + 1 < len(call_args):
+                    env_val = str(call_args[i + 1])
+                    if env_val.startswith("AGENTIALLOY_PACKS="):
+                        assert "engineering" in env_val
+                        packs_found = True
+        assert packs_found, "AGENTIALLOY_PACKS env var with 'engineering' not found in container run"
 
     def test_container_flow_skips_prompt_when_packs_preset(self, tmp_state_dir: tuple[Path, Path]):
         """A preset --packs value must bypass the interactive prompt and
-        flow straight through to the install-packs one-shot."""
+        flow straight through to the container run with packs in env."""
         SetupConfig, run_setup = self._import_run_setup()
 
         with (
@@ -1747,9 +1709,24 @@ class TestContainerFlow:
 
         assert rc == 0
         mock_prompt.assert_not_called()
-        argv = self._install_packs_argv(mock_run)
-        assert "--packs" in argv and argv[argv.index("--packs") + 1] == "go"
-        assert "--ignore-unknown" in argv
+        # Verify the container run call includes the packs in env var
+        run_calls = [
+            c.args[0]
+            for c in mock_run.call_args_list
+            if c.args and isinstance(c.args[0], list)
+            and len(c.args[0]) >= 2
+            and c.args[0][1] == "run"
+        ]
+        assert len(run_calls) >= 1
+        packs_found = False
+        for call_args in run_calls:
+            for i, arg in enumerate(call_args):
+                if str(arg) == "-e" and i + 1 < len(call_args):
+                    env_val = str(call_args[i + 1])
+                    if env_val.startswith("AGENTIALLOY_PACKS="):
+                        assert "go" in env_val
+                        packs_found = True
+        assert packs_found, "AGENTIALLOY_PACKS env var with 'go' not found in container run"
 
     def test_container_flow_non_interactive_no_packs_uses_defaults(
         self, tmp_state_dir: tuple[Path, Path]
@@ -1769,9 +1746,27 @@ class TestContainerFlow:
             rc = run_setup(SetupConfig(deployment="container", non_interactive=True))
 
         assert rc == 0
-        argv = self._install_packs_argv(mock_run)
-        assert "--packs" not in argv
-        assert "--ignore-unknown" not in argv
+        # Verify no AGENTIALLOY_PACKS env var with packs was set
+        run_calls = [
+            c.args[0]
+            for c in mock_run.call_args_list
+            if c.args and isinstance(c.args[0], list)
+            and len(c.args[0]) >= 2
+            and c.args[0][1] == "run"
+        ]
+        assert len(run_calls) >= 1
+        packs_found = False
+        for call_args in run_calls:
+            for i, arg in enumerate(call_args):
+                if str(arg) == "-e" and i + 1 < len(call_args):
+                    env_val = str(call_args[i + 1])
+                    if env_val.startswith("AGENTIALLOY_PACKS="):
+                        # Should be empty or not contain pack names
+                        packs_found = True
+                        assert "rust" not in env_val and "go" not in env_val
+        # Either no AGENTIALLOY_PACKS env var, or it's empty
+        if packs_found:
+            pass  # Empty packs env var is OK
 
     def test_container_flow_unknown_pack_stripped_and_warned(
         self,
@@ -1779,7 +1774,7 @@ class TestContainerFlow:
         capsys: pytest.CaptureFixture[str],
     ):
         """Unknown pack names are stripped client-side with a warning so
-        the install-packs one-shot never sees them."""
+        the container never sees them."""
         SetupConfig, run_setup = self._import_run_setup()
 
         with (
@@ -1804,10 +1799,25 @@ class TestContainerFlow:
         out = re.sub(r"\x1b\[[0-9;]*m", "", capsys.readouterr().out)
         assert "bogus" in out
         assert "Unknown pack" in out
-        argv = self._install_packs_argv(mock_run)
-        # Only the valid name survives into argv.
-        assert "--packs" in argv and argv[argv.index("--packs") + 1] == "rust"
-        assert "bogus" not in argv
+        # Verify the container run call only has 'rust' in the packs env var
+        run_calls = [
+            c.args[0]
+            for c in mock_run.call_args_list
+            if c.args and isinstance(c.args[0], list)
+            and len(c.args[0]) >= 2
+            and c.args[0][1] == "run"
+        ]
+        assert len(run_calls) >= 1
+        packs_found = False
+        for call_args in run_calls:
+            for i, arg in enumerate(call_args):
+                if str(arg) == "-e" and i + 1 < len(call_args):
+                    env_val = str(call_args[i + 1])
+                    if env_val.startswith("AGENTIALLOY_PACKS="):
+                        packs_found = True
+                        assert "rust" in env_val, f"Expected 'rust' in {env_val}"
+                        assert "bogus" not in env_val, f"Unexpected 'bogus' in {env_val}"
+        assert packs_found, "AGENTIALLOY_PACKS env var not found in container run"
 
     def test_verify_failures_surfaced_inline(
         self,

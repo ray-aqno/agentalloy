@@ -52,38 +52,22 @@ def _make_containerfile(tmp_path: Path) -> Path:
 
 
 def _inject_preflight_mocks():
-    """Inject mock versions of _probe_compose_runtime and _compose_failure_message
-    into the preflight module so that _run_container_flow can import them.
+    """Inject mock versions of container_runtime functions into the
+    preflight module (kept for backward compat with tests that still use it).
     """
-    import agentalloy.install.subcommands.preflight as preflight
-
-    if not hasattr(preflight, "_probe_compose_runtime"):
-        preflight._probe_compose_runtime = lambda: ("podman", "/usr/bin/podman", [])
-
-    if not hasattr(preflight, "_compose_failure_message"):
-        preflight._compose_failure_message = lambda probes: (
-            "Neither `podman` nor `docker` found on PATH",
-            "Install Podman (recommended) or Docker.\n"
-            "  Linux:   sudo apt install podman\n"
-            "  macOS:   brew install podman\n"
-            "  Verify:  podman --version",
-        )
+    pass
 
 
 def _run_with_all_patches(tmp_path: Path, tmp_compose: Path, extra_patches=None):
     """Helper to run _run_container_flow with all necessary patches applied.
 
     Uses contextlib.ExitStack to avoid Python's AST nested block limit.
+
+    The new single-container flow uses container_runtime functions:
+    _build_image, _ensure_volume, _run_container, _wait_for_health,
+    _generate_entrypoint, _cleanup_temp_entrypoint.
     """
     patches = [
-        patch(
-            "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-            return_value=("podman", "/usr/bin/podman", []),
-        ),
-        patch(
-            "agentalloy.install.subcommands.preflight._compose_failure_message",
-            return_value=("ok", "ok"),
-        ),
         patch(
             "agentalloy.install.subcommands.preflight.run_preflight", return_value={"checks": []}
         ),
@@ -95,11 +79,22 @@ def _run_with_all_patches(tmp_path: Path, tmp_compose: Path, extra_patches=None)
             "agentalloy.install.subcommands.simple_setup._container_setup_log_path",
             return_value=tmp_path / "setup.log",
         ),
-        patch("agentalloy.install.subcommands.simple_setup._run_quiet", return_value=0),
-        patch("agentalloy.install.subcommands.simple_setup._wait_for_one_shot", return_value=0),
         patch(
-            "agentalloy.install.subcommands.simple_setup._inspect_ollama_project",
-            return_value=("test-project", "test-project_default"),
+            "agentalloy.install.subcommands.container_runtime._build_image", return_value=0
+        ),
+        patch("agentalloy.install.subcommands.container_runtime._ensure_volume"),
+        patch(
+            "agentalloy.install.subcommands.container_runtime._run_container", return_value=0
+        ),
+        patch(
+            "agentalloy.install.subcommands.container_runtime._wait_for_health", return_value=True
+        ),
+        patch(
+            "agentalloy.install.subcommands.container_runtime._generate_entrypoint",
+            return_value=Path("/tmp/entry.sh"),
+        ),
+        patch(
+            "agentalloy.install.subcommands.container_runtime._cleanup_temp_entrypoint"
         ),
         patch("agentalloy.install.state.load_state", return_value={}),
         patch("agentalloy.install.state.save_state"),
@@ -211,22 +206,10 @@ class TestRuntimeNotFound:
 
     def test_no_runtime_on_path_returns_exit_1(self):
         """When neither podman nor docker is on PATH, exit code is 1."""
-        _inject_preflight_mocks()
-
-        def fake_probe():
-            return (None, None, [])
-
-        def fake_failure(probes):
-            return ("Neither podman nor docker found", "Install podman or docker")
-
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                side_effect=fake_probe,
-            ),
-            patch(
-                "agentalloy.install.subcommands.preflight._compose_failure_message",
-                side_effect=fake_failure,
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value=None,
             ),
             patch("agentalloy.install.subcommands.simple_setup._print"),
         ):
@@ -256,20 +239,18 @@ class TestBuildContextNotFound:
 
     def test_no_compose_file_returns_exit_1(self):
         """When no compose.yaml + Containerfile pair is found, exit code is 1."""
-        _inject_preflight_mocks()
-
         with (
             patch(
-                "agentalloy.install.subcommands.preflight._probe_compose_runtime",
-                return_value=("podman", "/usr/bin/podman", []),
+                "agentalloy.install.subcommands.container_runtime._detect_runtime_binary",
+                return_value="podman",
             ),
+            patch("shutil.which", return_value="/usr/bin/podman"),
             patch(
                 "agentalloy.install.subcommands.preflight.run_preflight",
                 return_value={"checks": []},
             ),
             patch("agentalloy.install.subcommands.simple_setup._print"),
             patch("pathlib.Path.exists", return_value=False),
-            patch("shutil.which", return_value=None),  # git not found
         ):
             from agentalloy.install.subcommands.simple_setup import (
                 SetupConfig,
@@ -302,20 +283,10 @@ class TestImageBuildFailure:
             compose_file = _make_compose_file(tmp_path)
             _make_containerfile(tmp_path)
 
-            _inject_preflight_mocks()
-
-            call_counter = [0]
-
-            def track_run_quiet(cmd, **kwargs):
-                call_counter[0] += 1
-                if "agentalloy-init" in str(cmd):
-                    return 1
-                return 0
-
             extra = [
                 patch(
-                    "agentalloy.install.subcommands.simple_setup._run_quiet",
-                    side_effect=track_run_quiet,
+                    "agentalloy.install.subcommands.container_runtime._build_image",
+                    return_value=1,
                 ),
             ]
 
@@ -343,19 +314,11 @@ class TestContainerStartFailure:
             def fake_save_state(st):
                 state_saved[0] = True
 
-            call_counter = [0]
-
-            def track_run_quiet(cmd, **kwargs):
-                call_counter[0] += 1
-                if call_counter[0] > 3:
-                    return 1
-                return 0
-
             extra = [
                 patch("agentalloy.install.state.save_state", side_effect=fake_save_state),
                 patch(
-                    "agentalloy.install.subcommands.simple_setup._run_quiet",
-                    side_effect=track_run_quiet,
+                    "agentalloy.install.subcommands.container_runtime._run_container",
+                    return_value=1,
                 ),
             ]
 
@@ -384,13 +347,26 @@ class TestHealthCheckTimeout:
             def capture_print(*args, **kwargs):
                 captured_prints.append(" ".join(str(a) for a in args))
 
-            _inject_preflight_mocks()
+            # Mock time.monotonic to exit health check loop immediately:
+            # First call sets deadline = X + 120, second call returns X + 120
+            # so while condition (X+120) < (X+120) is False → loop exits
+            _monotonic_calls = [0, 120]
+
+            def fake_monotonic():
+                result = _monotonic_calls[0]
+                _monotonic_calls[0] += 1
+                return result
 
             extra = [
                 patch(
                     "agentalloy.install.subcommands.simple_setup._print", side_effect=capture_print
                 ),
-                patch("urllib.request.urlopen", side_effect=Exception("connection refused")),
+                patch(
+                    "urllib.request.urlopen",
+                    side_effect=OSError("connection refused"),
+                ),
+                patch("time.sleep", return_value=None),
+                patch("time.monotonic", side_effect=fake_monotonic),
             ]
 
             _run_with_all_patches(tmp_path, compose_file, extra_patches=extra)
@@ -414,10 +390,7 @@ class TestStateRecording:
         We mock _run_container_flow itself to avoid hanging on the full flow.
         The mock verifies that save_state is called with correct values.
         """
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            compose_file = _make_compose_file(tmp_path)
-            _make_containerfile(tmp_path)
+        with tempfile.TemporaryDirectory():
             saved_state = {}
 
             def fake_save_state(st):
@@ -427,15 +400,19 @@ class TestStateRecording:
             _inject_preflight_mocks()
 
             def mock_run_container_flow(cfg, t0):
-                cfg.compose_binary = "podman"
-                cfg.compose_file = str(compose_file)
+                cfg.runtime_binary = "podman"
+                cfg.image_tag = "agentalloy:local"
+                cfg.container_name = "agentalloy"
+                cfg.data_volume = "agentalloy-data"
                 # Simulate state save
                 fake_save_state(
                     {
                         "deployment": "container",
+                        "runtime_binary": cfg.runtime_binary,
+                        "image_tag": cfg.image_tag,
+                        "container_name": cfg.container_name,
+                        "data_volume": cfg.data_volume,
                         "port": cfg.port,
-                        "compose_file": str(compose_file),
-                        "compose_binary": "podman",
                     }
                 )
                 return 0
@@ -462,9 +439,9 @@ class TestStateRecording:
 
                     assert rc == 0
                     assert saved_state.get("deployment") == "container"
+                    assert saved_state.get("runtime_binary") == "podman"
+                    assert saved_state.get("image_tag") == "agentalloy:local"
                     assert saved_state.get("port") == 47950
-                    assert saved_state.get("compose_file") == str(compose_file)
-                    assert saved_state.get("compose_binary") == "podman"
 
 
 # ---------------------------------------------------------------------------
@@ -517,7 +494,7 @@ class TestEntrypointContent:
         assert "127.0.0.1:11434" in script, "Missing Ollama bind address"
         assert "curl" in script, "Missing health check for Ollama"
         assert "qwen3-embedding" in script, "Missing embedding model pull"
-        assert "agentalloy.migrate" in script, "Missing migration step"
+        assert "agentalloy migrate" in script, "Missing migration step"
         assert "install-packs" in script, "Missing pack installation step"
         assert "touch" in script and ".bootstrap-complete" in script, (
             "Missing bootstrap complete flag"

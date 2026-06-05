@@ -467,7 +467,7 @@ class TestEntrypointBootstrapComplete:
         script = _build_entrypoint_script("")
         bootstrap_check = script.index(".bootstrap-complete")
         ollama_install = script.index("ollama.ai/install.sh")
-        uvicorn_start = script.index("exec uvicorn")
+        uvicorn_start = script.index("exec uv run uvicorn")
         assert bootstrap_check < ollama_install
         assert ollama_install < uvicorn_start
 
