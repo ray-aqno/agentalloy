@@ -1321,7 +1321,7 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
 
     last_pack: str | None = None
 
-    def _on_progress(evt: dict) -> None:
+    def _on_progress(evt: dict[str, Any]) -> None:
         nonlocal last_pack
         progress = evt.get("progress") or {}
         extra = evt.get("extra") or {}
@@ -1367,7 +1367,8 @@ def _run_container_flow(cfg: SetupConfig, t0: float) -> int:
     st["port"] = cfg.port
     # Persist bootstrap timing for diagnostics (only meaningful when readiness
     # actually returned ready; otherwise leave the completed_at unset).
-    from datetime import UTC, datetime as _dt  # noqa: PLC0415
+    from datetime import UTC  # noqa: PLC0415
+    from datetime import datetime as _dt
 
     if not st.get("bootstrap_started_at"):
         st["bootstrap_started_at"] = _dt.now(UTC).isoformat()
