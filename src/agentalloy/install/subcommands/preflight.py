@@ -475,41 +475,6 @@ def _check_fastflowlm_present() -> dict[str, Any]:
     )
 
 
-def _check_git_present() -> dict[str, Any]:
-    """Container install clones the agentalloy repo into a cache dir when the
-    user runs setup without a local checkout (the Containerfile build context
-    needs the full source tree). Surface a missing git here so the user knows
-    upfront, but only as a WARNING — if they already have a local checkout
-    (cwd or editable install), the auto-clone fallback never fires and git
-    isn't needed. The actual hard-fail happens in `_ensure_cached_repo` if
-    and only if the clone is actually needed.
-    """
-    t0 = time.monotonic()
-    git_path = shutil.which("git")
-    if git_path:
-        return _check(
-            "git_present",
-            passed=True,
-            started=t0,
-            detail=f"git at {git_path}",
-        )
-    return _check(
-        "git_present",
-        passed=False,
-        started=t0,
-        severity="warn",
-        error="git not found on PATH",
-        remediation=(
-            "Install git (e.g. `apt install git`, `brew install git`, "
-            "`dnf install git`) if you don't have a local agentalloy checkout. "
-            "Container setup falls back to cloning the repo into "
-            "~/.cache/agentalloy/repo when no clone is found on disk; that "
-            "step needs git. If you DO have a clone (cwd or editable install), "
-            "this warning is informational."
-        ),
-    )
-
-
 # ---------------------------------------------------------------------------
 # Container-phase checks
 # ---------------------------------------------------------------------------
@@ -552,59 +517,72 @@ def _check_runtime_binary(runtime: str | None) -> dict[str, Any]:
     )
 
 
-def _check_build_context(build_context: str | None) -> dict[str, Any]:
-    """Verify the build context directory has required assets.
-
-    Checks for: Containerfile, pyproject.toml, uv.lock.
-
-    Parameters
-    ----------
-    build_context : str | None
-        Path to the build context directory.
-
-    Returns
-    -------
-    dict
-        Check result.
-    """
+def _check_ghcr_reachable() -> dict[str, Any]:
+    """Check network connectivity to ghcr.io (for image pulls)."""
     t0 = time.monotonic()
-    if not build_context:
+    try:
+        req = Request("https://ghcr.io", method="HEAD")
+        with urlopen(req, timeout=5) as resp:
+            status = getattr(resp, "status", 200)
+    except (URLError, OSError) as exc:
         return _check(
-            "build_context",
+            "ghcr_reachable",
             passed=False,
             started=t0,
-            error="No build context specified",
-            remediation="Pass --build-context <path> to specify the directory containing Containerfile, pyproject.toml, and uv.lock.",
+            severity="warn",
+            error=f"Cannot reach ghcr.io: {exc}",
+            remediation=(
+                "Container image pull will fail without network access to ghcr.io. "
+                "Use --image-path to deploy from a local tarball instead."
+            ),
         )
-    ctx = Path(build_context)
-    if not ctx.exists():
-        return _check(
-            "build_context",
-            passed=False,
-            started=t0,
-            error=f"Build context not found: {ctx}",
-            remediation="Ensure the build context directory exists.",
-        )
-
-    missing: list[str] = []
-    for name in ("Containerfile", "pyproject.toml", "uv.lock"):
-        if not (ctx / name).exists():
-            missing.append(name)
-
-    if missing:
-        return _check(
-            "build_context",
-            passed=False,
-            started=t0,
-            error=f"Missing assets in {ctx}: {', '.join(missing)}",
-            remediation=f"Place the missing files in {ctx} (Containerfile, pyproject.toml, uv.lock).",
-        )
-
     return _check(
-        "build_context",
+        "ghcr_reachable",
         passed=True,
         started=t0,
-        detail=f"Containerfile, pyproject.toml, uv.lock found in {ctx}",
+        detail=f"ghcr.io reachable (HTTP {status})",
+    )
+
+
+def _check_disk_space(min_bytes: int = 2 * 1024**3) -> dict[str, Any]:
+    """Check available disk space before pulling/loading an image."""
+    t0 = time.monotonic()
+    paths_to_check = [
+        os.environ.get("CONTAINER_STORAGE", ""),
+    ]
+    available = 0
+    for path in paths_to_check:
+        if path and os.path.exists(path):
+            available = shutil.disk_usage(path).free
+            break
+    # No configured path worked — try common container storage locations
+    if available == 0:
+        for fallback in [
+            os.path.expanduser("~/.local/share/containers"),
+            "/var/lib/containers",
+            "/var/lib/docker",
+        ]:
+            if os.path.exists(fallback):
+                available = shutil.disk_usage(fallback).free
+                break
+    # Still nothing — fall back to root filesystem
+    if available == 0:
+        available = shutil.disk_usage("/").free
+    if available < min_bytes:
+        return _check(
+            "disk_space",
+            passed=False,
+            started=t0,
+            severity="fatal",
+            error=f"Insufficient disk space: {available // (1024**2)}MB available, "
+            f"{min_bytes // (1024**2)}MB required",
+            remediation="Free disk space or use --image-path with a smaller tarball.",
+        )
+    return _check(
+        "disk_space",
+        passed=True,
+        started=t0,
+        detail=f"{available // (1024**3)}GB available",
     )
 
 
@@ -702,50 +680,6 @@ def _check_volume_exists(runtime: str) -> dict[str, Any]:
     )
 
 
-def _check_image_build_deps(build_context: str | None) -> dict[str, Any]:
-    """Check that a Containerfile exists in the build context.
-
-    Unlike the old compose-based check, this only looks for Containerfile
-    (no Dockerfile fallback) because the container runtime module always
-    builds with ``-f Containerfile``.
-
-    Parameters
-    ----------
-    build_context : str | None
-        Path to the build context directory, or None/empty.
-
-    Returns
-    -------
-    dict
-        Check result.
-    """
-    t0 = time.monotonic()
-    if not build_context:
-        return _check(
-            "image_build_deps",
-            passed=True,
-            started=t0,
-            severity="warn",
-            detail="No build context specified — skipping Containerfile check",
-        )
-    ctx = Path(build_context)
-    containerfile = ctx / "Containerfile"
-    if containerfile.exists():
-        return _check(
-            "image_build_deps",
-            passed=True,
-            started=t0,
-            detail=f"Containerfile at {containerfile}",
-        )
-    return _check(
-        "image_build_deps",
-        passed=False,
-        started=t0,
-        error=f"No Containerfile found in {ctx}",
-        remediation="Place a Containerfile in the build context directory.",
-    )
-
-
 # ---------------------------------------------------------------------------
 # Phase orchestration
 # ---------------------------------------------------------------------------
@@ -768,7 +702,6 @@ def run_preflight(
     phase: str = "early",
     runner: str | None = None,
     port: int = _DEFAULT_PORT,
-    build_context: str | None = None,
     runtime: str | None = None,
 ) -> dict[str, Any]:
     if phase not in _PHASES:
@@ -793,12 +726,11 @@ def run_preflight(
                     break
 
         checks.append(_check_runtime_binary(runtime))
-        checks.append(_check_git_present())
-        checks.append(_check_build_context(build_context))
+        checks.append(_check_ghcr_reachable())
+        checks.append(_check_disk_space())
         checks.append(_check_name_conflicts(runtime or "podman"))
         checks.append(_check_volume_exists(runtime or "podman"))
         checks.append(_check_port_free(port))
-        checks.append(_check_image_build_deps(build_context))
     else:  # runner
         chosen = runner or _runner_from_models_output()
         if chosen is None:
@@ -899,11 +831,7 @@ def add_parser(
         default=_DEFAULT_PORT,
         help=f"Port to test for availability (default: {_DEFAULT_PORT}).",
     )
-    p.add_argument(
-        "--build-context",
-        default=None,
-        help="Container phase: path to the build context directory (containing Containerfile, pyproject.toml, uv.lock).",
-    )
+
     add_json_flag(p)
     p.set_defaults(func=_run)
 
@@ -929,7 +857,6 @@ def _run(args: argparse.Namespace) -> int:
         phase=args.phase,
         runner=args.runner,
         port=args.port,
-        build_context=getattr(args, "build_context", None),
         runtime=None,
     )
     install_state.save_output_file(result, f"preflight-{args.phase}.json")
