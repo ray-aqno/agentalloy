@@ -64,6 +64,7 @@ uv tool install git+https://github.com/nrmeyers/agentalloy.git
 
 # Step 3: configure and wire
 agentalloy setup
+# select option 1
 ```
 
 The setup wizard walks you through everything: hardware detection, runner selection (`ollama`, `lm-studio`, or `llama-server`), model and port, service mode, **skill pack selection** (with tier-grouped listing), IDE harness wiring, and hardware target. It then executes all install steps and validates the result. **3–5 minutes** on a warm machine.
@@ -82,7 +83,8 @@ agentalloy setup -n --runner ollama --hardware nvidia --packs all --harness curs
 ### Container install
 
 ```bash
-agentalloy setup --deployment container
+agentalloy setup 
+# select options 2
 ```
 
 Runs agentalloy + Ollama in a single container with `qwen3-embedding:0.6b` auto-pulled on first start. Port 47950 is the only external surface. Container inference is **CPU-only** on every host; for GPU acceleration (NVIDIA / AMD / Metal) pick the native install instead.
@@ -137,13 +139,7 @@ Your agent calls `/compose`, gets back the relevant raw skill prose, and assembl
 
 ## Container deployment
 
-AgentAlloy can run as a single container (`agentalloy:local`) that bundles the service and its embedding model (Ollama) in one process. This is the recommended deployment for users who want zero host-side inference dependencies.
-
-### How it works
-
-```bash
-agentalloy setup --deployment container
-```
+AgentAlloy can run as a single container (`agentalloy:local`, setup option #2) that bundles the service and its embedding model (Ollama) in one process. This is the recommended deployment for users who want zero host-side inference dependencies.
 
 The setup wizard:
 
